@@ -2,4 +2,4 @@
 
 
 #Authors
-CLuade, Gemini, Chatgpt
+Claude, Gemini, Chatgpt
