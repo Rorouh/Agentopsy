@@ -2,4 +2,4 @@
 
 
 #Authors
-Daniel Ramos not  Miguel
+CLuade, Gemini, Chatgpt
