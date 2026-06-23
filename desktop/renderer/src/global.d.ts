@@ -14,6 +14,7 @@ declare global {
       connection(): Promise<{ url: string }>;
       health(): Promise<{ status: string; version: string }>;
       capabilities(): Promise<Capabilities>;
+      query(req: { os_profile?: string; evidence_id?: string; prompt: string }): Promise<{ status: string; reply: string; evidence_id: string; os_profile: string }>;
     };
   }
 }

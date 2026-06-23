@@ -61,6 +61,20 @@ async function sidecarFetch(pathname) {
   return res.json();
 }
 
+async function sidecarPost(pathname, body) {
+  const res = await fetch(connection.url + pathname, {
+    method: "POST",
+    headers: {
+      "X-Forensia-Token": connection.token,
+      "Content-Type": "application/json",
+      Host: new URL(connection.url).host,
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`${pathname} -> ${res.status}`);
+  return res.json();
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1200,
@@ -83,6 +97,7 @@ function createWindow() {
 ipcMain.handle("forensia:connection", () => ({ url: connection.url }));
 ipcMain.handle("forensia:health", () => sidecarFetch("/api/health"));
 ipcMain.handle("forensia:capabilities", () => sidecarFetch("/api/capabilities"));
+ipcMain.handle("forensia:query", (event, req) => sidecarPost("/api/agent/query", req));
 
 app.whenReady().then(async () => {
   try {

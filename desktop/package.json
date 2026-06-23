@@ -6,8 +6,8 @@
   "main": "main.cjs",
   "scripts": {
     "dev:renderer": "vite renderer",
-    "dev:app": "electron .",
-    "dev": "concurrently -k \"npm:dev:renderer\" \"wait-on http://localhost:5173 && npm:dev:app\"",
+    "dev:app": "wait-on http://localhost:5173 && electron .",
+    "dev": "concurrently -k \"npm:dev:renderer\" \"npm:dev:app\"",
     "build": "vite build renderer",
     "dist": "npm run build && electron-builder",
     "dist:all": "npm run build && electron-builder -mwl"
