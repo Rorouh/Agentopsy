@@ -1,0 +1,26 @@
+{
+  "name": "forensia-desktop",
+  "version": "0.0.1",
+  "private": true,
+  "description": "FORENSIA desktop shell (Electron). Bundles the Python sidecar + vendored forensic tools.",
+  "main": "main.cjs",
+  "scripts": {
+    "dev:renderer": "vite renderer",
+    "dev:app": "electron .",
+    "dev": "concurrently -k \"npm:dev:renderer\" \"wait-on http://localhost:5173 && npm:dev:app\"",
+    "build": "vite build renderer",
+    "dist": "npm run build && electron-builder",
+    "dist:all": "npm run build && electron-builder -mwl"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.2.0",
+    "concurrently": "^8.2.2",
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "typescript": "^5.4.0",
+    "vite": "^5.2.0",
+    "wait-on": "^7.2.0"
+  }
+}

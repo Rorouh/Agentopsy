@@ -1,0 +1,48 @@
+# --- Vendored forensic binaries (large; build machine produces them, users get the bundle) ---
+vendor/*/
+!vendor/CATALOG.md
+
+# --- Evidence, cases, reports: NEVER commit (may contain real/personal data) ---
+cases/
+evidence/
+*.raw
+*.vmdk
+*.E01
+*.aff4
+*.mem
+*.dump
+*.plaso
+*_findings.json
+reports/
+
+# --- Secrets / config ---
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+.venv-*/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+/build/
+backend/build/*/         # PyInstaller working output; the spec file itself stays tracked
+!backend/build/forensia.spec
+
+# --- Node / Electron ---
+node_modules/
+desktop/renderer/dist/
+desktop/out/
+desktop/dist/
+*.log
+
+# --- OS ---
+.DS_Store
+Thumbs.db

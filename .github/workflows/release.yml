@@ -1,0 +1,46 @@
+name: release
+
+# Manual for now. Code signing is deferred (ARCHITECTURE.md §6): artifacts are unsigned
+# until external distribution is decided. Produces one installer per OS/arch.
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-14, macos-13]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build Python sidecar (PyInstaller onedir, native arch)
+        working-directory: backend
+        run: |
+          pip install -e ".[dev]" pyinstaller
+          pyinstaller build/forensia.spec --noconfirm
+
+      - name: Stage sidecar into desktop/resources
+        shell: bash
+        run: |
+          mkdir -p desktop/resources
+          cp -r backend/dist/forensia-sidecar desktop/resources/forensia-sidecar
+
+      - name: Build installer
+        working-directory: desktop
+        run: |
+          npm install
+          npm run dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: forensia-${{ matrix.os }}
+          path: desktop/dist/*
