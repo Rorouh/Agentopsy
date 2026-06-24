@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Capabilities } from "../global";
+import { Button } from "../ui/Button";
 
 function getGreeting() {
   const hr = new Date().getHours();
@@ -195,7 +196,7 @@ export function ChatPage({ caps }: ChatPageProps) {
               />
               <div className="composer-footer">
                 <span className="composer-tip">Enter para enviar · Shift+Enter para nueva línea</span>
-                <button className="send-btn" onClick={send} disabled={!input.trim() || busy}>
+                <Button variant="icon" onClick={send} disabled={!input.trim() || busy}>
                   <svg
                     width="16"
                     height="16"
@@ -209,20 +210,20 @@ export function ChatPage({ caps }: ChatPageProps) {
                     <line x1="22" y1="2" x2="11" y2="13" />
                     <polygon points="22 2 15 22 11 13 2 9 22 2" />
                   </svg>
-                </button>
+                </Button>
               </div>
             </div>
           </div>
 
           <div className="quick-chips">
             {QUICK_CHIPS.map((chip, i) => (
-              <button
+              <Button
                 key={i}
-                className="chip"
+                variant="chip"
                 onClick={() => handleChipClick(chip.prefill)}
               >
                 {chip.label}
-              </button>
+              </Button>
             ))}
           </div>
         </div>
@@ -256,7 +257,7 @@ export function ChatPage({ caps }: ChatPageProps) {
               />
               <div className="composer-footer">
                 <span className="composer-tip">Enter para enviar · Shift+Enter para nueva línea</span>
-                <button className="send-btn" onClick={send} disabled={!input.trim() || busy}>
+                <Button variant="icon" onClick={send} disabled={!input.trim() || busy}>
                   <svg
                     width="16"
                     height="16"
@@ -270,7 +271,7 @@ export function ChatPage({ caps }: ChatPageProps) {
                     <line x1="22" y1="2" x2="11" y2="13" />
                     <polygon points="22 2 15 22 11 13 2 9 22 2" />
                   </svg>
-                </button>
+                </Button>
               </div>
             </div>
           </div>

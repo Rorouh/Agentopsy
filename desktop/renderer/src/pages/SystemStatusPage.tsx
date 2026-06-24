@@ -1,4 +1,6 @@
 import type { Capabilities } from "../global";
+import { Card } from "../ui/Card";
+import { StatusDot } from "../ui/StatusDot";
 
 interface SystemStatusPageProps {
   caps: Capabilities | null;
@@ -12,7 +14,7 @@ export function SystemStatusPage({ caps }: SystemStatusPageProps) {
 
       {caps ? (
         <div className="status-grid">
-          <div className="status-card">
+          <Card>
             <h3>Plataforma</h3>
             <div className="status-card-body">
               <div className="status-row">
@@ -32,24 +34,24 @@ export function SystemStatusPage({ caps }: SystemStatusPageProps) {
                 <span className="status-row-value">{caps.packaged ? "Sí" : "No (Modo Dev)"}</span>
               </div>
             </div>
-          </div>
+          </Card>
 
-          <div className="status-card">
+          <Card>
             <h3>Modelos Disponibles</h3>
             <div className="status-card-body">
               {Object.entries(caps.models).map(([k, v]) => (
                 <div className="status-row" key={k}>
                   <span className="status-row-label">{k}</span>
                   <span className="status-row-value" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span className={`status-dot ${v ? "" : "offline"}`} />
+                    <StatusDot online={v} />
                     {v ? "Disponible" : "No Disponible"}
                   </span>
                 </div>
               ))}
             </div>
-          </div>
+          </Card>
 
-          <div className="status-card full-width">
+          <Card fullWidth>
             <h3>Maletín Forense (Resolución Bundled → PATH)</h3>
             <div className="tools-grid">
               {Object.entries(caps.tools).map(([k, v]) => (
@@ -59,7 +61,7 @@ export function SystemStatusPage({ caps }: SystemStatusPageProps) {
                 </div>
               ))}
             </div>
-          </div>
+          </Card>
         </div>
       ) : (
         <div style={{ color: "var(--fg-dim)" }}>Obteniendo capacidades del sidecar backend...</div>

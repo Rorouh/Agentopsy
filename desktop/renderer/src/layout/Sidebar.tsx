@@ -1,4 +1,5 @@
 import type { } from "../global";
+import { StatusDot } from "../ui/StatusDot";
 
 type Tab = "chat" | "system";
 
@@ -64,7 +65,7 @@ export function Sidebar({ activeTab, onTabChange, isConnected, version }: Sideba
       <div className="sidebar-footer">
         <div className="system-status-indicator">
           <div className="status-label-group">
-            <span className={`status-dot ${isConnected ? "" : "offline"}`} />
+            <StatusDot online={isConnected} />
             <span>{isConnected ? "Conectado" : "Sin Conexión"}</span>
           </div>
           <span className="app-version">{version ? `v${version}` : "offline"}</span>
