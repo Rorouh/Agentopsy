@@ -7,26 +7,26 @@
   --bg-panel: rgba(12, 14, 20, 0.85); /* Semi-transparent panel for HUD look */
   --bg-elev: rgba(22, 26, 36, 0.88);
   --bg-sidebar: rgba(8, 10, 14, 0.88);
-  
+
   --fg: #ffffff;
   --fg-dim: #cbd5e1;
   --fg-mute: #64748b;
-  
+
   /* Retro RPG Accents */
   --accent: #f8b800;           /* Gold quest highlighter */
   --accent-hover: #ffcc33;
   --accent-soft: rgba(248, 184, 0, 0.15);
   --accent-fg: #0c0e14;
-  
+
   --border: #ffffff;           /* Retro white border */
   --border-active: #f8b800;    /* Gold select border */
   --border-dim: #475569;
-  
+
   --ok: #22c55e;
   --bad: #ef4444;
   --warn: #f97316;
   --hover: rgba(255, 255, 255, 0.1);
-  
+
   /* Fonts */
   --font-pixel: 'Press Start 2P', monospace;
   --font-retro: 'VT323', monospace;
@@ -73,7 +73,7 @@ body::after {
   display: block;
   position: fixed;
   top: 0; left: 0; bottom: 0; right: 0;
-  background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.15) 50%), 
+  background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.15) 50%),
               linear-gradient(90deg, rgba(255, 0, 0, 0.02), rgba(0, 255, 0, 0.005), rgba(0, 0, 255, 0.02));
   z-index: 9999;
   background-size: 100% 4px, 6px 100%;
