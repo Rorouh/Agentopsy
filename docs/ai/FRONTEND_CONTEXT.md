@@ -91,30 +91,49 @@ desktop/renderer/src/
 ├── index.css               Token system (CSS custom properties). Single source of truth for all design tokens.
 ├── global.d.ts             TypeScript declaration of window.forensia. Update this when backend adds endpoints.
 ├── main.tsx                Entry point. Just renders <App />.
-├── App.tsx                 Root assembler (42 lines). Calls health + capabilities, owns active-tab state.
+├── App.tsx                 Root assembler. Calls health + capabilities, owns activeView state, wires mock data as props.
 ├── ThemeProvider.tsx       React context for theme. Reads localStorage, writes data-theme on <html>.
-├── ThemeToggle.tsx         Pill UI control. Reads/writes through useTheme(). No local state.
+├── ThemeToggle.tsx         Pill UI control. Reads/writes through useTheme(). No local state. Lives only inside SettingsPage now — not in the global topbar.
+├── navigation/
+│   └── navItems.ts         ViewId union, NavItem interface, NAV_ITEMS (section: "primary"|"secondary"), DEFAULT_VIEW.
+├── types/
+│   └── domain.ts            Domain contracts meant to mirror future backend shapes: CaseSummary, EvidenceFile, ReportDocument, TimelineEvent, MitreTechniqueMatch, InvestigationFinding, GuideStep, LoadState.
+├── mocks/
+│   └── frontendPreviewData.ts  All mock data. Imported ONLY in App.tsx and passed down as typed props — pages never import mocks directly.
 ├── layout/
-│   ├── AppShell.tsx        Visual frame: CSS grid (sidebar 260px + main), topbar with ThemeToggle, error banner.
-│   └── Sidebar.tsx         Brand, tab navigation (chat/system), connection status dot + sidecar version.
+│   ├── AppShell.tsx        Visual frame: CSS grid (sidebar 260px + main), error banner via ErrorState. No topbar/ThemeToggle here anymore.
+│   └── Sidebar.tsx         Brand, full nav list (8 items, primary + secondary sections), connection status dot + sidecar version.
 ├── pages/
-│   ├── ChatPage.tsx        Full chat UI + send logic. Calls window.forensia.query(). Has ownership constraint (see below).
+│   ├── ChatPage.tsx        Full chat UI + send logic. Calls window.forensia.query(). Has ownership constraint (see below). NOT modified by the visual-demo work.
+│   ├── GuidePage.tsx       Static onboarding/flow explainer. CTA → repository.
+│   ├── RepositoryPage.tsx  "Casos y evidencias". Mock case form + evidence list + metrics. CTA → investigation.
+│   ├── InvestigationPage.tsx  Wraps ChatPage unmodified, adds ContextBanner + findings side panel. CTA → timeline.
+│   ├── TimelinePage.tsx    Mock chronological events with severity filter. CTA → document-viewer.
+│   ├── DocumentViewerPage.tsx  Mock report list + viewer pane. CTA → mitre.
+│   ├── MitreAttackPage.tsx Mock MITRE technique correlation grid. Last step in the flow, no onNavigate.
+│   ├── SettingsPage.tsx    Apariencia (real theme toggle + persistence), Operador/Reportes (mock forms), Modelos/IA (reads real caps.models), Seguridad, Diagnóstico (CTA → system), Acerca de.
 │   └── SystemStatusPage.tsx  Capabilities dashboard. Renders caps.tools and caps.models from window.forensia.capabilities().
 └── ui/
-    ├── Button.tsx          Thin wrapper. Variants: "chip" (quick-access buttons) and "icon" (send button).
-    ├── Card.tsx            Wraps .status-card. Optional fullWidth prop.
-    └── StatusDot.tsx       Online/offline indicator. Prop: online: boolean.
+    ├── Button.tsx, Card.tsx, StatusDot.tsx   Original primitives, unchanged.
+    ├── Badge.tsx, EmptyState.tsx, LoadingState.tsx, ErrorState.tsx   Visual state primitives.
+    ├── PageHeader.tsx, PageSection.tsx       Page-level layout primitives.
+    ├── MetricCard.tsx, KeyValueList.tsx      Data display primitives.
+    └── ContextBanner.tsx                      Shows active case/evidence; used on Repository/Investigation/Timeline/DocumentViewer/Mitre.
 ```
+
+All of the above (pages, navigation, mocks, types, ui primitives) is a **visual-only demo layer**: no new `window.forensia` calls, no `fetch`, no real persistence except theme. It exists to make the app navigable and screenshot-ready while the real backend wiring lands incrementally through `App.tsx`.
 
 ### App.tsx — what it does and does not do
 
-`App.tsx` is a 42-line assembler. It:
+`App.tsx` is the root assembler. It:
 - calls `window.forensia.health()` and `window.forensia.capabilities()` on mount
 - derives `isConnected` from the presence of `version` and absence of `error`
-- owns the `activeTab: "chat" | "system"` state
-- delegates everything else to `AppShell`, `ChatPage`, `SystemStatusPage`
+- owns the `activeView: ViewId` state (8 views now, see `navigation/navItems.ts`)
+- imports all mock data from `mocks/frontendPreviewData.ts` and passes it down as typed props
+- passes `onNavigate={setActiveView}` to pages that have a flow CTA
+- delegates everything else to `AppShell` and the page components
 
-It does **not** contain any UI, any business logic, or any direct DOM manipulation.
+It does **not** contain any UI, any business logic, or any direct DOM manipulation. When real backend data arrives, this is the only file that needs to change — pages keep their prop contracts.
 
 ### ChatPage.tsx — ownership constraint
 
@@ -281,7 +300,7 @@ In priority order, accounting for team coordination requirements:
 | What | Why not |
 |---|---|
 | Migrate to SaaS web / remove Electron | Core architecture decision. Locked in `ARCHITECTURE.md`. |
-| Add React Router | Only 2 tabs. `useState` is sufficient. Router adds history/URL complexity in a desktop app that has no URLs. |
+| Add React Router | `useState<ViewId>` in `App.tsx` is still sufficient (8 views as of 2026-06-24, see `navItems.ts`). The journal's original threshold ("revisit past 4-5 views") has technically been crossed — flagged as an open question for the team, not yet a decision to act on. Router still adds history/URL complexity with no real benefit in a desktop app with no URLs. |
 | Add Zustand / Redux | State is flat and lives in `App.tsx`. No cross-tree sharing problem yet. |
 | Add a UI component library (MUI, shadcn, etc.) | Adds weight and overrides the CSS token system. Evaluate only if primitive count grows significantly. |
 | Add responsive / mobile layout | This is an Electron desktop app with a fixed window. Not a target use case. |

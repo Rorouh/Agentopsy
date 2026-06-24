@@ -6,6 +6,46 @@ No reemplaza ni contradice `ARCHITECTURE.md` ni `THREAT_MODEL.md`; los complemen
 
 ---
 
+## Entrada 2026-06-24 (tarde) — Demo visual navegable, rama `feature/saas-theming`
+
+**Cubre:** trabajo posterior a `37aa036`, todavía sin commitear al cierre de esta entrada.
+**Autores:** equipo frontend FORENSIA
+**Objetivo de la sesión:** dejar una demo navegable y presentable (capturas para el equipo), sin tocar backend, Electron main/preload, ni la arquitectura local-first. Cero `fetch` directo, cero APIs falsas en `window.forensia`, cero librerías nuevas (Router/Zustand/Redux/Tailwind/UI libs).
+
+### Qué se añadió
+
+**6 pantallas nuevas** en `src/pages/`: `GuidePage`, `RepositoryPage` (antes "repositorio de evidencia", ahora "Casos y evidencias"), `InvestigationPage` (envuelve `ChatPage` sin tocarlo, añade panel de hallazgos), `TimelinePage`, `DocumentViewerPage`, `MitreAttackPage`, más `SettingsPage` (Apariencia, Operador, Reportes, Modelos/IA, Seguridad y privacidad, Diagnóstico, Acerca de).
+
+**Navegación centralizada**: `src/navigation/navItems.ts` exporta `ViewId`, `NavItem`, `NAV_ITEMS` (con `section: "primary" | "secondary"`) y `DEFAULT_VIEW`. `App.tsx` sigue siendo el único dueño del estado `activeView` (`useState`, sin Router). Las páginas reciben un prop opcional `onNavigate?: (view: ViewId) => void` para los CTAs de flujo (Guía→Repositorio→Investigación→Timeline→Documentos→MITRE); `App.tsx` les pasa literalmente `setActiveView`.
+
+**Contratos de dominio**: `src/types/domain.ts` (`CaseSummary`, `EvidenceFile`, `ReportDocument`, `TimelineEvent`, `MitreTechniqueMatch`, `InvestigationFinding`, `GuideStep`, `LoadState`) pensados para mapear 1:1 con las futuras respuestas de `forensia/routers/*`. Mock data en `src/mocks/frontendPreviewData.ts`, importado **solo** en `App.tsx` y pasado como props — ninguna página importa mocks directamente, así que el día que haya backend real solo cambia `App.tsx`.
+
+**Primitivos UI nuevos** en `src/ui/`: `PageHeader`, `PageSection`, `MetricCard`, `KeyValueList`, `ContextBanner` (muestra caso/evidencia activa — usado en Repositorio/Investigación/Timeline/Documentos/MITRE para que se entienda visualmente que esas pantallas dependen de una evidencia seleccionada), `LoadingState`, `ErrorState`, `EmptyState`, `Badge`.
+
+**El topbar global perdió el `ThemeToggle`.** Vivía flotando en todas las pantallas; ahora el toggle de tema vive únicamente en Configuración → Apariencia. Se quitó `<div className="topbar">` de `AppShell.tsx` y la regla `.topbar` de `index.css` (quedó sin uso). El banner de error de conexión (antes con `color: "#ff6b6b"` hardcodeado, una violación a la regla de tokens que ya existía antes de esta sesión) ahora pasa por el nuevo `ErrorState`, que usa `var(--danger)`.
+
+**Limpieza menor:** se quitó `.investigation-context-bar` de `index.css` (quedó muerta tras adoptar `ContextBanner` en `InvestigationPage`). Se corrigió `var(--fg-dim)` en `SystemStatusPage.tsx` — un token que nunca existió en `:root`, reemplazado por `LoadingState`.
+
+### Lo que NO cambió
+
+- `ChatPage.tsx` — cero ediciones. `InvestigationPage` lo monta tal cual y le añade contexto alrededor.
+- `global.d.ts`, `preload.cjs`, `main.cjs` — sin tocar. Ninguna pantalla nueva llama a `window.forensia` directamente; todo lo que muestran es mock data tipada.
+- Tokens de `:root` / `[data-theme="dark"]` — sin tocar. Todo lo nuevo consume `var(--token)` existente, cero hex nuevos.
+
+### Para quien integre backend real
+
+Cada página recibe sus datos por props (`activeCase`, `activeEvidence`, `evidenceFiles`, `events`, `documents`, `matches`, `findings`). El punto de integración es exclusivamente `App.tsx`: sustituir los `mock*` de `frontendPreviewData.ts` por el resultado de las llamadas reales a `forensia/routers/*` (vía la cadena `window.forensia.*` ya existente, no por `fetch`). El tipo `EvidenceFile` ya incluye `osProfile?: string` para cuando el backend lo provea.
+
+### Deuda no resuelta (sigue igual que en la entrada anterior)
+
+`evidence_id` vacío en `ChatPage.tsx`, parser de markdown manual, estilos inline hardcodeados en `ChatPage.tsx` (no tocados, siguen siendo del owner de chat), `typecheck` no conectado a CI. Nada de esto se tocó en esta sesión — es trabajo de UI puramente visual sobre páginas nuevas.
+
+### Pregunta abierta nueva
+
+La entrada anterior decía "revisar React Router cuando haya más de 4-5 vistas". Hoy `navItems.ts` ya tiene 8 (6 primarias + Estado del Sistema + Configuración). Sigue funcionando bien con `useState<ViewId>` y no hay urgencia, pero queda anotado como punto a discutir en equipo, no como decisión tomada unilateralmente.
+
+---
+
 ## Entrada 2026-06-24 — Rama `feature/saas-theming`
 
 **Commits cubiertos:** `d8e7dfa` → `37aa036` (6 commits sobre `main`)

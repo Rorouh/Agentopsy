@@ -1,34 +1,28 @@
 import type { ReactNode } from "react";
-import { ThemeToggle } from "../ThemeToggle";
 import { Sidebar } from "./Sidebar";
-
-type Tab = "chat" | "system";
+import { ErrorState } from "../ui/ErrorState";
+import type { ViewId } from "../navigation/navItems";
 
 interface AppShellProps {
-  activeTab: Tab;
-  onTabChange: (tab: Tab) => void;
+  activeView: ViewId;
+  onViewChange: (view: ViewId) => void;
   isConnected: boolean;
   version: string;
   error: string;
   children: ReactNode;
 }
 
-export function AppShell({ activeTab, onTabChange, isConnected, version, error, children }: AppShellProps) {
+export function AppShell({ activeView, onViewChange, isConnected, version, error, children }: AppShellProps) {
   return (
     <div className="app">
       <Sidebar
-        activeTab={activeTab}
-        onTabChange={onTabChange}
+        activeView={activeView}
+        onViewChange={onViewChange}
         isConnected={isConnected}
         version={version}
       />
       <main className="main-content">
-        <div className="topbar"><ThemeToggle /></div>
-        {error && (
-          <div style={{ color: "#ff6b6b", marginBottom: 16, fontFamily: "var(--font-mono)", fontSize: 13 }}>
-            Error de conexión: {error}
-          </div>
-        )}
+        {error && <ErrorState message={error} />}
         {children}
       </main>
     </div>

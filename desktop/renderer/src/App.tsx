@@ -2,14 +2,33 @@ import { useEffect, useState } from "react";
 import type { Capabilities } from "./global";
 import { ThemeProvider } from "./ThemeProvider";
 import { AppShell } from "./layout/AppShell";
-import { ChatPage } from "./pages/ChatPage";
+import { DEFAULT_VIEW, type ViewId } from "./navigation/navItems";
+
+import { GuidePage } from "./pages/GuidePage";
+import { RepositoryPage } from "./pages/RepositoryPage";
+import { DocumentViewerPage } from "./pages/DocumentViewerPage";
+import { TimelinePage } from "./pages/TimelinePage";
+import { InvestigationPage } from "./pages/InvestigationPage";
+import { MitreAttackPage } from "./pages/MitreAttackPage";
 import { SystemStatusPage } from "./pages/SystemStatusPage";
+import { SettingsPage } from "./pages/SettingsPage";
+
+import {
+  mockActiveCase,
+  mockActiveEvidence,
+  mockEvidenceFiles,
+  mockReportDocuments,
+  mockTimelineEvents,
+  mockFindings,
+  mockMitreMatches,
+  guideSteps,
+} from "./mocks/frontendPreviewData";
 
 export function App() {
   const [caps, setCaps] = useState<Capabilities | null>(null);
   const [version, setVersion] = useState<string>("");
   const [error, setError] = useState<string>("");
-  const [activeTab, setActiveTab] = useState<"chat" | "system">("chat");
+  const [activeView, setActiveView] = useState<ViewId>(DEFAULT_VIEW);
 
   const isConnected = !error && !!version;
 
@@ -27,15 +46,56 @@ export function App() {
   return (
     <ThemeProvider>
       <AppShell
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
+        activeView={activeView}
+        onViewChange={setActiveView}
         isConnected={isConnected}
         version={version}
         error={error}
       >
-        {activeTab === "chat"
-          ? <ChatPage caps={caps} />
-          : <SystemStatusPage caps={caps} />}
+        {/* Demo visual con mock data — ver src/mocks/frontendPreviewData.ts.
+            Cuando exista backend real, cada página recibirá sus props desde
+            llamadas a forensia/routers/* en lugar de los arrays mock. */}
+        {activeView === "guide" && <GuidePage steps={guideSteps} onNavigate={setActiveView} />}
+        {activeView === "repository" && (
+          <RepositoryPage
+            activeCase={mockActiveCase}
+            activeEvidence={mockActiveEvidence}
+            evidenceFiles={mockEvidenceFiles}
+            onNavigate={setActiveView}
+          />
+        )}
+        {activeView === "document-viewer" && (
+          <DocumentViewerPage
+            activeCase={mockActiveCase}
+            activeEvidence={mockActiveEvidence}
+            documents={mockReportDocuments}
+            onNavigate={setActiveView}
+          />
+        )}
+        {activeView === "timeline" && (
+          <TimelinePage
+            activeCase={mockActiveCase}
+            activeEvidence={mockActiveEvidence}
+            events={mockTimelineEvents}
+            onNavigate={setActiveView}
+          />
+        )}
+        {activeView === "investigation" && (
+          <InvestigationPage
+            caps={caps}
+            activeCase={mockActiveCase}
+            activeEvidence={mockActiveEvidence}
+            findings={mockFindings}
+            onNavigate={setActiveView}
+          />
+        )}
+        {activeView === "mitre" && (
+          <MitreAttackPage activeCase={mockActiveCase} activeEvidence={mockActiveEvidence} matches={mockMitreMatches} />
+        )}
+        {activeView === "system" && <SystemStatusPage caps={caps} />}
+        {activeView === "settings" && (
+          <SettingsPage caps={caps} version={version} activeCase={mockActiveCase} onNavigate={setActiveView} />
+        )}
       </AppShell>
     </ThemeProvider>
   );
