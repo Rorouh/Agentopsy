@@ -408,3 +408,40 @@ html, body, #root {
 }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* ── Theme Toggle ────────────────────────────────────────────────────────── */
+.topbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 20px;
+}
+.theme-toggle {
+  display: inline-flex;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 3px;
+  gap: 2px;
+}
+.toggle-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.toggle-option.active {
+  background: var(--accent);
+  color: #ffffff;
+}
+.toggle-option:not(.active):hover {
+  background: var(--accent-bg);
+  color: var(--accent-text);
+}

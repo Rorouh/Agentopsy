@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Capabilities } from "./global";
+import { ThemeProvider } from "./ThemeProvider";
+import { ThemeToggle } from "./ThemeToggle";
 
 function getGreeting() {
   const hr = new Date().getHours();
@@ -192,6 +194,7 @@ export function App() {
   const isConnected = !error && !!version;
 
   return (
+    <ThemeProvider>
     <div className="app">
       {/* Sidebar Navigation */}
       <aside className="sidebar">
@@ -257,6 +260,7 @@ export function App() {
 
       {/* Main Workspace */}
       <main className="main-content">
+        <div className="topbar"><ThemeToggle /></div>
         {error && (
           <div style={{ color: "#ff6b6b", marginBottom: 16, fontFamily: "var(--font-mono)", fontSize: 13 }}>
             Error de conexión: {error}
@@ -430,5 +434,6 @@ export function App() {
         )}
       </main>
     </div>
+    </ThemeProvider>
   );
 }
