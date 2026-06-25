@@ -263,8 +263,8 @@ Know this before making changes. Some debt is intentional.
 | Inline styles with hardcoded hex | `ChatPage.tsx` throughout | Yes (literal move) | Cleaning them up breaks dark mode in chat |
 | `evidence_id` sent as `""` | `ChatPage.tsx:147` | Temporary | Agent receives no evidence context; forensic analysis is disconnected from UI |
 | No API/hook abstraction layer | `ChatPage.tsx:133–163` | Temporary | All fetch logic lives inside the component; untestable in isolation |
-| `getGreeting()` defined but unused | `ChatPage.tsx:4–9` | No | Dead code; remove when coordinating with chat owner |
-| `typecheck` not in CI | `desktop/package.json` | Temporary | Type errors can reach `main` undetected |
+| ~~`getGreeting()` defined but unused~~ | — | **Resolved 2026-06-25** | Removed — it was never called anywhere, zero behavior change. |
+| ~~`typecheck` not in CI~~ | — | **Resolved 2026-06-25** | `ci.yml`'s `renderer` job now runs `npm run typecheck` (it already ran an equivalent `tsc` command; now it calls the actual npm script so there is one source of truth). |
 | `@types/react: ^19.2.17` with `react: ^18.3.0` | `desktop/package.json` | **Intentional** | Do not "fix" this. The combination is compatible. Do not upgrade React to 19 without team review. |
 | TODO `electron-store` for theme | `ThemeProvider.tsx:32` | Temporary | Low priority; localStorage works for now |
 
@@ -288,7 +288,7 @@ In priority order, accounting for team coordination requirements:
 4. **Migrate inline styles in `ChatPage.tsx` to tokens** — coordinate with chat owner. Must not
    change layout or spacing, only replace hardcoded colors with `var(--token)`.
 
-5. **Connect `npm run typecheck` to CI** (`.github/workflows/ci.yml`).
+5. ~~Connect `npm run typecheck` to CI~~ — done 2026-06-25.
 
 6. **Frontend tests** — write only after hooks and components are stable. Start with the
    hook layer (`useChatApi`), not with component snapshots.

@@ -2,13 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import type { Capabilities } from "../global";
 import { Button } from "../ui/Button";
 
-function getGreeting() {
-  const hr = new Date().getHours();
-  if (hr >= 6 && hr < 12) return "Buenos días";
-  if (hr >= 12 && hr < 20) return "Buenas tardes";
-  return "Buenas noches";
-}
-
 function renderBoldText(text: string) {
   // Simple regex to parse **bold** and `code`
   const parts = text.split(/(\*\*.*?\*\*|`.*?`)/g);

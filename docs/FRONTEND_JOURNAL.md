@@ -6,6 +6,18 @@ No reemplaza ni contradice `ARCHITECTURE.md` ni `THREAT_MODEL.md`; los complemen
 
 ---
 
+## Entrada 2026-06-25 (2) — Quitar `getGreeting()` muerta en ChatPage.tsx
+
+Función definida en `ChatPage.tsx:4-9` que nunca se llamaba desde ningún lado del archivo (confirmado por búsqueda en todo `src/`). Se eliminó. Cero cambio de comportamiento — no es un refactor de la lógica de chat, solo borrar código que no se ejecutaba. `npm run typecheck` sigue limpio.
+
+---
+
+## Entrada 2026-06-25 — CI: alinear typecheck con el script real
+
+`ci.yml` ya corría un `tsc -p renderer/tsconfig.json` equivalente a `npm run typecheck` (el `tsconfig.json` ya tenía `noEmit: true`), así que el ítem de deuda "typecheck no conectado a CI" estaba desactualizado en `FRONTEND_CONTEXT.md` — quedó marcado como resuelto. Se cambió el job `renderer` para llamar literalmente `npm run typecheck` en vez de duplicar el comando, así hay una sola fuente de verdad si alguien cambia las flags del script en `package.json`. Cambio de una línea en `.github/workflows/ci.yml`, sin riesgo, no toca `ChatPage.tsx` ni ningún archivo con restricción de ownership.
+
+---
+
 ## Entrada 2026-06-24 (tarde) — Demo visual navegable, rama `feature/saas-theming`
 
 **Cubre:** trabajo posterior a `37aa036`, todavía sin commitear al cierre de esta entrada.
