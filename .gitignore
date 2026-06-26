@@ -3,8 +3,11 @@ vendor/*/
 !vendor/CATALOG.md
 
 # --- Evidence, cases, reports: NEVER commit (may contain real/personal data) ---
-cases/
-evidence/
+# Anchored to repo root so we don't accidentally block source modules under
+# backend/forensia/cases/, backend/forensia/reports/, etc.
+/cases/
+/evidence/
+/reports/
 *.raw
 *.vmdk
 *.E01
@@ -13,7 +16,6 @@ evidence/
 *.dump
 *.plaso
 *_findings.json
-reports/
 
 # --- Secrets / config ---
 .env

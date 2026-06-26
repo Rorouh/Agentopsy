@@ -1,0 +1,127 @@
+"""Case + evidence HTTP surface.
+
+Thin adapter over ``forensia.cases.manager.case_manager`` and
+``forensia.evidence.evidence_manager`` (CLAUDE.md RULE 3). All routes are token-gated
+and dataclass results are converted to JSON-friendly dicts here (Pydantic does not
+serialize ``pathlib.Path`` natively).
+"""
+
+from __future__ import annotations
+
+from dataclasses import asdict
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+
+from forensia.cases.manager import case_manager
+from forensia.evidence import evidence_manager
+from forensia.security import require_token
+
+router = APIRouter()
+
+
+class CreateCaseRequest(BaseModel):
+    name: str
+    examiner: str
+    os_profile: str
+    notes: str = ""
+
+
+class RegisterEvidenceRequest(BaseModel):
+    source_path: str
+
+
+def _case_dict(case: Any) -> dict[str, Any]:
+    return asdict(case)
+
+
+def _evidence_dict(handle: Any) -> dict[str, Any]:
+    data = asdict(handle)
+    # EvidenceHandle.original_path is a pathlib.Path — JSON cannot serialize it.
+    if "original_path" in data and data["original_path"] is not None:
+        data["original_path"] = str(data["original_path"])
+    return data
+
+
+# ---- cases ---------------------------------------------------------------
+
+
+@router.post("/api/cases", dependencies=[Depends(require_token)])
+def create_case(req: CreateCaseRequest) -> dict[str, Any]:
+    try:
+        case = case_manager.create(
+            name=req.name,
+            examiner=req.examiner,
+            os_profile=req.os_profile,
+            notes=req.notes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _case_dict(case)
+
+
+@router.get("/api/cases", dependencies=[Depends(require_token)])
+def list_cases() -> list[dict[str, Any]]:
+    return [_case_dict(c) for c in case_manager.list()]
+
+
+@router.get("/api/cases/{case_id}", dependencies=[Depends(require_token)])
+def get_case(case_id: str) -> dict[str, Any]:
+    try:
+        case = case_manager.load(case_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _case_dict(case)
+
+
+@router.post("/api/cases/{case_id}/close", dependencies=[Depends(require_token)])
+def close_case(case_id: str) -> dict[str, Any]:
+    try:
+        case = case_manager.close(case_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _case_dict(case)
+
+
+# ---- evidence ------------------------------------------------------------
+
+
+@router.post("/api/cases/{case_id}/evidence", dependencies=[Depends(require_token)])
+def register_evidence(case_id: str, req: RegisterEvidenceRequest) -> dict[str, Any]:
+    try:
+        handle = evidence_manager.register(case_id, req.source_path)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _evidence_dict(handle)
+
+
+@router.get("/api/cases/{case_id}/evidence", dependencies=[Depends(require_token)])
+def list_evidence(case_id: str) -> list[dict[str, Any]]:
+    try:
+        handles = evidence_manager.list(case_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return [_evidence_dict(h) for h in handles]
+
+
+@router.post(
+    "/api/cases/{case_id}/evidence/{evidence_id}/verify",
+    dependencies=[Depends(require_token)],
+)
+def verify_evidence(case_id: str, evidence_id: str) -> dict[str, Any]:
+    try:
+        verified = evidence_manager.verify(case_id, evidence_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"evidence_id": evidence_id, "verified": bool(verified)}

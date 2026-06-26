@@ -34,20 +34,27 @@ tras un panel de 5 expertos (empaquetado, DFIR, seguridad, orquestación IA, ges
 │   capabilities.py contrato de degradación (qué hay disponible)│
 │   config.py      ~/.forensia/config.json + env override       │
 │   routers/       adaptadores FINOS (health, capabilities, …)  │
-│   evidence/      EvidenceManager — único dueño de la evidencia│
-│   audit/         log append-only encadenado por hash          │
-│   toolkit/       resolver env→bundled→PATH + contrato de tool │
+│   evidence.py    EvidenceManager — copia inmutable + hash gate│
+│   cases/         CaseManager (caso-como-carpeta, ver STORAGE) │
+│   artifacts/     ArtifactStore (manifest + hashes por run)    │
+│   chats/         ChatStore (JSONL append-only por sesión)     │
+│   audit/         AuditLog encadenado por hash (uno por caso)  │
+│   toolkit/       resolver env→bundled→container→PATH; tools   │
 │   agent/         un agente, parametrizado por os_profile      │
 │   models/        backend cloud|local + capabilities()         │
-│   reports/       hallazgo trazable + timeline                 │
+│   reports/       hallazgo trazable + timeline (pendiente)     │
 └───────────────┬──────────────────────────────────────────────┘
-                │ resolver: env → bundled → PATH   (sin rama Docker)
+                │ resolver: env → bundled → container → PATH
 ┌───────────────▼──────────────────────────────────────────────┐
 │ vendor/<tool>/<os>-<arch>/   maletín forense bundleado         │
 │   TSK, bulk_extractor, ewf-tools, hayabusa, chainsaw,         │
 │   RegRipper…   (Volatility3 y plaso van DENTRO del sidecar)   │
 └──────────────────────────────────────────────────────────────┘
 ```
+
+> Detalle del layout en disco (`~/.forensia/cases/<id>/{case.json, evidence/, artifacts/, chats/, audit.jsonl, reports/}`),
+> contrato de cada manager/store, y flujo end-to-end de una ejecución anclada a caso:
+> ver [`STORAGE.md`](STORAGE.md).
 
 ## 3. Por qué el transporte va desacoplado
 
