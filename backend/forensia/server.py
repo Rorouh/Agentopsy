@@ -31,6 +31,7 @@ from forensia.routers import (
     chats,
     config as config_router,
     evidence,
+    findings,
     health,
 )
 from forensia.security import HostHeaderMiddleware, allowed_hosts, new_session_token
@@ -57,6 +58,7 @@ def create_app(port: int) -> FastAPI:
     app.include_router(cases.router)
     app.include_router(artifacts.router)
     app.include_router(chats.router)
+    app.include_router(findings.router)
     app.include_router(agent.router)
     return app
 

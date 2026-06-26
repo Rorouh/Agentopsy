@@ -35,6 +35,30 @@ Caracteriza el archivo ANTES de invocar herramientas forenses específicas:
 primer plugin — auto-detectan el perfil. NO empieces con `linux.pslist.PsList`
 ni `windows.pslist.PsList` (esos requieren que el perfil ya esté resuelto).
 
+## Si la hipótesis es "memdump Windows" (después del paso 4)
+
+Encadena estos plugins de Volatility 3 EN ESTE ORDEN — sin pedir permiso:
+
+1. `windows.info` → confirma kernel build / hyperv / runtime.
+2. `windows.pslist.PsList` → procesos activos.
+3. `windows.netscan.NetScan` → conexiones de red abiertas (IOC red).
+4. `windows.malfind.Malfind` → secciones de memoria sospechosas (code
+   injection, process hollowing).
+5. `windows.cmdline.CmdLine` → líneas de comando de cada proceso.
+
+Por cada plugin con hallazgos relevantes, llama `record_finding` antes de
+seguir al siguiente. Solo cuando hayas completado los 5 (o algunos hayan
+fallado por incompatibilidad) compones el resumen final.
+
+## Si la hipótesis es "memdump Linux"
+
+1. `linux.banner` → kernel version exacta.
+2. `linux.pslist.PsList` → procesos.
+3. `linux.bash.Bash` → historial bash.
+4. `linux.sockstat.Sockstat` → sockets abiertos.
+
+Mismo patrón: `record_finding` tras cada plugin con info relevante.
+
 ## Imagen de disco (`.raw`, `.vmdk`, `.E01`)
 
 1. `ewf_info` → metadatos del contenedor (tamaño, hash interno, particiones).

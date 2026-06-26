@@ -76,6 +76,18 @@ export interface PersistedChatMessage {
   tool_calls: unknown[] | null;
 }
 
+export interface AgentFinding {
+  id: string;
+  case_id: string;
+  title: string;
+  summary: string;
+  severity: "low" | "medium" | "high" | "critical";
+  evidence_id: string | null;
+  tool_id: string | null;
+  run_id: string | null;
+  created_at: string;
+}
+
 export interface ConfigKeyStatus {
   set: boolean;
   preview: string | null;
@@ -103,6 +115,7 @@ declare global {
         listEvidence(caseId: string): Promise<EvidenceHandle[]>;
         verifyEvidence(caseId: string, evidenceId: string): Promise<VerifyResult>;
         pickEvidenceFile(): Promise<string | null>;
+        listFindings(caseId: string): Promise<AgentFinding[]>;
         readChat(caseId: string, sessionId: string): Promise<PersistedChatMessage[]>;
         appendChat(
           caseId: string,

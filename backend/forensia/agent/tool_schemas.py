@@ -276,6 +276,68 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
 }
 
 
+# Side-channel tools that the agent loop handles in-process (NOT dispatched
+# to a binary). They get exposed to the LLM in the same `tools=[…]` list so
+# the model can call them naturally.
+_INTERNAL_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
+    "record_finding": {
+        "type": "object",
+        "properties": {
+            "title": {
+                "type": "string",
+                "minLength": 4,
+                "maxLength": 200,
+                "description": "Short headline (≤ 80 chars idealmente).",
+            },
+            "summary": {
+                "type": "string",
+                "minLength": 4,
+                "maxLength": 4000,
+                "description": "1–3 frases que explican el hallazgo y CÓMO lo dedujiste.",
+            },
+            "severity": {
+                "type": "string",
+                "enum": ["low", "medium", "high", "critical"],
+            },
+            "tool_id": {
+                "type": "string",
+                "description": "Tool id que produjo la evidencia para este hallazgo.",
+            },
+            "run_id": {
+                "type": "string",
+                "description": "UUID4 del ArtifactRun que respalda este hallazgo.",
+            },
+        },
+        "required": ["title", "summary", "severity"],
+        "additionalProperties": False,
+    },
+}
+
+_INTERNAL_DESCRIPTIONS: dict[str, str] = {
+    "record_finding": (
+        "PERSIST a structured finding for this case. Call this BEFORE composing your "
+        "final answer for EACH meaningful conclusion (file type identified, kernel "
+        "version detected, IOC found, hypothesis confirmed/rejected, etc.). The "
+        "findings panel in the UI reads these. severity: low for context, medium for "
+        "noteworthy, high for actionable, critical for clear compromise."
+    ),
+}
+
+
+def internal_tool_specs() -> list[dict[str, Any]]:
+    specs: list[dict[str, Any]] = []
+    for tid, schema in _INTERNAL_TOOL_SCHEMAS.items():
+        specs.append({
+            "type": "function",
+            "function": {
+                "name": tid,
+                "description": _INTERNAL_DESCRIPTIONS.get(tid, ""),
+                "parameters": schema,
+            },
+        })
+    return specs
+
+
 def openai_tool_spec(tool_id: str) -> dict[str, Any] | None:
     """Return the OpenAI function-calling spec for ``tool_id``, or None if unsupported."""
     if tool_id not in TOOL_PARAM_SCHEMAS:

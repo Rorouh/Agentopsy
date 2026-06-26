@@ -21,6 +21,8 @@ contextBridge.exposeInMainWorld("forensia", {
     verifyEvidence: (caseId, evidenceId) =>
       ipcRenderer.invoke("forensia:cases-verify-evidence", { caseId, evidenceId }),
     pickEvidenceFile: () => ipcRenderer.invoke("forensia:pick-evidence-file"),
+    listFindings: (caseId) =>
+      ipcRenderer.invoke("forensia:cases-list-findings", caseId),
     readChat: (caseId, sessionId) =>
       ipcRenderer.invoke("forensia:cases-read-chat", { caseId, sessionId }),
     appendChat: (caseId, sessionId, msg) =>

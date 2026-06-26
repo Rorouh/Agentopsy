@@ -117,9 +117,12 @@ interface ChatPageProps {
   // legacy behaviour for backward compat with any standalone use of ChatPage.
   activeCase?: Case | null;
   activeEvidence?: EvidenceHandle | null;
+  // Called whenever a query() finishes (success or error) so the surrounding
+  // page (Investigation) can refresh side-channel state like findings.
+  onTurnComplete?: () => void;
 }
 
-export function ChatPage({ caps, activeCase, activeEvidence }: ChatPageProps) {
+export function ChatPage({ caps, activeCase, activeEvidence, onTurnComplete }: ChatPageProps) {
   const [msgs, setMsgs] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -232,6 +235,7 @@ export function ChatPage({ caps, activeCase, activeEvidence }: ChatPageProps) {
             /* best-effort */
           });
       }
+      if (onTurnComplete) onTurnComplete();
     }
   };
 

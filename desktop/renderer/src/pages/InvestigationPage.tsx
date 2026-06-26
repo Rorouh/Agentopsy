@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import type { Capabilities, Case, EvidenceHandle } from "../global";
+import { useCallback, useEffect, useState } from "react";
+import type { AgentFinding, Capabilities, Case, EvidenceHandle } from "../global";
 import type { ViewId } from "../navigation/navItems";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
@@ -12,16 +12,39 @@ interface InvestigationPageProps {
 
 type Phase = "loading" | "ready" | "no-case" | "error";
 
-// Envuelve el ChatPage añadiendo contexto real de caso/evidencia leído del
-// backend (POST /api/cases + /api/cases/{id}/evidence). El ChatPage es el único
-// componente con lógica de red conversacional y se mantiene como dueño de su
-// estado de chat; solo recibe el caso activo para que el agente pueda anclar
-// los tool runs a un evidence_id real.
+const SEVERITY_VARIANT: Record<AgentFinding["severity"], "low" | "medium" | "high" | "critical"> = {
+  low: "low",
+  medium: "medium",
+  high: "high",
+  critical: "critical",
+};
+
+const SEVERITY_LABEL: Record<AgentFinding["severity"], string> = {
+  low: "Baja",
+  medium: "Media",
+  high: "Alta",
+  critical: "Crítica",
+};
+
+// Envuelve el ChatPage añadiendo contexto real de caso/evidencia + el panel
+// lateral de hallazgos que el agente persiste vía `record_finding`. El panel se
+// refresca tras cada turno del chat (ChatPage llama onTurnComplete en finally).
 export function InvestigationPage({ caps, onNavigate }: InvestigationPageProps) {
   const [activeCase, setActiveCase] = useState<Case | null>(null);
   const [activeEvidence, setActiveEvidence] = useState<EvidenceHandle | null>(null);
+  const [findings, setFindings] = useState<AgentFinding[]>([]);
   const [phase, setPhase] = useState<Phase>("loading");
   const [error, setError] = useState<string | null>(null);
+
+  const refreshFindings = useCallback(async (caseId: string) => {
+    try {
+      const list = await window.forensia.cases.listFindings(caseId);
+      setFindings(list);
+    } catch {
+      // 404 = sin findings.jsonl aún. No es error, es estado vacío.
+      setFindings([]);
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -40,6 +63,8 @@ export function InvestigationPage({ caps, onNavigate }: InvestigationPageProps) 
         if (evidences.length > 0) {
           setActiveEvidence(evidences[0]);
         }
+        await refreshFindings(newest.id);
+        if (cancelled) return;
         setPhase("ready");
       } catch (err) {
         if (cancelled) return;
@@ -50,7 +75,11 @@ export function InvestigationPage({ caps, onNavigate }: InvestigationPageProps) 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refreshFindings]);
+
+  const onTurnComplete = useCallback(() => {
+    if (activeCase) refreshFindings(activeCase.id);
+  }, [activeCase, refreshFindings]);
 
   if (phase === "loading") {
     return (
@@ -154,15 +183,44 @@ export function InvestigationPage({ caps, onNavigate }: InvestigationPageProps) 
           caps={caps}
           activeCase={activeCase}
           activeEvidence={activeEvidence}
+          onTurnComplete={onTurnComplete}
         />
 
         <div className="findings-panel">
-          <div className="findings-panel-title">Hallazgos del caso</div>
-          <div className="empty-state" style={{ padding: "20px 12px" }}>
-            Aún no hay hallazgos registrados para este caso. Aparecerán aquí a medida que el
-            agente ejecute herramientas y persista resultados en{" "}
-            <code>artifacts/&lt;run-id&gt;/manifest.json</code>.
+          <div className="findings-panel-title">
+            Hallazgos del caso ({findings.length})
           </div>
+          {findings.length === 0 ? (
+            <div className="empty-state" style={{ padding: "20px 12px" }}>
+              Aún no hay hallazgos registrados. El agente los irá apilando aquí a medida que
+              vaya analizando con sus herramientas.
+            </div>
+          ) : (
+            findings.map((f) => (
+              <div className="finding-card" key={f.id}>
+                <div className="finding-card-title">{f.title}</div>
+                <div className="finding-card-summary">{f.summary}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <Badge variant={SEVERITY_VARIANT[f.severity]}>
+                    {SEVERITY_LABEL[f.severity]}
+                  </Badge>
+                  {f.tool_id && (
+                    <code style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                      {f.tool_id}
+                    </code>
+                  )}
+                  {f.run_id && (
+                    <code
+                      style={{ fontSize: 11, color: "var(--text-muted)" }}
+                      title={f.run_id}
+                    >
+                      run {f.run_id.slice(0, 8)}
+                    </code>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>

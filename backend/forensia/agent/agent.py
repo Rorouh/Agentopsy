@@ -34,9 +34,14 @@ import logging
 from typing import Any
 
 from forensia.agent.package import AgentPackage
-from forensia.agent.tool_schemas import AUTO_INJECTED, openai_tool_specs
+from forensia.agent.tool_schemas import (
+    AUTO_INJECTED,
+    internal_tool_specs,
+    openai_tool_specs,
+)
 from forensia.audit import AuditLog
 from forensia.evidence import EvidenceManager
+from forensia.findings.store import finding_store
 from forensia.models.base import FinalAnswer, ModelBackend, ToolCall
 from forensia.toolkit.catalog import BY_ID as TOOL_BY_ID
 from forensia.toolkit.tool import Tool
@@ -128,7 +133,7 @@ class ForensicAgent:
             "messages": messages,
             "temperature": float(self.package.model.temperature or 0.2),
         }
-        tool_specs = openai_tool_specs(list(allowed))
+        tool_specs = openai_tool_specs(list(allowed)) + internal_tool_specs()
 
         max_iter = max(1, int(self.package.model.max_iterations or 8))
         tool_calls_log: list[dict[str, Any]] = []
@@ -158,6 +163,26 @@ class ForensicAgent:
             if isinstance(action, ToolCall):
                 if action.assistant_message is not None:
                     messages.append(action.assistant_message)
+
+                # Internal side-channel tools — NOT in the catalog and NOT
+                # subject to the package allowlist. Handled in-process.
+                if action.tool_id == "record_finding":
+                    try:
+                        params = dict(action.params)
+                        # Inject evidence_id automatically if the model didn't.
+                        if not params.get("evidence_id"):
+                            params["evidence_id"] = evidence_id
+                        finding = finding_store.append(case_id, params)
+                        body = {"finding_id": finding.id, "stored": True}
+                    except (KeyError, ValueError) as exc:
+                        body = {"error": f"record_finding rejected: {exc}"}
+                    messages.append(self._tool_result_msg(action, body))
+                    tool_calls_log.append({
+                        "tool_id": "record_finding",
+                        "finding_id": body.get("finding_id"),
+                        "error": body.get("error"),
+                    })
+                    continue
 
                 if action.tool_id not in allowed:
                     refusal = (
@@ -252,6 +277,20 @@ class ForensicAgent:
             "tool calls siguiendo tu playbook. No saludes y luego esperes — "
             "saluda E invoca tools en la misma respuesta si quieres, pero NUNCA "
             "te quedes esperando una clarificación que el sistema ya te dio.\n\n"
+            "## Registra hallazgos a medida que avanzas\n"
+            "Tienes una tool especial `record_finding(title, summary, severity, "
+            "tool_id?, run_id?)`. Cada vez que llegues a una conclusión "
+            "concreta (tipo de archivo identificado, kernel detectado, IOC "
+            "encontrado, hipótesis confirmada o descartada), LLÁMALA antes de "
+            "seguir. Se persisten en el caso y la UI las pinta en el panel "
+            "lateral.\n\n"
+            "## NUNCA sugieras el siguiente paso — EJECÚTALO\n"
+            "Si tras los pasos 0 ves indicadores de \"memdump Windows\", NO "
+            "termines con \"sugiero correr volatility3 windows.info\". "
+            "EJECÚTALO en el mismo turno como otro tool call. Sigue invocando "
+            "tools hasta agotar el playbook o las iteraciones — solo entonces "
+            "compones la respuesta final. La respuesta final es para *resumir* "
+            "lo que ya hiciste, NUNCA para proponer lo que harías.\n\n"
             "## Cuando un tool falle (exit_code != 0)\n"
             "1. NO devuelvas la respuesta final con un \"hubo un error\" genérico.\n"
             "2. Cita el contenido literal de `stderr_sample` que te devolvió el "

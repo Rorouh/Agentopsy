@@ -197,6 +197,11 @@ ipcMain.handle("forensia:cases-verify-evidence", (event, { caseId, evidenceId })
   )
 );
 
+// Per-case structured findings (populated by the agent loop's record_finding tool).
+ipcMain.handle("forensia:cases-list-findings", (event, caseId) =>
+  sidecarFetch(`/api/cases/${encodeURIComponent(caseId)}/findings`)
+);
+
 // Chat persistence (per-case JSONL via /api/cases/{id}/chats/{session}/*).
 ipcMain.handle("forensia:cases-read-chat", (event, { caseId, sessionId }) =>
   sidecarFetch(
