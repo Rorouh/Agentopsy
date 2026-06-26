@@ -1,18 +1,24 @@
 """FastAPI sidecar. Binds 127.0.0.1 on an ephemeral port (never 0.0.0.0).
 
-On startup it prints a single machine-readable line to stdout that the Electron main
-process parses to learn the url + session token:
+Once uvicorn has actually bound the socket, the sidecar prints a single machine-readable
+line to stdout that the Electron main process parses to learn the url + session token:
 
     FORENSIA_SIDECAR_READY {"url": "http://127.0.0.1:54321", "token": "..."}
+
+Emitting the line AFTER bind matters: Electron creates the window as soon as it reads
+READY, and the renderer fires its first /api/health on mount. Announcing too early causes
+ECONNREFUSED until uvicorn finishes binding, freezing the UI in an error state.
 
 The token goes over the pipe to the parent process only — never to argv or disk.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import socket
 
+import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -48,14 +54,32 @@ def _free_port() -> int:
         return s.getsockname()[1]
 
 
-def main() -> None:
-    import uvicorn
+class _ReadyAnnouncingServer(uvicorn.Server):
+    """Print the READY line only after `self.started` flips (sockets listening)."""
 
+    def __init__(self, config: uvicorn.Config, *, ready_payload: dict) -> None:
+        super().__init__(config)
+        self._ready_payload = ready_payload
+
+    async def serve(self, sockets=None) -> None:
+        asyncio.create_task(self._announce_when_ready())
+        await super().serve(sockets=sockets)
+
+    async def _announce_when_ready(self) -> None:
+        while not self.started:
+            await asyncio.sleep(0.05)
+        print("FORENSIA_SIDECAR_READY " + json.dumps(self._ready_payload), flush=True)
+
+
+def main() -> None:
     port = _free_port()
     app = create_app(port)
-    ready = {"url": f"http://127.0.0.1:{port}", "token": app.state.token}
-    print("FORENSIA_SIDECAR_READY " + json.dumps(ready), flush=True)
-    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
+    server = _ReadyAnnouncingServer(
+        config,
+        ready_payload={"url": f"http://127.0.0.1:{port}", "token": app.state.token},
+    )
+    server.run()
 
 
 if __name__ == "__main__":
