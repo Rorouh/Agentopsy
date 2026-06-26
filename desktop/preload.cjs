@@ -8,5 +8,6 @@ contextBridge.exposeInMainWorld("forensia", {
   connection: () => ipcRenderer.invoke("forensia:connection"),
   health: () => ipcRenderer.invoke("forensia:health"),
   capabilities: () => ipcRenderer.invoke("forensia:capabilities"),
+  agents: () => ipcRenderer.invoke("forensia:agents"),
   query: (req) => ipcRenderer.invoke("forensia:query", req),
 });

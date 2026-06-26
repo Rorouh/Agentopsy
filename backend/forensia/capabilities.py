@@ -12,6 +12,7 @@ import platform
 import sys
 from typing import Any
 
+from forensia.agent.registry import agent_registry
 from forensia.config import config
 from forensia.toolkit.catalog import CATALOG
 from forensia.toolkit.resolver import container_runtime, is_tool_available
@@ -31,5 +32,9 @@ def snapshot() -> dict[str, Any]:
             "ollama": config.get("OLLAMA_HOST") is not None,
             "anthropic": config.get("ANTHROPIC_API_KEY") is not None,
             "openai": config.get("OPENAI_API_KEY") is not None,
+        },
+        "agents": {
+            "root": str(agent_registry.root),
+            "loaded": [pkg.summary() for pkg in agent_registry.list()],
         },
     }

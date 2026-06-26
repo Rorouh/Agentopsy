@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import type { Capabilities } from "../global";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { AgentSummary, Capabilities } from "../global";
 import { Button } from "../ui/Button";
 
 function renderBoldText(text: string) {
@@ -117,6 +117,17 @@ export function ChatPage({ caps }: ChatPageProps) {
   const logRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
+  // Pick the agent compatible with the case's os_profile. When no case is
+  // selected yet we fall back to the host's detected profile (unix on
+  // mac/linux, windows on win32). RULE 2 in the backend: if there is no
+  // package for the requested profile, /api/agent/query returns 503 — we
+  // surface that explicitly instead of inventing a default.
+  const activeProfile = (caps?.os === "windows" ? "windows" : "unix") as "unix" | "windows";
+  const activeAgent: AgentSummary | null = useMemo(() => {
+    const loaded = caps?.agents?.loaded ?? [];
+    return loaded.find((a) => a.os_profile === activeProfile) ?? null;
+  }, [caps, activeProfile]);
+
   // Auto-scroll chat to bottom
   useEffect(() => {
     if (logRef.current) {
@@ -137,7 +148,7 @@ export function ChatPage({ caps }: ChatPageProps) {
     try {
       const res = await window.forensia.query({
         prompt: text,
-        os_profile: caps?.os || "unix",
+        os_profile: activeProfile,
         evidence_id: "",
       });
       setMsgs((prev) => {
@@ -146,9 +157,15 @@ export function ChatPage({ caps }: ChatPageProps) {
         return next;
       });
     } catch (e) {
+      const msg = String(e);
+      // /api/agent/query → 503 when no agent is loaded for the requested profile.
+      // We surface the actionable hint instead of a generic "connection failed".
+      const friendly = /503/.test(msg)
+        ? `No hay agente cargado para el perfil \`${activeProfile}\`. Suelta su carpeta dentro de \`agentes/\` y reinicia FORENSIA.`
+        : "Error: No se pudo conectar con el agente de IA.";
       setMsgs((prev) => {
         const next = [...prev];
-        next[next.length - 1] = { role: "assistant", content: "Error: No se pudo conectar con el agente de IA." };
+        next[next.length - 1] = { role: "assistant", content: friendly };
         return next;
       });
     } finally {
@@ -174,6 +191,25 @@ export function ChatPage({ caps }: ChatPageProps) {
         // Welcome / empty state
         <div className="chat-welcome">
           <div className="welcome-title">Bueno Santi a trabajar ...</div>
+
+          <div className="agent-badge" title={activeAgent?.path ?? ""}>
+            {activeAgent ? (
+              <>
+                <span className="agent-badge-dot agent-badge-dot--ok" />
+                Agente activo: <strong>{activeAgent.name}</strong>{" "}
+                <span className="agent-badge-meta">
+                  v{activeAgent.version} · {activeAgent.os_profile} ·{" "}
+                  {activeAgent.model.backend}/{activeAgent.model.name}
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="agent-badge-dot agent-badge-dot--warn" />
+                Sin agente para perfil <code>{activeProfile}</code>. Suelta su
+                carpeta en <code>agentes/</code> y reinicia FORENSIA.
+              </>
+            )}
+          </div>
 
           {/* Composer inside welcome */}
           <div className="composer-wrapper" style={{ width: "100%" }}>

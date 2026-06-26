@@ -22,14 +22,29 @@ CLI tools to produce a structured, court-style report plus a timeline.
 Electron shell  (desktop/)        UI is identical on Windows / macOS / Linux (Chromium)
    │  main.cjs + preload.cjs — contextIsolation, sandbox:true, nodeIntegration:false, CSP
    │  manages the sidecar lifecycle: free port → spawn → health → kill
+   │  sets FORENSIA_AGENTS_DIR so the sidecar knows where to read agentes/ from
    ▼  HTTP/WS to 127.0.0.1:<ephemeral> + per-session token   (DECOUPLED transport)
 Python sidecar  (backend/)        PyInstaller **onedir** (never onefile), one build per OS/arch
    forensia/  = ALL the logic. routers/ are thin adapters over it.
    ▼
 vendor/<tool>/<os>-<arch>/        forensic binaries bundled INTO the app
+agentes/<id>/                     trained-agent packages (drop-in; see docs/AGENTS.md)
 ```
 
 Two runtimes (Node + Python). **No third runtime.** See the bundling rule.
+
+## Trained-agent packages
+
+The reasoning agent is **declarative**: each trained agent ships as a folder
+under `agentes/<id>/` with `agent.yaml`, `prompts/`, and `policy/`. The
+training team produces this folder; FORENSIA discovers it at startup, validates
+it (`forensia.agent.loader`), and indexes it by `os_profile`
+(`forensia.agent.registry`). **One agent per `os_profile`** — two packages
+declaring the same profile fails the sidecar at startup (RULE 2). When no
+package is loaded for the requested profile, `/api/agent/query` returns 503 and
+the UI degrades explicitly — there is never a fallback agent. See
+`docs/AGENTS.md` for the full contract and `agentes/README.md` for the
+sample-shaped reference.
 
 ## RULE 0 — No AI authorship or attribution
 

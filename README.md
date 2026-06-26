@@ -104,6 +104,7 @@ npm run dist
 
 *   **GUI & Ventana:** Operativa con un tema RPG Pixel Art personalizado y panel de control de estado integrado.
 *   **Sidecar Bridge:** En funcionamiento. Conexión IPC fluida mediante handshake de puerto efímero.
+*   **Paquetes de Agente:** El loop del agente carga su persona, prompts y allowlist de tools desde una carpeta declarativa `agentes/<id>/` que entrega el equipo de entrenamiento (ver [`agentes/README.md`](agentes/README.md) y [`docs/AGENTS.md`](docs/AGENTS.md)). El loader, la registry y el endpoint `/api/agents` están operativos; los samples `sample-unix` y `sample-windows` viajan en el repo para desarrollo.
 *   **Agente Local:** Capas de auditoría e ingesta de evidencias implementadas; algoritmos de inferencia y wrappers específicos de CLI en fase de desarrollo.
 
 ---

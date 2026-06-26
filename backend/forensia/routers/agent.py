@@ -1,70 +1,94 @@
-from typing import Optional
-from fastapi import APIRouter, Depends
+"""Chat / agent-query HTTP surface.
+
+Thin adapter (CLAUDE.md RULE 3) over ``forensia.agent.registry``. While the
+reasoning loop is still a skeleton (``ForensicAgent.run`` raises), this router
+performs the real wiring so the UI can prove end-to-end that the agent package
+is loaded:
+
+1. Validates inputs.
+2. Pulls the ``AgentPackage`` from the registry by ``os_profile`` (RULE 2: no
+   fallback agent — if none is loaded for that profile, returns 503).
+3. Builds a deterministic, structured response describing the loaded agent
+   (id, version, allowed tools) plus an echo of the user's prompt.
+
+When the real loop lands, only the body of ``query`` changes; the contract
+(request/response shape) stays the same.
+"""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from forensia.agent.registry import agent_registry
 from forensia.security import require_token
 
 router = APIRouter()
 
+_VALID_OS_PROFILES = frozenset({"unix", "windows"})
+
 
 class QueryRequest(BaseModel):
-    os_profile: Optional[str] = "unix"
-    evidence_id: Optional[str] = ""
+    os_profile: str = "unix"
+    evidence_id: str | None = None
     prompt: str
 
 
 @router.post("/api/agent/query", dependencies=[Depends(require_token)])
 def query(req: QueryRequest) -> dict:
-    prompt = req.prompt.strip().lower()
-    
-    # Simple rule-based mock responder for testing capabilities
+    prompt = (req.prompt or "").strip()
     if not prompt:
-        reply = "Por favor, escribe un mensaje o pregunta."
-    elif any(word in prompt for word in ("hola", "saludos", "buenos", "buenas")):
-        reply = (
-            "¡Hola! Soy **FORENSIA AI**, tu asistente inteligente para análisis forense post-mortem.\n\n"
-            "Puedo ayudarte a examinar evidencias de disco (`.vmdk`/`.raw`), analizar volcados de memoria RAM, "
-            "buscar palabras clave o reconstruir líneas temporales de incidentes de seguridad.\n\n"
-            "Para comenzar, selecciona o carga una evidencia en el panel correspondiente."
+        raise HTTPException(status_code=422, detail="prompt is empty")
+
+    if req.os_profile not in _VALID_OS_PROFILES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"os_profile must be one of {sorted(_VALID_OS_PROFILES)}, "
+                   f"got {req.os_profile!r}",
         )
-    elif any(word in prompt for word in ("herramienta", "tools", "toolkit", "maletín")):
-        reply = (
-            "Tengo a mi disposición un **maletín forense local** con herramientas integradas listas para usar:\n\n"
-            "*   **Análisis de Archivos:** Sleuth Kit (`tsk_fls`, `tsk_icat`, `tsk_mmls`), `foremost`, `bulk_extractor`.\n"
-            "*   **Volcados de RAM:** `volatility3` para reconstruir procesos, sockets y controladores cargados.\n"
-            "*   **Sistemas de Archivos y Logs:** `plaso_log2timeline` y `plaso_psort` para generar líneas temporales completas.\n"
-            "*   **Análisis de Windows:** `regripper` para registro, `hayabusa` y `chainsaw` para logs de eventos EVTX.\n\n"
-            "Todas estas herramientas se ejecutan de manera local e integrada sin dependencias externas."
-        )
-    elif any(word in prompt for word in ("analizar", "evidencia", "image", "disco", "raw", "vmdk")):
-        reply = (
-            "Para **analizar una evidencia**, el proceso sigue estos estrictos pasos de rigor forense:\n\n"
-            "1.  **Registro e Ingesta:** Se calcula el hash baseline (SHA-256) de la evidencia.\n"
-            "2.  **Protección de Escritura:** Se expone un manejador de lectura a nivel de bloque (read-only).\n"
-            "3.  **Ejecución de Capabilidades:** Los agentes de IA pueden invocar herramientas del maletín sobre este manejador.\n"
-            "4.  **Generación de Reportes:** Se crea un reporte estructurado y una línea de tiempo con hash-chaining para auditoría.\n\n"
-            "¿Tienes una ruta de imagen de disco o volcado para registrar?"
-        )
-    elif any(word in prompt for word in ("log", "auditoría", "custodia", "audit")):
-        reply = (
-            "El sistema mantiene un **registro de auditoría inmutable** encadenado por hash (cadena de custodia).\n\n"
-            "Cada comando ejecutado por la IA registra el array exacto de argumentos ejecutados (`argv`), "
-            "la versión de la herramienta utilizada, los hashes de los archivos de salida generados, "
-            "así como el hash del estado anterior. Esto asegura que la evidencia no pueda ser alterada "
-            "y que todo el proceso de análisis sea 100% reproducible ante un tribunal."
-        )
-    else:
-        reply = (
-            f"He recibido tu consulta: *\"{req.prompt}\"*\n\n"
-            "En esta entrega del esqueleto de FORENSIA, el agente está simulando el procesamiento de tu solicitud.\n"
-            "Una vez cargada una evidencia real, podré invocar herramientas específicas en base al "
-            f"perfil de sistema operativo seleccionado (`{req.os_profile}`)."
-        )
-    
+
+    try:
+        pkg = agent_registry.get_for_profile(req.os_profile)
+    except KeyError as exc:
+        # 503: the dependency is missing, not the request. The UI maps this to
+        # "no hay agente cargado para este perfil" without inventing a default.
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    # The reasoning loop is not implemented yet (see CLAUDE.md "Status"). We
+    # return a deterministic, structured envelope that proves the package is
+    # loaded and lists what the agent WOULD use. The renderer treats this as a
+    # diagnostic message until the real loop lands.
+    reply = _skeleton_reply(pkg.name, prompt, pkg.policy.allowed_tools)
+
     return {
-        "status": "success",
+        "status": "skeleton",
         "reply": reply,
         "evidence_id": req.evidence_id,
         "os_profile": req.os_profile,
+        "agent": pkg.summary(),
     }
 
+
+@router.get("/api/agents", dependencies=[Depends(require_token)])
+def list_agents() -> dict:
+    """Lista los paquetes cargados desde ``agentes/`` y la raíz utilizada.
+
+    La UI lo consume en Settings ("Agentes cargados") y en el header del chat
+    para mostrar qué agente está activo para el perfil del caso.
+    """
+    return {
+        "root": str(agent_registry.root),
+        "agents": [pkg.summary() for pkg in agent_registry.list()],
+    }
+
+
+def _skeleton_reply(agent_name: str, prompt: str, allowed_tools: tuple[str, ...]) -> str:
+    tools_md = "\n".join(f"- `{t}`" for t in allowed_tools)
+    return (
+        f"**{agent_name}** está cargado y conectado, pero el loop de razonamiento "
+        "aún no está implementado en este esqueleto.\n\n"
+        f"He recibido tu mensaje:\n\n> {prompt}\n\n"
+        "Cuando el loop esté disponible, este agente podrá invocar las siguientes "
+        "herramientas del maletín (allowlist declarada en su `policy/tools.yaml`):\n\n"
+        f"{tools_md}"
+    )

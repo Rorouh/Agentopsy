@@ -15,7 +15,7 @@ tras un panel de 5 expertos (empaquetado, DFIR, seguridad, orquestación IA, ges
 | Docker / OCI runtime | **Aceptado como mecanismo de entrega peer al bundling** (RULE 1); el runtime es prerequisito del instalador, las imágenes viajan como tarballs y se cargan con `docker load` en el primer arranque | Sin esto no hay forma viable de entregar herramientas Perl (RegRipper) ni .NET (EvtxECmd, MFTECmd) en Linux/Mac sin pedir al usuario que instale .NET o Perl portable |
 | Empaquetado | `electron-builder` (nsis/dmg/AppImage+deb) + PyInstaller **onedir** por OS/arch | PyInstaller no cross-compila; onedir arranca rápido y firma mejor |
 | Modelos | Capa común; **local (Ollama) por defecto**, cloud opt-in | Sensibilidad de evidencias |
-| Agente | **UNO**, parametrizado por `os_profile` (win/unix) | El loop de razonamiento es idéntico; evita duplicación |
+| Agente | **UNO**, parametrizado por un **paquete declarativo** (`agentes/<id>/`) y por `os_profile` (win/unix) | El loop es idéntico; lo que cambia (prompts, modelo, allowlist) viaja en una carpeta que entrega el equipo de entrenamiento — sin código Python suyo, sin dos agentes paralelos. Ver [`AGENTS.md`](AGENTS.md) |
 | RAG | **Stub de interfaz**; catálogo en el system prompt | Cabe en prompt; RAG real es fase 2 |
 
 ## 2. Capas
@@ -40,7 +40,8 @@ tras un panel de 5 expertos (empaquetado, DFIR, seguridad, orquestación IA, ges
 │   chats/         ChatStore (JSONL append-only por sesión)     │
 │   audit/         AuditLog encadenado por hash (uno por caso)  │
 │   toolkit/       resolver env→bundled→container→PATH; tools   │
-│   agent/         un agente, parametrizado por os_profile      │
+│   agent/         un agente, parametrizado por AgentPackage    │
+│                  (loader+registry sobre agentes/<id>/)        │
 │   models/        backend cloud|local + capabilities()         │
 │   reports/       hallazgo trazable + timeline (pendiente)     │
 └───────────────┬──────────────────────────────────────────────┘
@@ -142,7 +143,27 @@ por separado. Si el runtime no está presente, `/api/capabilities` reporta
 disponibles; el resto de la app (sidecar, herramientas bundleadas, agente, audit log)
 sigue funcionando con normalidad.
 
-## 7. Lo que el esqueleto NO implementa todavía
+## 7. Paquetes de agente entrenado (`agentes/`)
 
-Agente real, RAG, backends de modelo reales, wrappers de herramientas reales, montaje real
-de evidencia, firma de código. Todo eso tiene su interfaz/stub clavado para no reescribir.
+El loop del agente NO es código que escriben los entrenadores. Cada agente
+entrenado viaja como una **carpeta declarativa** bajo `agentes/<id>/` con
+manifiesto, prompts y políticas (allowlist de tools, redacción cloud).
+`forensia.agent.loader` valida el paquete y `forensia.agent.registry` lo indexa
+por `os_profile`. Reglas innegociables:
+
+- **Un paquete por `os_profile`** — duplicados → arranque del sidecar falla.
+- **Allowlist obligatoria** y cerrada al catálogo de `forensia.toolkit`.
+- **Sin agente fallback**: si no hay paquete para el perfil del caso, el chat
+  degrada con un mensaje accionable; nunca se inventa default.
+
+Distribución: `electron-builder` mete `../agentes` en `extraResources` y
+`asarUnpack`. En dev, el sidecar lee `<repo>/agentes`. En packaged, Electron
+exporta `FORENSIA_AGENTS_DIR=<resourcesPath>/agentes` al spawnear el sidecar.
+
+Detalle completo del contrato y del schema de `agent.yaml`: [`AGENTS.md`](AGENTS.md).
+
+## 8. Lo que el esqueleto NO implementa todavía
+
+Loop de razonamiento real, RAG, backends de modelo reales, wrappers de
+herramientas reales, montaje real de evidencia, firma de código. Todo eso tiene
+su interfaz/stub clavado para no reescribir.

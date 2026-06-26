@@ -1,0 +1,279 @@
+"""Lectura + validación de un directorio ``agentes/<id>/``.
+
+Defensivo por diseño:
+- Schema mínimo obligatorio (id, version, os_profile, model, prompts, policy).
+- Cualquier path declarado (prompts/*, policy/*) debe (a) ser relativo y (b)
+  resolverse DENTRO del directorio del agente — sin escapes con `..`/absolutos.
+- ``policy.tools.allowed`` referencia sólo ``tool_id``s del catálogo, **y** los
+  ids referenciados deben declarar el ``os_profile`` del agente. Cualquier id
+  fuera del catálogo o no aplicable al perfil hace fallar la carga (CLAUDE.md
+  RULE 2 — no defaults silenciosos).
+
+El loader nunca ejecuta nada del paquete: sólo lee texto y devuelve dataclasses.
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from forensia.agent.package import (
+    AgentPackage,
+    AgentPackagePolicy,
+    AgentPackagePrompts,
+    AgentPackageModel,
+    RedactionPattern,
+)
+from forensia.toolkit.catalog import BY_ID as TOOL_BY_ID
+
+_VALID_OS_PROFILES = frozenset({"unix", "windows"})
+_VALID_MODEL_BACKENDS = frozenset({"local", "cloud"})
+_ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")  # kebab-case
+_SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$")
+
+
+class AgentPackageError(ValueError):
+    """Falla de validación al cargar un paquete. Mensaje siempre orientado al
+    entrenador (qué fichero, qué falta, qué se esperaba)."""
+
+
+def load_package(agent_dir: Path) -> AgentPackage:
+    """Carga + valida un único ``agentes/<id>/`` y devuelve el ``AgentPackage``.
+
+    Lanza ``AgentPackageError`` con mensaje accionable si algo falla. NO captura
+    excepciones del sistema de ficheros: las propaga (es responsabilidad del
+    llamador decidir si "este directorio se ignora" o "el arranque falla").
+    """
+    agent_dir = agent_dir.resolve()
+    if not agent_dir.is_dir():
+        raise AgentPackageError(f"agent path is not a directory: {agent_dir}")
+
+    manifest_path = agent_dir / "agent.yaml"
+    if not manifest_path.is_file():
+        raise AgentPackageError(
+            f"agent.yaml not found at {manifest_path}. "
+            "Every agent package must declare a manifest (see agentes/README.md)."
+        )
+
+    raw = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise AgentPackageError(
+            f"{manifest_path}: top-level YAML must be a mapping, got {type(raw).__name__}"
+        )
+
+    pkg_id = _require_str(raw, "id", manifest_path)
+    if not _ID_RE.match(pkg_id):
+        raise AgentPackageError(
+            f"{manifest_path}: id={pkg_id!r} must be kebab-case ([a-z0-9-])"
+        )
+
+    name = _require_str(raw, "name", manifest_path)
+    version = _require_str(raw, "version", manifest_path)
+    if not _SEMVER_RE.match(version):
+        raise AgentPackageError(
+            f"{manifest_path}: version={version!r} is not semver (e.g. 0.1.0)"
+        )
+
+    os_profile = _require_str(raw, "os_profile", manifest_path)
+    if os_profile not in _VALID_OS_PROFILES:
+        raise AgentPackageError(
+            f"{manifest_path}: os_profile must be one of "
+            f"{sorted(_VALID_OS_PROFILES)}, got {os_profile!r}"
+        )
+
+    authors = _coerce_authors(raw.get("authors"), manifest_path)
+
+    model = _parse_model(raw.get("model"), manifest_path)
+    prompts = _parse_prompts(raw.get("prompts"), agent_dir, manifest_path)
+    policy = _parse_policy(raw.get("policy"), agent_dir, os_profile, manifest_path)
+
+    return AgentPackage(
+        id=pkg_id,
+        name=name,
+        version=version,
+        os_profile=os_profile,
+        authors=authors,
+        path=agent_dir,
+        model=model,
+        prompts=prompts,
+        policy=policy,
+    )
+
+
+# ---- helpers ---------------------------------------------------------------
+
+
+def _require_str(data: dict, key: str, source: Path) -> str:
+    value = data.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise AgentPackageError(
+            f"{source}: required string field {key!r} is missing or empty"
+        )
+    return value.strip()
+
+
+def _coerce_authors(value: Any, source: Path) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list) or not all(isinstance(a, str) for a in value):
+        raise AgentPackageError(
+            f"{source}: authors must be a list of strings, got {type(value).__name__}"
+        )
+    return tuple(a.strip() for a in value if a.strip())
+
+
+def _parse_model(value: Any, source: Path) -> AgentPackageModel:
+    if not isinstance(value, dict):
+        raise AgentPackageError(
+            f"{source}: 'model' must be a mapping with backend/name/temperature/max_iterations"
+        )
+    backend = _require_str(value, "backend", source)
+    if backend not in _VALID_MODEL_BACKENDS:
+        raise AgentPackageError(
+            f"{source}: model.backend must be one of {sorted(_VALID_MODEL_BACKENDS)},"
+            f" got {backend!r}"
+        )
+    name = _require_str(value, "name", source)
+    temperature = value.get("temperature", 0.0)
+    if not isinstance(temperature, (int, float)) or not 0.0 <= float(temperature) <= 2.0:
+        raise AgentPackageError(
+            f"{source}: model.temperature must be a number in [0.0, 2.0], got {temperature!r}"
+        )
+    max_iterations = value.get("max_iterations")
+    if not isinstance(max_iterations, int) or max_iterations < 1 or max_iterations > 100:
+        raise AgentPackageError(
+            f"{source}: model.max_iterations must be an int in [1, 100], got {max_iterations!r}"
+        )
+    return AgentPackageModel(
+        backend=backend,
+        name=name,
+        temperature=float(temperature),
+        max_iterations=max_iterations,
+    )
+
+
+def _parse_prompts(value: Any, agent_dir: Path, source: Path) -> AgentPackagePrompts:
+    if not isinstance(value, dict):
+        raise AgentPackageError(
+            f"{source}: 'prompts' must be a mapping with system/identity/playbook"
+        )
+    system = _read_relative_file(value.get("system"), agent_dir, "prompts.system", source)
+    identity = _read_relative_file(value.get("identity"), agent_dir, "prompts.identity", source)
+    playbook = _read_relative_file(value.get("playbook"), agent_dir, "prompts.playbook", source)
+    return AgentPackagePrompts(system=system, identity=identity, playbook=playbook)
+
+
+def _parse_policy(
+    value: Any, agent_dir: Path, os_profile: str, source: Path
+) -> AgentPackagePolicy:
+    if not isinstance(value, dict):
+        raise AgentPackageError(
+            f"{source}: 'policy' must be a mapping with tools/redaction"
+        )
+    tools_path = _resolve_relative_path(
+        value.get("tools"), agent_dir, "policy.tools", source
+    )
+    redaction_path = _resolve_relative_path(
+        value.get("redaction"), agent_dir, "policy.redaction", source
+    )
+
+    tools_raw = yaml.safe_load(tools_path.read_text(encoding="utf-8"))
+    if not isinstance(tools_raw, dict) or not isinstance(tools_raw.get("allowed"), list):
+        raise AgentPackageError(
+            f"{tools_path}: must be a mapping with an 'allowed' list of tool ids"
+        )
+    allowed_tools = tuple(
+        _validate_tool_id(t, os_profile, tools_path) for t in tools_raw["allowed"]
+    )
+    if not allowed_tools:
+        raise AgentPackageError(
+            f"{tools_path}: 'allowed' is empty. An agent with zero tools cannot operate."
+        )
+    if len(set(allowed_tools)) != len(allowed_tools):
+        raise AgentPackageError(f"{tools_path}: 'allowed' contains duplicate tool ids")
+
+    red_raw = yaml.safe_load(redaction_path.read_text(encoding="utf-8"))
+    if red_raw is None:
+        red_patterns: tuple[RedactionPattern, ...] = ()
+    elif isinstance(red_raw, dict) and isinstance(red_raw.get("patterns"), list):
+        red_patterns = tuple(
+            _parse_redaction_pattern(p, redaction_path) for p in red_raw["patterns"]
+        )
+    else:
+        raise AgentPackageError(
+            f"{redaction_path}: must be a mapping with a 'patterns' list (or empty)"
+        )
+
+    return AgentPackagePolicy(
+        allowed_tools=allowed_tools,
+        redaction_patterns=red_patterns,
+    )
+
+
+def _read_relative_file(value: Any, agent_dir: Path, field: str, source: Path) -> str:
+    path = _resolve_relative_path(value, agent_dir, field, source)
+    return path.read_text(encoding="utf-8")
+
+
+def _resolve_relative_path(value: Any, agent_dir: Path, field: str, source: Path) -> Path:
+    if not isinstance(value, str) or not value.strip():
+        raise AgentPackageError(f"{source}: {field!r} must be a non-empty path string")
+    relative = Path(value)
+    if relative.is_absolute():
+        raise AgentPackageError(
+            f"{source}: {field}={value!r} must be a path RELATIVE to the agent directory"
+        )
+    target = (agent_dir / relative).resolve()
+    # Defense against `..` escapes — the resolved path must stay inside agent_dir.
+    if agent_dir != target and agent_dir not in target.parents:
+        raise AgentPackageError(
+            f"{source}: {field}={value!r} resolves outside the agent directory"
+        )
+    if not target.is_file():
+        raise AgentPackageError(
+            f"{source}: {field}={value!r} does not exist at {target}"
+        )
+    return target
+
+
+def _validate_tool_id(tool_id: Any, os_profile: str, source: Path) -> str:
+    if not isinstance(tool_id, str):
+        raise AgentPackageError(
+            f"{source}: tool ids must be strings, got {type(tool_id).__name__}: {tool_id!r}"
+        )
+    tool = TOOL_BY_ID.get(tool_id)
+    if tool is None:
+        raise AgentPackageError(
+            f"{source}: tool id {tool_id!r} is not in forensia.toolkit.catalog. "
+            "Allowed ids must reference the curated maletín."
+        )
+    if os_profile not in tool.os_profiles:
+        raise AgentPackageError(
+            f"{source}: tool {tool_id!r} does not declare os_profile={os_profile!r} "
+            f"(catalog declares {list(tool.os_profiles)})"
+        )
+    return tool_id
+
+
+def _parse_redaction_pattern(value: Any, source: Path) -> RedactionPattern:
+    if not isinstance(value, dict):
+        raise AgentPackageError(
+            f"{source}: each redaction pattern must be a mapping with name/regex/replacement"
+        )
+    name = _require_str(value, "name", source)
+    regex = _require_str(value, "regex", source)
+    try:
+        re.compile(regex)
+    except re.error as exc:
+        raise AgentPackageError(
+            f"{source}: redaction pattern {name!r} has invalid regex: {exc}"
+        ) from exc
+    replacement = value.get("replacement")
+    if not isinstance(replacement, str):
+        raise AgentPackageError(
+            f"{source}: redaction pattern {name!r} replacement must be a string"
+        )
+    return RedactionPattern(name=name, regex=regex, replacement=replacement)

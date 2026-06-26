@@ -12,6 +12,8 @@ files:
 # RULE 1: everything the app uses ships inside the installer.
 # `resources/forensia-sidecar` is the PyInstaller onedir (Volatility3/plaso inside it),
 # copied here per OS/arch BEFORE electron-builder runs. `vendor/` holds native tools.
+# `../agentes` is the trained-agent packages folder (see agentes/README.md); the
+# sidecar reads it via FORENSIA_AGENTS_DIR which main.cjs sets to resourcesPath/agentes.
 extraResources:
   - from: resources/forensia-sidecar
     to: forensia-sidecar
@@ -19,11 +21,14 @@ extraResources:
     to: vendor
   - from: resources/images
     to: images
+  - from: ../agentes
+    to: agentes
 
 asarUnpack:
   - "resources/forensia-sidecar/**"
   - "vendor/**"
   - "resources/images/**"
+  - "agentes/**"
 
 # Code signing is deferred (see ARCHITECTURE.md §6). No Apple identity / Windows cert yet.
 win:

@@ -23,10 +23,22 @@ function sidecarCommand() {
   return { cmd: py, args: ["-m", "forensia.server"], cwd: backend };
 }
 
+// RULE 2 (no silent defaults): the sidecar always receives an explicit path for the
+// agentes/ folder. In packaged builds it lives next to vendor/ inside resourcesPath
+// (declared via electron-builder extraResources). In dev it sits at the repo root
+// alongside backend/.
+function agentesDir() {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, "agentes");
+  }
+  return path.join(__dirname, "..", "agentes");
+}
+
 function startSidecar() {
   return new Promise((resolve, reject) => {
     const { cmd, args, cwd } = sidecarCommand();
-    sidecar = spawn(cmd, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    const env = { ...process.env, FORENSIA_AGENTS_DIR: agentesDir() };
+    sidecar = spawn(cmd, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
 
     let buffer = "";
     const timer = setTimeout(() => reject(new Error("sidecar startup timeout")), 20000);
@@ -162,6 +174,7 @@ function createWindow() {
 ipcMain.handle("forensia:connection", () => ({ url: connection.url }));
 ipcMain.handle("forensia:health", () => sidecarFetch("/api/health"));
 ipcMain.handle("forensia:capabilities", () => sidecarFetch("/api/capabilities"));
+ipcMain.handle("forensia:agents", () => sidecarFetch("/api/agents"));
 ipcMain.handle("forensia:query", (event, req) => sidecarPost("/api/agent/query", req));
 
 app.whenReady().then(async () => {
