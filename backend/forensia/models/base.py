@@ -27,6 +27,14 @@ class ModelCapabilities:
 class ToolCall:
     tool_id: str
     params: dict[str, Any]
+    # Provider-side identifier (e.g. OpenAI's tool_call_id). The agent loop uses
+    # it to anchor the tool-result message back to the assistant turn that
+    # requested it. Opaque to FORENSIA.
+    call_id: str = ""
+    # Optional: the assistant message that issued the call (raw provider-shaped
+    # dict). The agent loop appends this to the conversation BEFORE the tool
+    # result so the message sequence stays valid for the provider.
+    assistant_message: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)

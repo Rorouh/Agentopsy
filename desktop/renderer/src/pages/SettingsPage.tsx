@@ -1,4 +1,5 @@
-import type { Capabilities } from "../global";
+import { useCallback, useEffect, useState } from "react";
+import type { Capabilities, ConfigSnapshot } from "../global";
 import type { CaseSummary } from "../types/domain";
 import type { ViewId } from "../navigation/navItems";
 import { useTheme } from "../ThemeProvider";
@@ -16,10 +17,97 @@ interface SettingsPageProps {
   version: string;
   activeCase: CaseSummary;
   onNavigate?: (view: ViewId) => void;
+  onCapsRefresh?: () => Promise<void> | void;
 }
 
-export function SettingsPage({ caps, version, activeCase, onNavigate }: SettingsPageProps) {
+type EditableKey =
+  | "MODEL_BACKEND"
+  | "MODEL_NAME"
+  | "OLLAMA_HOST"
+  | "ANTHROPIC_API_KEY"
+  | "OPENAI_API_KEY";
+
+const EDITABLE_KEYS: EditableKey[] = [
+  "MODEL_BACKEND",
+  "MODEL_NAME",
+  "OLLAMA_HOST",
+  "ANTHROPIC_API_KEY",
+  "OPENAI_API_KEY",
+];
+
+const KEY_LABELS: Record<EditableKey, string> = {
+  MODEL_BACKEND: "Backend del modelo",
+  MODEL_NAME: "Modelo activo",
+  OLLAMA_HOST: "Ollama host (local)",
+  ANTHROPIC_API_KEY: "Anthropic API key",
+  OPENAI_API_KEY: "OpenAI API key",
+};
+
+const KEY_HINTS: Record<EditableKey, string> = {
+  MODEL_BACKEND: "Valores admitidos: `local` o `cloud`.",
+  MODEL_NAME:
+    "OpenAI: elige uno de la lista. Ollama: escribe el tag local (p. ej. llama3.1:8b).",
+  OLLAMA_HOST: "URL completa, p. ej. http://localhost:11434.",
+  ANTHROPIC_API_KEY: "Clave Anthropic. ≥16 chars. Solo se envía al sidecar local.",
+  OPENAI_API_KEY: "Clave OpenAI. ≥16 chars. Solo se envía al sidecar local.",
+};
+
+export function SettingsPage({
+  caps,
+  version,
+  activeCase,
+  onNavigate,
+  onCapsRefresh,
+}: SettingsPageProps) {
   const { theme } = useTheme();
+  const [configSnapshot, setConfigSnapshot] = useState<ConfigSnapshot | null>(null);
+  const [openaiModels, setOpenaiModels] = useState<string[]>([]);
+  const [draft, setDraft] = useState<Record<EditableKey, string>>({
+    MODEL_BACKEND: "",
+    MODEL_NAME: "",
+    OLLAMA_HOST: "",
+    ANTHROPIC_API_KEY: "",
+    OPENAI_API_KEY: "",
+  });
+  const [savingKey, setSavingKey] = useState<EditableKey | null>(null);
+  const [configError, setConfigError] = useState<string | null>(null);
+
+  const refreshConfig = useCallback(async () => {
+    try {
+      const snap = await window.forensia.config.get();
+      setConfigSnapshot(snap);
+    } catch (err) {
+      setConfigError(String(err instanceof Error ? err.message : err));
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshConfig();
+    window.forensia.config
+      .models()
+      .then((res) => setOpenaiModels(res.openai))
+      .catch(() => setOpenaiModels([]));
+  }, [refreshConfig]);
+
+  const saveKey = useCallback(
+    async (key: EditableKey) => {
+      const value = draft[key].trim();
+      if (!value) return;
+      setSavingKey(key);
+      setConfigError(null);
+      try {
+        await window.forensia.config.set(key, value);
+        setDraft((prev) => ({ ...prev, [key]: "" }));
+        await refreshConfig();
+        if (onCapsRefresh) await onCapsRefresh();
+      } catch (err) {
+        setConfigError(String(err instanceof Error ? err.message : err));
+      } finally {
+        setSavingKey(null);
+      }
+    },
+    [draft, refreshConfig, onCapsRefresh]
+  );
 
   return (
     <div>
@@ -92,9 +180,9 @@ export function SettingsPage({ caps, version, activeCase, onNavigate }: Settings
           </div>
         </PageSection>
 
-        {/* Modelos / IA — lee de caps.models si está disponible, sin selección real */}
+        {/* Modelos / IA — form real contra /api/config (RULE 2: el operador define cada valor). */}
         <PageSection title="Modelos / IA" fullWidth={false}>
-          {caps ? (
+          {caps && (
             <KeyValueList
               items={Object.entries(caps.models).map(([name, available]) => ({
                 label: name,
@@ -106,12 +194,114 @@ export function SettingsPage({ caps, version, activeCase, onNavigate }: Settings
                 ),
               }))}
             />
-          ) : (
-            <LoadingState label="Consultando modelos del sidecar…" />
           )}
-          <p style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--text-muted)", marginTop: 10, marginBottom: 0 }}>
-            La selección de modelo por caso no está implementada todavía; hoy el agente usa el modelo local por defecto.
+          <p
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: 12,
+              color: "var(--text-muted)",
+              marginTop: 10,
+              marginBottom: 12,
+            }}
+          >
+            Las claves se guardan en{" "}
+            <code>{configSnapshot?.config_file ?? "~/.forensia/config.json"}</code>. Las
+            API keys nunca vuelven a salir del sidecar — al leerlas, FORENSIA solo
+            muestra los primeros 4 caracteres y la longitud.
           </p>
+
+          {!configSnapshot ? (
+            <LoadingState label="Consultando configuración del sidecar…" />
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {EDITABLE_KEYS.map((key) => {
+                const status = configSnapshot.keys[key];
+                const placeholder = status?.set ? status.preview ?? "" : "(sin definir)";
+                const backendIsCloud =
+                  configSnapshot.keys.MODEL_BACKEND?.preview === "cloud" ||
+                  draft.MODEL_BACKEND === "cloud";
+                const isModelDropdown =
+                  key === "MODEL_NAME" && backendIsCloud && openaiModels.length > 0;
+                return (
+                  <div key={key} className="form-field full-width">
+                    <label className="form-label">
+                      {KEY_LABELS[key]}
+                      {status?.set ? (
+                        <span style={{ marginLeft: 6, color: "var(--success)" }}>
+                          ● configurada
+                        </span>
+                      ) : (
+                        <span style={{ marginLeft: 6, color: "var(--text-muted)" }}>
+                          ○ no configurada
+                        </span>
+                      )}
+                    </label>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      {isModelDropdown ? (
+                        <select
+                          className="form-select"
+                          value={draft[key]}
+                          onChange={(e) =>
+                            setDraft((prev) => ({ ...prev, [key]: e.target.value }))
+                          }
+                          style={{ flex: 1 }}
+                        >
+                          <option value="">
+                            {status?.set
+                              ? `Actual: ${status.preview}`
+                              : "Selecciona un modelo OpenAI…"}
+                          </option>
+                          {openaiModels.map((m) => (
+                            <option key={m} value={m}>
+                              {m}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          className="form-input"
+                          type={
+                            key === "ANTHROPIC_API_KEY" || key === "OPENAI_API_KEY"
+                              ? "password"
+                              : "text"
+                          }
+                          placeholder={placeholder}
+                          value={draft[key]}
+                          onChange={(e) =>
+                            setDraft((prev) => ({ ...prev, [key]: e.target.value }))
+                          }
+                          style={{ flex: 1 }}
+                        />
+                      )}
+                      <Button
+                        variant="chip"
+                        disabled={savingKey === key || !draft[key].trim()}
+                        onClick={() => saveKey(key)}
+                      >
+                        {savingKey === key ? "Guardando…" : "Guardar"}
+                      </Button>
+                    </div>
+                    <p
+                      style={{
+                        fontFamily: "var(--font-sans)",
+                        fontSize: 11,
+                        color: "var(--text-muted)",
+                        margin: "4px 0 0 0",
+                      }}
+                    >
+                      {KEY_HINTS[key]}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {configError && (
+            <div className="error-state" style={{ marginTop: 10 }}>
+              <strong>No se pudo guardar:</strong> {configError}
+            </div>
+          )}
         </PageSection>
 
         {/* Seguridad y privacidad — conceptual, sin lógica funcional */}

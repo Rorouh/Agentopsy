@@ -197,6 +197,30 @@ ipcMain.handle("forensia:cases-verify-evidence", (event, { caseId, evidenceId })
   )
 );
 
+// Chat persistence (per-case JSONL via /api/cases/{id}/chats/{session}/*).
+ipcMain.handle("forensia:cases-read-chat", (event, { caseId, sessionId }) =>
+  sidecarFetch(
+    `/api/cases/${encodeURIComponent(caseId)}/chats/${encodeURIComponent(sessionId)}`
+  )
+);
+ipcMain.handle(
+  "forensia:cases-append-chat",
+  (event, { caseId, sessionId, role, content, tool_calls }) =>
+    sidecarPost(
+      `/api/cases/${encodeURIComponent(caseId)}/chats/${encodeURIComponent(
+        sessionId
+      )}/messages`,
+      { role, content, tool_calls }
+    )
+);
+
+// Operator config (RULE 2: no silent defaults — the operator sets every key explicitly).
+ipcMain.handle("forensia:config-get", () => sidecarFetch("/api/config"));
+ipcMain.handle("forensia:config-set", (event, { key, value }) =>
+  sidecarPost("/api/config", { key, value })
+);
+ipcMain.handle("forensia:config-models", () => sidecarFetch("/api/config/models"));
+
 // Native file picker — the renderer can't see absolute paths (contextIsolation +
 // sandbox), so it asks main to open Electron's dialog and returns the chosen path.
 ipcMain.handle("forensia:pick-evidence-file", async () => {

@@ -2,6 +2,9 @@
 # puede invocar. Todos los ids listados deben (1) existir en el catálogo y
 # (2) declarar el os_profile "unix"; en caso contrario, la carga falla.
 allowed:
+  - file_info
+  - xxd_head
+  - strings_head
   - tsk_mmls
   - tsk_fls
   - tsk_mactime

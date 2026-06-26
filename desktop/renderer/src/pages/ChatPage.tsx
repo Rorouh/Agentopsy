@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { AgentSummary, Capabilities } from "../global";
+import type { AgentSummary, Capabilities, Case, EvidenceHandle } from "../global";
 import { Button } from "../ui/Button";
 
 function renderBoldText(text: string) {
@@ -8,7 +8,7 @@ function renderBoldText(text: string) {
   return parts.map((part, i) => {
     if (part.startsWith("**") && part.endsWith("**")) {
       return (
-        <strong key={i} style={{ fontWeight: 650, color: "#ffffff" }}>
+        <strong key={i} style={{ fontWeight: 650, color: "var(--text-primary)" }}>
           {part.slice(2, -2)}
         </strong>
       );
@@ -55,7 +55,7 @@ function formatMessageContent(content: string) {
     }
     if (text.startsWith("### ")) {
       return (
-        <h4 key={idx} style={{ color: "#ffffff", marginTop: 12, marginBottom: 6 }}>
+        <h4 key={idx} style={{ color: "var(--text-primary)", marginTop: 12, marginBottom: 6 }}>
           {renderBoldText(text.substring(4))}
         </h4>
       );
@@ -65,10 +65,10 @@ function formatMessageContent(content: string) {
         <h3
           key={idx}
           style={{
-            color: "#ffffff",
+            color: "var(--text-primary)",
             marginTop: 14,
             marginBottom: 8,
-            borderBottom: "1px solid #1f252e",
+            borderBottom: "1px solid var(--border)",
             paddingBottom: 4,
           }}
         >
@@ -78,7 +78,7 @@ function formatMessageContent(content: string) {
     }
     if (text.startsWith("# ")) {
       return (
-        <h2 key={idx} style={{ color: "#ffffff", marginTop: 16, marginBottom: 10 }}>
+        <h2 key={idx} style={{ color: "var(--text-primary)", marginTop: 16, marginBottom: 10 }}>
           {renderBoldText(text.substring(2))}
         </h2>
       );
@@ -105,11 +105,21 @@ interface ChatMessage {
   pending?: boolean;
 }
 
+// One session id per case is enough for v1 — múltiples investigaciones por caso
+// se introducen cuando el flujo lo pida explícitamente.
+const CHAT_SESSION_ID = "main";
+
 interface ChatPageProps {
   caps: Capabilities | null;
+  // Optional case context. When provided, the chat anchors queries to the
+  // case's os_profile (instead of the host's) and to the registered evidence's
+  // evidence_id (instead of an empty string). When absent, falls back to the
+  // legacy behaviour for backward compat with any standalone use of ChatPage.
+  activeCase?: Case | null;
+  activeEvidence?: EvidenceHandle | null;
 }
 
-export function ChatPage({ caps }: ChatPageProps) {
+export function ChatPage({ caps, activeCase, activeEvidence }: ChatPageProps) {
   const [msgs, setMsgs] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -117,12 +127,15 @@ export function ChatPage({ caps }: ChatPageProps) {
   const logRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Pick the agent compatible with the case's os_profile. When no case is
-  // selected yet we fall back to the host's detected profile (unix on
-  // mac/linux, windows on win32). RULE 2 in the backend: if there is no
-  // package for the requested profile, /api/agent/query returns 503 — we
-  // surface that explicitly instead of inventing a default.
-  const activeProfile = (caps?.os === "windows" ? "windows" : "unix") as "unix" | "windows";
+  // Source of truth for the agent selection: the CASE's os_profile, not the
+  // host's. Only when no case is open we fall back to host detection. RULE 2 in
+  // the backend: /api/agent/query returns 503 if there is no package for the
+  // requested profile — we surface that explicitly instead of inventing a default.
+  const activeProfile: "unix" | "windows" = activeCase
+    ? activeCase.os_profile
+    : caps?.os === "windows"
+      ? "windows"
+      : "unix";
   const activeAgent: AgentSummary | null = useMemo(() => {
     const loaded = caps?.agents?.loaded ?? [];
     return loaded.find((a) => a.os_profile === activeProfile) ?? null;
@@ -135,6 +148,32 @@ export function ChatPage({ caps }: ChatPageProps) {
     }
   }, [msgs]);
 
+  // Load persisted chat history when the active case changes. A 404 (no session
+  // file yet) means "fresh conversation" — not an error to surface.
+  useEffect(() => {
+    if (!activeCase) {
+      setMsgs([]);
+      return;
+    }
+    let cancelled = false;
+    window.forensia.cases
+      .readChat(activeCase.id, CHAT_SESSION_ID)
+      .then((history) => {
+        if (cancelled) return;
+        const restored: ChatMessage[] = history
+          .filter((m) => m.role === "user" || m.role === "assistant")
+          .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+        setMsgs(restored);
+      })
+      .catch(() => {
+        // No prior session yet — start empty.
+        if (!cancelled) setMsgs([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeCase?.id]);
+
   const send = async () => {
     const text = input.trim();
     if (!text || busy) return;
@@ -145,12 +184,26 @@ export function ChatPage({ caps }: ChatPageProps) {
     // Add typing state
     setMsgs((prev) => [...prev, { role: "assistant", content: "Pensando...", pending: true }]);
 
+    // Persist user turn upfront so a crash/disconnect during query() doesn't
+    // erase what the analyst asked. The assistant turn gets appended below
+    // once the response (or the error) is known.
+    if (activeCase) {
+      window.forensia.cases
+        .appendChat(activeCase.id, CHAT_SESSION_ID, { role: "user", content: text })
+        .catch(() => {
+          /* persistence best-effort; UI state stays */
+        });
+    }
+
+    let assistantReply = "";
     try {
       const res = await window.forensia.query({
         prompt: text,
         os_profile: activeProfile,
-        evidence_id: "",
+        evidence_id: activeEvidence?.evidence_id ?? "",
+        case_id: activeCase?.id,
       });
+      assistantReply = res.reply;
       setMsgs((prev) => {
         const next = [...prev];
         next[next.length - 1] = { role: "assistant", content: res.reply };
@@ -158,11 +211,10 @@ export function ChatPage({ caps }: ChatPageProps) {
       });
     } catch (e) {
       const msg = String(e);
-      // /api/agent/query → 503 when no agent is loaded for the requested profile.
-      // We surface the actionable hint instead of a generic "connection failed".
       const friendly = /503/.test(msg)
         ? `No hay agente cargado para el perfil \`${activeProfile}\`. Suelta su carpeta dentro de \`agentes/\` y reinicia FORENSIA.`
         : "Error: No se pudo conectar con el agente de IA.";
+      assistantReply = friendly;
       setMsgs((prev) => {
         const next = [...prev];
         next[next.length - 1] = { role: "assistant", content: friendly };
@@ -170,6 +222,16 @@ export function ChatPage({ caps }: ChatPageProps) {
       });
     } finally {
       setBusy(false);
+      if (activeCase && assistantReply) {
+        window.forensia.cases
+          .appendChat(activeCase.id, CHAT_SESSION_ID, {
+            role: "assistant",
+            content: assistantReply,
+          })
+          .catch(() => {
+            /* best-effort */
+          });
+      }
     }
   };
 
@@ -258,7 +320,7 @@ export function ChatPage({ caps }: ChatPageProps) {
         </div>
       ) : (
         // Conversation Flow
-        <div style={{ display: "flex", flexDirection: "column", height: "100%", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
           <div className="chat-messages" ref={logRef}>
             {msgs.map((msg, i) => (
               <div key={i} className={`msg-wrapper ${msg.role}`}>

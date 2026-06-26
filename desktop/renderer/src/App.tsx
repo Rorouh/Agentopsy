@@ -32,15 +32,21 @@ export function App() {
 
   const isConnected = !error && !!version;
 
+  const refreshCaps = async () => {
+    try {
+      const c = await window.forensia.capabilities();
+      setCaps(c);
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
   useEffect(() => {
     window.forensia
       .health()
       .then((h) => setVersion(h.version))
       .catch((e) => setError(String(e)));
-    window.forensia
-      .capabilities()
-      .then(setCaps)
-      .catch((e) => setError(String(e)));
+    refreshCaps();
   }, []);
 
   return (
@@ -74,20 +80,20 @@ export function App() {
           />
         )}
         {activeView === "investigation" && (
-          <InvestigationPage
-            caps={caps}
-            activeCase={mockActiveCase}
-            activeEvidence={mockActiveEvidence}
-            findings={mockFindings}
-            onNavigate={setActiveView}
-          />
+          <InvestigationPage caps={caps} onNavigate={setActiveView} />
         )}
         {activeView === "mitre" && (
           <MitreAttackPage activeCase={mockActiveCase} activeEvidence={mockActiveEvidence} matches={mockMitreMatches} />
         )}
         {activeView === "system" && <SystemStatusPage caps={caps} />}
         {activeView === "settings" && (
-          <SettingsPage caps={caps} version={version} activeCase={mockActiveCase} onNavigate={setActiveView} />
+          <SettingsPage
+            caps={caps}
+            version={version}
+            activeCase={mockActiveCase}
+            onNavigate={setActiveView}
+            onCapsRefresh={refreshCaps}
+          />
         )}
       </AppShell>
     </ThemeProvider>

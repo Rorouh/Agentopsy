@@ -23,7 +23,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from forensia._version import __version__
-from forensia.routers import agent, artifacts, capabilities, cases, chats, evidence, health
+from forensia.routers import (
+    agent,
+    artifacts,
+    capabilities,
+    cases,
+    chats,
+    config as config_router,
+    evidence,
+    health,
+)
 from forensia.security import HostHeaderMiddleware, allowed_hosts, new_session_token
 
 
@@ -43,6 +52,7 @@ def create_app(port: int) -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(capabilities.router)
+    app.include_router(config_router.router)
     app.include_router(evidence.router)
     app.include_router(cases.router)
     app.include_router(artifacts.router)

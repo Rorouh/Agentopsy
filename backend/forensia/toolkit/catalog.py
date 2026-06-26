@@ -22,6 +22,15 @@ from forensia.toolkit.wrappers import (
     bulk_extractor as _bulk_extractor,
 )
 from forensia.toolkit.wrappers import (
+    file_info as _file_info,
+)
+from forensia.toolkit.wrappers import (
+    strings_head as _strings_head,
+)
+from forensia.toolkit.wrappers import (
+    xxd_head as _xxd_head,
+)
+from forensia.toolkit.wrappers import (
     chainsaw as _chainsaw,
 )
 from forensia.toolkit.wrappers import (
@@ -60,6 +69,35 @@ from forensia.toolkit.wrappers import (
 
 CATALOG: tuple[Tool, ...] = (
     # ====== CORE TIER — kit "primeros 30 minutos" ======
+
+    # --- "Primer vistazo": characterize the file BEFORE invoking forensic tools ---
+    Tool(
+        "file_info",
+        "file",
+        ("unix", "windows"),
+        tier="core",
+        allowed_flags=_file_info.ALLOWED_FLAGS,
+        build_argv=_file_info.build_argv,
+        parse=_file_info.parse,
+    ),
+    Tool(
+        "xxd_head",
+        "xxd",
+        ("unix", "windows"),
+        tier="core",
+        allowed_flags=_xxd_head.ALLOWED_FLAGS,
+        build_argv=_xxd_head.build_argv,
+        parse=_xxd_head.parse,
+    ),
+    Tool(
+        "strings_head",
+        "strings",
+        ("unix", "windows"),
+        tier="core",
+        allowed_flags=_strings_head.ALLOWED_FLAGS,
+        build_argv=_strings_head.build_argv,
+        parse=_strings_head.parse,
+    ),
 
     # --- Sistema de ficheros / particiones (TSK, bundled cross) ---
     Tool(

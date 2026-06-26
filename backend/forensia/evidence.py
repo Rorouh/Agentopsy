@@ -35,6 +35,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from forensia.audit.log import AuditLog
 from forensia.cases import CaseManager, case_manager
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,21 @@ _READ_ONLY_MODE = 0o444
 
 
 @dataclass(frozen=True)
+class VerificationRecord:
+    """Last on-demand verification result, persisted to ``verification.json``.
+
+    Forensemente, una verificación es un evento timestamped — el examinador
+    necesita poder responder "verifiqué este artefacto el día X con resultado
+    Y" sin reabrir la app. Por eso se persiste junto al ``baseline.json`` y
+    además se apenda al ``audit.jsonl`` del caso (cadena hash-chained).
+    """
+
+    verified_at: str
+    verified: bool
+    current_sha256: str
+
+
+@dataclass(frozen=True)
 class EvidenceHandle:
     evidence_id: str
     case_id: str
@@ -55,6 +71,7 @@ class EvidenceHandle:
     sha256: str
     size: int
     registered_at: str
+    last_verification: VerificationRecord | None = None
 
 
 def _utc_now_iso() -> str:
@@ -193,6 +210,7 @@ class EvidenceManager:
             sha256=baseline["sha256"],
             size=baseline["size"],
             registered_at=baseline["registered_at"],
+            last_verification=self._read_verification(evidence_dir),
         )
 
     def list(self, case_id: str) -> list[EvidenceHandle]:
@@ -216,7 +234,36 @@ class EvidenceManager:
     def verify(self, case_id: str, evidence_id: str) -> bool:
         handle = self.get(case_id, evidence_id)
         current_sha, current_size = _sha256_file(handle.original_path)
-        return current_sha == handle.sha256 and current_size == handle.size
+        verified = current_sha == handle.sha256 and current_size == handle.size
+
+        # Persist the result so it survives navigation / app restarts. The record
+        # lives next to baseline.json and the same fact is hash-chained into the
+        # case audit log so the perito can prove WHEN and WITH WHAT RESULT every
+        # verification happened.
+        record = VerificationRecord(
+            verified_at=_utc_now_iso(),
+            verified=verified,
+            current_sha256=current_sha,
+        )
+        evidence_dir = self._evidence_dir(case_id, evidence_id)
+        self._write_verification(evidence_dir, record)
+
+        case_dir = self._cases.case_dir(case_id)
+        AuditLog(case_dir / "audit.jsonl").append(
+            {
+                "action": "evidence_verify",
+                "case_id": case_id,
+                "evidence_id": evidence_id,
+                "verified": verified,
+                "current_sha256": current_sha,
+                "baseline_sha256": handle.sha256,
+            }
+        )
+        return verified
+
+    def get_verification(self, case_id: str, evidence_id: str) -> VerificationRecord | None:
+        evidence_dir = self._evidence_dir(case_id, evidence_id)
+        return self._read_verification(evidence_dir)
 
     # ---- internals ----------------------------------------------------------
 
@@ -233,6 +280,46 @@ class EvidenceManager:
     @staticmethod
     def _baseline_path(evidence_dir: Path) -> Path:
         return evidence_dir / "baseline.json"
+
+    @staticmethod
+    def _verification_path(evidence_dir: Path) -> Path:
+        return evidence_dir / "verification.json"
+
+    def _write_verification(
+        self, evidence_dir: Path, record: VerificationRecord
+    ) -> None:
+        path = self._verification_path(evidence_dir)
+        tmp = path.with_suffix(".json.tmp")
+        payload = {
+            "verified_at": record.verified_at,
+            "verified": record.verified,
+            "current_sha256": record.current_sha256,
+        }
+        tmp.write_text(
+            json.dumps(payload, sort_keys=True, indent=2), encoding="utf-8"
+        )
+        tmp.replace(path)
+
+    def _read_verification(self, evidence_dir: Path) -> VerificationRecord | None:
+        path = self._verification_path(evidence_dir)
+        if not path.is_file():
+            return None
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning("ignoring unreadable verification.json at %s: %s", path, exc)
+            return None
+        required = {"verified_at", "verified", "current_sha256"}
+        if not required <= data.keys():
+            logger.warning("verification.json at %s missing required fields", path)
+            return None
+        if not isinstance(data["verified"], bool):
+            return None
+        return VerificationRecord(
+            verified_at=data["verified_at"],
+            verified=data["verified"],
+            current_sha256=data["current_sha256"],
+        )
 
     def _write_baseline(self, evidence_dir: Path, baseline: dict) -> None:
         path = self._baseline_path(evidence_dir)

@@ -15,7 +15,12 @@ interface RepositoryPageProps {
 }
 
 type LoadingPhase = "loading" | "ready" | "error";
-type VerifyState = "unknown" | "verified" | "mismatch";
+
+function rowStatus(ev: EvidenceHandle): "unknown" | "verified" | "mismatch" {
+  const lv = ev.last_verification;
+  if (!lv) return "unknown";
+  return lv.verified ? "verified" : "mismatch";
+}
 
 interface FormState {
   name: string;
@@ -35,7 +40,6 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
   const [cases, setCases] = useState<Case[]>([]);
   const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
   const [evidence, setEvidence] = useState<EvidenceHandle[]>([]);
-  const [verifyStatus, setVerifyStatus] = useState<Record<string, VerifyState>>({});
   const [phase, setPhase] = useState<LoadingPhase>("loading");
   const [error, setError] = useState<string | null>(null);
 
@@ -44,6 +48,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
   const [createError, setCreateError] = useState<string | null>(null);
 
   const [registering, setRegistering] = useState(false);
+  const [verifyingIds, setVerifyingIds] = useState<Set<string>>(new Set());
   const [evidenceError, setEvidenceError] = useState<string | null>(null);
 
   const activeCase = useMemo(
@@ -89,7 +94,6 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
     async (caseId: string) => {
       if (caseId === activeCaseId) return;
       setActiveCaseId(caseId);
-      setVerifyStatus({});
       try {
         const ev = await window.forensia.cases.listEvidence(caseId);
         setEvidence(ev);
@@ -113,7 +117,6 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
       setCases((prev) => [created, ...prev]);
       setActiveCaseId(created.id);
       setEvidence([]);
-      setVerifyStatus({});
       setForm(EMPTY_FORM);
     } catch (err) {
       setCreateError(String(err instanceof Error ? err.message : err));
@@ -141,14 +144,30 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
   const verifyOne = useCallback(
     async (evidenceId: string) => {
       if (!activeCase) return;
+      setEvidenceError(null);
+      setVerifyingIds((prev) => {
+        const next = new Set(prev);
+        next.add(evidenceId);
+        return next;
+      });
       try {
-        const res = await window.forensia.cases.verifyEvidence(activeCase.id, evidenceId);
-        setVerifyStatus((prev) => ({
-          ...prev,
-          [evidenceId]: res.verified ? "verified" : "mismatch",
-        }));
+        const updated = await window.forensia.cases.verifyEvidence(
+          activeCase.id,
+          evidenceId
+        );
+        // The router returns the full handle with last_verification freshly
+        // persisted (verification.json + audit.jsonl). Replace the row in place.
+        setEvidence((prev) =>
+          prev.map((ev) => (ev.evidence_id === evidenceId ? { ...ev, ...updated } : ev))
+        );
       } catch (err) {
         setEvidenceError(String(err instanceof Error ? err.message : err));
+      } finally {
+        setVerifyingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(evidenceId);
+          return next;
+        });
       }
     },
     [activeCase]
@@ -165,8 +184,8 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
   }, [activeCase]);
 
   const verifiedCount = useMemo(
-    () => evidence.filter((e) => verifyStatus[e.evidence_id] === "verified").length,
-    [evidence, verifyStatus]
+    () => evidence.filter((e) => e.last_verification?.verified === true).length,
+    [evidence]
   );
   const pendingCount = evidence.length - verifiedCount;
 
@@ -248,12 +267,12 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
       <div className="metric-row">
         <MetricCard label="Evidencias registradas" value={String(evidence.length)} />
         <MetricCard
-          label="Verificadas en esta sesión"
+          label="Verificadas (hash OK)"
           value={String(verifiedCount)}
           variant="success"
         />
         <MetricCard
-          label="Pendientes de verificar"
+          label="Pendientes / sin verificar"
           value={String(pendingCount)}
           variant={pendingCount > 0 ? "warning" : "neutral"}
         />
@@ -359,7 +378,8 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
           ) : (
             <div className="file-list">
               {evidence.map((ev) => {
-                const status = verifyStatus[ev.evidence_id] ?? "unknown";
+                const status = rowStatus(ev);
+                const verifying = verifyingIds.has(ev.evidence_id);
                 const fileName = ev.original_path.split("/").pop() ?? ev.original_path;
                 return (
                   <div className="file-row" key={ev.evidence_id}>
@@ -369,6 +389,11 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
                         <div className="file-row-meta">
                           {formatBytes(ev.size)} · añadido {formatDate(ev.registered_at)} ·{" "}
                           {ev.evidence_id.slice(0, 8)}
+                          {ev.last_verification && (
+                            <>
+                              {" · "}último verify {formatDate(ev.last_verification.verified_at)}
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -378,9 +403,20 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
                       </span>
                       {status === "verified" && <Badge variant="success">Verificado</Badge>}
                       {status === "mismatch" && <Badge variant="critical">Hash MISMATCH</Badge>}
-                      {status === "unknown" && <Badge variant="neutral">Sin verificar</Badge>}
-                      <Button variant="chip" onClick={() => verifyOne(ev.evidence_id)}>
-                        Verificar ahora
+                      {status === "unknown" && !verifying && (
+                        <Badge variant="neutral">Sin verificar</Badge>
+                      )}
+                      {verifying && <Badge variant="medium">Re-hasheando…</Badge>}
+                      <Button
+                        variant="chip"
+                        disabled={verifying}
+                        onClick={() => verifyOne(ev.evidence_id)}
+                      >
+                        {verifying
+                          ? "Verificando…"
+                          : ev.last_verification
+                            ? "Re-verificar"
+                            : "Verificar ahora"}
                       </Button>
                     </div>
                   </div>

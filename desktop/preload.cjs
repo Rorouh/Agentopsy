@@ -21,5 +21,20 @@ contextBridge.exposeInMainWorld("forensia", {
     verifyEvidence: (caseId, evidenceId) =>
       ipcRenderer.invoke("forensia:cases-verify-evidence", { caseId, evidenceId }),
     pickEvidenceFile: () => ipcRenderer.invoke("forensia:pick-evidence-file"),
+    readChat: (caseId, sessionId) =>
+      ipcRenderer.invoke("forensia:cases-read-chat", { caseId, sessionId }),
+    appendChat: (caseId, sessionId, msg) =>
+      ipcRenderer.invoke("forensia:cases-append-chat", {
+        caseId,
+        sessionId,
+        role: msg.role,
+        content: msg.content,
+        tool_calls: msg.tool_calls ?? null,
+      }),
+  },
+  config: {
+    get: () => ipcRenderer.invoke("forensia:config-get"),
+    set: (key, value) => ipcRenderer.invoke("forensia:config-set", { key, value }),
+    models: () => ipcRenderer.invoke("forensia:config-models"),
   },
 });

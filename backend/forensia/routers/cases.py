@@ -120,8 +120,13 @@ def list_evidence(case_id: str) -> list[dict[str, Any]]:
 def verify_evidence(case_id: str, evidence_id: str) -> dict[str, Any]:
     try:
         verified = evidence_manager.verify(case_id, evidence_id)
+        # Re-read so the returned handle contains the freshly persisted
+        # ``last_verification`` block (verify() wrote verification.json).
+        handle = evidence_manager.get(case_id, evidence_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return {"evidence_id": evidence_id, "verified": bool(verified)}
+    payload = _evidence_dict(handle)
+    payload["verified"] = bool(verified)
+    return payload

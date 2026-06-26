@@ -44,6 +44,12 @@ export interface Case {
   notes: string;
 }
 
+export interface VerificationRecord {
+  verified_at: string;
+  verified: boolean;
+  current_sha256: string;
+}
+
 export interface EvidenceHandle {
   evidence_id: string;
   case_id: string;
@@ -51,6 +57,7 @@ export interface EvidenceHandle {
   sha256: string;
   size: number;
   registered_at: string;
+  last_verification: VerificationRecord | null;
 }
 
 export interface CreateCaseRequest {
@@ -60,9 +67,23 @@ export interface CreateCaseRequest {
   notes?: string;
 }
 
-export interface VerifyResult {
-  evidence_id: string;
-  verified: boolean;
+export type VerifyResult = EvidenceHandle & { verified: boolean };
+
+export interface PersistedChatMessage {
+  role: "user" | "assistant" | "system" | "tool";
+  content: string;
+  ts: string;
+  tool_calls: unknown[] | null;
+}
+
+export interface ConfigKeyStatus {
+  set: boolean;
+  preview: string | null;
+}
+
+export interface ConfigSnapshot {
+  keys: Record<string, ConfigKeyStatus>;
+  config_file: string;
 }
 
 declare global {
@@ -72,7 +93,7 @@ declare global {
       health(): Promise<{ status: string; version: string }>;
       capabilities(): Promise<Capabilities>;
       agents(): Promise<{ root: string; agents: AgentSummary[] }>;
-      query(req: { os_profile?: string; evidence_id?: string; prompt: string }): Promise<QueryResponse>;
+      query(req: { os_profile?: string; evidence_id?: string; case_id?: string; prompt: string }): Promise<QueryResponse>;
       cases: {
         create(body: CreateCaseRequest): Promise<Case>;
         list(): Promise<Case[]>;
@@ -82,6 +103,17 @@ declare global {
         listEvidence(caseId: string): Promise<EvidenceHandle[]>;
         verifyEvidence(caseId: string, evidenceId: string): Promise<VerifyResult>;
         pickEvidenceFile(): Promise<string | null>;
+        readChat(caseId: string, sessionId: string): Promise<PersistedChatMessage[]>;
+        appendChat(
+          caseId: string,
+          sessionId: string,
+          msg: { role: string; content: string; tool_calls?: unknown[] | null }
+        ): Promise<PersistedChatMessage>;
+      };
+      config: {
+        get(): Promise<ConfigSnapshot>;
+        set(key: string, value: string): Promise<{ key: string; set: boolean; preview: string }>;
+        models(): Promise<{ openai: string[] }>;
       };
     };
   }

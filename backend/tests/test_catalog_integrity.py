@@ -16,6 +16,9 @@ from forensia.toolkit.tool import _not_built
 # --------------------------------------------------------------------------- #
 _CORE_TOOL_IDS = frozenset(
     {
+        "file_info",  # paso 0a del playbook: libmagic
+        "xxd_head",   # paso 0b: ver bytes en hex
+        "strings_head",  # paso 0c: vendor markers / kernel banners
         "tsk_mmls",
         "tsk_fls",
         "tsk_mactime",
@@ -33,10 +36,10 @@ _CORE_TOOL_IDS = frozenset(
 )
 
 
-def test_core_tier_has_exactly_thirteen_tools() -> None:
+def test_core_tier_matches_expected_kit() -> None:
     core = by_tier("core")
-    assert len(core) == 13
     assert {t.id for t in core} == _CORE_TOOL_IDS
+    assert len(core) == len(_CORE_TOOL_IDS)
 
 
 def test_core_tools_have_real_build_argv_and_parse() -> None:
