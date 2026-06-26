@@ -87,7 +87,7 @@ adapters** — no business logic, no duplicated orchestration. Keep modules pure
 
 ## RULE 4 — Keep documentation in sync before committing
 
-Whenever changes are made to the codebase, all corresponding documentation (including READMEs, markdown files, and guides inside `docs/`) must be updated to reflect those changes before committing. No code or feature changes should be committed with outdated documentation.
+Whenever changes are made to the codebase, all corresponding documentation (including READMEs, markdown files, and any other documentation files across the entire project) must be updated to reflect those changes before committing. No code or feature changes should be committed with outdated documentation.
 
 ## FORENSIC INVARIANTS (chain of custody — do not erode these)
 
