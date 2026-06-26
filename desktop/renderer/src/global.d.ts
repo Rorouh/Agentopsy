@@ -33,6 +33,38 @@ export interface QueryResponse {
   agent: AgentSummary;
 }
 
+// Backend dataclasses (mirrored 1:1 in snake_case — no transformation at the bridge).
+export interface Case {
+  id: string;
+  name: string;
+  examiner: string;
+  created_at: string;
+  os_profile: "unix" | "windows";
+  status: "active" | "closed";
+  notes: string;
+}
+
+export interface EvidenceHandle {
+  evidence_id: string;
+  case_id: string;
+  original_path: string;
+  sha256: string;
+  size: number;
+  registered_at: string;
+}
+
+export interface CreateCaseRequest {
+  name: string;
+  examiner: string;
+  os_profile: "unix" | "windows";
+  notes?: string;
+}
+
+export interface VerifyResult {
+  evidence_id: string;
+  verified: boolean;
+}
+
 declare global {
   interface Window {
     forensia: {
@@ -41,6 +73,16 @@ declare global {
       capabilities(): Promise<Capabilities>;
       agents(): Promise<{ root: string; agents: AgentSummary[] }>;
       query(req: { os_profile?: string; evidence_id?: string; prompt: string }): Promise<QueryResponse>;
+      cases: {
+        create(body: CreateCaseRequest): Promise<Case>;
+        list(): Promise<Case[]>;
+        get(caseId: string): Promise<Case>;
+        close(caseId: string): Promise<Case>;
+        registerEvidence(caseId: string, source_path: string): Promise<EvidenceHandle>;
+        listEvidence(caseId: string): Promise<EvidenceHandle[]>;
+        verifyEvidence(caseId: string, evidenceId: string): Promise<VerifyResult>;
+        pickEvidenceFile(): Promise<string | null>;
+      };
     };
   }
 }

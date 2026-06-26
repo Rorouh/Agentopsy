@@ -1,6 +1,6 @@
 "use strict";
 
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog } = require("electron");
 const { spawn, spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -176,6 +176,44 @@ ipcMain.handle("forensia:health", () => sidecarFetch("/api/health"));
 ipcMain.handle("forensia:capabilities", () => sidecarFetch("/api/capabilities"));
 ipcMain.handle("forensia:agents", () => sidecarFetch("/api/agents"));
 ipcMain.handle("forensia:query", (event, req) => sidecarPost("/api/agent/query", req));
+
+// Cases + Evidence (storage layer over /api/cases/*).
+ipcMain.handle("forensia:cases-create", (event, body) => sidecarPost("/api/cases", body));
+ipcMain.handle("forensia:cases-list", () => sidecarFetch("/api/cases"));
+ipcMain.handle("forensia:cases-get", (event, caseId) => sidecarFetch(`/api/cases/${encodeURIComponent(caseId)}`));
+ipcMain.handle("forensia:cases-close", (event, caseId) =>
+  sidecarPost(`/api/cases/${encodeURIComponent(caseId)}/close`, {})
+);
+ipcMain.handle("forensia:cases-register-evidence", (event, { caseId, source_path }) =>
+  sidecarPost(`/api/cases/${encodeURIComponent(caseId)}/evidence`, { source_path })
+);
+ipcMain.handle("forensia:cases-list-evidence", (event, caseId) =>
+  sidecarFetch(`/api/cases/${encodeURIComponent(caseId)}/evidence`)
+);
+ipcMain.handle("forensia:cases-verify-evidence", (event, { caseId, evidenceId }) =>
+  sidecarPost(
+    `/api/cases/${encodeURIComponent(caseId)}/evidence/${encodeURIComponent(evidenceId)}/verify`,
+    {}
+  )
+);
+
+// Native file picker — the renderer can't see absolute paths (contextIsolation +
+// sandbox), so it asks main to open Electron's dialog and returns the chosen path.
+ipcMain.handle("forensia:pick-evidence-file", async () => {
+  const result = await dialog.showOpenDialog({
+    title: "Selecciona una evidencia forense",
+    properties: ["openFile"],
+    filters: [
+      {
+        name: "Imágenes forenses",
+        extensions: ["E01", "raw", "dd", "img", "vmdk", "vmem", "mem", "lime", "aff", "ad1"],
+      },
+      { name: "Todos los archivos", extensions: ["*"] },
+    ],
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
+});
 
 app.whenReady().then(async () => {
   try {

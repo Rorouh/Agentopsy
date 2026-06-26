@@ -10,4 +10,16 @@ contextBridge.exposeInMainWorld("forensia", {
   capabilities: () => ipcRenderer.invoke("forensia:capabilities"),
   agents: () => ipcRenderer.invoke("forensia:agents"),
   query: (req) => ipcRenderer.invoke("forensia:query", req),
+  cases: {
+    create: (body) => ipcRenderer.invoke("forensia:cases-create", body),
+    list: () => ipcRenderer.invoke("forensia:cases-list"),
+    get: (caseId) => ipcRenderer.invoke("forensia:cases-get", caseId),
+    close: (caseId) => ipcRenderer.invoke("forensia:cases-close", caseId),
+    registerEvidence: (caseId, source_path) =>
+      ipcRenderer.invoke("forensia:cases-register-evidence", { caseId, source_path }),
+    listEvidence: (caseId) => ipcRenderer.invoke("forensia:cases-list-evidence", caseId),
+    verifyEvidence: (caseId, evidenceId) =>
+      ipcRenderer.invoke("forensia:cases-verify-evidence", { caseId, evidenceId }),
+    pickEvidenceFile: () => ipcRenderer.invoke("forensia:pick-evidence-file"),
+  },
 });

@@ -56,14 +56,7 @@ export function App() {
             Cuando exista backend real, cada página recibirá sus props desde
             llamadas a forensia/routers/* en lugar de los arrays mock. */}
         {activeView === "guide" && <GuidePage steps={guideSteps} onNavigate={setActiveView} />}
-        {activeView === "repository" && (
-          <RepositoryPage
-            activeCase={mockActiveCase}
-            activeEvidence={mockActiveEvidence}
-            evidenceFiles={mockEvidenceFiles}
-            onNavigate={setActiveView}
-          />
-        )}
+        {activeView === "repository" && <RepositoryPage onNavigate={setActiveView} />}
         {activeView === "document-viewer" && (
           <DocumentViewerPage
             activeCase={mockActiveCase}
