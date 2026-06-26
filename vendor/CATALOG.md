@@ -1,40 +1,67 @@
 # Maletín forense — catálogo y estado de vendoring
 
-Cada herramienta del catálogo (`backend/forensia/toolkit/catalog.py`) viaja **dentro del
-binario compilado** (CLAUDE.md RULE 1). Dos vías de entrega:
+Cada herramienta del catálogo (`backend/forensia/toolkit/catalog.py`) declara su
+**delivery** por host OS (CLAUDE.md RULE 1). Dos vías de entrega:
 
-- **sidecar** — herramienta Python; la empaqueta PyInstaller dentro del sidecar. No requiere
-  vendoring nativo.
-- **vendored** — binario nativo; se copia a `vendor/<tool>/<os>-<arch>/<binary>` con
-  `scripts/bundle-tool.mjs` en la máquina de build. El usuario lo recibe en el bundle.
+- **bundled** — Python tools (Volatility 3, Plaso) empaquetadas por PyInstaller dentro del
+  sidecar; binarios nativos vendoreados a `vendor/<tool>/<os>-<arch>/<binary>` con
+  `scripts/bundle-tool.mjs` en la máquina de build.
+- **container** — imagen OCI ejecutada contra el runtime del host (docker / podman /
+  nerdctl). Para herramientas sin build nativo viable en algún OS (.NET, Perl, libguestfs).
 
-El `resolver` (`toolkit/resolver.py`) busca: `env → vendored/bundled → PATH`. **Sin Docker.**
+El `resolver` (`toolkit/resolver.py`) elige según lo declarado:
+`env → bundled (vendor / sidecar) → container → host PATH`.
 
-Layout esperado: `vendor/<tool>/{win-x64,linux-x64,mac-arm64,mac-x64}/<binary>`
+## CORE TIER — kit "primeros 30 minutos"
 
-| id (Tool) | binario | vía | OS | win-x64 | linux-x64 | mac-arm64 | mac-x64 |
-|---|---|---|---|:---:|:---:|:---:|:---:|
-| tsk_fls / icat / mmls / mactime | `fls`… | vendored | cross | ☐ | ☐ | ☐ | ☐ |
-| bulk_extractor | `bulk_extractor` | vendored | cross | ☐ | ☐ | ☐ | ☐ |
-| foremost | `foremost` | vendored | unix | — | ☐ | ☐ | ☐ |
-| ewf_info | `ewfinfo` | vendored | cross | ☐ | ☐ | ☐ | ☐ |
-| qemu_nbd | `qemu-nbd` | vendored | unix | — | ☐ | ☐ | ☐ |
-| hashdeep | `hashdeep` | vendored | cross | ☐ | ☐ | ☐ | ☐ |
-| plaso_log2timeline / psort | `*.py` | **sidecar** | cross | ✅* | ✅* | ✅* | ✅* |
-| volatility3 | `vol` | **sidecar** | cross | ✅* | ✅* | ✅* | ✅* |
-| regripper | `rip` | vendored (Perl) | windows | ☐ | — | — | — |
-| hayabusa | `hayabusa` | vendored | windows | ☐ | ☐ | ☐ | ☐ |
-| chainsaw | `chainsaw` | vendored | windows | ☐ | ☐ | ☐ | ☐ |
+13 herramientas requeridas para el MVP. Ver `docs/TOOLS_INVENTORY.md` para el razonamiento.
 
-`✅*` = entra vía sidecar una vez fijada la versión en `pyproject [forensics]`.
-`☐` = pendiente de vendorizar.  `—` = no aplica a esa plataforma.
+| id | binario | vía | linux | mac | windows | win-x64 | linux-x64 | mac-arm64 | mac-x64 |
+|---|---|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| `tsk_mmls` | `mmls` | bundled | bundled | bundled | bundled | ☐ | ☐ | ☐ | ☐ |
+| `tsk_fls` | `fls` | bundled | bundled | bundled | bundled | ☐ | ☐ | ☐ | ☐ |
+| `tsk_mactime` | `mactime` | bundled | bundled | bundled | bundled | ☐ | ☐ | ☐ | ☐ |
+| `ewf_info` | `ewfinfo` | bundled | bundled | bundled | bundled | ☐ | ☐ | ☐ | ☐ |
+| `bulk_extractor` | `bulk_extractor` | bundled | bundled | bundled | bundled | ☐ | ☐ | ☐ | ☐ |
+| `yara` | `yara` | bundled | bundled | bundled | bundled | ☐ | ☐ | ☐ | ☐ |
+| `volatility3` | `vol` | sidecar | bundled | bundled | bundled | ✅* | ✅* | ✅* | ✅* |
+| `hayabusa` | `hayabusa` | bundled | bundled | bundled | bundled | ☐ | ☐ | ☐ | ☐ |
+| `chainsaw` | `chainsaw` | bundled | bundled | bundled | bundled | ☐ | ☐ | ☐ | ☐ |
+| `evtxecmd` | `EvtxECmd` | bundled+container | container | container | bundled | ☐ | 🐳 | 🐳 | 🐳 |
+| `mftecmd` | `MFTECmd` | bundled+container | container | container | bundled | ☐ | 🐳 | 🐳 | 🐳 |
+| `regripper` | `rip` | container | container | container | container | 🐳 | 🐳 | 🐳 | 🐳 |
+| `jq` | `jq` | bundled | bundled | bundled | bundled | ☐ | ☐ | ☐ | ☐ |
+
+## EXTENDED TIER — añadidas tras estabilizar el core
+
+| id | binario | vía | linux | mac | windows | win-x64 | linux-x64 | mac-arm64 | mac-x64 |
+|---|---|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| `tsk_icat` | `icat` | bundled | bundled | bundled | bundled | ☐ | ☐ | ☐ | ☐ |
+| `plaso_log2timeline` | `log2timeline.py` | sidecar | bundled | bundled | bundled | ✅* | ✅* | ✅* | ✅* |
+| `plaso_psort` | `psort.py` | sidecar | bundled | bundled | bundled | ✅* | ✅* | ✅* | ✅* |
+| `hashdeep` | `hashdeep` | bundled | bundled | bundled | bundled | ☐ | ☐ | ☐ | ☐ |
+| `foremost` | `foremost` | bundled | bundled | bundled | — | — | ☐ | ☐ | ☐ |
+| `qemu_nbd` | `qemu-nbd` | bundled | bundled | bundled | — | — | ☐ | ☐ | ☐ |
+
+Leyenda:
+- `✅*` = entra vía sidecar una vez fijada la versión en `pyproject [forensics]`.
+- `🐳` = entregada vía contenedor; no requiere vendoring de binario nativo en esa plataforma.
+- `☐` = pendiente de vendorizar.
+- `—` = no aplica en esa plataforma (el tool no tiene build nativo viable allí; ver columna `delivery`).
 
 ## Notas de vendoring (las ásperas)
 
-- **RegRipper** es Perl → hay que bundlear un Perl portable o compilar a binario (PAR::Packer).
-- **plaso** nativo en Windows es delicado; preferir la vía sidecar (PyInstaller) y validar.
-- **macOS**: binarios con dylibs propias necesitan `dylibbundler` para relocalizar (ver fractia/QEMU).
-- Tras vendorizar, **comprobar la firma/quarantine** en el `.dmg`/instalador real, no en dev.
+- **EvtxECmd / MFTECmd** (.NET): en Windows se bundlea el `.exe` self-contained; en Linux/Mac
+  se entrega vía imagen `forensia/evtxecmd:latest` / `forensia/mftecmd:latest` (pendiente de
+  build pipeline).
+- **RegRipper** (`rip.pl`) es Perl 5 + módulos CPAN — bundlearlo cross-OS exige Perl portable
+  o PAR::Packer. Decisión: entregar **siempre por contenedor** (`forensia/regripper:latest`).
+- **plaso** nativo en Windows es delicado; preferimos vía sidecar (PyInstaller) y validar.
+- **macOS**: binarios con dylibs propias necesitan `dylibbundler` para relocalizar.
+- Tras vendorizar, **comprobar firma/quarantine** en el `.dmg`/instalador real, no en dev.
+- Si `container_runtime()` devuelve `None` (no hay docker/podman/nerdctl), las filas con
+  `delivery=container` se marcan automáticamente como no disponibles en `/api/capabilities`
+  y la UI degrada esas herramientas (el resto sigue funcionando).
 
 > Este árbol está en `.gitignore` (binarios grandes, repo público). La máquina de build los
 > produce; los usuarios los reciben en el instalador.

@@ -1,8 +1,9 @@
 """Capability contract: the UI never assumes a platform — it asks here and degrades.
 
-There is intentionally NO `docker` key: FORENSIA does not use Docker (CLAUDE.md RULE 1).
-A tool is reported available when the bundled or env copy resolves, so the packaged app
-enables a feature even when the host PATH lacks it.
+Reports per-tool availability based on the catalog's declared delivery mode for this
+host OS (bundled or container — see CLAUDE.md RULE 1). The `container_runtime` field
+indicates whether docker / podman / nerdctl is present on PATH; container-delivered
+tools require it.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ from typing import Any
 
 from forensia.config import config
 from forensia.toolkit.catalog import CATALOG
-from forensia.toolkit.resolver import resolve
+from forensia.toolkit.resolver import container_runtime, is_tool_available
 
 
 def snapshot() -> dict[str, Any]:
@@ -23,7 +24,8 @@ def snapshot() -> dict[str, Any]:
         "arch": platform.machine().lower(),
         "python": platform.python_version(),
         "packaged": getattr(sys, "frozen", False),
-        "tools": {tool.id: resolve(tool.binary) is not None for tool in CATALOG},
+        "container_runtime": container_runtime() is not None,
+        "tools": {tool.id: is_tool_available(tool) for tool in CATALOG},
         "models": {
             "local_default": True,
             "ollama": config.get("OLLAMA_HOST") is not None,

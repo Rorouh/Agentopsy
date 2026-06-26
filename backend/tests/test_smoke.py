@@ -21,12 +21,16 @@ def test_health_is_public(client: TestClient) -> None:
     assert r.json()["status"] == "ok"
 
 
-def test_capabilities_reports_no_docker_key(client: TestClient) -> None:
+def test_capabilities_reports_container_runtime(client: TestClient) -> None:
     token = client.app.state.token
     r = client.get("/api/capabilities", headers={"X-Forensia-Token": token})
     assert r.status_code == 200
     body = r.json()
+    # No docker-branded key: the runtime is reported generically because Podman /
+    # nerdctl are equally valid (CLAUDE.md RULE 1).
     assert "docker" not in body
+    assert "container_runtime" in body
+    assert isinstance(body["container_runtime"], bool)
     assert body["models"]["local_default"] is True
     assert "tools" in body
 
