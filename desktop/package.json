@@ -10,7 +10,8 @@
     "dev": "concurrently -k \"npm:dev:renderer\" \"npm:dev:app\"",
     "build": "vite build renderer",
     "dist": "npm run build && electron-builder",
-    "dist:all": "npm run build && electron-builder -mwl"
+    "dist:all": "npm run build && electron-builder -mwl",
+    "typecheck": "tsc --noEmit -p renderer/tsconfig.json"
   },
   "devDependencies": {
     "@types/react": "^19.2.17",
