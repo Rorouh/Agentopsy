@@ -29,7 +29,7 @@ Python sidecar  (backend/)        PyInstaller **onedir** (never onefile), one bu
 vendor/<tool>/<os>-<arch>/        forensic binaries bundled INTO the app
 ```
 
-Two runtimes (Node + Python). **No third runtime. No Docker.** See the bundling rule.
+Two runtimes (Node + Python). **No third runtime.** See the bundling rule.
 
 ## RULE 0 — No AI authorship or attribution
 
@@ -84,6 +84,10 @@ All orchestration lives in `backend/forensia/` modules (`evidence`, `audit`, `to
 `agent`, `models`, `reports`). `forensia/routers/*` and `desktop/main.cjs` are **thin
 adapters** — no business logic, no duplicated orchestration. Keep modules pure: no
 `print()`/stdin prompts/`sys.exit()` inside the logic modules; surfaces handle I/O.
+
+## RULE 4 — Keep documentation in sync before committing
+
+Whenever changes are made to the codebase, all corresponding documentation (including READMEs, markdown files, and guides inside `docs/`) must be updated to reflect those changes before committing. No code or feature changes should be committed with outdated documentation.
 
 ## FORENSIC INVARIANTS (chain of custody — do not erode these)
 

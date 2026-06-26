@@ -11,8 +11,8 @@ tras un panel de 5 expertos (empaquetado, DFIR, seguridad, orquestación IA, ges
 | Shell | **Electron** | UI Chromium idéntica en Win/Mac/Linux; el equipo ya conoce Electron |
 | Backend | **Python/FastAPI** como **sidecar** PyInstaller | Ecosistema forense+IA es Python (Volatility3, plaso, RAG) |
 | Transporte | **HTTP/WS a 127.0.0.1 + token**, desacoplado | El shell no importa lógica; el wrapper es intercambiable |
-| Maletín | **Bundleado en el binario** (`vendor/<tool>/<os>-<arch>`) | Regla "instalar y usar"; sin Docker |
-| Docker | **Descartado por completo** | Rompe "instala nada"; falla en máquinas bloqueadas; mala soundness en VM |
+| Maletín | **Bundleado en el binario** (`vendor/<tool>/<os>-<arch>`) | Regla "instalar y usar"; el bundle nativo es el camino preferido |
+| Docker / OCI runtime | **Aceptado como mecanismo de entrega peer al bundling** (RULE 1); el runtime es prerequisito del instalador, las imágenes viajan como tarballs y se cargan con `docker load` en el primer arranque | Sin esto no hay forma viable de entregar herramientas Perl (RegRipper) ni .NET (EvtxECmd, MFTECmd) en Linux/Mac sin pedir al usuario que instale .NET o Perl portable |
 | Empaquetado | `electron-builder` (nsis/dmg/AppImage+deb) + PyInstaller **onedir** por OS/arch | PyInstaller no cross-compila; onedir arranca rápido y firma mejor |
 | Modelos | Capa común; **local (Ollama) por defecto**, cloud opt-in | Sensibilidad de evidencias |
 | Agente | **UNO**, parametrizado por `os_profile` (win/unix) | El loop de razonamiento es idéntico; evita duplicación |
@@ -97,6 +97,43 @@ comparativa es la contribución científica del TFM.
 - `asarUnpack` para los binarios vendored y cualquier `.sh`/data que se ejecute.
 - Firma de código: **diferida** (no bloquea el TFM). Cuando haya distribución externa:
   Apple Developer ID + notarización (mac), cert Windows (Azure Trusted Signing). Linux sin firma.
+
+### Imágenes OCI (entrega vía contenedor)
+
+Las herramientas declaradas con `delivery="container"` en `backend/forensia/toolkit/catalog.py`
+viajan como **tarballs de imagen OCI dentro del instalador** — nunca se descargan desde un
+registro en tiempo de ejecución. Se evaluaron dos modelos de distribución:
+
+- **Modelo A — Pull desde registro en el primer uso** (p.ej. `ghcr.io/forensia/...`):
+  instalador minúsculo, pero exige internet en la máquina del analista. **Descartado**:
+  las estaciones forenses suelen estar air-gapped y bloquear egress de Docker daemon.
+- **Modelo B — Tarball bundleado dentro del instalador (elegido)**: el pipeline de release
+  en CI construye las imágenes, las exporta con `docker save`, y mete los `.tar` resultantes
+  dentro del `.dmg`/`.exe`/AppImage a través de `electron-builder extraResources`. El
+  proceso principal de Electron ejecuta `docker load` para cada tarball en el primer
+  arranque (idempotente vía `docker image inspect`).
+
+Flujo de build:
+
+```
+CI release pipeline (per OS/arch)
+  └─ scripts/build-images.sh
+       └─ docker build images/<tool>/        → forensia/<tool>:latest
+       └─ docker save forensia/<tool>:latest -o desktop/resources/images/<tool>.tar
+  └─ electron-builder (bundles resources/images/ via extraResources)
+
+First launch on user machine
+  └─ desktop/main.cjs: loadBundledImages()
+       └─ for each *.tar: docker image inspect <tag> || docker load -i <tar>
+```
+
+El **runtime de contenedores** (Docker / Podman / nerdctl) es un prerequisito documentado
+del instalador, en coherencia con RULE 1: el equipo no se considera "instalado a medias"
+porque pide *un* runtime de contenedores genérico, no una herramienta forense específica
+por separado. Si el runtime no está presente, `/api/capabilities` reporta
+`container_runtime: false` y marca las herramientas de entrega container como no
+disponibles; el resto de la app (sidecar, herramientas bundleadas, agente, audit log)
+sigue funcionando con normalidad.
 
 ## 7. Lo que el esqueleto NO implementa todavía
 

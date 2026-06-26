@@ -61,6 +61,9 @@ class Tool:
     tier: Tier = "extended"
     build_argv: Callable[[dict[str, Any]], list[str]] = _not_built
     parse: Callable[[str], Any] = _not_built
+    # Container-delivered tools set this so the executor knows what to mount.
+    # Returns (read-only mounts, read-write mounts). None for bundled tools.
+    host_mounts: Callable[[dict[str, Any]], tuple[dict, dict]] | None = None
 
     def delivery_for(self, host: HostOs) -> DeliveryMode | None:
         for h, mode in self.delivery:

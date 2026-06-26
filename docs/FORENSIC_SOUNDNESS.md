@@ -62,3 +62,33 @@ defecto, no lo deja a la política.
 
 Cada caso registra versiones/builds de cada herramienta y del sidecar, hashes baseline y de
 verificación, y la cadena del audit log. Sin esto no hay informe defendible.
+
+## 7. Contenedores y evidencia
+
+Regla dura: **un contenedor nunca monta la imagen raw**. Extensiones prohibidas como volumen
+de entrada a cualquier contenedor: `.raw`, `.dd`, `.img`, `.vmdk`, `.vmem`, `.E01`, `.aff`,
+`.lime`, `.ad1`.
+
+El motivo es el mismo que justifica la sección §1, agravado por el runtime: en Mac y Windows
+el OCI runtime (Docker Desktop, Podman Desktop) proxifica los volúmenes a través de una VM
+intermedia — HyperKit/Virtualization.framework en macOS, WSL2 en Windows — que tiene su
+propio journaling y políticas de montaje. Montar la imagen raw allí puede disparar journal
+replay o escrituras de metadatos en el dispositivo subyacente, romper el hash baseline y, con
+él, la cadena de custodia. El usuario no lo ve; el `verify()` final sí.
+
+Disciplina de los wrappers `container` (`evtxecmd`, `mftecmd`, `regripper`): **se
+pre-extrae el artefacto** necesario en el host con TSK (`icat` desde un inodo conocido) o
+equivalente — siempre a través del `Handle` read-only de `EvidenceManager` — y solo ese
+fichero derivado se monta read-only dentro del contenedor (típicamente en `/in/<artifact>`).
+El contenedor ve un EVTX, un hive de registro o un `$MFT` aislado; nunca la imagen entera.
+
+Defensa en profundidad: `backend/forensia/toolkit/container.py:_validate_mount_paths` rechaza
+cualquier ruta cuyo sufijo coincida con la lista prohibida, independientemente de qué
+wrapper la haya construido. Es belt-and-suspenders frente a un wrapper mal escrito o una
+herramienta nueva que un colaborador añada sin leer esta sección.
+
+Networking del contenedor: `--network none` por defecto, sin excepción implícita. Una
+herramienta forense que necesite red es una bandera roja — egress significa exfiltración
+potencial de bytes de evidencia y una superficie de SSRF a través de prompt injection.
+Habilitarla exige una decisión consciente del operador, queda registrada en el audit log
+junto con el motivo, y nunca se concede de forma persistente para la herramienta entera.

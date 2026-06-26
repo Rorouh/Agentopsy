@@ -1,7 +1,8 @@
 "use strict";
 
 const { app, BrowserWindow, ipcMain } = require("electron");
-const { spawn } = require("node:child_process");
+const { spawn, spawnSync } = require("node:child_process");
+const fs = require("node:fs");
 const path = require("node:path");
 const process = require("node:process");
 
@@ -75,6 +76,70 @@ async function sidecarPost(pathname, body) {
   return res.json();
 }
 
+function imagesDir() {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, "images");
+  }
+  return path.join(__dirname, "resources", "images");
+}
+
+function findOciRuntime() {
+  const candidates = ["docker", "podman", "nerdctl"];
+  for (const cmd of candidates) {
+    try {
+      const result = spawnSync(cmd, ["--version"], { stdio: "ignore" });
+      if (result.status === 0) return cmd;
+    } catch {
+      // try next candidate
+    }
+  }
+  return null;
+}
+
+function loadBundledImages() {
+  const dir = imagesDir();
+  if (!fs.existsSync(dir)) {
+    console.log("[images] no bundled images directory; skipping");
+    return;
+  }
+
+  const runtime = findOciRuntime();
+  if (!runtime) {
+    console.log(
+      "[images] no OCI runtime; skipping (capabilities will report tools as unavailable)"
+    );
+    return;
+  }
+
+  let entries;
+  try {
+    entries = fs.readdirSync(dir);
+  } catch (err) {
+    console.warn("[images] could not read images directory:", err.message);
+    return;
+  }
+
+  const tarballs = entries.filter((name) => name.endsWith(".tar"));
+  for (const file of tarballs) {
+    const tarPath = path.join(dir, file);
+    const base = file.slice(0, -".tar".length);
+    const tag = `forensia/${base}:latest`;
+
+    const inspect = spawnSync(runtime, ["image", "inspect", tag], { stdio: "ignore" });
+    if (inspect.status === 0) {
+      console.log(`[images] ${tag} already loaded`);
+      continue;
+    }
+
+    const load = spawnSync(runtime, ["load", "-i", tarPath], { stdio: "inherit" });
+    if (load.status !== 0) {
+      console.warn(`[images] warning: failed to load ${tag} from ${tarPath} (exit ${load.status})`);
+      continue;
+    }
+    console.log(`[images] loaded ${tag}`);
+  }
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1200,
@@ -106,6 +171,11 @@ app.whenReady().then(async () => {
     console.error("failed to start sidecar:", err);
     app.quit();
     return;
+  }
+  try {
+    await loadBundledImages();
+  } catch (err) {
+    console.warn("[images] loadBundledImages failed:", err && err.message ? err.message : err);
   }
   createWindow();
   app.on("activate", () => {

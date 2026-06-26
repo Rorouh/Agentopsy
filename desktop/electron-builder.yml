@@ -17,10 +17,13 @@ extraResources:
     to: forensia-sidecar
   - from: ../vendor
     to: vendor
+  - from: resources/images
+    to: images
 
 asarUnpack:
   - "resources/forensia-sidecar/**"
   - "vendor/**"
+  - "resources/images/**"
 
 # Code signing is deferred (see ARCHITECTURE.md §6). No Apple identity / Windows cert yet.
 win:
