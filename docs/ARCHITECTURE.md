@@ -156,6 +156,12 @@ por `os_profile`. Reglas innegociables:
 - **Sin agente fallback**: si no hay paquete para el perfil del caso, el chat
   degrada con un mensaje accionable; nunca se inventa default.
 
+En el repo viajan dos paquetes de investigación reales —`forensia-unix/`
+(`os_profile: unix`) y `forensia-windows/` (`os_profile: windows`)— más el pack
+de síntesis `_orchestrator/`, que la registry ignora por su prefijo `_`: no es un
+agente y no declara `os_profile`; lo consumirá la capa `forensia.reports` (informe
+pericial, timeline y correlación MITRE, aún sin implementar).
+
 Distribución: `electron-builder` mete `../agentes` en `extraResources` y
 `asarUnpack`. En dev, el sidecar lee `<repo>/agentes`. En packaged, Electron
 exporta `FORENSIA_AGENTS_DIR=<resourcesPath>/agentes` al spawnear el sidecar.

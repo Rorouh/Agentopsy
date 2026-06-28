@@ -1,0 +1,26 @@
+# Allowlist de FORENSIA-UNIX — subset del catálogo (forensia.toolkit.catalog)
+# que ESTE agente puede invocar. El dispatcher rechaza cualquier tool_id fuera
+# de esta lista aunque el modelo lo emita. Todos los ids:
+#   (1) existen en el catálogo, y
+#   (2) declaran el os_profile "unix".
+# Si alguno no cumple, la carga del paquete falla en seco (CLAUDE.md RULE 2).
+allowed:
+  # --- Particiones / imagen ---
+  - tsk_mmls            # tabla de particiones (no monta FS)
+  - ewf_info            # metadatos del contenedor .E01
+  # --- Sistema de ficheros (lectura directa, sin montar) ---
+  - tsk_fls             # árbol de ficheros incl. borrados (artefacto)
+  - tsk_mactime         # bodyfile -> línea temporal MAC(b) (artefacto)
+  - tsk_icat            # extracción quirúrgica de un inodo concreto
+  # --- IOCs / carving / firmas ---
+  - bulk_extractor      # emails, urls, ips, PII en no-asignado (artefacto)
+  - foremost            # carving por firma desde espacio no asignado
+  - yara                # reglas (webshell, ransomware, persistencia)
+  # --- Memoria volátil ---
+  - volatility3         # plugins linux.* / mac.* (JSON)
+  # --- Super-timeline (pesado, opcional) ---
+  - plaso_log2timeline  # genera .plaso multi-fuente
+  - plaso_psort         # filtra/exports la timeline de Plaso
+  # --- Integridad / helpers para la IA ---
+  - hashdeep            # hashing recursivo (verificación de artefactos)
+  - jq                  # filtra JSON de Volatility/bulk_extractor antes del LLM

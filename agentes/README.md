@@ -11,6 +11,20 @@ políticas de redacción) deja aquí su carpeta y FORENSIA la descubre al arranc
 
 ---
 
+## Paquetes incluidos en el repo
+
+| Carpeta | `os_profile` | Rol |
+|---|---|---|
+| [`forensia-unix/`](forensia-unix/) | `unix` | Agente de investigación para imágenes Linux/macOS. **Referencia ejecutable** del contrato: se carga tal cual al arrancar el sidecar en dev. |
+| [`forensia-windows/`](forensia-windows/) | `windows` | Agente de investigación para imágenes Windows. **Referencia ejecutable** del contrato. |
+| [`_orchestrator/`](_orchestrator/) | — | Pack de **síntesis** (nivel 2). NO es un agente: la registry lo ignora por su prefijo `_`. No tiene `agent.yaml`; lo consumirá la futura capa `forensia.reports` (informe + timeline + correlación MITRE). Ver [`_orchestrator/README.md`](_orchestrator/README.md). |
+
+El contrato declarativo de abajo (`agent.yaml`, `prompts/`, `policy/`) describe la
+**forma** de cualquier paquete de investigación; `forensia-unix/` y
+`forensia-windows/` son sus instancias reales en este repo.
+
+---
+
 ## Contrato del paquete (declarativo)
 
 ```
@@ -36,8 +50,8 @@ Nada de código Python del entrenador. Todo el loop de razonamiento lo ejecuta
 ## `agent.yaml` — manifiesto
 
 ```yaml
-id: sample-unix              # kebab-case, único dentro de agentes/
-name: "Sample Unix Analyst"  # nombre legible para la UI
+id: forensia-unix            # kebab-case, único dentro de agentes/
+name: "FORENSIA-UNIX · Analista forense post-mortem (Linux/macOS)"
 version: "0.1.0"             # semver
 os_profile: unix             # unix | windows  (UN agente por os_profile)
 authors:                     # equipo de entrenamiento — NO atribución a IA

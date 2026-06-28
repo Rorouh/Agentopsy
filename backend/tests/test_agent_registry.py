@@ -1,7 +1,7 @@
 """Tests for the agent package loader + registry.
 
 Covers:
-- Valid manifest loads end to end (the two sample packages shipped in agentes/).
+- Valid manifest loads end to end (the two real packages shipped in agentes/).
 - Schema violations fail loud with actionable messages (RULE 2).
 - Path-escape attempts (`../`, absolute) are rejected.
 - Allowlist must reference catalog tool ids that match the os_profile.
@@ -28,24 +28,24 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 AGENTES_DIR = REPO_ROOT / "agentes"
 
 
-# ---- valid sample packages -------------------------------------------------
+# ---- valid real packages ---------------------------------------------------
 
 
-def test_sample_unix_package_loads() -> None:
-    pkg = load_package(AGENTES_DIR / "sample-unix")
-    assert pkg.id == "sample-unix"
+def test_forensia_unix_package_loads() -> None:
+    pkg = load_package(AGENTES_DIR / "forensia-unix")
+    assert pkg.id == "forensia-unix"
     assert pkg.os_profile == "unix"
     assert pkg.model.backend == "local"
     assert pkg.model.max_iterations == 12
     assert "tsk_mmls" in pkg.policy.allowed_tools
     assert "volatility3" in pkg.policy.allowed_tools
     # Prompts loaded as text from disk.
-    assert "FORENSIA-UNIX" in pkg.prompts.identity or "Sample Unix" in pkg.prompts.identity
+    assert "FORENSIA-UNIX" in pkg.prompts.identity
 
 
-def test_sample_windows_package_loads() -> None:
-    pkg = load_package(AGENTES_DIR / "sample-windows")
-    assert pkg.id == "sample-windows"
+def test_forensia_windows_package_loads() -> None:
+    pkg = load_package(AGENTES_DIR / "forensia-windows")
+    assert pkg.id == "forensia-windows"
     assert pkg.os_profile == "windows"
     assert "regripper" in pkg.policy.allowed_tools
     # The Windows agent uses the Windows-only tools.
@@ -166,12 +166,16 @@ def test_empty_allowlist_rejected(tmp_path: Path) -> None:
 # ---- registry --------------------------------------------------------------
 
 
-def test_registry_loads_both_sample_profiles() -> None:
+def test_registry_loads_both_real_profiles() -> None:
     reg = AgentRegistry(AGENTES_DIR)
     assert reg.has_profile("unix")
     assert reg.has_profile("windows")
-    assert reg.get_for_profile("unix").id == "sample-unix"
-    assert reg.get_for_profile("windows").id == "sample-windows"
+    assert reg.get_for_profile("unix").id == "forensia-unix"
+    assert reg.get_for_profile("windows").id == "forensia-windows"
+    # Exactly the two investigation packages load. The synthesis pack
+    # `_orchestrator/` is ignored on purpose (leading `_`): it never shows up
+    # as an agent and never claims an os_profile.
+    assert [pkg.id for pkg in reg.list()] == ["forensia-unix", "forensia-windows"]
 
 
 def test_registry_refuses_duplicate_profile(tmp_path: Path) -> None:
@@ -207,8 +211,10 @@ def test_list_agents_endpoint(client: TestClient) -> None:
     assert r.status_code == 200
     body = r.json()
     ids = {a["id"] for a in body["agents"]}
-    assert "sample-unix" in ids
-    assert "sample-windows" in ids
+    assert "forensia-unix" in ids
+    assert "forensia-windows" in ids
+    # The ignored synthesis pack is not an agent.
+    assert "_orchestrator" not in ids
 
 
 def test_query_returns_skeleton_envelope(client: TestClient) -> None:
@@ -221,7 +227,7 @@ def test_query_returns_skeleton_envelope(client: TestClient) -> None:
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "skeleton"
-    assert body["agent"]["id"] == "sample-unix"
+    assert body["agent"]["id"] == "forensia-unix"
     assert "tsk_mmls" in body["agent"]["allowed_tools"]
 
 

@@ -1,0 +1,30 @@
+# Caso de evaluación sintético para el harness comparativo local-vs-cloud.
+# Formato propuesto en docs/FASE2_AGENTES_DISENO.md §9.4.
+# NUNCA contiene evidencia real con datos personales: la fixture es sintética.
+id: case-win-001
+description: "Imagen Windows 11 con persistencia en Run key + proceso inyectado en memoria"
+os_profile: windows
+evidence_fixture: fixtures/win11-persist.raw    # generada por el equipo, no incluida en git
+
+expected_findings:
+  - title_glob: "*Run key*|*persistencia*registro*"
+    severity: high
+    provenance_tool: regripper       # HKCU\...\Run -> binario en %APPDATA% no firmado
+  - title_glob: "*proceso inyectado*|*process hollowing*"
+    severity: critical
+    provenance_tool: volatility3      # windows.malfind / hollowprocesses
+  - title_glob: "*creación de servicio*|*7045*"
+    severity: medium
+    provenance_tool: evtxecmd         # System.evtx event id 7045
+
+expected_mitre:
+  - technique_id: T1547.001          # Boot or Logon Autostart: Registry Run Keys
+  - technique_id: T1055              # Process Injection
+  - technique_id: T1543.003          # Create or Modify System Process: Windows Service
+
+budget:
+  max_iterations: 12
+  max_tokens: 200000
+
+# Este caso refleja el escenario de la demo (Caso 2026-014): persistencia vía Run
+# key + hueco de memoria por process hollowing sobre svchost.exe.

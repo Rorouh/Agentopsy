@@ -5,9 +5,11 @@ el agente forense, cómo el sidecar descubre los paquetes y cómo el desktop los
 conecta. El catálogo de herramientas y los invariantes forenses están en otros
 documentos; aquí sólo se trata el **agente**.
 
-> Carpeta de entrega en repo: [`agentes/`](../agentes/README.md). Los samples
-> `sample-unix/` y `sample-windows/` ahí dentro son la referencia ejecutable
-> del contrato (se cargan tal cual al arrancar el sidecar en dev).
+> Carpeta de entrega en repo: [`agentes/`](../agentes/README.md). Los paquetes
+> `forensia-unix/` y `forensia-windows/` ahí dentro son la referencia ejecutable
+> del contrato (se cargan tal cual al arrancar el sidecar en dev). Junto a ellos
+> convive el pack de síntesis `_orchestrator/`, que NO es un agente: la registry
+> lo ignora por su prefijo `_` (ver §5).
 
 ## 1. Una decisión, no dos agentes
 
@@ -87,7 +89,29 @@ campo concretos (CLAUDE.md RULE 2 — sin fallbacks).
    muestra el agente activo en el header del chat y degrada explícitamente si
    no hay paquete para el perfil del caso.
 
-## 5. Selección del agente en la UI
+## 5. El pack `_orchestrator/` — síntesis (nivel 2)
+
+Junto a los agentes de investigación vive `agentes/_orchestrator/`. **No es un
+agente** y la registry lo **ignora a propósito**: su prefijo `_` hace que el
+escaneo lo salte (igual que los ficheros ocultos — ver §4, punto 2, y
+`backend/forensia/agent/registry.py`). No tiene `agent.yaml` ni declara
+`os_profile`, así que nunca colisiona con la regla «un agente por perfil».
+
+Es el paquete declarativo del **orquestador**: prompts y conocimiento con los que
+la capa de síntesis (`forensia.reports`, aún sin implementar) convierte los
+`Finding[]` ya trazados por los agentes de nivel 1 en los tres entregables de la
+propuesta:
+
+1. **Informe pericial** (`reporter.md`) → `ReportDocument`.
+2. **Línea temporal** (`timeline.md`) → `TimelineEvent[]`.
+3. **Correlación MITRE ATT&CK** (`mitre.md` + `knowledge/`) → `MitreTechniqueMatch[]`.
+
+Es agnóstico del SO: trabaja sobre hallazgos estructurados (con su cadena de
+custodia), no sobre la imagen cruda; por eso no encaja en el enum
+`os_profile ∈ {unix, windows}`. Detalle en
+[`agentes/_orchestrator/README.md`](../agentes/_orchestrator/README.md).
+
+## 6. Selección del agente en la UI
 
 El chat usa el agente del `os_profile` activo. Por ahora:
 
@@ -99,7 +123,7 @@ Si no hay agente cargado para ese perfil, `/api/agent/query` responde 503 y el
 chat muestra: *"No hay agente cargado para el perfil `unix`. Suelta su carpeta
 dentro de `agentes/` y reinicia FORENSIA"*. **Nunca** se inventa un fallback.
 
-## 6. Cómo lo entrega el equipo de entrenamiento
+## 7. Cómo lo entrega el equipo de entrenamiento
 
 1. Empaqueta su carpeta `<id>/` con el layout de arriba.
 2. La sube al repo bajo `agentes/<id>/`, o se entrega out-of-band y se copia
@@ -107,7 +131,7 @@ dentro de `agentes/` y reinicia FORENSIA"*. **Nunca** se inventa un fallback.
    `extraResources`).
 3. Reinicia el desktop. El badge "Agente activo" en el chat lo confirma.
 
-## 7. Estado actual del esqueleto
+## 8. Estado actual del esqueleto
 
 - **Loader + registry**: implementados, con tests en
   `backend/tests/test_agent_registry.py`.

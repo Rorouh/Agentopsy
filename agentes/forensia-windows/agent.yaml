@@ -1,0 +1,24 @@
+# FORENSIA-WIN — agente forense post-mortem para imágenes Windows.
+# Paquete declarativo real (Fase 2). Sustituye a sample-windows.
+# El loader (forensia.agent.loader) valida este manifiesto en seco al arrancar.
+id: forensia-windows
+name: "FORENSIA-WIN · Analista forense post-mortem (Windows)"
+version: "0.1.0"
+os_profile: windows
+authors:
+  - "FORENSIA Team"
+
+model:
+  backend: local            # privacidad de evidencia por defecto (THREAT_MODEL §C)
+  name: "llama3.1:8b"       # base local de la comparativa; cambiar aquí no toca prompts
+  temperature: 0.2          # análisis determinista, poca creatividad
+  max_iterations: 12        # tope de seguridad del loop tool-use
+
+prompts:
+  system: prompts/system.md
+  identity: prompts/identity.md
+  playbook: prompts/playbook.md
+
+policy:
+  tools: policy/tools.yaml
+  redaction: policy/redaction.yaml

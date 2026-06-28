@@ -1,0 +1,24 @@
+# FORENSIA-UNIX — agente forense post-mortem para imágenes Linux/macOS.
+# Paquete declarativo real (Fase 2). Sustituye a sample-unix.
+# El loader (forensia.agent.loader) valida este manifiesto en seco al arrancar.
+id: forensia-unix
+name: "FORENSIA-UNIX · Analista forense post-mortem (Linux/macOS)"
+version: "0.1.0"
+os_profile: unix
+authors:
+  - "FORENSIA Team"
+
+model:
+  backend: local            # privacidad de evidencia por defecto (THREAT_MODEL §C)
+  name: "llama3.1:8b"       # base local de la comparativa; cambiar aquí no toca prompts
+  temperature: 0.2          # análisis determinista, poca creatividad
+  max_iterations: 12        # tope de seguridad del loop tool-use
+
+prompts:
+  system: prompts/system.md
+  identity: prompts/identity.md
+  playbook: prompts/playbook.md
+
+policy:
+  tools: policy/tools.yaml
+  redaction: policy/redaction.yaml
