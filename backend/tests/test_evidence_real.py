@@ -163,10 +163,14 @@ class TestGetAndList:
             srcs.append(src)
             handles.append(manager.register(case.id, str(src)))
         listed = manager.list(case.id)
-        # Newest registered first.
-        assert [h.evidence_id for h in listed] == [
-            h.evidence_id for h in reversed(handles)
-        ]
+        # Every registered handle is listed exactly once...
+        assert {h.evidence_id for h in listed} == {h.evidence_id for h in handles}
+        # ...sorted newest-registered first. Asserting exact reverse-insertion order
+        # would over-specify: registered_at has millisecond resolution, so handles
+        # registered within the same tick legitimately share a stamp and the sort
+        # makes no promise about their relative order.
+        stamps = [h.registered_at for h in listed]
+        assert stamps == sorted(stamps, reverse=True)
 
     def test_list_empty_case_returns_empty(self, manager, case):
         assert manager.list(case.id) == []

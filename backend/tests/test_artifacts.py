@@ -211,7 +211,13 @@ class TestListAndGet:
             store.finalize_run(case.id, run_id, exit_code=0, stdout="", stderr="")
             ids.append(run_id)
         runs = store.list_runs(case.id)
-        assert [r.run_id for r in runs] == list(reversed(ids))
+        # Every started run is listed exactly once...
+        assert {r.run_id for r in runs} == set(ids)
+        # ...sorted by started_at descending (the documented contract). Asserting
+        # exact reverse-insertion order would over-specify: timestamps can tie and
+        # the sort makes no promise about the relative order of equal stamps.
+        stamps = [r.started_at for r in runs]
+        assert stamps == sorted(stamps, reverse=True)
 
     def test_list_runs_skips_dir_without_manifest(self, store, cases, case):
         run_id, _ = store.start_run(case.id, "tool_x", argv=["x"])

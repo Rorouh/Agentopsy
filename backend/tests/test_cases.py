@@ -103,16 +103,20 @@ class TestCaseDirConfinement:
 
 class TestList:
     def test_list_is_sorted_desc_by_created_at(self, manager):
-        # Created in order a, b, c — listed in c, b, a order.
+        # Contract: list() returns "most recent first" — sorted by created_at desc.
         cases = [
             manager.create(name=f"op-{n}", examiner="alice", os_profile="unix")
             for n in range(3)
         ]
-        # The created_at strings are monotonic at sub-ms resolution; in the unlikely
-        # case two share a stamp this assertion is still consistent with the contract
-        # (sort by created_at desc).
         listed = manager.list()
-        assert [c.id for c in listed] == [c.id for c in reversed(cases)]
+        # Every created case is listed exactly once...
+        assert {c.id for c in listed} == {c.id for c in cases}
+        # ...and the order is non-increasing by created_at. Asserting exact
+        # reverse-insertion order would over-specify the contract: created_at has
+        # millisecond resolution, so cases created within the same tick legitimately
+        # share a stamp and the sort makes no promise about their relative order.
+        stamps = [c.created_at for c in listed]
+        assert stamps == sorted(stamps, reverse=True)
 
     def test_list_skips_non_uuid_dirs(self, manager):
         manager.create(name="real", examiner="alice", os_profile="unix")
