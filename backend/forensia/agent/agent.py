@@ -96,7 +96,13 @@ class ForensicAgent:
     def available_tool_ids(self) -> tuple[str, ...]:
         return tuple(t for t in self.package.policy.allowed_tools if t in TOOL_BY_ID)
 
-    def run(self, prompt: str, case_id: str, evidence_id: str) -> AgentLoopResult:
+    def run(
+        self,
+        prompt: str,
+        case_id: str,
+        evidence_id: str,
+        prior_messages: list[dict[str, Any]] | None = None,
+    ) -> AgentLoopResult:
         # Local import to avoid a circular dep that only matters at call time.
         from forensia.toolkit.dispatcher import ToolExecutionError, execute as dispatch_tool
 
@@ -111,6 +117,7 @@ class ForensicAgent:
         evidence_path = str(handle.original_path)
         evidence_filename = handle.original_path.name
         detected_os = handle.detected_os
+        detected_kind = handle.detected_kind
 
         allowed = self.available_tool_ids()
         if not allowed:
@@ -125,11 +132,12 @@ class ForensicAgent:
             )
 
         system_text = self._system_prompt(
-            case_id, evidence_filename, allowed, detected_os
+            case_id, evidence_filename, allowed, detected_os, detected_kind
         )
 
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": system_text},
+            *(prior_messages or []),
             {"role": "user", "content": prompt},
         ]
         state: dict[str, Any] = {
@@ -254,6 +262,7 @@ class ForensicAgent:
         evidence_filename: str,
         allowed: tuple[str, ...],
         detected_os: str,
+        detected_kind: str,
     ) -> str:
         pkg_parts = [
             self.package.prompts.system,
@@ -281,6 +290,39 @@ class ForensicAgent:
                 "equivocado.\n"
             )
 
+        # Route the model to the right playbook section based on detected_kind.
+        # Without this, the agent always starts at section A (disk image) of the
+        # playbook and burns iterations on tsk_mmls/tsk_fls failures before
+        # pivoting to section B (memory) — even when the evidence is clearly
+        # a memdump.
+        kind_routing = ""
+        if detected_kind == "memory":
+            kind_routing = (
+                "\n## Ruta del playbook — MEMORY DUMP\n"
+                "El triage clasificó la evidencia como `kind=memory`. **Salta "
+                "directamente a la sección B del playbook** («Volcado de "
+                "memoria RAM»). La sección A (imagen de disco) NO APLICA — no "
+                "ejecutes `tsk_mmls`, `tsk_fls`, `tsk_mactime` ni `ewf_info` "
+                "sobre esta evidencia: van a fallar y no producirán hallazgos.\n"
+            )
+        elif detected_kind == "disk":
+            kind_routing = (
+                "\n## Ruta del playbook — DISK IMAGE\n"
+                "El triage clasificó la evidencia como `kind=disk`. Sigue la "
+                "sección A del playbook. La sección B (volcado RAM) NO APLICA — "
+                "no llames a plugins `windows.*` / `linux.*` de Volatility "
+                "sobre esta evidencia: la imagen no contiene un volcado de "
+                "memoria física.\n"
+            )
+        elif detected_kind == "container_disk":
+            kind_routing = (
+                "\n## Ruta del playbook — DISK IMAGE EN CONTENEDOR\n"
+                "La evidencia es una imagen de disco dentro de un contenedor "
+                "(VMDK / VDI / QCOW / VHD / E01). Trátala como sección A del "
+                "playbook; las herramientas TSK la abren correctamente. No "
+                "intentes Volatility — no es un volcado de memoria.\n"
+            )
+
         return (
             f"{identity_block}\n\n"
             f"## Caso activo\n"
@@ -290,10 +332,12 @@ class ForensicAgent:
             "absoluto en cada tool call; NUNCA incluyas un path absoluto tú.\n\n"
             f"## Contexto de evidencia (triage de FORENSIA)\n"
             f"- detected_os: `{detected_os}`\n"
-            "El valor lo computa `forensia.triage.fingerprint_os` con un escaneo "
-            "determinista de marcadores byte-string sobre el handle read-only. "
-            "`unknown` significa que no hay señal clara; está permitido un único "
-            "probe diagnóstico para confirmar.\n"
+            f"- detected_kind: `{detected_kind}`\n"
+            "Los valores los computa `forensia.triage.fingerprint_evidence` "
+            "con un escaneo determinista de cabeceras + marcadores byte-string "
+            "sobre el handle read-only. `unknown` significa que no hay señal "
+            "clara; está permitido un único probe diagnóstico para confirmar.\n"
+            f"{kind_routing}"
             f"{mismatch_block}\n"
             f"## Toolkit disponible\n"
             "Elige siempre las herramientas por su id. FORENSIA valida cada llamada "

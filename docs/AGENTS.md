@@ -125,33 +125,63 @@ dentro de `agentes/` y reinicia FORENSIA"*. **Nunca** se inventa un fallback.
 
 ### 6.1 Guard rail de perfil + triage de evidencia
 
-Cuando el caso lleva un perfil pero la evidencia es de otro SO, FORENSIA tiene
-dos defensas independientes que se refuerzan entre sí:
+Cuando el caso lleva un perfil pero la evidencia es de otro SO o de un tipo
+que no encaja con el playbook elegido, FORENSIA tiene tres defensas
+independientes que se refuerzan entre sí:
 
-1. **Triage backend (`forensia.triage`).** En `EvidenceManager.register()` se
-   ejecuta `fingerprint_os(handle)` — un escaneo determinista de marcadores
-   byte-string sobre la copia read-only ya hash-verificada (`Microsoft Windows`,
-   `Linux version`, `/etc/passwd`, `Mach-O`…). El resultado (`unix`, `windows`,
-   `unknown`) se persiste en `baseline.json` como `detected_os`. Para evidencia
-   registrada antes de que existiera el módulo, hay lazy-backfill en `get()`.
-   El `ForensicAgent` recibe el valor y lo inyecta en el system prompt como
-   bloque `## Contexto de evidencia`; cuando hay desajuste real
-   (`detected_os ≠ os_profile` **y** `detected_os ≠ unknown`) añade además un
-   bloque `## ⚠️ DESAJUSTE DE PERFIL DETECTADO` que ordena al agente parar.
+1. **Triage backend (`forensia.triage.fingerprint_evidence`).** En
+   `EvidenceManager.register()` se computa un par `(family, kind)` por escaneo
+   determinista sobre la copia read-only ya hash-verificada:
+   - **family** ∈ {`unix`, `windows`, `unknown`} por marcadores byte-string
+     (`Microsoft Windows`, `Linux version`, `/etc/passwd`, `Mach-O`…).
+   - **kind** ∈ {`disk`, `memory`, `container_disk`, `unknown`} por cabeceras
+     de fixed-offset (LiME, Windows crash dump, EWF, AFF, VMDK, VDI, QCOW,
+     VHD/VHDX), MBR/GPT/NTFS/ext, y scoring PE-scatter + RSDS + page-0-zero
+     para detectar volcados RAM Volatility-style sin cabecera.
+   Ambos campos se persisten en `baseline.json` (con `triage_signals` audit-
+   trail). Lazy backfill en `get()` para evidencia anterior al módulo.
 
 2. **Guard rail en los prompts** (`agentes/forensia-*/prompts/system.md`,
-   regla 8 unix / regla 9 windows). El agente del paquete está obligado a
-   negarse a invocar herramientas ante un mismatch y a pedir a la operadora
-   que cierre el caso y lo reabra con el perfil correcto. **No cambia de
-   agente por sí mismo** — eso sería un default silencioso (RULE 2).
+   regla 8 unix / regla 9 windows). Ante mismatch de `family`, el agente está
+   obligado a negarse a invocar tools y a pedir reabrir el caso con el perfil
+   correcto. **No cambia de agente por sí mismo** — RULE 2.
 
-3. **Banner en la UI** (`InvestigationPage.tsx`). Cuando hay mismatch, aparece
-   un banner amarillo arriba del chat explicando la situación y nombrando
-   `forensia-<detected_os>` como el agente adecuado. El cambio de caso lo hace
-   la operadora; la UI no lo hace por ella.
+3. **Routing por `kind` en el system prompt.** El `_system_prompt` del
+   `ForensicAgent` añade un bloque «Ruta del playbook» según `detected_kind`:
+   `memory` → salta a la sección B (Volatility); `disk`/`container_disk` →
+   sección A (TSK). Sin esto, el agente arranca siempre por la sección A del
+   playbook y desperdicia iteraciones en `tsk_mmls`/`tsk_fls` cuando la
+   evidencia es un memdump.
 
-`unknown` no es un mismatch — significa que el triage no tuvo señal clara y se
-permite un único probe diagnóstico antes de seguir.
+4. **Banner en la UI** (`InvestigationPage.tsx`). Cuando hay mismatch de
+   `family`, aparece un banner amarillo arriba del chat. El cambio de caso lo
+   hace la operadora; la UI no lo hace por ella.
+
+`unknown` no es un mismatch — significa que el triage no tuvo señal clara y
+se permite un único probe diagnóstico antes de seguir.
+
+### 6.2 Memoria conversacional del agente
+
+Cada `/api/agent/query` recibe `session_id` (default `"main"`). El backend lee
+`ChatStore` y construye prefix de OpenAI messages que se splicea entre system
+y el user prompt entrante:
+
+1. **Ledger de tool runs** — del campo `tool_calls` que el frontend persiste
+   en cada `assistant` ChatMessage tras una respuesta. Una línea por
+   invocación previa con `tool_id + exit_code + run_id[:8]`. Le dice al
+   modelo qué YA ejecutó para que no repita el mismo `{tool_id, params}`.
+2. **Ledger de findings** — los hallazgos estructurados que el propio agente
+   registró con `record_finding` en turnos anteriores. Le dice qué ya
+   concluyó para que construya encima en vez de re-deducir.
+3. **Transcript user/assistant** — los turnos previos en texto. Le da
+   referencia anafórica para mensajes tipo "hazlo".
+
+Caps: 6 turnos / 8K chars de transcript / 30 entradas de ledger / 10
+findings. Sin LLM-based summarization en v1. Detalle en
+`backend/forensia/agent/history.py`.
+
+Source of truth = `ChatStore` (servidor), no la memoria del renderer — RULE 2:
+no confíes en input no verificado. El frontend solo envía `session_id`.
 
 ## 7. Cómo lo entrega el equipo de entrenamiento
 

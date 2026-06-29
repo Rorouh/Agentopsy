@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from forensia.agent.agent import ForensicAgent
+from forensia.agent.history import build_replay_messages
 from forensia.agent.registry import agent_registry
 from forensia.audit.log import AuditLog
 from forensia.cases.manager import case_manager
@@ -56,6 +57,13 @@ class QueryRequest(BaseModel):
     evidence_id: str | None = None
     case_id: str | None = None
     prompt: str
+    # Chat session within the case. The backend reads ``ChatStore`` (case_dir
+    # /chats/<session_id>.jsonl) to splice prior user/assistant turns + a
+    # tool-runs ledger + a findings ledger into the agent's messages BEFORE
+    # the in-flight user prompt. Without this, every turn is a fresh agent
+    # with no memory — leading to repeated tool runs and lost intent.
+    # Default "main" matches the frontend's CHAT_SESSION_ID.
+    session_id: str = "main"
 
 
 @router.post("/api/agent/query", dependencies=[Depends(require_token)])
@@ -89,8 +97,16 @@ def query(req: QueryRequest) -> dict:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 
         agent = ForensicAgent(package=pkg, model=model, evidence=evidence_manager, audit=audit)
+        # Replay prior chat history (tool ledger + findings + user/assistant
+        # text) so the agent doesn't restart from scratch every turn.
+        prior_messages = build_replay_messages(req.case_id, req.session_id)
         try:
-            result = agent.run(prompt=prompt, case_id=req.case_id, evidence_id=req.evidence_id)
+            result = agent.run(
+                prompt=prompt,
+                case_id=req.case_id,
+                evidence_id=req.evidence_id,
+                prior_messages=prior_messages,
+            )
         except (KeyError, ValueError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 

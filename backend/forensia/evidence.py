@@ -37,7 +37,7 @@ from pathlib import Path
 
 from forensia.audit.log import AuditLog
 from forensia.cases import CaseManager, case_manager
-from forensia.triage import DetectedOS, fingerprint_os
+from forensia.triage import DetectedKind, DetectedOS, fingerprint_evidence
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +79,11 @@ class EvidenceHandle:
     # to refuse running OS-mismatched plugins. Never used to auto-switch the
     # case's ``os_profile`` — that decision belongs to the operator (RULE 2).
     detected_os: DetectedOS = "unknown"
+    # Evidence shape — disk image, memory dump, container disk, or unknown.
+    # The agent system prompt uses this to route to the right playbook section
+    # (disk: TSK; memory: Volatility). Same persistence + lazy backfill as
+    # detected_os; same RULE 2 guarantee — never auto-anything.
+    detected_kind: DetectedKind = "unknown"
 
 
 def _utc_now_iso() -> str:
@@ -185,8 +190,8 @@ class EvidenceManager:
 
         # 7. Triage fingerprint over the already-frozen copy. Pure read, so it
         #    can run AFTER chmod 0o444. We do this before writing baseline.json
-        #    so the persisted record carries detected_os from day one.
-        detected_os = fingerprint_os(dest)
+        #    so the persisted record carries the triage axes from day one.
+        triage = fingerprint_evidence(dest)
 
         registered_at = _utc_now_iso()
         baseline = {
@@ -195,7 +200,10 @@ class EvidenceManager:
             "registered_at": registered_at,
             "source_path": str(src),
             "original_basename": dest.name,
-            "detected_os": detected_os,
+            "detected_os": triage.family,
+            "detected_kind": triage.kind,
+            "triage_confidence": triage.confidence,
+            "triage_signals": list(triage.signals),
         }
         self._write_baseline(evidence_dir, baseline)
 
@@ -206,7 +214,8 @@ class EvidenceManager:
             sha256=baseline_sha,
             size=baseline_size,
             registered_at=registered_at,
-            detected_os=detected_os,
+            detected_os=triage.family,
+            detected_kind=triage.kind,
         )
 
     def get(self, case_id: str, evidence_id: str) -> EvidenceHandle:
@@ -219,18 +228,28 @@ class EvidenceManager:
             )
 
         # Lazy backfill: evidence registered before forensia.triage existed
-        # carries no ``detected_os`` in baseline.json. Compute it once and
-        # persist so subsequent reads are cheap. A failure to write back is
-        # logged but not fatal — the in-memory handle still gets the value.
+        # may lack ``detected_os`` and/or ``detected_kind`` in baseline.json.
+        # We re-run a single triage pass when either is missing, and persist
+        # both at once so the next read is cheap. A failure to write back is
+        # logged but not fatal — the in-memory handle still gets the values.
         detected_os: DetectedOS = baseline.get("detected_os", "unknown")
-        if "detected_os" not in baseline:
-            detected_os = fingerprint_os(original.resolve())
+        detected_kind: DetectedKind = baseline.get("detected_kind", "unknown")
+        needs_backfill = (
+            "detected_os" not in baseline or "detected_kind" not in baseline
+        )
+        if needs_backfill:
+            triage = fingerprint_evidence(original.resolve())
+            detected_os = triage.family
+            detected_kind = triage.kind
             baseline["detected_os"] = detected_os
+            baseline["detected_kind"] = detected_kind
+            baseline["triage_confidence"] = triage.confidence
+            baseline["triage_signals"] = list(triage.signals)
             try:
                 self._write_baseline(evidence_dir, baseline)
             except OSError as exc:
                 logger.warning(
-                    "triage backfill: failed to persist detected_os for %s: %s",
+                    "triage backfill: failed to persist for %s: %s",
                     evidence_id, exc,
                 )
 
@@ -243,6 +262,7 @@ class EvidenceManager:
             registered_at=baseline["registered_at"],
             last_verification=self._read_verification(evidence_dir),
             detected_os=detected_os,
+            detected_kind=detected_kind,
         )
 
     def list(self, case_id: str) -> list[EvidenceHandle]:

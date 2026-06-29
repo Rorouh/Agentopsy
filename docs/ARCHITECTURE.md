@@ -35,7 +35,7 @@ tras un panel de 5 expertos (empaquetado, DFIR, seguridad, orquestación IA, ges
 │   config.py      ~/.forensia/config.json + env override       │
 │   routers/       adaptadores FINOS (health, capabilities, …)  │
 │   evidence.py    EvidenceManager — copia inmutable + hash gate│
-│   triage.py      fingerprint_os(handle) → unix|windows|unknown│
+│   triage.py      fingerprint_evidence(handle) → (family, kind)│
 │   cases/         CaseManager (caso-como-carpeta, ver STORAGE) │
 │   artifacts/     ArtifactStore (manifest + hashes por run)    │
 │   chats/         ChatStore (JSONL append-only por sesión)     │

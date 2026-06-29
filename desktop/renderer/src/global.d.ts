@@ -26,11 +26,17 @@ export interface Capabilities {
 }
 
 export interface QueryResponse {
-  status: "skeleton" | "success";
+  status: "skeleton" | "success" | "llm-loop" | "demo-ok" | "demo-error";
   reply: string;
   evidence_id: string | null;
   os_profile: string;
   agent: AgentSummary;
+  // Present when status="llm-loop": list of {tool_id, run_id?, exit_code?,
+  // refused?, error?} entries — one per tool invocation made during this
+  // turn. Persisted by ChatPage.send() onto the assistant ChatMessage so
+  // the next turn's server-side history replay can build a tool-runs ledger.
+  tool_calls?: unknown[];
+  iterations?: number;
 }
 
 // Backend dataclasses (mirrored 1:1 in snake_case — no transformation at the bridge).
@@ -62,6 +68,9 @@ export interface EvidenceHandle {
   // the case's os_profile and renders a mismatch banner; never used to
   // auto-switch the case (RULE 2).
   detected_os: "unix" | "windows" | "unknown";
+  // Evidence shape — disk image, memory dump, container disk, or unknown.
+  // The agent system prompt uses this to route to the right playbook section.
+  detected_kind: "disk" | "memory" | "container_disk" | "unknown";
 }
 
 export interface CreateCaseRequest {
@@ -109,7 +118,16 @@ declare global {
       health(): Promise<{ status: string; version: string }>;
       capabilities(): Promise<Capabilities>;
       agents(): Promise<{ root: string; agents: AgentSummary[] }>;
-      query(req: { os_profile?: string; evidence_id?: string; case_id?: string; prompt: string }): Promise<QueryResponse>;
+      query(req: {
+        os_profile?: string;
+        evidence_id?: string;
+        case_id?: string;
+        prompt: string;
+        // Chat session id — backend uses it to splice prior history into the
+        // agent's messages so the LLM doesn't re-execute tools or lose intent.
+        // Default "main" matches CHAT_SESSION_ID.
+        session_id?: string;
+      }): Promise<QueryResponse>;
       cases: {
         create(body: CreateCaseRequest): Promise<Case>;
         list(): Promise<Case[]>;

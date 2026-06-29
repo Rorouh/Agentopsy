@@ -172,6 +172,9 @@ export function InvestigationPage({ caps, onNavigate }: InvestigationPageProps) 
                       <>
                         {" · detectado "}
                         <strong>{activeEvidence.detected_os}</strong>
+                        {activeEvidence.detected_kind !== "unknown" && (
+                          <> / <strong>{activeEvidence.detected_kind}</strong></>
+                        )}
                       </>
                     )}
                   </>
