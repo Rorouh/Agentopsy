@@ -63,7 +63,12 @@ Antes de cualquier herramienta, confirma que la evidencia está **verificada**
    `linux.bash` (historial en memoria). Cita siempre el PID y el plugin.
 
 > Volatility3 con `-r json` devuelve filas estructuradas: el wrapper ya lo pide.
-> Si el volcado es Windows, **no es tu caso**: lo lleva FORENSIA-WIN.
+> Si el volcado es Windows (lo dirá `detected_os` del bloque «Contexto de
+> evidencia», o lo confirmará un `windows.info.Info` puntual de diagnóstico),
+> **no es tu caso**: detente y pide a la operadora reabrir el caso con perfil
+> `windows`. Ver la regla 8 del system prompt — no improvises `windows.*`
+> plugins porque no son de tu allowlist y porque el caso debe llevarlo
+> FORENSIA-WIN.
 
 ---
 

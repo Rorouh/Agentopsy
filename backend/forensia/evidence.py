@@ -37,6 +37,7 @@ from pathlib import Path
 
 from forensia.audit.log import AuditLog
 from forensia.cases import CaseManager, case_manager
+from forensia.triage import DetectedOS, fingerprint_os
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +73,12 @@ class EvidenceHandle:
     size: int
     registered_at: str
     last_verification: VerificationRecord | None = None
+    # Triage fingerprint computed at registration (or backfilled lazily on the
+    # first ``get()`` for evidence registered before this field existed). Used
+    # by the UI to warn on profile mismatch and by the agent's system prompt
+    # to refuse running OS-mismatched plugins. Never used to auto-switch the
+    # case's ``os_profile`` — that decision belongs to the operator (RULE 2).
+    detected_os: DetectedOS = "unknown"
 
 
 def _utc_now_iso() -> str:
@@ -176,6 +183,11 @@ class EvidenceManager:
         # 6. Read-only at the FS level. v1 minimum; Phase 2 adds block-level RO.
         os.chmod(dest, _READ_ONLY_MODE)
 
+        # 7. Triage fingerprint over the already-frozen copy. Pure read, so it
+        #    can run AFTER chmod 0o444. We do this before writing baseline.json
+        #    so the persisted record carries detected_os from day one.
+        detected_os = fingerprint_os(dest)
+
         registered_at = _utc_now_iso()
         baseline = {
             "sha256": baseline_sha,
@@ -183,6 +195,7 @@ class EvidenceManager:
             "registered_at": registered_at,
             "source_path": str(src),
             "original_basename": dest.name,
+            "detected_os": detected_os,
         }
         self._write_baseline(evidence_dir, baseline)
 
@@ -193,6 +206,7 @@ class EvidenceManager:
             sha256=baseline_sha,
             size=baseline_size,
             registered_at=registered_at,
+            detected_os=detected_os,
         )
 
     def get(self, case_id: str, evidence_id: str) -> EvidenceHandle:
@@ -203,6 +217,23 @@ class EvidenceManager:
             raise KeyError(
                 f"evidence original missing for evidence_id={evidence_id}: {original}"
             )
+
+        # Lazy backfill: evidence registered before forensia.triage existed
+        # carries no ``detected_os`` in baseline.json. Compute it once and
+        # persist so subsequent reads are cheap. A failure to write back is
+        # logged but not fatal — the in-memory handle still gets the value.
+        detected_os: DetectedOS = baseline.get("detected_os", "unknown")
+        if "detected_os" not in baseline:
+            detected_os = fingerprint_os(original.resolve())
+            baseline["detected_os"] = detected_os
+            try:
+                self._write_baseline(evidence_dir, baseline)
+            except OSError as exc:
+                logger.warning(
+                    "triage backfill: failed to persist detected_os for %s: %s",
+                    evidence_id, exc,
+                )
+
         return EvidenceHandle(
             evidence_id=evidence_id,
             case_id=case_id,
@@ -211,6 +242,7 @@ class EvidenceManager:
             size=baseline["size"],
             registered_at=baseline["registered_at"],
             last_verification=self._read_verification(evidence_dir),
+            detected_os=detected_os,
         )
 
     def list(self, case_id: str) -> list[EvidenceHandle]:

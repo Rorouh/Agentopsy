@@ -58,6 +58,10 @@ export interface EvidenceHandle {
   size: number;
   registered_at: string;
   last_verification: VerificationRecord | null;
+  // Triage fingerprint computed by forensia.triage. UI compares it against
+  // the case's os_profile and renders a mismatch banner; never used to
+  // auto-switch the case (RULE 2).
+  detected_os: "unix" | "windows" | "unknown";
 }
 
 export interface CreateCaseRequest {

@@ -44,6 +44,11 @@ la evidencia está **verificada** (`verified=true`).
 
 ## B. Volcado de memoria RAM Windows (`.mem`, `.dmp`)
 
+> Antes de empezar, confirma que `detected_os` del bloque «Contexto de
+> evidencia» dice `windows` (o que un probe diagnóstico ya lo confirmó). Si el
+> volcado es UNIX, **no es tu caso**: detente y pide reabrir con perfil
+> `unix` (lo lleva FORENSIA-UNIX). Ver regla 9 del system prompt.
+
 1. **Perfil.** `volatility3` con `plugin: "windows.info.Info"` → build y perfil.
 2. **Procesos.** `windows.pslist.PsList`, `windows.pstree.PsTree`,
    `windows.psscan.PsScan` → cruza para detectar ocultos.

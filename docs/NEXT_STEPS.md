@@ -29,6 +29,9 @@ en los cuerpos de commit (`git log --oneline main`).
 | Pipeline OCI | ✅ Dockerfiles `regripper`, `evtxecmd`, `mftecmd` + `scripts/build-images.sh` + bundling en `electron-builder` + loader en `main.cjs`. **Falta correr el script** (ver §1.A). |
 | Agente real (cloud LLM) | ✅ `CloudBackend` OpenAI con tool-calling nativo + `ForensicAgent.run()` con allowlist + inyección de paths + tool interna `record_finding`. |
 | Paquetes de agente declarativos | ✅ `forensia-unix`, `forensia-windows`, `_orchestrator` (ignorado por registry por convención `_`). Loader + tests. |
+| Triage de evidencia (`forensia.triage`) | ✅ Fingerprint determinista de SO (sin LLM, sin tools externas) en `register()`, persistido a `baseline.json` como `detected_os`, lazy-backfill en `get()` para evidencia previa al módulo. Plumed al `system_prompt` del `ForensicAgent` como bloque «Contexto de evidencia» + bloque de mismatch cuando `case.os_profile != detected_os`. |
+| Guard rail de perfil en los prompts | ✅ Regla nueva en `system.md` de `forensia-unix` y `forensia-windows`: ante mismatch detectado, el agente se niega a invocar tools y pide a la operadora reabrir el caso con el perfil correcto. RULE 2 intacta: nunca auto-switch. |
+| Banner de desajuste en UI | ✅ `InvestigationPage` muestra un banner amarillo cuando `evidence.detected_os` discrepa de `case.os_profile`, con copy explicando que el cambio lo hace el operador (no FORENSIA). El header del caso también muestra `detectado <os>` cuando hay señal. |
 | UI desmoqueada | ✅ Casos y evidencias, Investigación (con findings panel reactivo), Settings (form de modelos + dropdown). |
 | Tests backend | ✅ 322 (cases 24, evidence_real 18, artifacts 22, chats 34, dispatcher_anchored 9, routers_storage 22, agent_registry 17, smoke 3, security_gates 4, wrappers 109, container 34, dispatcher 11, catalog_integrity 11, others 4). |
 
@@ -101,6 +104,15 @@ Ratio impacto / esfuerzo más alto. Si solo se atacan estos 4, hay demo:
 | **Dónde toca** | `backend/forensia/timeline/` + `routers/timeline.py` + cableo en `InvestigationPage` "Ver Timeline →" y en `TimelinePage`. |
 | **Estimación** | 4-6 h. |
 | **Diseño** | `FASE2_AGENTES_DISENO.md` §4 (orquestador) + `_orchestrator/timeline.md`. |
+
+### Acción "Reabrir caso con perfil correcto" (UI)
+
+| | |
+|---|---|
+| **Qué** | Botón en el banner amarillo de `InvestigationPage` que cierre el caso actual y lance el formulario de creación con `os_profile` pre-rellenado al `detected_os`. Hoy el banner es solo texto: la operadora tiene que ir a "Casos y evidencias" a mano. |
+| **Por qué** | El backend ya conoce el desajuste (`forensia.triage`) y el agente ya rechaza ejecutar tools (guard rail). Lo único que falta es bajar la fricción del flujo correcto. **RULE 2 sigue intacta**: el botón abre el formulario, no crea el caso automáticamente. |
+| **Dónde toca** | `desktop/renderer/src/pages/InvestigationPage.tsx` (botón) + `RepositoryPage.tsx` (aceptar `?prefilledProfile=…` o equivalente) + posible nuevo endpoint para "re-registrar evidencia a otro caso" si no se quiere obligar a re-hashing. |
+| **Estimación** | 2-3 h. |
 
 ### `models.local` — Ollama (NotImplementedError hoy)
 

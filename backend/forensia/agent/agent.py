@@ -110,6 +110,7 @@ class ForensicAgent:
         handle = self.evidence.get(case_id, evidence_id)
         evidence_path = str(handle.original_path)
         evidence_filename = handle.original_path.name
+        detected_os = handle.detected_os
 
         allowed = self.available_tool_ids()
         if not allowed:
@@ -123,7 +124,9 @@ class ForensicAgent:
                 tool_calls=[],
             )
 
-        system_text = self._system_prompt(case_id, evidence_filename, allowed)
+        system_text = self._system_prompt(
+            case_id, evidence_filename, allowed, detected_os
+        )
 
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": system_text},
@@ -250,6 +253,7 @@ class ForensicAgent:
         case_id: str,
         evidence_filename: str,
         allowed: tuple[str, ...],
+        detected_os: str,
     ) -> str:
         pkg_parts = [
             self.package.prompts.system,
@@ -257,6 +261,26 @@ class ForensicAgent:
             self.package.prompts.playbook,
         ]
         identity_block = "\n\n".join(p.strip() for p in pkg_parts if p and p.strip())
+
+        # Build a profile-mismatch warning ONLY when the triage fingerprint
+        # disagrees with the case's os_profile. The agent's system prompt
+        # already carries a hard rule (guard rail) that tells it to stop and
+        # request reassignment in this case — this block makes the mismatch
+        # impossible to miss.
+        mismatch_block = ""
+        if detected_os not in ("unknown", self.os_profile):
+            mismatch_block = (
+                "\n\n## ⚠️ DESAJUSTE DE PERFIL DETECTADO\n"
+                f"El caso declara `os_profile = {self.os_profile}` pero el triage "
+                f"de FORENSIA fingerprintó la evidencia como `{detected_os}`.\n"
+                "Aplica la regla del guard rail de perfil: **no ejecutes "
+                "herramientas**. Responde al usuario en lenguaje natural "
+                f"pidiéndole cerrar el caso y reabrirlo con `os_profile = "
+                f"{detected_os}` (lo llevará "
+                f"`forensia-{detected_os}`). No improvises plugins del SO "
+                "equivocado.\n"
+            )
+
         return (
             f"{identity_block}\n\n"
             f"## Caso activo\n"
@@ -264,6 +288,13 @@ class ForensicAgent:
             f"- Perfil del sistema operativo: `{self.os_profile}`\n"
             f"- Evidencia: `{evidence_filename}` — FORENSIA te inyecta su path "
             "absoluto en cada tool call; NUNCA incluyas un path absoluto tú.\n\n"
+            f"## Contexto de evidencia (triage de FORENSIA)\n"
+            f"- detected_os: `{detected_os}`\n"
+            "El valor lo computa `forensia.triage.fingerprint_os` con un escaneo "
+            "determinista de marcadores byte-string sobre el handle read-only. "
+            "`unknown` significa que no hay señal clara; está permitido un único "
+            "probe diagnóstico para confirmar.\n"
+            f"{mismatch_block}\n"
             f"## Toolkit disponible\n"
             "Elige siempre las herramientas por su id. FORENSIA valida cada llamada "
             "contra tu allowlist y resuelve el path real de la evidencia "

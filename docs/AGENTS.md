@@ -123,6 +123,36 @@ Si no hay agente cargado para ese perfil, `/api/agent/query` responde 503 y el
 chat muestra: *"No hay agente cargado para el perfil `unix`. Suelta su carpeta
 dentro de `agentes/` y reinicia FORENSIA"*. **Nunca** se inventa un fallback.
 
+### 6.1 Guard rail de perfil + triage de evidencia
+
+Cuando el caso lleva un perfil pero la evidencia es de otro SO, FORENSIA tiene
+dos defensas independientes que se refuerzan entre sí:
+
+1. **Triage backend (`forensia.triage`).** En `EvidenceManager.register()` se
+   ejecuta `fingerprint_os(handle)` — un escaneo determinista de marcadores
+   byte-string sobre la copia read-only ya hash-verificada (`Microsoft Windows`,
+   `Linux version`, `/etc/passwd`, `Mach-O`…). El resultado (`unix`, `windows`,
+   `unknown`) se persiste en `baseline.json` como `detected_os`. Para evidencia
+   registrada antes de que existiera el módulo, hay lazy-backfill en `get()`.
+   El `ForensicAgent` recibe el valor y lo inyecta en el system prompt como
+   bloque `## Contexto de evidencia`; cuando hay desajuste real
+   (`detected_os ≠ os_profile` **y** `detected_os ≠ unknown`) añade además un
+   bloque `## ⚠️ DESAJUSTE DE PERFIL DETECTADO` que ordena al agente parar.
+
+2. **Guard rail en los prompts** (`agentes/forensia-*/prompts/system.md`,
+   regla 8 unix / regla 9 windows). El agente del paquete está obligado a
+   negarse a invocar herramientas ante un mismatch y a pedir a la operadora
+   que cierre el caso y lo reabra con el perfil correcto. **No cambia de
+   agente por sí mismo** — eso sería un default silencioso (RULE 2).
+
+3. **Banner en la UI** (`InvestigationPage.tsx`). Cuando hay mismatch, aparece
+   un banner amarillo arriba del chat explicando la situación y nombrando
+   `forensia-<detected_os>` como el agente adecuado. El cambio de caso lo hace
+   la operadora; la UI no lo hace por ella.
+
+`unknown` no es un mismatch — significa que el triage no tuvo señal clara y se
+permite un único probe diagnóstico antes de seguir.
+
 ## 7. Cómo lo entrega el equipo de entrenamiento
 
 1. Empaqueta su carpeta `<id>/` con el layout de arriba.
