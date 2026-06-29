@@ -107,6 +107,31 @@ Ratio impacto / esfuerzo más alto. Si solo se atacan estos 4, hay demo:
 | **Estimación** | 4-6 h. |
 | **Diseño** | `FASE2_AGENTES_DISENO.md` §4 (orquestador) + `_orchestrator/timeline.md`. |
 
+### Calidad del playbook windows — siete mejoras observadas en sesión real
+
+Tras arreglar memoria conversacional + triage tipado + routing por `kind`, una
+sesión real sobre el memdump Windows 7 SP1 + hMailServer dejó al desnudo siete
+problemas que YA NO son de infraestructura sino de **prompt-engineering del
+playbook**. Todos viven en `agentes/forensia-windows/prompts/playbook.md` y
+`system.md`; cero código.
+
+| # | Síntoma | Cambio propuesto en el playbook |
+|---|---|---|
+| 1 | Severity High para "regiones RWX" en `explorer.exe` y `svchost.exe` sin payload analizado. Falso positivo notorio: CLR/JIT/ASLR pintan RWX legítimo. | Sección B paso 3: «`malfind` por sí solo NO concluye maliciousness — clasifícalo `medium` hasta que `windows.dumpfiles` + hash + comparación devuelva un payload sospechoso». |
+| 2 | El finding cita "regiones RWX en `explorer.exe`" sin PID, sin offset, sin primeras instrucciones. | Sección de "Esquema de hallazgo": para `malfind`, exigir `{pid, vaddr, size_bytes, first_bytes_hex[:32]}` como provenance — el output del plugin ya los devuelve. |
+| 3 | Missed la storyline: hMailServer + sshd + W7 SP1 EOL + puertos 25/110/143/587 abiertos = casi seguro "compromised mail server" (escenario CTF/CFReDS conocido). El agente reportó inventario, no narrativa. | Nueva sección "Patrones de caso conocidos" en playbook: lista de combinaciones (servicio EOL + puertos atípicos + cuentas locales sospechosas) → hipótesis a verificar, con cita al artefacto correspondiente. |
+| 4 | `pslist` y `netscan` se reportan como findings separados. Pierden la correlación PID↔puerto que ya está en sus outputs. | Sección B paso 4: «cuando tengas `pslist` y `netscan` del mismo dump, **emite un único finding** por PID con la tupla `{pid, image, owner, listening_ports, established_remote_eps}` — no dos findings disjuntos». |
+| 5 | "Monitoreo de red" como próximo paso — la máquina ya está volcada, no hay red viva. Confunde post-mortem con live response. | Reforzar regla 1 del system prompt: «sugerencias de "monitorizar" / "capturar tráfico en vivo" están PROHIBIDAS — el caso es post-mortem por definición. Si sospechas que falta un PCAP, sugiere "buscar PCAP del incidente en la carpeta del caso", no instalar Wireshark ahora». |
+| 6 | "Herramientas adicionales" sigue genérico ("herramientas de análisis de tráfico"). El operador pidió explícitamente sugerencias concretas. | Sección "Cuando tu allowlist no llega": pedir nombres concretos por categoría (forensia de red: Wireshark/tshark, Zeek, Suricata + ET Open; reputación de hashes: hashlookup.circl.lu, MISP, VirusTotal CLI; correlación TTPs: framework MITRE local). No vendor-speak. |
+| 7 | El agente reporta RWX en `svchost.exe` (High) pero NO autoencadena `windows.dumpfiles --pid X`, `windows.cmdline --pid X`, `windows.handles --pid X` — todos en su allowlist. | Sección B paso 3, después de `malfind`: «por cada PID flagged, encadena `dumpfiles` + `cmdline` + `handles` en el MISMO turno antes de cerrar. No reportes "regiones sospechosas" sin haber extraído el binario en memoria y hasheado». |
+
+| | |
+|---|---|
+| **Por qué** | El motor (memoria + triage + routing + max_iter) ya está bien; lo que limita la calidad del análisis ahora es la prosa del playbook. La diferencia entre "inventario forense" y "narrativa pericial" se juega en estas reglas. |
+| **Dónde toca** | `agentes/forensia-windows/prompts/playbook.md` (entradas 1, 2, 4, 7 — secciones B paso 3-4 y "Esquema de hallazgo"); `agentes/forensia-windows/prompts/system.md` (entradas 5, 6 — reforzar regla 1 + nueva sección "Cuando tu allowlist no llega"); nueva sección 3 "Patrones de caso conocidos" en playbook (entrada 3, opcional). Aplicar simétrico en `forensia-unix/` cuando aplique (4, 6, 7 sí; 1, 2, 3, 5 con matices). |
+| **Estimación** | 2-4 h de pulido + una iteración de prueba contra el mismo memdump para confirmar que el agente ahora autoencadena dumpfiles/cmdline/handles en lugar de cerrar con un finding incompleto. |
+| **Observación** | Estas son las siete entradas levantadas en la sesión del 2026-06-29 sobre el caso `f3abd274…` (hMailServer + W7 SP1). Cualquiera con acceso al chat persistido (`~/.forensia/cases/f3abd274.../chats/main.jsonl`) puede reproducir el material de juicio. |
+
 ### Acción "Reabrir caso con perfil correcto" (UI)
 
 | | |
