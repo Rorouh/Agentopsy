@@ -43,7 +43,7 @@ agentes/<tu-agente>/
 
 Nada de código Python del entrenador. Todo el loop de razonamiento lo ejecuta
 `forensia.agent.ForensicAgent`, parametrizado con el paquete cargado (ver
-[`docs/AGENTS.md`](../docs/AGENTS.md)).
+[`docs/agentes/contrato-paquetes.md`](../docs/agentes/contrato-paquetes.md)).
 
 ---
 
@@ -77,7 +77,7 @@ Reglas de validación (las hace `forensia.agent.loader`):
 
 - `id` único en `agentes/`; `os_profile` único en `agentes/`.
 - `model.backend` ∈ {`local`, `cloud`}. `cloud` necesita config explícita por caso
-  (consentimiento + redacción) — ver `docs/THREAT_MODEL.md` §C.
+  (consentimiento + redacción) — ver `docs/modelo-amenazas.md` §C.
 - `prompts.*` y `policy.*` deben existir como ficheros relativos al directorio del
   agente. Cualquier path absoluto o que se salga de la carpeta del agente es rechazado.
 - `policy.tools` referencia sólo `tool_id`s presentes en

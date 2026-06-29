@@ -1,6 +1,6 @@
 """The curated maletín. Each entry is a closed-enum Tool the agent may select.
 
-Tiers (see `docs/TOOLS_INVENTORY.md` — "Kit primeros 30 minutos"):
+Tiers (see `docs/maletin/inventario-tools.md` — "Kit primeros 30 minutos"):
 - `core`: the 13-tool kit needed for a fast post-mortem. Required for the MVP.
 - `extended`: additional tools that ride along once the core is stable (Plaso, hashing,
   carving extras, mount helpers).

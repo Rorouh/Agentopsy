@@ -1,6 +1,6 @@
 """Pydantic input schemas for every forensic tool published via MCP.
 
-D4 of MCP_TOOLKIT_PLAN.md: each ``Tool`` in the catalog has a tightly-typed
+D4 of mcp-toolkit-s1.md: each ``Tool`` in the catalog has a tightly-typed
 schema that becomes its MCP ``inputSchema``. The schema enforces the L2 line:
 **no raw paths to evidence are accepted as parameters**. Path-bearing fields
 are:

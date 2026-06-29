@@ -28,7 +28,7 @@ Python sidecar  (backend/)        PyInstaller **onedir** (never onefile), one bu
    forensia/  = ALL the logic. routers/ are thin adapters over it.
    ▼
 vendor/<tool>/<os>-<arch>/        forensic binaries bundled INTO the app
-agentes/<id>/                     trained-agent packages (drop-in; see docs/AGENTS.md)
+agentes/<id>/                     trained-agent packages (drop-in; see docs/agentes/contrato-paquetes.md)
 ```
 
 Two runtimes (Node + Python). **No third runtime.** See the bundling rule.
@@ -43,7 +43,7 @@ it (`forensia.agent.loader`), and indexes it by `os_profile`
 declaring the same profile fails the sidecar at startup (RULE 2). When no
 package is loaded for the requested profile, `/api/agent/query` returns 503 and
 the UI degrades explicitly — there is never a fallback agent. See
-`docs/AGENTS.md` for the full contract and `agentes/README.md` for the
+`docs/agentes/contrato-paquetes.md` for the full contract and `agentes/README.md` for the
 sample-shaped reference.
 
 ## RULE 0 — No AI authorship or attribution
@@ -77,7 +77,7 @@ installer.** If absent at runtime, `capabilities` reports container-delivered to
 unavailable and the UI degrades for those tools only — bundled tools and the rest of the app
 still work.
 
-**Evidence soundness invariant holds inside containers** (`docs/FORENSIC_SOUNDNESS.md`):
+**Evidence soundness invariant holds inside containers** (`docs/soundness-forense.md`):
 a container never mounts the raw `.raw`/`.vmdk` directly. It receives derived artifacts or
 reads through the read-only block-level handle from `EvidenceManager`. Mounting evidence
 inside a Mac/Windows container runtime — which proxies through a journaling VM

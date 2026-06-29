@@ -3,7 +3,7 @@
 Casos sintéticos para el **harness comparativo cloud-vs-local** (slice S6). Miden
 las métricas del TFM: precisión de invocación de herramientas, recall/precision de
 hallazgos, tokens por caso, iteraciones, calidad de informe y corrección MITRE
-(ver `docs/FASE2_AGENTES_DISENO.md` §9.4).
+(ver `docs/agentes/diseno-fase2.md` §9.4).
 
 ## Reglas
 

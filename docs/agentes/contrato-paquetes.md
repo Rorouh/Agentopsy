@@ -201,8 +201,8 @@ filtrado + dispatcher contra catálogo).
 Esto es el "MCP como núcleo" que pidió el PI (email 2026-06-24): un
 agente arbitrario puede operar el maletín FORENSIA hablando el protocolo
 estándar, sin código FORENSIA propio. Detalle en
-[`MCP_TOOLKIT_PLAN.md`](MCP_TOOLKIT_PLAN.md) y
-[`MCP_INVENTORY.md`](MCP_INVENTORY.md). En sprint S2 el propio
+[`mcp-toolkit-s1.md`](../maletin/mcp-toolkit-s1.md) y
+[`inventario-mcps.md`](../maletin/inventario-mcps.md). En sprint S2 el propio
 `ForensicAgent` también pasará a ser cliente MCP in-process del mismo
 servidor, unificando ambos caminos.
 

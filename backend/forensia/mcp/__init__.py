@@ -6,8 +6,8 @@ in-process / standalone server that exposes the curated maletín
 session tools (``list_cases``, ``select_case``, ``list_evidence``,
 ``select_evidence``).
 
-Design and decisions in ``docs/MCP_TOOLKIT_PLAN.md`` and
-``docs/MCP_INVENTORY.md``. Red lines L1-L6 enforced here.
+Design and decisions in ``docs/maletin/mcp-toolkit-s1.md`` and
+``docs/maletin/inventario-mcps.md``. Red lines L1-L6 enforced here.
 """
 
 from __future__ import annotations

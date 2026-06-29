@@ -76,11 +76,11 @@ El sistema desacopla la GUI del motor de cómputo forense mediante una arquitect
 ```
 
 Documentación adicional para hackers y desarrolladores:
-*   [Especificaciones de Arquitectura](docs/ARCHITECTURE.md)
-*   [Modelo de Amenazas y Seguridad](docs/THREAT_MODEL.md) — incluye superficie MCP (sección E + gates 13–18).
-*   [Preservación Criptográfica y Cadena de Custodia](docs/FORENSIC_SOUNDNESS.md)
-*   [Inventario de servidores MCP](docs/MCP_INVENTORY.md) — los 13 MCPs candidatos priorizados P0–P3.
-*   [Plan de implementación del MCP toolkit](docs/MCP_TOOLKIT_PLAN.md) — sprint S1 cerrado, decisiones D1–D7 + líneas rojas L1–L6.
+*   [Especificaciones de Arquitectura](docs/arquitectura.md)
+*   [Modelo de Amenazas y Seguridad](docs/modelo-amenazas.md) — incluye superficie MCP (sección E + gates 13–18).
+*   [Preservación Criptográfica y Cadena de Custodia](docs/soundness-forense.md)
+*   [Inventario de servidores MCP](docs/maletin/inventario-mcps.md) — los 13 MCPs candidatos priorizados P0–P3.
+*   [Plan de implementación del MCP toolkit](docs/maletin/mcp-toolkit-s1.md) — sprint S1 cerrado, decisiones D1–D7 + líneas rojas L1–L6.
 
 ---
 
@@ -143,7 +143,7 @@ Para conectarlo a Claude Desktop, edita
 Reinicia Claude Desktop (Cmd-Q completo). En un nuevo Chat aparecerán las
 tools `list_cases` / `select_case` / `list_evidence` / `select_evidence` + 16
 forenses una vez selecciones el caso. Detalle en
-[`docs/MCP_TOOLKIT_PLAN.md`](docs/MCP_TOOLKIT_PLAN.md).
+[`docs/maletin/mcp-toolkit-s1.md`](docs/maletin/mcp-toolkit-s1.md).
 
 ### Empaquetado de producción (Production Bundling)
 
@@ -158,9 +158,9 @@ npm run dist
 
 *   **GUI & Ventana:** Operativa con un tema RPG Pixel Art personalizado y panel de control de estado integrado.
 *   **Sidecar Bridge:** En funcionamiento. Conexión IPC fluida mediante handshake de puerto efímero.
-*   **Paquetes de Agente:** El loop del agente carga su persona, prompts y allowlist de tools desde una carpeta declarativa `agentes/<id>/` que entrega el equipo de entrenamiento (ver [`agentes/README.md`](agentes/README.md) y [`docs/AGENTS.md`](docs/AGENTS.md)). El loader, la registry y el endpoint `/api/agents` están operativos; los paquetes reales `forensia-unix` y `forensia-windows` viajan en `agentes/`, junto al pack de síntesis `_orchestrator/` (ignorado por la registry por su prefijo `_`, consumido por la futura capa `forensia.reports`).
+*   **Paquetes de Agente:** El loop del agente carga su persona, prompts y allowlist de tools desde una carpeta declarativa `agentes/<id>/` que entrega el equipo de entrenamiento (ver [`agentes/README.md`](agentes/README.md) y [`docs/agentes/contrato-paquetes.md`](docs/agentes/contrato-paquetes.md)). El loader, la registry y el endpoint `/api/agents` están operativos; los paquetes reales `forensia-unix` y `forensia-windows` viajan en `agentes/`, junto al pack de síntesis `_orchestrator/` (ignorado por la registry por su prefijo `_`, consumido por la futura capa `forensia.reports`).
 *   **Agente Local:** Capas de auditoría e ingesta de evidencias implementadas; algoritmos de inferencia y wrappers específicos de CLI en fase de desarrollo.
-*   **Servidor MCP (rama `mcp`):** Sprint S1 cerrado. El maletín forense se expone como servidor MCP estándar — verificado E2E con Claude Desktop sobre un memdump real Windows 7 SP1 de 5 GiB. Patrón Jira para selección de caso + evidencia, 16 tools forenses, ResourceLinks `artifact://`, redaction por modos, líneas rojas L1–L6 verificadas por panel de expertos. Ver [`docs/MCP_INVENTORY.md`](docs/MCP_INVENTORY.md) y [`docs/MCP_TOOLKIT_PLAN.md`](docs/MCP_TOOLKIT_PLAN.md).
+*   **Servidor MCP (rama `mcp`):** Sprint S1 cerrado. El maletín forense se expone como servidor MCP estándar — verificado E2E con Claude Desktop sobre un memdump real Windows 7 SP1 de 5 GiB. Patrón Jira para selección de caso + evidencia, 16 tools forenses, ResourceLinks `artifact://`, redaction por modos, líneas rojas L1–L6 verificadas por panel de expertos. Ver [`docs/maletin/inventario-mcps.md`](docs/maletin/inventario-mcps.md) y [`docs/maletin/mcp-toolkit-s1.md`](docs/maletin/mcp-toolkit-s1.md).
 
 ---
 

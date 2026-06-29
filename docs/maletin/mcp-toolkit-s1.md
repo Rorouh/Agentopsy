@@ -5,11 +5,11 @@
 > de panel de expertos verificados; las 6 líneas rojas L1–L6 funcionales por test.
 > 335/335 tests passing. Commit `92083f2` en `origin/mcp`. Lo que sigue (sprint S2):
 > `mcp-evidence` standalone + integración del `ForensicAgent` propio como cliente MCP
-> in-process — ver [`MCP_INVENTORY.md §10`](MCP_INVENTORY.md#10-plan-de-implementación-por-sprint-cronograma-real-del-tfm).
+> in-process — ver [`inventario-mcps.md §10`](inventario-mcps.md#10-plan-de-implementación-por-sprint-cronograma-real-del-tfm).
 
 Plan operativo para construir el primer servidor MCP de FORENSIA y dejarlo demoable a los
 compañeros y al PI. Es el desglose accionable del MCP número 1 declarado en
-[`docs/MCP_INVENTORY.md`](MCP_INVENTORY.md): un servidor que publica los 16 `Tool` del
+[`docs/maletin/inventario-mcps.md`](inventario-mcps.md): un servidor que publica los 16 `Tool` del
 catálogo (`backend/forensia/toolkit/catalog.py`) por protocolo MCP, delegando en el
 `dispatcher` existente sin reimplementar nada, con **patrón Jira para selección de caso y
 evidencia**.
@@ -84,7 +84,7 @@ backend/tests/
 └── test_audit_lock.py     # concurrencia AuditLog con flock
 
 docs/
-└── MCP_TOOLKIT_PLAN.md    # este documento
+└── mcp-toolkit-s1.md    # este documento
 ```
 
 ---
@@ -105,7 +105,7 @@ docs/
 | 10 | **Tests**: round-trip, happy path Jira flow, `listChanged` on case switch, `INVALID_PARAMS` sin select, differential `dispatcher.execute` directo vs `mcp_client.call_tool` → `dispatcher.execute` (comparar `argv`, `exit_code`, `output_files[].sha256`). 322/322 legados siguen verdes. | Suite verde | 1 día |
 | 11 | **E2E real**: spawn server, conectar cliente, hacer `list_cases → select_case Windows → list_evidence → select_evidence → volatility3 windows.pslist` contra el memdump real. Verificar respuesta + `audit.jsonl` + `output_files` persistidos en disco. | Demo reproducible | ½ día |
 | 12 | **Claude Desktop config + capturas**: `claude_desktop_config.json` con `command: python -m forensia.mcp`, `env: { FORENSIA_CLOUD_CONSENT: claude_desktop }`. Reproducir el flujo natural y capturar pantalla. | Materiales para presentación | ½ día |
-| 13 | **`MCP_INVENTORY.md §10`** marcar S1 hecho + commit + push | Inventario al día (RULE 4) | ½ h |
+| 13 | **`inventario-mcps.md §10`** marcar S1 hecho + commit + push | Inventario al día (RULE 4) | ½ h |
 
 **Total estimado**: ~10 días-persona. Con 2 personas en paralelo (uno schemas, otro server + Jira tools), 5-6 días reales.
 
@@ -190,7 +190,7 @@ docs/
 
 ## 10. Materiales para la reunión del equipo
 
-- Este `MCP_TOOLKIT_PLAN.md` + `MCP_INVENTORY.md` en el repo.
+- Este `mcp-toolkit-s1.md` + `inventario-mcps.md` en el repo.
 - `claude_desktop_config.json` de ejemplo con FORENSIA registrado y el consent flag.
 - Grabación de 90 s del flujo natural "list_cases → select_case → list_evidence → volatility3 windows.pslist" en Claude Desktop.
 - Captura del `audit.jsonl` post-run con argv literal idéntico al del agente nativo.

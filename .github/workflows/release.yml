@@ -1,6 +1,6 @@
 name: release
 
-# Manual for now. Code signing is deferred (ARCHITECTURE.md §6): artifacts are unsigned
+# Manual for now. Code signing is deferred (arquitectura.md §6): artifacts are unsigned
 # until external distribution is decided. Produces one installer per OS/arch.
 on:
   workflow_dispatch:

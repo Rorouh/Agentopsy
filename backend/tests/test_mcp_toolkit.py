@@ -8,7 +8,7 @@ Each test enters its own client/server context — using a fixture trips
 anyio's cancel-scope-across-tasks assertion. The `async with`-per-test
 pattern is verbose but reliable.
 
-Coverage map (mirrors §5 of MCP_TOOLKIT_PLAN.md):
+Coverage map (mirrors §5 of mcp-toolkit-s1.md):
 
 - Round-trip: initialize → tools/list (4 Jira tools when no case selected).
 - Happy path Jira: list_cases → select_case → list_evidence → select_evidence.

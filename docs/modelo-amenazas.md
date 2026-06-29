@@ -86,7 +86,7 @@ análogas pero los gates difieren:
   cooperativo no unwind. Claude Desktop al cerrarse no deja zombies.
 
 Las líneas rojas L1–L6 del servidor MCP están documentadas en
-[`MCP_TOOLKIT_PLAN.md`](MCP_TOOLKIT_PLAN.md) §7. Verificadas por 2 rounds
+[`mcp-toolkit-s1.md`](maletin/mcp-toolkit-s1.md) §7. Verificadas por 2 rounds
 de panel de expertos en 2026-06-29.
 
 ## Invariantes (gates de CI) — baratos ahora, carísimos de retrofittear

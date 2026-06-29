@@ -14,7 +14,7 @@ El `resolver` (`toolkit/resolver.py`) elige según lo declarado:
 
 ## CORE TIER — kit "primeros 30 minutos"
 
-13 herramientas requeridas para el MVP. Ver `docs/TOOLS_INVENTORY.md` para el razonamiento.
+13 herramientas requeridas para el MVP. Ver `docs/maletin/inventario-tools.md` para el razonamiento.
 
 | id | binario | vía | linux | mac | windows | win-x64 | linux-x64 | mac-arm64 | mac-x64 |
 |---|---|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|

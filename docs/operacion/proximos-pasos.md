@@ -7,7 +7,7 @@ en vez de inventar otra lista paralela.
 > **Por qué existe este doc**: la deuda vivía dispersa entre cuerpos de commit,
 > la sección `## Status` de `CLAUDE.md` y conversaciones en chat. Esto la
 > centraliza. La capa de **agentes / orquestador / RAG / MCP / evals** tiene su
-> propio diseño detallado en [`FASE2_AGENTES_DISENO.md`](FASE2_AGENTES_DISENO.md);
+> propio diseño detallado en [`diseno-fase2.md`](../agentes/diseno-fase2.md);
 > aquí solo se referencia.
 
 ---
@@ -22,7 +22,7 @@ en los cuerpos de commit (`git log --oneline main`).
 | Esqueleto Electron + sidecar Python | ✅ Operativo. Race de `FORENSIA_SIDECAR_READY` arreglado. |
 | Seguridad de transporte (gates 1-3, 5) | ✅ Token + Host-header + CORS exacto + tests `test_security_gates.py`. |
 | RULE 1 (delivery: bundled \| container) | ✅ Política aceptada en `CLAUDE.md`, reflejada en catálogo, executor y resolver. |
-| Storage caso-como-carpeta | ✅ Cases / Evidence / Artifacts / Chats / Audit (hash-chained) / Findings. STORAGE.md documentado. |
+| Storage caso-como-carpeta | ✅ Cases / Evidence / Artifacts / Chats / Audit (hash-chained) / Findings. storage.md documentado. |
 | EvidenceManager real | ✅ Hash gate completo (stream SHA-256 → copy → re-hash → chmod 0o444 → baseline.json). `verify()` persiste a `verification.json` + apenda a `audit.jsonl`. |
 | Catálogo de tools | ✅ 16 core (incl. `file_info`, `xxd_head`, `strings_head`) + 6 extended (stubs). Wrappers reales para los 16 core. |
 | Dispatcher | ✅ Bundled + container path, con `case_id` opcional para anclar ArtifactRun + audit. |
@@ -34,7 +34,7 @@ en los cuerpos de commit (`git log --oneline main`).
 | Banner de desajuste en UI | ✅ `InvestigationPage` muestra un banner amarillo cuando `evidence.detected_os` discrepa de `case.os_profile`, con copy explicando que el cambio lo hace el operador (no FORENSIA). El header del caso también muestra `detectado <os> / <kind>` cuando hay señal. |
 | Memoria conversacional del agente | ✅ `QueryRequest.session_id` + nuevo `forensia.agent.history.build_replay_messages(case_id, session_id)` que lee `ChatStore` y construye prefix de OpenAI messages: ledger de tool runs (de `tool_calls` persistidos en assistant ChatMessages) + ledger de findings + tail-capped user/assistant transcript. Splicea entre system y user. Cap: 6 turnos / 8K chars / 30 entradas de ledger. El frontend ya envía `session_id` y persiste `tool_calls` con cada respuesta de la API. |
 | Routing por `detected_kind` + max_iter 18 | ✅ `_system_prompt` añade «Ruta del playbook — MEMORY DUMP/DISK IMAGE/CONTAINER» según `detected_kind`, ahorrando al agente la ronda de fail-and-pivot. `max_iterations` subido de 12 a 18 en ambos `agent.yaml` para que los turnos "hazlo" puedan encadenar 4-6 tool calls. |
-| **MCP `mcp-toolkit` S1 (rama `mcp`)** | ✅ Servidor MCP standalone (`python -m forensia.mcp`) que expone los 16 tools del catálogo como herramientas MCP estándar. Patrón Jira (`list_cases`/`select_case`/`list_evidence`/`select_evidence`). Verificado E2E con Claude Desktop sobre el memdump real Windows 7 SP1 de 5 GiB. Líneas rojas L1-L6 verificadas por panel de 4 expertos en 2 rounds. Concurrencia con el sidecar HTTP vía `fcntl.flock` sobre `audit.jsonl`. Detalle en [`MCP_TOOLKIT_PLAN.md`](MCP_TOOLKIT_PLAN.md). |
+| **MCP `mcp-toolkit` S1 (rama `mcp`)** | ✅ Servidor MCP standalone (`python -m forensia.mcp`) que expone los 16 tools del catálogo como herramientas MCP estándar. Patrón Jira (`list_cases`/`select_case`/`list_evidence`/`select_evidence`). Verificado E2E con Claude Desktop sobre el memdump real Windows 7 SP1 de 5 GiB. Líneas rojas L1-L6 verificadas por panel de 4 expertos en 2 rounds. Concurrencia con el sidecar HTTP vía `fcntl.flock` sobre `audit.jsonl`. Detalle en [`mcp-toolkit-s1.md`](../maletin/mcp-toolkit-s1.md). |
 | `AuditLog` concurrencia | ✅ `fcntl.flock` exclusivo sobre el log; cadena hash sobrevive a appends concurrentes desde el sidecar HTTP y el servidor MCP. Test `test_audit_lock.py` con `multiprocessing` (4 workers × 50 entradas). |
 | `apply_in` por patrón de redaction | ✅ `RedactionPattern.apply_in: ("strict",)` por defecto; los patrones que opten a `("strict","relaxed")` se aplican incluso en modo relajado. Loader valida el campo. Permite preservar IoCs forenses (IPs, MACs, SIDs) en sesiones locales sin perder scrubbing de credenciales. |
 | Regla "No fallbacks" en CLAUDE.md | ✅ RULE 2 reforzada con cinco corolarios explícitos: no "try the other tool", no "use the only/latest one", no "guess from context", no "default to cloud", no "downgrade silently". |
@@ -99,7 +99,7 @@ Ratio impacto / esfuerzo más alto. Si solo se atacan estos 4, hay demo:
 | **Por qué** | La carpeta `~/.forensia/cases/<id>/reports/` está reservada en el layout pero nadie escribe ahí. La propuesta TFM exige "Generación de informe forense estructurado". |
 | **Dónde toca** | `backend/forensia/reports/__init__.py` + `templates/` + `generator.py` + router `routers/reports.py`. |
 | **Estimación** | 1-2 días (incluido template UCM). |
-| **Diseño** | `FASE2_AGENTES_DISENO.md` §4 + `_orchestrator/reporter.md` ya tienen prompt + contrato. |
+| **Diseño** | `diseno-fase2.md` §4 + `_orchestrator/reporter.md` ya tienen prompt + contrato. |
 
 ### `forensia.timeline` — consolidación cronológica (no existe)
 
@@ -109,7 +109,7 @@ Ratio impacto / esfuerzo más alto. Si solo se atacan estos 4, hay demo:
 | **Por qué** | `TimelinePage.tsx` (frontend) sigue con mock data. Sin esto la pantalla "Timeline" no es real. |
 | **Dónde toca** | `backend/forensia/timeline/` + `routers/timeline.py` + cableo en `InvestigationPage` "Ver Timeline →" y en `TimelinePage`. |
 | **Estimación** | 4-6 h. |
-| **Diseño** | `FASE2_AGENTES_DISENO.md` §4 (orquestador) + `_orchestrator/timeline.md`. |
+| **Diseño** | `diseno-fase2.md` §4 (orquestador) + `_orchestrator/timeline.md`. |
 
 ### Calidad del playbook windows — siete mejoras observadas en sesión real
 
@@ -177,8 +177,8 @@ playbook**. Todos viven en `agentes/forensia-windows/prompts/playbook.md` y
 
 ## 3. MCP y RAG (estado y siguiente sprint)
 
-Cubierto en detalle en [`MCP_INVENTORY.md`](MCP_INVENTORY.md) (13 servidores
-inventariados, priorizados P0–P3) y [`MCP_TOOLKIT_PLAN.md`](MCP_TOOLKIT_PLAN.md)
+Cubierto en detalle en [`inventario-mcps.md`](../maletin/inventario-mcps.md) (13 servidores
+inventariados, priorizados P0–P3) y [`mcp-toolkit-s1.md`](../maletin/mcp-toolkit-s1.md)
 (plan operativo + decisiones D1–D7 cerradas + líneas rojas L1–L6).
 **No duplicar aquí.** Estado real:
 
@@ -196,7 +196,7 @@ inventariados, priorizados P0–P3) y [`MCP_TOOLKIT_PLAN.md`](MCP_TOOLKIT_PLAN.m
 - **Resto de la lista** (`mcp-cases`, `mcp-audit`, `mcp-yara-rules`,
   `mcp-sigma-rules`, `mcp-artifact-playbooks`, `mcp-timeline`, `mcp-report`,
   los 3 lookup locales y los 2 cloud opt-in) — sprints S4–S6, ver §10 de
-  `MCP_INVENTORY.md`.
+  `inventario-mcps.md`.
 - **RAG real**: hoy el "conocimiento" del agente vive en los prompts del
   package (`agentes/<id>/prompts/*.md`) + en el bundle estático que servirá
   `mcp-mitre-attack`. RAG con embeddings + vector store (Chroma / FAISS) es
@@ -228,7 +228,7 @@ Gaps todavía abiertos:
 | **Vendoring real de binarios** | `scripts/bundle-tool.mjs` está cableado pero `vendor/` está vacío. Pendiente: correr el script por cada tool bundled (TSK family, libewf, libvmdk, bulk_extractor, yara, hayabusa, chainsaw, jq, file, xxd, strings, …) en cada OS/arch (mac-arm64, mac-x64, win-x64, linux-x64). Estimación: 1 día por OS/arch. |
 | **CI workflow** | `.github/workflows/ci.yml` corre ruff + pytest en matriz de OS. Pendiente: añadir `openai` a `pip install`, exigir `npm run typecheck` en el job `renderer`, opcionalmente `npm run build`. Estimación: 30 min. |
 | **Release pipeline** | `.github/workflows/release.yml` es `workflow_dispatch` manual. Funciona pero nadie lo ha ejecutado todavía. Estimación: 0 — solo correrlo y validar artefactos. |
-| **Code signing macOS / Windows** | Diferido en `ARCHITECTURE.md` §6. Solo bloqueador si hay distribución externa. |
+| **Code signing macOS / Windows** | Diferido en `arquitectura.md` §6. Solo bloqueador si hay distribución externa. |
 
 ---
 
@@ -237,9 +237,9 @@ Gaps todavía abiertos:
 | Doc | Qué actualizar |
 |---|---|
 | `CLAUDE.md` § Status | Dice "esqueleto" y "agente, RAG, model backends, real tool wrappers ... intentionally not implemented yet". Falso ahora: el agente cloud está real, los 16 wrappers están reales, el dispatcher anclado a caso está real, los findings están persistidos. Reescribir a estado actual. |
-| `docs/ARCHITECTURE.md` § 7 ("Lo que el esqueleto NO implementa todavía") | Misma desactualización. Mover ítems hechos a una sección "Lo que SÍ está implementado al 2026-06-28" y dejar solo los reales pendientes. |
-| `docs/FRONTEND_JOURNAL.md` | Añadir entradas para el desmoqueo de Casos y evidencias, Investigación + findings panel, Settings con LLM config form. |
-| `docs/ai/FRONTEND_CONTEXT.md` | Refrescar el árbol de `src/pages/` (las pages que antes eran "mock-only" ya no lo son) y la sección "Current Technical Debt". |
+| `docs/arquitectura.md` § 7 ("Lo que el esqueleto NO implementa todavía") | Misma desactualización. Mover ítems hechos a una sección "Lo que SÍ está implementado al 2026-06-28" y dejar solo los reales pendientes. |
+| `docs/operacion/frontend-journal.md` | Añadir entradas para el desmoqueo de Casos y evidencias, Investigación + findings panel, Settings con LLM config form. |
+| `docs/ai-context/frontend.md` | Refrescar el árbol de `src/pages/` (las pages que antes eran "mock-only" ya no lo son) y la sección "Current Technical Debt". |
 | `vendor/CATALOG.md` | Añadir `file`, `xxd`, `strings` como tools del kit core. |
 | `scripts/dev.md` | Añadir sección "Setup del maletín en dev" con los `brew install` listados en §1.B. |
 
@@ -252,7 +252,7 @@ Cosas que **no son TODO sino preguntas pendientes** para el equipo:
 | ID | Decisión | Estado |
 |---|---|---|
 | **D-1** | ¿Conservar TSK como fallback explícito cuando se cablee `dissect.target`, o deprecar? | Abierta. |
-| **D-2** | Si el orquestador necesita `role: investigation \| synthesis` en `agent.yaml`, o seguir con el truco de prefijo `_` para que la registry lo ignore. | Cubierta en `FASE2_AGENTES_DISENO.md`. |
+| **D-2** | Si el orquestador necesita `role: investigation \| synthesis` en `agent.yaml`, o seguir con el truco de prefijo `_` para que la registry lo ignore. | Cubierta en `diseno-fase2.md`. |
 | **D-3** | Anthropic backend: ¿se implementa pre-defensa o se quita del allowlist de config para que RULE 2 sea estricta? | Abierta. |
 | **D-4** | El campo `os_profile` del `Case` es **frozen** hoy. ¿Permitir cambio post-creación con entrada en audit log? Caso de uso: el examinador eligió mal al crear el caso. | Abierta. |
 | **D-5** | ¿Auto-detección del `os_profile` al registrar la primera evidencia (warning, no override)? | Abierta. |
@@ -266,7 +266,7 @@ Orden ejecutable para llegar a una **demo end-to-end real** sobre Caso CFReDS:
 1. §1.B — `brew install bulk_extractor yara chainsaw` + hayabusa (5 min).
 2. §1.D — descargar NIST Hacking Case (5-30 min).
 3. §1.A — `bash scripts/build-images.sh` (10-20 min).
-4. §6 — refrescar `CLAUDE.md § Status` y `ARCHITECTURE.md § 7` (30 min).
+4. §6 — refrescar `CLAUDE.md § Status` y `arquitectura.md § 7` (30 min).
 5. §1.C — `dissect.target` wrapper (medio día).
 6. §2 — `forensia.reports` para cerrar el flujo análisis → informe (1-2 días).
 7. §2 — `forensia.timeline` para desmoquear TimelinePage (medio día).

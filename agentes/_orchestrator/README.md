@@ -22,7 +22,7 @@ El orquestador es **agnóstico del SO**: trabaja sobre `Finding[]` ya estructura
 perfil». Mantenerlo como pack ignorado por la registry permite **entrenarlo con
 prompts** (mi rol) sin tocar el motor ni el schema del paquete. La alternativa
 —extender el schema con `role: investigation | synthesis`— está descrita como
-decisión abierta D-2 en `docs/FASE2_AGENTES_DISENO.md`.
+decisión abierta D-2 en `docs/agentes/diseno-fase2.md`.
 
 ## Disparadores (desde la UI)
 

@@ -15,7 +15,7 @@ tras un panel de 5 expertos (empaquetado, DFIR, seguridad, orquestación IA, ges
 | Docker / OCI runtime | **Aceptado como mecanismo de entrega peer al bundling** (RULE 1); el runtime es prerequisito del instalador, las imágenes viajan como tarballs y se cargan con `docker load` en el primer arranque | Sin esto no hay forma viable de entregar herramientas Perl (RegRipper) ni .NET (EvtxECmd, MFTECmd) en Linux/Mac sin pedir al usuario que instale .NET o Perl portable |
 | Empaquetado | `electron-builder` (nsis/dmg/AppImage+deb) + PyInstaller **onedir** por OS/arch | PyInstaller no cross-compila; onedir arranca rápido y firma mejor |
 | Modelos | Capa común; **local (Ollama) por defecto**, cloud opt-in | Sensibilidad de evidencias |
-| Agente | **UNO**, parametrizado por un **paquete declarativo** (`agentes/<id>/`) y por `os_profile` (win/unix) | El loop es idéntico; lo que cambia (prompts, modelo, allowlist) viaja en una carpeta que entrega el equipo de entrenamiento — sin código Python suyo, sin dos agentes paralelos. Ver [`AGENTS.md`](AGENTS.md) |
+| Agente | **UNO**, parametrizado por un **paquete declarativo** (`agentes/<id>/`) y por `os_profile` (win/unix) | El loop es idéntico; lo que cambia (prompts, modelo, allowlist) viaja en una carpeta que entrega el equipo de entrenamiento — sin código Python suyo, sin dos agentes paralelos. Ver [`contrato-paquetes.md`](agentes/contrato-paquetes.md) |
 | RAG | **Stub de interfaz**; catálogo en el system prompt | Cabe en prompt; RAG real es fase 2 |
 
 ## 2. Capas
@@ -75,12 +75,12 @@ tras un panel de 5 expertos (empaquetado, DFIR, seguridad, orquestación IA, ges
 servidor MCP stdio (para clientes externos) son procesos Python
 independientes que comparten el mismo `dispatcher`, `EvidenceManager`,
 `ArtifactStore` y `AuditLog`. Concurrencia segura vía `fcntl.flock` sobre
-`audit.jsonl`. Ver [`MCP_TOOLKIT_PLAN.md`](MCP_TOOLKIT_PLAN.md) y
-[`MCP_INVENTORY.md`](MCP_INVENTORY.md) para detalle del servidor MCP.
+`audit.jsonl`. Ver [`mcp-toolkit-s1.md`](maletin/mcp-toolkit-s1.md) y
+[`inventario-mcps.md`](maletin/inventario-mcps.md) para detalle del servidor MCP.
 
 > Detalle del layout en disco (`~/.forensia/cases/<id>/{case.json, evidence/, artifacts/, chats/, audit.jsonl, reports/}`),
 > contrato de cada manager/store, y flujo end-to-end de una ejecución anclada a caso:
-> ver [`STORAGE.md`](STORAGE.md).
+> ver [`storage.md`](storage.md).
 
 ## 3. Por qué el transporte va desacoplado
 
@@ -191,7 +191,7 @@ Distribución: `electron-builder` mete `../agentes` en `extraResources` y
 `asarUnpack`. En dev, el sidecar lee `<repo>/agentes`. En packaged, Electron
 exporta `FORENSIA_AGENTS_DIR=<resourcesPath>/agentes` al spawnear el sidecar.
 
-Detalle completo del contrato y del schema de `agent.yaml`: [`AGENTS.md`](AGENTS.md).
+Detalle completo del contrato y del schema de `agent.yaml`: [`contrato-paquetes.md`](agentes/contrato-paquetes.md).
 
 ## 8. Lo que el esqueleto NO implementa todavía
 

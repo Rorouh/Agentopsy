@@ -3,7 +3,7 @@
 Catálogo de **servidores MCP** que FORENSIA expone para que el agente — y, opcionalmente, un
 cliente externo — opere el maletín forense, consulte conocimiento y emita el informe a través
 de un protocolo único. Mirroreado en estructura con
-[`docs/TOOLS_INVENTORY.md`](TOOLS_INVENTORY.md): este documento es la lista larga; la
+[`docs/maletin/inventario-tools.md`](inventario-tools.md): este documento es la lista larga; la
 selección final que se empaqueta vive en `backend/forensia/mcp/` (no existe aún) y `vendor/`.
 
 > **Por qué este documento existe ahora**: en el email del 2026-06-24, el PI movió MCP de
@@ -140,7 +140,7 @@ sha256 + fecha por dataset para reproducibilidad.
 | `mcp-report` | tools (1: `render_report_pdf`) | `forensia.reports` (no existe aún) — markdown → docx → PDF con manifest hash | **P2** | Cierre del caso; consume `mcp-timeline` + `mcp-mitre-attack`. Posterior porque el módulo de reportes todavía no existe; construirlo y exponerlo a la vez es doble riesgo. |
 
 **Nota sobre `mcp-timeline`**: el módulo backend `forensia.timeline` está pendiente
-(`NEXT_STEPS.md §2`). El MCP server se diseña ahora pero su implementación va detrás del
+(`../operacion/proximos-pasos.md §2`). El MCP server se diseña ahora pero su implementación va detrás del
 módulo nativo (P0 conceptual / P1 de tiempo real). Hasta entonces, el agente correlaciona
 en prompt con limitaciones conocidas — material de la sección "limitaciones" de la
 memoria.
@@ -223,7 +223,7 @@ primero "el agente opera por protocolo", luego "el agente razona con KB por prot
 - **Frontera de custodia inviolable**: todo MCP recibe `evidence_id` y obtiene el handle
   read-only vía `mcp-evidence`. Cero paths absolutos crudos en argv del cliente MCP.
   Cero `mount` dentro de contenedores proxy (HyperKit/WSL2 dispara journal replay —
-  ver `docs/FORENSIC_SOUNDNESS.md`).
+  ver `docs/soundness-forense.md`).
 
 - **Argv literal en el audit, no JSON-RPC**: cada llamada MCP → resolución a argv array
   → `subprocess.run([...], shell=False)` → entrada en `audit.jsonl` con argv, versión de
@@ -246,7 +246,7 @@ primero "el agente opera por protocolo", luego "el agente razona con KB por prot
 
 | Sprint | MCPs cerrados | Personas (de 6) | Estado / Resultado defendible |
 |---|---|---|---|
-| S1 | **`mcp-toolkit` (P0)** standalone stdio con patrón Jira + 16 tools + ResourceLinks + redaction modes | 2 | ✅ **CERRADO 2026-06-29**. Verificado E2E con Claude Desktop sobre memdump real 5 GiB Windows 7 SP1. 2 rounds de panel; líneas rojas L1–L6 verificadas. 335 tests passing. Detalle: [`MCP_TOOLKIT_PLAN.md`](MCP_TOOLKIT_PLAN.md). |
+| S1 | **`mcp-toolkit` (P0)** standalone stdio con patrón Jira + 16 tools + ResourceLinks + redaction modes | 2 | ✅ **CERRADO 2026-06-29**. Verificado E2E con Claude Desktop sobre memdump real 5 GiB Windows 7 SP1. 2 rounds de panel; líneas rojas L1–L6 verificadas. 335 tests passing. Detalle: [`mcp-toolkit-s1.md`](mcp-toolkit-s1.md). |
 | S2 | `mcp-evidence` (P0) + integración `ForensicAgent` propio como cliente MCP in-process del `mcp-toolkit` | 2 | Pendiente. Unifica los dos caminos al dispatcher (sidecar HTTP + servidor MCP) bajo el mismo protocolo. Demo: el agente nativo ejecuta su cadena vía cliente MCP, output idéntico al dispatcher directo (test diferencial — ya escrito). |
 | S3 | `mcp-mitre-attack` (P0) — bundle ATT&CK Enterprise + cliente MCP en el orquestador | 1 | Pendiente. El informe cita técnicas + sub-técnicas + data sources del bundle, no del prompt. ~30 MB bundleados. |
 | S4 | `mcp-cases` (P1) + `mcp-audit` (P1) + `mcp-artifact-playbooks` (P1) + `mcp-yara-rules` (P1) + `mcp-sigma-rules` (P1) | 3 (paralelo) | Pendiente. Conocimiento + custodia accesibles vía protocolo en toda la app. |
