@@ -242,16 +242,16 @@ primero "el agente opera por protocolo", luego "el agente razona con KB por prot
 
 ---
 
-## 10. Plan de implementación por sprint (sugerencia para el cronograma del TFM)
+## 10. Plan de implementación por sprint (cronograma real del TFM)
 
-| Sprint | MCPs cerrados | Personas (de 6) | Resultado defendible |
+| Sprint | MCPs cerrados | Personas (de 6) | Estado / Resultado defendible |
 |---|---|---|---|
-| S1 (preparación) | Diseño cerrado + `MCP_INVENTORY.md` (este doc) + schemas derivados generados desde `catalog.py` | 2 | Acta de decisiones cerradas; pruebas unitarias del generador de schemas. |
-| S2 | `mcp-toolkit` (P0) + `mcp-evidence` (P0) — in-process | 2 | Demo: el agente ejecuta su cadena habitual vía cliente MCP, idéntico output que con dispatcher directo (test diferencial). |
-| S3 | `mcp-mitre-attack` (P0) — bundle ATT&CK Enterprise + cliente MCP en el orquestador | 1 | El informe cita técnicas + sub-técnicas + data sources del bundle, no del prompt. |
-| S4 | `mcp-cases` (P1) + `mcp-audit` (P1) + `mcp-artifact-playbooks` (P1) + `mcp-yara-rules` (P1) + `mcp-sigma-rules` (P1) | 3 (paralelo) | Conocimiento + custodia accesibles vía protocolo en toda la app. |
-| S5 | `mcp-timeline` (P0 conceptual / P1 real — después de `forensia.timeline`) | 2 | Timeline correlacionada por protocolo; consultable por ventana ± delta. |
-| S6 (cierre) | `mcp-report` (P2) + stdio externo + cliente demo (Claude Desktop / Continue) | 2 | Cliente MCP externo opera el maletín FORENSIA sin código FORENSIA propio — la demostración estrella del TFM. |
+| S1 | **`mcp-toolkit` (P0)** standalone stdio con patrón Jira + 16 tools + ResourceLinks + redaction modes | 2 | ✅ **CERRADO 2026-06-29**. Verificado E2E con Claude Desktop sobre memdump real 5 GiB Windows 7 SP1. 2 rounds de panel; líneas rojas L1–L6 verificadas. 335 tests passing. Detalle: [`MCP_TOOLKIT_PLAN.md`](MCP_TOOLKIT_PLAN.md). |
+| S2 | `mcp-evidence` (P0) + integración `ForensicAgent` propio como cliente MCP in-process del `mcp-toolkit` | 2 | Pendiente. Unifica los dos caminos al dispatcher (sidecar HTTP + servidor MCP) bajo el mismo protocolo. Demo: el agente nativo ejecuta su cadena vía cliente MCP, output idéntico al dispatcher directo (test diferencial — ya escrito). |
+| S3 | `mcp-mitre-attack` (P0) — bundle ATT&CK Enterprise + cliente MCP en el orquestador | 1 | Pendiente. El informe cita técnicas + sub-técnicas + data sources del bundle, no del prompt. ~30 MB bundleados. |
+| S4 | `mcp-cases` (P1) + `mcp-audit` (P1) + `mcp-artifact-playbooks` (P1) + `mcp-yara-rules` (P1) + `mcp-sigma-rules` (P1) | 3 (paralelo) | Pendiente. Conocimiento + custodia accesibles vía protocolo en toda la app. |
+| S5 | `mcp-timeline` (P0 conceptual / P1 real — después de `forensia.timeline` nativo) | 2 | Pendiente. Timeline correlacionada por protocolo; consultable por ventana ± delta. |
+| S6 (cierre) | `mcp-report` (P2) + cliente demo finalizado (Claude Desktop / Continue) | 2 | Pendiente. Cliente MCP externo opera el maletín sin código FORENSIA propio — demo estrella del TFM. |
 | Posterior | `mcp-cve-cpe-local`, `mcp-hash-reputation-local`, `mcp-ioc-local` (P2) + `mcp-vt-cloud`/`mcp-otx-cloud` (P3 opt-in) | — | Enriquecimiento offline + opcionales online con consent. |
 
 Reparto entre 6 personas (alineado con el email del 2026-06-24):
@@ -273,8 +273,8 @@ Reparto entre 6 personas (alineado con el email del 2026-06-24):
 
 | Bloque | MCPs | Estado |
 |---|---:|---|
-| Toolkit + custodia (P0) | 2 | Diseñados, **pendientes de implementación**. Cimiento de todo lo demás. |
-| Conocimiento bundleado (P0+P1) | 4 | Diseñados; bundles a curar. ATT&CK Enterprise es P0 obligatorio. |
+| Toolkit + custodia (P0) | 2 | `mcp-toolkit` **✅ cerrado en S1** (rama `mcp`). `mcp-evidence` pendiente para S2. |
+| Conocimiento bundleado (P0+P1) | 4 | Diseñados; bundles a curar. ATT&CK Enterprise es P0 obligatorio (S3). |
 | Síntesis (P0/P1/P2) | 2 | Dependen de módulos backend (`forensia.timeline`, `forensia.reports`) que no existen aún. |
 | Lookup local snapshot (P2) | 3 | Datasets a vendorear; post-MVP del TFM. |
 | Lookup online opt-in (P3) | 2 | Solo con consent firmado. Bandera explícita por caso. |

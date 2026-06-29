@@ -1,5 +1,12 @@
 # `mcp-toolkit` — plan de implementación para la demo del equipo
 
+> **Estado: ✅ S1 CERRADO 2026-06-29.** Servidor MCP standalone funcional contra Claude
+> Desktop, sobre el memdump real Windows 7 SP1 de 5 GiB del caso `f3abd274...`. 2 rounds
+> de panel de expertos verificados; las 6 líneas rojas L1–L6 funcionales por test.
+> 335/335 tests passing. Commit `92083f2` en `origin/mcp`. Lo que sigue (sprint S2):
+> `mcp-evidence` standalone + integración del `ForensicAgent` propio como cliente MCP
+> in-process — ver [`MCP_INVENTORY.md §10`](MCP_INVENTORY.md#10-plan-de-implementación-por-sprint-cronograma-real-del-tfm).
+
 Plan operativo para construir el primer servidor MCP de FORENSIA y dejarlo demoable a los
 compañeros y al PI. Es el desglose accionable del MCP número 1 declarado en
 [`docs/MCP_INVENTORY.md`](MCP_INVENTORY.md): un servidor que publica los 16 `Tool` del

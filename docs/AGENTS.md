@@ -183,6 +183,29 @@ findings. Sin LLM-based summarization en v1. Detalle en
 Source of truth = `ChatStore` (servidor), no la memoria del renderer — RULE 2:
 no confíes en input no verificado. El frontend solo envía `session_id`.
 
+### 6.3 El agente ya no es el único cliente del dispatcher
+
+Desde la rama `mcp`, el `dispatcher` tiene **dos clientes posibles**:
+
+1. **El `ForensicAgent` propio** (vía `/api/agent/query` del sidecar HTTP) —
+   llamado por la UI Electron. Camino que esta sección describe.
+2. **Cualquier cliente MCP externo** (Claude Desktop, Continue, Cline,
+   agente custom) vía el servidor `mcp-toolkit` (`python -m forensia.mcp`).
+
+Ambos comparten el mismo dispatcher, el mismo `EvidenceManager`, el mismo
+`ArtifactStore` y el mismo `AuditLog`. El servidor MCP **no reimplementa
+nada** — delega en `dispatcher.execute(tool_id, params, case_id)`. La
+allowlist del paquete activo se enforce en dos puntos (MCP `tools/list`
+filtrado + dispatcher contra catálogo).
+
+Esto es el "MCP como núcleo" que pidió el PI (email 2026-06-24): un
+agente arbitrario puede operar el maletín FORENSIA hablando el protocolo
+estándar, sin código FORENSIA propio. Detalle en
+[`MCP_TOOLKIT_PLAN.md`](MCP_TOOLKIT_PLAN.md) y
+[`MCP_INVENTORY.md`](MCP_INVENTORY.md). En sprint S2 el propio
+`ForensicAgent` también pasará a ser cliente MCP in-process del mismo
+servidor, unificando ambos caminos.
+
 ## 7. Cómo lo entrega el equipo de entrenamiento
 
 1. Empaqueta su carpeta `<id>/` con el layout de arriba.

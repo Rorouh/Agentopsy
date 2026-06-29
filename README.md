@@ -33,35 +33,54 @@
 
 ## 🛠️ ARQUITECTURA DEL COCKPIT
 
-El sistema desacopla la GUI del motor de cómputo forense mediante una arquitectura de sidecar local:
+El sistema desacopla la GUI del motor de cómputo forense mediante una arquitectura de sidecar local. Desde la rama `mcp`, el maletín además se expone como servidor MCP estándar para clientes externos (Claude Desktop, Continue, Cline, agentes custom):
 
 ```text
+                                    +----------------------------------+
+                                    | Cliente MCP externo              |
+                                    |  (Claude Desktop, Continue, ...) |
+                                    +-----------------+----------------+
+                                                      | (stdio MCP)
++-------------------------------------------------+   |
+|         ELECTRON HARNESS (desktop/)             |   |
+|  - Proceso principal de Chromium hardened       |   |
+|  - Controla el ciclo de vida del sidecar         |   |
+|  - IPC Bridge seguro (ContextIsolation+Sandbox)  |   |
++----------------------+--------------------------+   |
+                       | (Local Loopback + Auth Token)|
+                       v                              v
++-------------------------+    +-------------------------------------+
+| FastAPI sidecar         |    | MCP server (mcp-toolkit, S1)        |
+| `python -m forensia     |    | `python -m forensia.mcp`            |
+|   .server`              |    | stdio puro, sin sockets de red      |
+| Para la UI Electron     |    | Patrón Jira para selección de caso  |
++-----------+-------------+    +---------------+---------------------+
+            |                                  |
+            +----------------+-----------------+
+                             | ambos delegan en el mismo dispatcher
+                             v
 +-------------------------------------------------------------+
-|               ELECTRON HARNESS (desktop/)                   |
-|  - Proceso principal de Chromium hardened                   |
-|  - Controla el ciclo de vida del sidecar (spawns/kills)      |
-|  - IPC Bridge seguro (ContextIsolation + Sandboxing)        |
-+-------------------------------------------------------------+
-                              | (Local Loopback + Auth Token)
-                              v
-+-------------------------------------------------------------+
-|             PYTHON FASTAPI SIDECAR (backend/)              |
-|  - Compilado via PyInstaller en modo 'onedir'               |
-|  - Expone endpoints JSON para orquestación                  |
-+-------------------------------------------------------------+
-                              | (Subprocess calls, shell=False)
-                              v
+| backend/forensia/  =  NÚCLEO COMPARTIDO                     |
+|  - dispatcher (resolver, shell=False, argv literal)         |
+|  - EvidenceManager (hash gate, read-only)                   |
+|  - ArtifactStore (manifest + sha256 por run)                |
+|  - AuditLog (hash-chained + fcntl.flock concurrencia)       |
++----------------------+--------------------------------------+
+                       | (Subprocess calls, shell=False)
+                       v
 +-------------------------------------------------------------+
 |             MALETÍN DE HERRAMIENTAS VENDORED                |
-|  - Binarios compilados bajo vendor/<tool>/<os>-<arch>/       |
+|  - Binarios compilados bajo vendor/<tool>/<os>-<arch>/      |
 |  - Volatility3, plaso, Sleuth Kit, bulk_extractor, etc.     |
 +-------------------------------------------------------------+
 ```
 
 Documentación adicional para hackers y desarrolladores:
-*   [Especificaciones de Arquitectura](file:///Users/menciagonzalez/workspace/Forensia-AI/docs/ARCHITECTURE.md)
-*   [Modelo de Amenazas y Seguridad](file:///Users/menciagonzalez/workspace/Forensia-AI/docs/THREAT_MODEL.md)
-*   [Preservación Criptográfica y Cadena de Custodia](file:///Users/menciagonzalez/workspace/Forensia-AI/docs/FORENSIC_SOUNDNESS.md)
+*   [Especificaciones de Arquitectura](docs/ARCHITECTURE.md)
+*   [Modelo de Amenazas y Seguridad](docs/THREAT_MODEL.md) — incluye superficie MCP (sección E + gates 13–18).
+*   [Preservación Criptográfica y Cadena de Custodia](docs/FORENSIC_SOUNDNESS.md)
+*   [Inventario de servidores MCP](docs/MCP_INVENTORY.md) — los 13 MCPs candidatos priorizados P0–P3.
+*   [Plan de implementación del MCP toolkit](docs/MCP_TOOLKIT_PLAN.md) — sprint S1 cerrado, decisiones D1–D7 + líneas rojas L1–L6.
 
 ---
 
@@ -91,6 +110,41 @@ npm install
 npm run dev
 ```
 
+### Servidor MCP — exponer el maletín a Claude Desktop / clientes externos
+
+```bash
+# Instalar el extra MCP (mcp SDK + jsonref)
+cd backend
+source .venv/bin/activate
+pip install -e ".[mcp]"
+
+# Arrancar el servidor MCP standalone (stdio puro)
+FORENSIA_CLOUD_CONSENT=manual_test python -m forensia.mcp
+```
+
+Para conectarlo a Claude Desktop, edita
+`~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "forensia": {
+      "command": "/ruta/absoluta/al/repo/backend/.venv/bin/python",
+      "args": ["-m", "forensia.mcp"],
+      "env": {
+        "FORENSIA_CLOUD_CONSENT": "claude_desktop",
+        "FORENSIA_REDACTION_MODE": "strict"
+      }
+    }
+  }
+}
+```
+
+Reinicia Claude Desktop (Cmd-Q completo). En un nuevo Chat aparecerán las
+tools `list_cases` / `select_case` / `list_evidence` / `select_evidence` + 16
+forenses una vez selecciones el caso. Detalle en
+[`docs/MCP_TOOLKIT_PLAN.md`](docs/MCP_TOOLKIT_PLAN.md).
+
 ### Empaquetado de producción (Production Bundling)
 
 ```bash
@@ -106,6 +160,7 @@ npm run dist
 *   **Sidecar Bridge:** En funcionamiento. Conexión IPC fluida mediante handshake de puerto efímero.
 *   **Paquetes de Agente:** El loop del agente carga su persona, prompts y allowlist de tools desde una carpeta declarativa `agentes/<id>/` que entrega el equipo de entrenamiento (ver [`agentes/README.md`](agentes/README.md) y [`docs/AGENTS.md`](docs/AGENTS.md)). El loader, la registry y el endpoint `/api/agents` están operativos; los paquetes reales `forensia-unix` y `forensia-windows` viajan en `agentes/`, junto al pack de síntesis `_orchestrator/` (ignorado por la registry por su prefijo `_`, consumido por la futura capa `forensia.reports`).
 *   **Agente Local:** Capas de auditoría e ingesta de evidencias implementadas; algoritmos de inferencia y wrappers específicos de CLI en fase de desarrollo.
+*   **Servidor MCP (rama `mcp`):** Sprint S1 cerrado. El maletín forense se expone como servidor MCP estándar — verificado E2E con Claude Desktop sobre un memdump real Windows 7 SP1 de 5 GiB. Patrón Jira para selección de caso + evidencia, 16 tools forenses, ResourceLinks `artifact://`, redaction por modos, líneas rojas L1–L6 verificadas por panel de expertos. Ver [`docs/MCP_INVENTORY.md`](docs/MCP_INVENTORY.md) y [`docs/MCP_TOOLKIT_PLAN.md`](docs/MCP_TOOLKIT_PLAN.md).
 
 ---
 

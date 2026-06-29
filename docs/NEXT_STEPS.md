@@ -34,8 +34,12 @@ en los cuerpos de commit (`git log --oneline main`).
 | Banner de desajuste en UI | ✅ `InvestigationPage` muestra un banner amarillo cuando `evidence.detected_os` discrepa de `case.os_profile`, con copy explicando que el cambio lo hace el operador (no FORENSIA). El header del caso también muestra `detectado <os> / <kind>` cuando hay señal. |
 | Memoria conversacional del agente | ✅ `QueryRequest.session_id` + nuevo `forensia.agent.history.build_replay_messages(case_id, session_id)` que lee `ChatStore` y construye prefix de OpenAI messages: ledger de tool runs (de `tool_calls` persistidos en assistant ChatMessages) + ledger de findings + tail-capped user/assistant transcript. Splicea entre system y user. Cap: 6 turnos / 8K chars / 30 entradas de ledger. El frontend ya envía `session_id` y persiste `tool_calls` con cada respuesta de la API. |
 | Routing por `detected_kind` + max_iter 18 | ✅ `_system_prompt` añade «Ruta del playbook — MEMORY DUMP/DISK IMAGE/CONTAINER» según `detected_kind`, ahorrando al agente la ronda de fail-and-pivot. `max_iterations` subido de 12 a 18 en ambos `agent.yaml` para que los turnos "hazlo" puedan encadenar 4-6 tool calls. |
+| **MCP `mcp-toolkit` S1 (rama `mcp`)** | ✅ Servidor MCP standalone (`python -m forensia.mcp`) que expone los 16 tools del catálogo como herramientas MCP estándar. Patrón Jira (`list_cases`/`select_case`/`list_evidence`/`select_evidence`). Verificado E2E con Claude Desktop sobre el memdump real Windows 7 SP1 de 5 GiB. Líneas rojas L1-L6 verificadas por panel de 4 expertos en 2 rounds. Concurrencia con el sidecar HTTP vía `fcntl.flock` sobre `audit.jsonl`. Detalle en [`MCP_TOOLKIT_PLAN.md`](MCP_TOOLKIT_PLAN.md). |
+| `AuditLog` concurrencia | ✅ `fcntl.flock` exclusivo sobre el log; cadena hash sobrevive a appends concurrentes desde el sidecar HTTP y el servidor MCP. Test `test_audit_lock.py` con `multiprocessing` (4 workers × 50 entradas). |
+| `apply_in` por patrón de redaction | ✅ `RedactionPattern.apply_in: ("strict",)` por defecto; los patrones que opten a `("strict","relaxed")` se aplican incluso en modo relajado. Loader valida el campo. Permite preservar IoCs forenses (IPs, MACs, SIDs) en sesiones locales sin perder scrubbing de credenciales. |
+| Regla "No fallbacks" en CLAUDE.md | ✅ RULE 2 reforzada con cinco corolarios explícitos: no "try the other tool", no "use the only/latest one", no "guess from context", no "default to cloud", no "downgrade silently". |
 | UI desmoqueada | ✅ Casos y evidencias, Investigación (con findings panel reactivo), Settings (form de modelos + dropdown). |
-| Tests backend | ✅ 322 (cases 24, evidence_real 18, artifacts 22, chats 34, dispatcher_anchored 9, routers_storage 22, agent_registry 17, smoke 3, security_gates 4, wrappers 109, container 34, dispatcher 11, catalog_integrity 11, others 4). |
+| Tests backend | ✅ **335** (322 legacy + 10 MCP toolkit + 3 audit lock concurrency). 0 fallos. |
 
 ---
 
@@ -171,23 +175,39 @@ playbook**. Todos viven en `agentes/forensia-windows/prompts/playbook.md` y
 
 ---
 
-## 3. MCP y RAG (Fase 2)
+## 3. MCP y RAG (estado y siguiente sprint)
 
-Cubierto en detalle en [`FASE2_AGENTES_DISENO.md`](FASE2_AGENTES_DISENO.md) §6 y §9.3.
-**No duplicar aquí.** Resumen de status:
+Cubierto en detalle en [`MCP_INVENTORY.md`](MCP_INVENTORY.md) (13 servidores
+inventariados, priorizados P0–P3) y [`MCP_TOOLKIT_PLAN.md`](MCP_TOOLKIT_PLAN.md)
+(plan operativo + decisiones D1–D7 cerradas + líneas rojas L1–L6).
+**No duplicar aquí.** Estado real:
 
-- **MCP server interno** envolviendo el dispatcher: diseñado, no implementado.
-  Beneficio: protocol-agnostic, futuro inter-op con otros agentes. Estimación
-  1-2 días.
-- **RAG real**: hoy el "conocimiento" del agente vive en los prompts del package
-  (`agentes/<id>/prompts/*.md`). Para RAG con embeddings + vector store
-  (Chroma / FAISS), seguir §9.3 del diseño Fase 2.
+- **`mcp-toolkit` (P0, sprint S1)** — ✅ **CERRADO** en la rama `mcp`. Servidor
+  MCP standalone con patrón Jira + 16 tools forenses + ResourceLinks +
+  redaction modes + consent flag. Verificado E2E con Claude Desktop sobre el
+  memdump real. 2 rounds de panel de expertos.
+- **`mcp-evidence` (P0, sprint S2)** — pendiente. Resource server independiente
+  con URIs `evidence://<case>/<id>`. Cuando se integre el `ForensicAgent`
+  propio como cliente MCP in-process, este será la frontera de custodia
+  visible para los demás MCPs.
+- **`mcp-mitre-attack` (P0, sprint S3)** — pendiente. Bundle ATT&CK Enterprise
+  STIX (~30 MB) + `resources/list` por técnica. Sin él, el `_orchestrator/
+  mitre.md` no aterriza más allá del seed de 15 entradas.
+- **Resto de la lista** (`mcp-cases`, `mcp-audit`, `mcp-yara-rules`,
+  `mcp-sigma-rules`, `mcp-artifact-playbooks`, `mcp-timeline`, `mcp-report`,
+  los 3 lookup locales y los 2 cloud opt-in) — sprints S4–S6, ver §10 de
+  `MCP_INVENTORY.md`.
+- **RAG real**: hoy el "conocimiento" del agente vive en los prompts del
+  package (`agentes/<id>/prompts/*.md`) + en el bundle estático que servirá
+  `mcp-mitre-attack`. RAG con embeddings + vector store (Chroma / FAISS) es
+  Fase 2, seguir §9.3 del diseño.
 
 ---
 
 ## 4. Tests pendientes
 
-Cobertura actual es 322 backend tests pero hay gaps cubiertos:
+Cobertura actual es **335 backend tests** (322 legacy + 10 MCP + 3 audit lock).
+Gaps todavía abiertos:
 
 | Falta | Prioridad | Notas |
 |---|---|---|
