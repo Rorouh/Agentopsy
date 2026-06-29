@@ -258,6 +258,9 @@ def _validate_tool_id(tool_id: Any, os_profile: str, source: Path) -> str:
     return tool_id
 
 
+_VALID_REDACTION_MODES = frozenset({"strict", "relaxed"})
+
+
 def _parse_redaction_pattern(value: Any, source: Path) -> RedactionPattern:
     if not isinstance(value, dict):
         raise AgentPackageError(
@@ -276,4 +279,23 @@ def _parse_redaction_pattern(value: Any, source: Path) -> RedactionPattern:
         raise AgentPackageError(
             f"{source}: redaction pattern {name!r} replacement must be a string"
         )
-    return RedactionPattern(name=name, regex=regex, replacement=replacement)
+    apply_in_raw = value.get("apply_in", ["strict"])
+    if not isinstance(apply_in_raw, list) or not all(isinstance(m, str) for m in apply_in_raw):
+        raise AgentPackageError(
+            f"{source}: redaction pattern {name!r} apply_in must be a list of strings"
+        )
+    apply_in = tuple(m.strip().lower() for m in apply_in_raw if m.strip())
+    unknown = set(apply_in) - _VALID_REDACTION_MODES
+    if unknown:
+        raise AgentPackageError(
+            f"{source}: redaction pattern {name!r} declares unknown apply_in modes "
+            f"{sorted(unknown)}; expected subset of {sorted(_VALID_REDACTION_MODES)}"
+        )
+    if not apply_in:
+        raise AgentPackageError(
+            f"{source}: redaction pattern {name!r} has empty apply_in — at least "
+            f"'strict' is required (use 'apply_in: [strict]' as a sensible default)"
+        )
+    return RedactionPattern(
+        name=name, regex=regex, replacement=replacement, apply_in=apply_in
+    )

@@ -93,6 +93,32 @@ Forbidden: `provider = config.provider or "anthropic"`. If a required value (mod
 provider, API key, target, evidence path, OS profile) is missing or invalid, **fail
 loudly** with an actionable error. Designed parameter defaults (`def f(opts=None)`) are fine.
 
+**No fallbacks — explicit corollaries.** This rule generalises beyond config values:
+
+- **No "try the other tool when this one fails"**: if `tsk_mmls` returns exit≠0, do
+  not silently try `mmstat` "to see if it works". Surface the failure with the exact
+  stderr; let the caller (operator or upstream code) decide the next step.
+- **No "use the latest / single / default case/evidence/agent"**: if the operator
+  didn't select one, the API returns an actionable error. The MCP server requires
+  `select_case` before any tool call; if it's missing, return `INVALID_PARAMS` with
+  "call `select_case` first" — never auto-pick "the only case" or "the most recent".
+- **No "guess from context"**: if a parameter is required, demand it. Inferring
+  `os_profile` from the host platform, `evidence_id` from "the one most recently
+  registered", or `case_id` from "the only active case" — all forbidden. The
+  triage classifier (`forensia.triage`) is allowed to *suggest* a value to the
+  operator via the UI, never to set it silently.
+- **No "default to the cloud / default to the local model"**: the model backend
+  is set explicitly by the operator. An absent `MODEL_BACKEND` is a 503, not a
+  retry against the cloud or the local Ollama.
+- **No "downgrade silently to a degraded mode"**: if a container runtime is
+  missing, the affected tools are unavailable — the others still work, but the
+  unavailable ones return `INVALID_PARAMS` with the missing dependency named.
+  Do NOT substitute with a "best effort" alternative.
+
+Every fallback we ever wrote later had to be unwound because the silent default
+masked a real configuration bug. Fail loud, log the actionable error, exit
+non-zero where appropriate. Operator agency over surprises, always.
+
 ## RULE 3 — Logic lives in `forensia/*`; surfaces stay thin
 
 All orchestration lives in `backend/forensia/` modules (`evidence`, `audit`, `toolkit`,
