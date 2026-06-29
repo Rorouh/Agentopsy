@@ -79,9 +79,33 @@ def query(req: QueryRequest) -> dict:
     # Cloud LLM path — only when fully anchored (case + evidence) AND configured.
     if req.case_id and req.evidence_id and _cloud_ready():
         try:
-            audit = AuditLog(case_manager.case_dir(req.case_id) / "audit.jsonl")
+            case = case_manager.load(req.case_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+        # F2 / gate 9 — cloud egress needs recorded per-case consent. Without it we
+        # return a structured `consent_required` (NOT a silent demo-loop fallback,
+        # NOT any egress): zero evidence-derived bytes leave the host, and the
+        # backend is never even constructed.
+        consent = case.cloud_consent
+        if consent is None or not consent.granted:
+            return {
+                "status": "consent_required",
+                "reply": (
+                    "Este caso usa un backend cloud, pero no tiene consentimiento de "
+                    "egreso registrado. Los datos derivados de la evidencia saldrían a "
+                    "un tercero (RGPD / cadena de custodia). Concede el consentimiento "
+                    f"(POST /api/cases/{req.case_id}/consent) antes de consultar con cloud."
+                ),
+                "evidence_id": req.evidence_id,
+                "case_id": req.case_id,
+                "os_profile": req.os_profile,
+                "agent": pkg.summary(),
+            }
+
+        audit = AuditLog(case_manager.case_dir(req.case_id) / "audit.jsonl")
 
         try:
             model = get_backend("cloud")
@@ -90,7 +114,12 @@ def query(req: QueryRequest) -> dict:
 
         agent = ForensicAgent(package=pkg, model=model, evidence=evidence_manager, audit=audit)
         try:
-            result = agent.run(prompt=prompt, case_id=req.case_id, evidence_id=req.evidence_id)
+            result = agent.run(
+                prompt=prompt,
+                case_id=req.case_id,
+                evidence_id=req.evidence_id,
+                consent_ref=consent.ref,
+            )
         except (KeyError, ValueError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 

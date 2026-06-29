@@ -44,6 +44,12 @@ Esquema por entrada:
   stdout_sha256, stderr_sha256, artifact_sha256, consent_ref?, entry_hash }
 ```
 
+Además del **comando literal por tool run** (lo escribe el dispatcher), el loop del agente
+añade eventos de nivel-agente que el dispatcher no puede ver, encadenados en la misma
+`audit.jsonl`: `agent_run_start` (caso, evidencia + hash, backend, modelo), `agent_cloud_egress`
+(uno por salida a cloud: `consent_ref`, `redacted_payload_sha256`, `message_count`) y
+`agent_finding` (`finding_id`). Nunca registran bytes crudos, sólo hashes/metadatos.
+
 ## 4. Separación de volúmenes
 
 - **Evidencia**: solo-lectura (block-level RO). Nunca se escribe aquí.
@@ -57,6 +63,23 @@ audit log, **redacción/minimización** previa (enviar metadatos/artefactos deri
 bytes crudos de evidencia) y preview de lo que sale. Aunque el TFM use datos
 sintéticos/públicos, el diseño **impide técnicamente** que la evidencia cruda salga por
 defecto, no lo deja a la política.
+
+**Implementado (la frontera es código, no política).** El egreso a un backend no-local pasa
+por un único punto en `ForensicAgent.run`:
+
+1. **Redacción.** Antes de cada `model.next_action`, si `model.capabilities().is_local ==
+   False`, se aplican TODAS las `redaction_patterns` del paquete activo
+   (`forensia.agent.redaction.redact_messages`) sobre una copia de la conversación entera
+   —system (con el nombre de la evidencia inyectado), user y resultados de tool—; la
+   conversación canónica que conserva el loop sigue en claro para replay, sólo se redacta el
+   payload que sale. Con backend local no se redacta porque nada cruza el host.
+2. **Consentimiento por caso.** `CaseManager` persiste `cloud_consent {granted, granted_at,
+   by, ref}` en `case.json` (`grant_cloud_consent` / `POST /api/cases/{id}/consent`). Sin
+   consentimiento, `/api/agent/query` devuelve `consent_required` y **no instancia el
+   backend**: cero bytes salen (THREAT_MODEL gate 9). Además `run` rechaza con error
+   cualquier egreso cloud sin `consent_ref` (RULE 2, defensa en profundidad).
+3. **Auditoría del egreso.** Cada salida queda encadenada en `audit.jsonl` con el SHA-256 del
+   payload **redactado** (nunca los bytes), `consent_ref` y `message_count` (ver §3).
 
 ## 6. Manifiesto del caso (reproducibilidad)
 

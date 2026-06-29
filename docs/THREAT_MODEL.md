@@ -39,6 +39,15 @@ instrucción ni un comando.**
   tercero (RGPD; cadena de custodia rota). → **Cloud OFF por defecto; local (Ollama) por
   defecto.** Cloud es **opt-in por caso, con consentimiento registrado** en el audit log,
   **redacción/minimización** previa y **preview de qué bytes saldrán**.
+- **Estado (implementado).** La redacción declarada por paquete (`policy/redaction.yaml`) se
+  aplica en el **único punto de egreso** del loop (`forensia.agent.redaction.redact_messages`
+  ← `ForensicAgent.run`) a todo lo que cruza a un backend con `capabilities().is_local ==
+  False` (system + user + resultados de tool); con backend local no se redacta porque nada
+  sale del host. El **consentimiento es por caso** (`CaseManager.grant_cloud_consent` /
+  `POST /api/cases/{id}/consent`, persistido en `case.json`): sin él, `/api/agent/query`
+  responde `consent_required` y **no se construye siquiera el backend** — cero bytes salen.
+  Cada egreso queda en el audit log (`agent_cloud_egress` con el SHA-256 del payload
+  **redactado**, nunca los bytes). El **preview** de bytes en la UI queda pendiente.
 
 ### D. Confinamiento del sistema de ficheros
 - Un LLM autónomo podría leer `~/.ssh`, `~/.aws`, keychains. → Todo path **canonicalizado en

@@ -25,15 +25,26 @@ Safety (THREAT_MODEL gates 5-7):
 - Evidence paths and output directories are injected by FORENSIA, not by the
   model.
 - Every tool run goes through the dispatcher → ``ArtifactRun`` + ``audit.jsonl``.
+
+Egress border (THREAT_MODEL gate 9 / FORENSIC_SOUNDNESS §5):
+- When the backend is NOT local, the conversation handed to ``next_action`` is
+  redacted with the package's ``redaction_patterns`` at a single point — the raw
+  conversation is kept internally for replay, only the wire payload is minimized.
+- A cloud run REFUSES to start without a ``consent_ref`` (recorded per-case
+  consent); local runs never leave the host and need none.
+- The agent chains run-start, each cloud egress (hash of the redacted payload),
+  and each finding into the case ``audit.jsonl`` — metadata/hashes only.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from typing import Any
 
 from forensia.agent.package import AgentPackage
+from forensia.agent.redaction import redact_messages
 from forensia.agent.tool_schemas import (
     AUTO_INJECTED,
     internal_tool_specs,
@@ -96,7 +107,13 @@ class ForensicAgent:
     def available_tool_ids(self) -> tuple[str, ...]:
         return tuple(t for t in self.package.policy.allowed_tools if t in TOOL_BY_ID)
 
-    def run(self, prompt: str, case_id: str, evidence_id: str) -> AgentLoopResult:
+    def run(
+        self,
+        prompt: str,
+        case_id: str,
+        evidence_id: str,
+        consent_ref: str | None = None,
+    ) -> AgentLoopResult:
         # Local import to avoid a circular dep that only matters at call time.
         from forensia.toolkit.dispatcher import ToolExecutionError, execute as dispatch_tool
 
@@ -106,6 +123,20 @@ class ForensicAgent:
             raise ValueError("case_id is required for an LLM-driven run")
         if not evidence_id:
             raise ValueError("evidence_id is required for an LLM-driven run")
+
+        # Egress posture (THREAT_MODEL gate 9 / FORENSIC_SOUNDNESS §5): a non-local
+        # backend means evidence-derived content crosses to a third party. Redact
+        # at the single egress point and REFUSE without a recorded per-case
+        # consent_ref (RULE 2 — no silent egress). Local backends never leave the
+        # host, so there is nothing to redact or consent to.
+        is_cloud = not self.model.capabilities().is_local
+        if is_cloud and not consent_ref:
+            raise ValueError(
+                "cloud egress requires a recorded consent_ref for this case "
+                "(THREAT_MODEL gate 9): refusing to send evidence-derived content "
+                "to a third party without registered consent."
+            )
+        model_name = getattr(self.model, "model_name", self.model.name)
 
         handle = self.evidence.get(case_id, evidence_id)
         evidence_path = str(handle.original_path)
@@ -138,9 +169,42 @@ class ForensicAgent:
         max_iter = max(1, int(self.package.model.max_iterations or 8))
         tool_calls_log: list[dict[str, Any]] = []
 
+        # F3 — anchor the run in the case's hash-chained audit log: which model,
+        # which backend, over which evidence. Only metadata/hashes ever land here.
+        self._audit_event(
+            "agent_run_start",
+            case_id=case_id,
+            evidence_id=evidence_id,
+            evidence_sha256=handle.sha256,
+            backend=self.model.name,
+            model_name=model_name,
+            consent_ref=consent_ref,
+        )
+
         for iteration in range(max_iter):
+            # F1 — SINGLE egress point. For a cloud backend, redact a copy of the
+            # whole conversation (system + user + tool results) with the package's
+            # patterns; the canonical `messages` stays raw. F3 — audit each egress
+            # with the SHA-256 of the exact redacted payload (never the bytes).
+            outbound = redact_messages(messages, self.package.policy.redaction_patterns) if is_cloud else messages
+            if is_cloud:
+                payload = json.dumps(
+                    outbound, sort_keys=True, separators=(",", ":"), default=str
+                ).encode("utf-8")
+                self._audit_event(
+                    "agent_cloud_egress",
+                    case_id=case_id,
+                    evidence_id=evidence_id,
+                    backend=self.model.name,
+                    model_name=model_name,
+                    consent_ref=consent_ref,
+                    redacted_payload_sha256=hashlib.sha256(payload).hexdigest(),
+                    message_count=len(outbound),
+                    iteration=iteration,
+                )
+            egress_state = {**state, "messages": outbound}
             try:
-                action = self.model.next_action(state, tool_specs)
+                action = self.model.next_action(egress_state, tool_specs)
             except Exception as exc:  # noqa: BLE001 — surface as friendly reply
                 logger.warning("model.next_action failed: %s", exc)
                 return AgentLoopResult(
@@ -174,6 +238,14 @@ class ForensicAgent:
                             params["evidence_id"] = evidence_id
                         finding = finding_store.append(case_id, params)
                         body = {"finding_id": finding.id, "stored": True}
+                        # F3 — record the finding's provenance in the audit chain
+                        # (only the id; the finding body lives in findings.jsonl).
+                        self._audit_event(
+                            "agent_finding",
+                            case_id=case_id,
+                            evidence_id=evidence_id,
+                            finding_id=finding.id,
+                        )
                     except (KeyError, ValueError) as exc:
                         body = {"error": f"record_finding rejected: {exc}"}
                     messages.append(self._tool_result_msg(action, body))
@@ -244,6 +316,21 @@ class ForensicAgent:
         )
 
     # ---- internals ---------------------------------------------------------
+
+    def _audit_event(self, event: str, **fields: Any) -> None:
+        """Append one event to the case audit chain, if an AuditLog was wired.
+
+        The dispatcher already audits each tool run (the literal argv); this adds
+        the agent-level events the dispatcher cannot see — run start, cloud
+        egress, and findings (F3). Never records raw evidence bytes, only
+        metadata and hashes. Best-effort: an audit failure must not crash a run.
+        """
+        if self.audit is None:
+            return
+        try:
+            self.audit.append({"event": event, **fields})
+        except Exception as exc:  # noqa: BLE001 — audit must never break the loop
+            logger.warning("audit append failed for event %s: %s", event, exc)
 
     def _system_prompt(
         self,
