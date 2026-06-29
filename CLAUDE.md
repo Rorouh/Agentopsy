@@ -6,13 +6,20 @@ and the **non-negotiable invariants**. Read it before writing code.
 
 ## What FORENSIA is
 
-FORENSIA is an **AI-assisted post-mortem digital forensics desktop tool** (TFM).
+FORENSIA is an **AI-assisted post-mortem digital forensics desktop application** (TFM).
 A forensic analyst loads already-extracted evidence (`.vmdk` / `.raw` / RAM dumps),
 and one AI agent (parametrized per OS profile) drives a curated toolkit of forensic
 CLI tools to produce a structured, court-style report plus a timeline.
 
+Authoritative source of scope and planning: [`FORENSIA_Alcance_y_Planificacion.md`](FORENSIA_Alcance_y_Planificacion.md).
+
 - **Post-mortem only.** No live forensics, no acquisition from the original machine.
-- **Desktop only.** No CLI surface, no web app. One surface: the desktop app.
+- **Universal desktop app, one-line install.** Native installer per OS
+  (`curl … | bash` on Linux/macOS, signed `.exe` / `.dmg` on Windows/macOS). No
+  `git clone + docker compose up`. The full toolkit ships with the installer — bundled
+  native binaries or pre-loaded OCI images (see RULE 1). Docker is **internal** to the
+  app, never invoked by the user.
+- **One surface.** The installed desktop app — no CLI for the end user, no web app.
 - **Academic.** No certified legal validity — but we hold ourselves to real forensic
   rigor anyway (chain of custody, integrity, reproducibility).
 
@@ -129,6 +136,20 @@ adapters** — no business logic, no duplicated orchestration. Keep modules pure
 ## RULE 4 — Keep documentation in sync before committing
 
 Whenever changes are made to the codebase, all corresponding documentation (including READMEs, markdown files, and any other documentation files across the entire project) must be updated to reflect those changes before committing. No code or feature changes should be committed with outdated documentation.
+
+## RULE 5 — Pull from `origin` at the start of every session
+
+At the very start of every session — before reading code, before planning, before
+editing — run `git pull` on the currently checked-out branch to sync with `origin`.
+The remote state has moved since your last context: branches have advanced, commits
+have landed, decisions have been recorded. Your conversational memory of the repo is
+**not** the source of truth; the remote is.
+
+This applies every time you switch branches mid-session as well: `git checkout <branch>`
+is immediately followed by `git pull` for that branch.
+
+If the pull surfaces conflicts, resolve them before doing any other work — never pile
+new commits on top of a divergent local state.
 
 ## FORENSIC INVARIANTS (chain of custody — do not erode these)
 
