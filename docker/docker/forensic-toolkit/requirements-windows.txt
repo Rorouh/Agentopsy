@@ -1,0 +1,8 @@
+# Parsers de artefactos Windows (capa Python del maletín).
+# Para reproducibilidad estricta, fija cada versión con == tras el primer build
+# (pip freeze) o usando un lockfile. Se dejan sin pin para tolerar releases.
+LnkParse3            # Parser de accesos directos .lnk
+python-evtx          # Lectura/volcado de registros de eventos .evtx (evtx_dump)
+regipy               # Análisis del registro de Windows (CLI regipy-*)
+pyhindsight          # Forense de navegadores Chromium/Chrome (hindsight)
+windowsprefetch      # Parser de archivos Prefetch (.pf)
