@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Case, EvidenceHandle } from "../global";
 import type { ViewId } from "../navigation/navItems";
 import { Badge } from "../ui/Badge";
@@ -49,19 +49,31 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
 
   const [registering, setRegistering] = useState(false);
   const [verifyingIds, setVerifyingIds] = useState<Set<string>>(new Set());
-  const [evidenceError, setEvidenceError] = useState<string | null>(null);
+  // Tagged so the toast can label the failure honestly. Mixing both in one
+  // string slot used to mean a verify 404 showed up as "No se pudo registrar
+  // la evidencia: …" which was wrong both ways.
+  const [evidenceError, setEvidenceError] = useState<
+    { kind: "register" | "verify"; message: string } | null
+  >(null);
 
   const activeCase = useMemo(
     () => cases.find((c) => c.id === activeCaseId) ?? null,
     [cases, activeCaseId]
   );
 
-  const refreshEvidence = useCallback(async (caseId: string) => {
-    const list = await window.forensia.cases.listEvidence(caseId);
-    setEvidence(list);
-  }, []);
+  // Mirror of activeCaseId in a ref. The native file-dialog (pickEvidenceFile)
+  // is async and the user may create/switch case while it's open; the closure
+  // of pickAndRegisterEvidence would otherwise register the evidence against
+  // a stale case_id. The ref always carries the latest value at the moment
+  // the dialog resolves.
+  const activeCaseIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    activeCaseIdRef.current = activeCaseId;
+  }, [activeCaseId]);
 
-  // Initial load: list cases, pick most recent, fetch its evidence.
+  // Initial load: list cases and pick the most recent as active. Evidence
+  // fetching is owned by the useEffect below — keyed on activeCaseId — so
+  // any subsequent change (switch chip, submitCase) refetches uniformly.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -70,11 +82,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
         if (cancelled) return;
         setCases(list);
         if (list.length > 0) {
-          const newest = list[0];
-          setActiveCaseId(newest.id);
-          const ev = await window.forensia.cases.listEvidence(newest.id);
-          if (cancelled) return;
-          setEvidence(ev);
+          setActiveCaseId(list[0].id);
         }
         setPhase("ready");
       } catch (err) {
@@ -89,17 +97,41 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
     };
   }, []);
 
-  // When the user picks a different case in the chip list, refetch evidence.
+  // Single source of truth for the evidence list: it follows activeCaseId.
+  // We clear immediately so the UI never paints zombie rows from the previous
+  // case (the source of the 404 from /verify when stale rows pointed at the
+  // wrong case). cancelled flag prevents a slow listEvidence from a previous
+  // case_id overwriting a newer fetch.
+  useEffect(() => {
+    if (!activeCaseId) {
+      setEvidence([]);
+      return;
+    }
+    let cancelled = false;
+    setEvidence([]);
+    (async () => {
+      try {
+        const ev = await window.forensia.cases.listEvidence(activeCaseId);
+        if (!cancelled) setEvidence(ev);
+      } catch (err) {
+        if (!cancelled) {
+          setEvidenceError({
+            kind: "register",
+            message: String(err instanceof Error ? err.message : err),
+          });
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeCaseId]);
+
   const switchCase = useCallback(
-    async (caseId: string) => {
+    (caseId: string) => {
       if (caseId === activeCaseId) return;
       setActiveCaseId(caseId);
-      try {
-        const ev = await window.forensia.cases.listEvidence(caseId);
-        setEvidence(ev);
-      } catch (err) {
-        setEvidenceError(String(err instanceof Error ? err.message : err));
-      }
+      // Evidence refetch happens automatically via the useEffect above.
     },
     [activeCaseId]
   );
@@ -116,7 +148,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
       });
       setCases((prev) => [created, ...prev]);
       setActiveCaseId(created.id);
-      setEvidence([]);
+      // Evidence is reset by the activeCaseId effect (it always clears first).
       setForm(EMPTY_FORM);
     } catch (err) {
       setCreateError(String(err instanceof Error ? err.message : err));
@@ -126,16 +158,40 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
   }, [form]);
 
   const pickAndRegisterEvidence = useCallback(async () => {
-    if (!activeCase) return;
+    // Snapshot the case at the moment the user CLICKED "Seleccionar archivo".
+    // The dialog is async; if the user switches cases (or creates one) while
+    // it's open, we abort instead of registering the file against whatever
+    // case ends up active when the dialog resolves. activeCaseIdRef holds the
+    // current value so we can detect the change after the await.
+    const intendedCaseId = activeCase?.id;
+    if (!intendedCaseId) return;
     setEvidenceError(null);
     try {
       const sourcePath = await window.forensia.cases.pickEvidenceFile();
       if (!sourcePath) return; // user cancelled the dialog
+      if (activeCaseIdRef.current !== intendedCaseId) {
+        setEvidenceError({
+          kind: "register",
+          message:
+            "El caso activo cambió mientras el diálogo de archivo estaba abierto. " +
+            "Cancelado para no anclar la evidencia al caso equivocado. " +
+            "Vuelve a seleccionar el archivo con el caso correcto activo.",
+        });
+        return;
+      }
       setRegistering(true);
-      const handle = await window.forensia.cases.registerEvidence(activeCase.id, sourcePath);
-      setEvidence((prev) => [handle, ...prev]);
+      const handle = await window.forensia.cases.registerEvidence(intendedCaseId, sourcePath);
+      // Only append if the user hasn't navigated away in the meantime; if they
+      // did, the effect on activeCaseId already refetched and will reflect
+      // reality next time they come back to this case.
+      if (activeCaseIdRef.current === intendedCaseId) {
+        setEvidence((prev) => [handle, ...prev]);
+      }
     } catch (err) {
-      setEvidenceError(String(err instanceof Error ? err.message : err));
+      setEvidenceError({
+        kind: "register",
+        message: String(err instanceof Error ? err.message : err),
+      });
     } finally {
       setRegistering(false);
     }
@@ -143,7 +199,8 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
 
   const verifyOne = useCallback(
     async (evidenceId: string) => {
-      if (!activeCase) return;
+      const intendedCaseId = activeCase?.id;
+      if (!intendedCaseId) return;
       setEvidenceError(null);
       setVerifyingIds((prev) => {
         const next = new Set(prev);
@@ -152,16 +209,22 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
       });
       try {
         const updated = await window.forensia.cases.verifyEvidence(
-          activeCase.id,
+          intendedCaseId,
           evidenceId
         );
         // The router returns the full handle with last_verification freshly
-        // persisted (verification.json + audit.jsonl). Replace the row in place.
-        setEvidence((prev) =>
-          prev.map((ev) => (ev.evidence_id === evidenceId ? { ...ev, ...updated } : ev))
-        );
+        // persisted (verification.json + audit.jsonl). Replace the row in place
+        // — but only if the active case hasn't changed under us.
+        if (activeCaseIdRef.current === intendedCaseId) {
+          setEvidence((prev) =>
+            prev.map((ev) => (ev.evidence_id === evidenceId ? { ...ev, ...updated } : ev))
+          );
+        }
       } catch (err) {
-        setEvidenceError(String(err instanceof Error ? err.message : err));
+        setEvidenceError({
+          kind: "verify",
+          message: String(err instanceof Error ? err.message : err),
+        });
       } finally {
         setVerifyingIds((prev) => {
           const next = new Set(prev);
@@ -179,7 +242,12 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
       const updated = await window.forensia.cases.close(activeCase.id);
       setCases((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
     } catch (err) {
-      setEvidenceError(String(err instanceof Error ? err.message : err));
+      // Cierre de caso comparte el slot de errores con register/verify; el copy
+      // "no se pudo verificar" cuadra peor que el de register, así que va aquí.
+      setEvidenceError({
+        kind: "register",
+        message: String(err instanceof Error ? err.message : err),
+      });
     }
   }, [activeCase]);
 
@@ -362,7 +430,12 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
           </div>
           {evidenceError && (
             <div className="error-state" style={{ marginTop: 8 }}>
-              <strong>No se pudo registrar la evidencia:</strong> {evidenceError}
+              <strong>
+                {evidenceError.kind === "register"
+                  ? "No se pudo registrar la evidencia:"
+                  : "No se pudo verificar la evidencia:"}
+              </strong>{" "}
+              {evidenceError.message}
             </div>
           )}
         </Card>

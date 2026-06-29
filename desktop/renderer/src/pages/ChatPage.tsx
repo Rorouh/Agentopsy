@@ -199,14 +199,20 @@ export function ChatPage({ caps, activeCase, activeEvidence, onTurnComplete }: C
     }
 
     let assistantReply = "";
+    // Captured per-turn so the assistant ChatMessage we persist below carries
+    // the tool ledger; without it the backend can't replay "what you already
+    // ran" into the next turn's context.
+    let toolCalls: unknown[] | null = null;
     try {
       const res = await window.forensia.query({
         prompt: text,
         os_profile: activeProfile,
         evidence_id: activeEvidence?.evidence_id ?? "",
         case_id: activeCase?.id,
+        session_id: CHAT_SESSION_ID,
       });
       assistantReply = res.reply;
+      toolCalls = res.tool_calls ?? null;
       setMsgs((prev) => {
         const next = [...prev];
         next[next.length - 1] = { role: "assistant", content: res.reply };
@@ -230,6 +236,7 @@ export function ChatPage({ caps, activeCase, activeEvidence, onTurnComplete }: C
           .appendChat(activeCase.id, CHAT_SESSION_ID, {
             role: "assistant",
             content: assistantReply,
+            tool_calls: toolCalls,
           })
           .catch(() => {
             /* best-effort */

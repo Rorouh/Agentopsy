@@ -526,6 +526,39 @@ html, body, #root {
   font-size: 12px;
 }
 
+/* ── Profile-mismatch warning (case.os_profile vs evidence.detected_os) ── */
+.profile-mismatch-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  background: rgba(234, 179, 8, 0.08);
+  border: 1px solid rgba(234, 179, 8, 0.35);
+  border-radius: var(--radius-card);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.profile-mismatch-banner-icon {
+  font-size: 18px;
+  line-height: 1;
+  margin-top: 1px;
+  color: rgb(234, 179, 8);
+}
+.profile-mismatch-banner-body { flex: 1; }
+.profile-mismatch-banner-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.profile-mismatch-banner code {
+  background: rgba(234, 179, 8, 0.15);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
 /* ── Loading / error states ─────────────────────────────────────────────── */
 .loading-state {
   display: flex;

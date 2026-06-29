@@ -123,6 +123,66 @@ Si no hay agente cargado para ese perfil, `/api/agent/query` responde 503 y el
 chat muestra: *"No hay agente cargado para el perfil `unix`. Suelta su carpeta
 dentro de `agentes/` y reinicia FORENSIA"*. **Nunca** se inventa un fallback.
 
+### 6.1 Guard rail de perfil + triage de evidencia
+
+Cuando el caso lleva un perfil pero la evidencia es de otro SO o de un tipo
+que no encaja con el playbook elegido, FORENSIA tiene tres defensas
+independientes que se refuerzan entre sí:
+
+1. **Triage backend (`forensia.triage.fingerprint_evidence`).** En
+   `EvidenceManager.register()` se computa un par `(family, kind)` por escaneo
+   determinista sobre la copia read-only ya hash-verificada:
+   - **family** ∈ {`unix`, `windows`, `unknown`} por marcadores byte-string
+     (`Microsoft Windows`, `Linux version`, `/etc/passwd`, `Mach-O`…).
+   - **kind** ∈ {`disk`, `memory`, `container_disk`, `unknown`} por cabeceras
+     de fixed-offset (LiME, Windows crash dump, EWF, AFF, VMDK, VDI, QCOW,
+     VHD/VHDX), MBR/GPT/NTFS/ext, y scoring PE-scatter + RSDS + page-0-zero
+     para detectar volcados RAM Volatility-style sin cabecera.
+   Ambos campos se persisten en `baseline.json` (con `triage_signals` audit-
+   trail). Lazy backfill en `get()` para evidencia anterior al módulo.
+
+2. **Guard rail en los prompts** (`agentes/forensia-*/prompts/system.md`,
+   regla 8 unix / regla 9 windows). Ante mismatch de `family`, el agente está
+   obligado a negarse a invocar tools y a pedir reabrir el caso con el perfil
+   correcto. **No cambia de agente por sí mismo** — RULE 2.
+
+3. **Routing por `kind` en el system prompt.** El `_system_prompt` del
+   `ForensicAgent` añade un bloque «Ruta del playbook» según `detected_kind`:
+   `memory` → salta a la sección B (Volatility); `disk`/`container_disk` →
+   sección A (TSK). Sin esto, el agente arranca siempre por la sección A del
+   playbook y desperdicia iteraciones en `tsk_mmls`/`tsk_fls` cuando la
+   evidencia es un memdump.
+
+4. **Banner en la UI** (`InvestigationPage.tsx`). Cuando hay mismatch de
+   `family`, aparece un banner amarillo arriba del chat. El cambio de caso lo
+   hace la operadora; la UI no lo hace por ella.
+
+`unknown` no es un mismatch — significa que el triage no tuvo señal clara y
+se permite un único probe diagnóstico antes de seguir.
+
+### 6.2 Memoria conversacional del agente
+
+Cada `/api/agent/query` recibe `session_id` (default `"main"`). El backend lee
+`ChatStore` y construye prefix de OpenAI messages que se splicea entre system
+y el user prompt entrante:
+
+1. **Ledger de tool runs** — del campo `tool_calls` que el frontend persiste
+   en cada `assistant` ChatMessage tras una respuesta. Una línea por
+   invocación previa con `tool_id + exit_code + run_id[:8]`. Le dice al
+   modelo qué YA ejecutó para que no repita el mismo `{tool_id, params}`.
+2. **Ledger de findings** — los hallazgos estructurados que el propio agente
+   registró con `record_finding` en turnos anteriores. Le dice qué ya
+   concluyó para que construya encima en vez de re-deducir.
+3. **Transcript user/assistant** — los turnos previos en texto. Le da
+   referencia anafórica para mensajes tipo "hazlo".
+
+Caps: 6 turnos / 8K chars de transcript / 30 entradas de ledger / 10
+findings. Sin LLM-based summarization en v1. Detalle en
+`backend/forensia/agent/history.py`.
+
+Source of truth = `ChatStore` (servidor), no la memoria del renderer — RULE 2:
+no confíes en input no verificado. El frontend solo envía `session_id`.
+
 ## 7. Cómo lo entrega el equipo de entrenamiento
 
 1. Empaqueta su carpeta `<id>/` con el layout de arriba.

@@ -124,6 +124,16 @@ export function InvestigationPage({ caps, onNavigate }: InvestigationPageProps) 
     ? `${activeEvidence.original_path.split("/").pop() ?? activeEvidence.original_path}`
     : "sin evidencia registrada todavía";
 
+  // RULE 2: detected_os NEVER auto-switches the case. We only surface the
+  // disagreement and tell the operator which profile would be appropriate.
+  // "unknown" is not a mismatch — triage was inconclusive, not contradictory.
+  const profileMismatch =
+    activeEvidence != null &&
+    activeEvidence.detected_os !== "unknown" &&
+    activeEvidence.detected_os !== activeCase.os_profile
+      ? activeEvidence.detected_os
+      : null;
+
   return (
     <div
       style={{
@@ -158,6 +168,15 @@ export function InvestigationPage({ caps, onNavigate }: InvestigationPageProps) 
                   <>
                     {" · SHA-256 "}
                     <code>{activeEvidence.sha256.slice(0, 8)}…</code>
+                    {activeEvidence.detected_os !== "unknown" && (
+                      <>
+                        {" · detectado "}
+                        <strong>{activeEvidence.detected_os}</strong>
+                        {activeEvidence.detected_kind !== "unknown" && (
+                          <> / <strong>{activeEvidence.detected_kind}</strong></>
+                        )}
+                      </>
+                    )}
                   </>
                 )}
               </span>
@@ -177,6 +196,25 @@ export function InvestigationPage({ caps, onNavigate }: InvestigationPageProps) 
           </Button>
         )}
       </div>
+
+      {profileMismatch && (
+        <div className="profile-mismatch-banner">
+          <span className="profile-mismatch-banner-icon" aria-hidden="true">⚠</span>
+          <div className="profile-mismatch-banner-body">
+            <div className="profile-mismatch-banner-title">
+              Desajuste de perfil — el agente activo no es el adecuado para esta evidencia
+            </div>
+            <div>
+              El caso declara <code>perfil = {activeCase.os_profile}</code> pero el triage de FORENSIA
+              identificó la evidencia como <code>{profileMismatch}</code>. El agente del caso
+              (<code>forensia-{activeCase.os_profile}</code>) se negará a invocar herramientas hasta
+              que cierres este caso y lo reabras con <code>perfil = {profileMismatch}</code> para que
+              lo lleve <code>forensia-{profileMismatch}</code>. FORENSIA no cambia el perfil por ti
+              (RULE 2 — la decisión es del operador).
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="investigation-layout" style={{ flex: 1, minHeight: 0 }}>
         <ChatPage
