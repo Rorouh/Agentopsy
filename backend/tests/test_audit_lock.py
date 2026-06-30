@@ -1,4 +1,4 @@
-"""Concurrency test for AuditLog.append + fcntl.flock.
+"""Concurrency test for AuditLog.append + cross-platform file lock.
 
 Without the lock, two processes appending concurrently both read the same
 prev_hash and the chain branches silently. This test arms two CHILD processes
@@ -6,8 +6,10 @@ hammering the same log file in parallel and asserts that AuditLog.verify()
 remains True afterwards — i.e. the chain is intact, regardless of who won
 each lock.
 
-Uses multiprocessing (real OS processes) because flock is the file-locking
-mechanism we care about; a threading test would not exercise that path.
+Uses multiprocessing (real OS processes) because the lock is cross-process
+(via the ``filelock`` library: ``fcntl`` on POSIX, ``msvcrt`` on Windows); a
+threading test would not exercise that path. The propuesta v1.1 requires the
+audit chain to remain coherent on Windows / macOS / Linux uniformly.
 """
 
 from __future__ import annotations

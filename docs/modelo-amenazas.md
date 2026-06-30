@@ -78,7 +78,7 @@ análogas pero los gates difieren:
   `dump_path`/etc. Los inyecta el dispatcher desde `EvidenceManager`. RULE
   L2 — la frontera de custodia no se rompe por el cliente MCP.
 - **AuditLog concurrencia**: cuando el sidecar HTTP y el servidor MCP
-  comparten un caso, ambos escriben en el mismo `audit.jsonl`. `fcntl.flock`
+  comparten un caso, ambos escriben en el mismo `audit.jsonl`. `filelock` (POSIX `fcntl` / Windows `msvcrt`)
   exclusivo en `AuditLog.append` evita carrera silenciosa de la cadena
   hash. Test `test_audit_lock.py`.
 - **Shutdown limpio**: SIGTERM/SIGINT cierran `sys.stdin` a nivel fd para
@@ -110,7 +110,7 @@ de panel de expertos en 2026-06-29.
 | 15 | MCP redaction (`policy/redaction.yaml`) aplicada antes de wire MCP | test |
 | 16 | MCP schemas Pydantic `extra='forbid'`: no aceptan paths crudos a evidencia | test |
 | 17 | MCP aux paths (yara rules, jq input, chainsaw sigma/rules) confinados a `~/.forensia/cases/` | test |
-| 18 | `AuditLog.append` con `fcntl.flock`: chain sobrevive a concurrencia sidecar↔MCP | test concurrente con `multiprocessing` |
+| 18 | `AuditLog.append` con `filelock` (POSIX `fcntl` / Windows `msvcrt`): chain sobrevive a concurrencia sidecar↔MCP | test concurrente con `multiprocessing` |
 
 > El transporte (gates 1–3) es copia directa del baseline de fractia. El núcleo del riesgo
 > (gates 5–8) es lo que el plan original **no** modelaba: fíjalos en el esqueleto desde el

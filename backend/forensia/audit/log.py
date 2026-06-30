@@ -3,27 +3,31 @@
 Records the LITERAL action (argv), never the LLM's stated intent. Implemented for real
 in the skeleton because it is cheap and central to chain of custody.
 
-**Concurrency**: ``append`` takes an exclusive ``fcntl.flock`` over the log file for the
-duration of the read-prev → compute → write critical section. Without the lock, two
-concurrent appenders both read the same ``prev_hash`` and the chain branches silently —
-only detectable later by ``verify()``. With it, appenders serialise. The lock is held for
-microseconds and goes away when the file descriptor closes (process death is safe).
+**Concurrency**: ``append`` takes an exclusive cross-platform file lock (via the
+``filelock`` library, which uses ``fcntl`` on POSIX and ``msvcrt`` on Windows) over a
+sidecar ``audit.jsonl.lock`` file for the duration of the read-prev → compute → write
+critical section. Without the lock, two concurrent appenders both read the same
+``prev_hash`` and the chain branches silently — only detectable later by ``verify()``.
+With it, appenders serialise. The lock is held for microseconds and goes away when the
+context manager exits (process death is also safe — the OS releases the lock).
 
 This matters now because the MCP server (``forensia.mcp.toolkit``) may run as a separate
 process (``python -m forensia.mcp`` spawned by Claude Desktop) that writes to the SAME
 ``audit.jsonl`` as the sidecar's dispatcher writes to. The lock is the only thing that
-keeps the hash chain coherent across processes.
+keeps the hash chain coherent across processes — and the propuesta v1.1 requires this to
+work on Windows / macOS / Linux uniformly.
 """
 
 from __future__ import annotations
 
-import fcntl
 import hashlib
 import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from filelock import FileLock
 
 GENESIS = "0" * 64
 
@@ -36,20 +40,10 @@ class AuditLog:
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-
-    def _last_hash_from_fd(self, fh) -> str:
-        """Read the chain tail from an OPEN file descriptor (the same one locked by
-        ``append``). Avoids the race window between two ``read_text`` + ``open("a")``
-        cycles. Empty file → GENESIS.
-        """
-        fh.seek(0)
-        last = GENESIS
-        for line in fh:
-            stripped = line.strip()
-            if not stripped:
-                continue
-            last = json.loads(stripped)["entry_hash"]
-        return last
+        # Lockfile is a SIDECAR of the audit log (not the log itself) so the locking
+        # semantics are uniform across POSIX (advisory flock) and Windows (mandatory
+        # msvcrt range lock). The audit.jsonl remains pure append-only data.
+        self._lock_path = self.path.with_suffix(self.path.suffix + ".lock")
 
     def _last_hash(self) -> str:
         if not self.path.exists():
@@ -61,34 +55,23 @@ class AuditLog:
         return last
 
     def append(self, event: dict[str, Any]) -> dict[str, Any]:
-        # Open with O_RDWR | O_CREAT | O_APPEND so the same fd can both read the
-        # tail and append the new line under a single lock. ``a`` mode would seek
-        # to end on every write but reading the tail still needs explicit seek(0).
-        flags = os.O_RDWR | os.O_CREAT | os.O_APPEND
-        fd = os.open(self.path, flags, 0o644)
-        try:
-            with os.fdopen(fd, "r+", encoding="utf-8") as fh:
-                # Exclusive lock across processes. Released when fd closes.
-                fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
-                prev = self._last_hash_from_fd(fh)
-                body = {
-                    "ts_utc": datetime.now(timezone.utc).isoformat(),
-                    "prev_hash": prev,
-                    **event,
-                }
-                body["entry_hash"] = hashlib.sha256(_canonical(body)).hexdigest()
-                # O_APPEND guarantees writes go to EOF atomically.
+        # Exclusive cross-process lock on the sidecar lockfile. The critical section
+        # is read-tail → compute hash → append: the read and the write must observe
+        # the same ``prev_hash``. Outside the lock, appends to ``audit.jsonl`` would
+        # race and the chain would branch silently.
+        with FileLock(str(self._lock_path)):
+            prev = self._last_hash()
+            body = {
+                "ts_utc": datetime.now(timezone.utc).isoformat(),
+                "prev_hash": prev,
+                **event,
+            }
+            body["entry_hash"] = hashlib.sha256(_canonical(body)).hexdigest()
+            with open(self.path, "a", encoding="utf-8") as fh:
                 fh.write(json.dumps(body, sort_keys=True) + "\n")
                 fh.flush()
                 os.fsync(fh.fileno())
-                return body
-        except BaseException:
-            # If we opened fd but didn't get into the with-block, close it.
-            try:
-                os.close(fd)
-            except OSError:
-                pass
-            raise
+            return body
 
     def verify(self) -> bool:
         prev = GENESIS

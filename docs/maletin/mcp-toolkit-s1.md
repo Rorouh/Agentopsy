@@ -6,6 +6,15 @@
 > 335/335 tests passing. Commit `92083f2` en `origin/mcp`. Lo que sigue (sprint S2):
 > `mcp-evidence` standalone + integración del `ForensicAgent` propio como cliente MCP
 > in-process — ver [`inventario-mcps.md §10`](inventario-mcps.md#10-plan-de-implementación-por-sprint-cronograma-real-del-tfm).
+>
+> **Post-S1 update (2026-06-30, propuesta v1.1).** L5 / Tarea 2 se implementó originalmente
+> con `fcntl.flock`. Tras pasar la propuesta a *app universal Windows / macOS / Linux con
+> instalable one-liner*, `fcntl` (POSIX-only) dejó de servir y el lock se migró a la lib
+> `filelock` (POSIX `fcntl` / Windows `msvcrt`) sobre un sidecar `audit.jsonl.lock`. El
+> contrato (cadena hash coherente bajo concurrencia sidecar↔MCP) y el test
+> `test_audit_lock.py` siguen igual; lo único que cambia es el mecanismo de adquisición
+> del lock. Las menciones de `fcntl.flock` en el cuerpo histórico de este documento
+> reflejan el cierre original de S1.
 
 Plan operativo para construir el primer servidor MCP de FORENSIA y dejarlo demoable a los
 compañeros y al PI. Es el desglose accionable del MCP número 1 declarado en

@@ -12,6 +12,9 @@ dependencies = [
     "uvicorn[standard]>=0.29",
     "pydantic>=2.6",
     "pyyaml>=6.0",
+    # Cross-platform exclusive file lock for AuditLog.append (replaces fcntl.flock
+    # so the audit chain stays coherent across processes on Win/macOS/Linux).
+    "filelock>=3.13",
 ]
 
 [project.optional-dependencies]
