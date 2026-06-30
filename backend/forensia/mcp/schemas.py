@@ -1,0 +1,544 @@
+"""Pydantic input schemas for every forensic tool published via MCP.
+
+D4 of mcp-toolkit-s1.md: each ``Tool`` in the catalog has a tightly-typed
+schema that becomes its MCP ``inputSchema``. The schema enforces the L2 line:
+**no raw paths to evidence are accepted as parameters**. Path-bearing fields
+are:
+
+- Evidence paths (image_path / dump_path / evtx_path / mft_path / hive_path /
+  target_path / bodyfile_path / target_dir / evtx_dir): EXCLUDED from the
+  schema. The MCP server injects them from the session's selected evidence
+  via ``toolkit._inject_evidence_path``.
+- ``output_dir``: EXCLUDED — injected by the dispatcher from ArtifactStore.
+- Auxiliary paths that are NOT evidence (yara ``rules_path``, jq
+  ``input_path``, chainsaw ``sigma_dir`` / ``rules_dir``): present as
+  optional strings, but CONFINED to FORENSIA's case tree via
+  ``_validate_confined_path`` — see SEC-1 of the round-1 panel review. A
+  malicious LLM cannot exfiltrate ``/etc/passwd`` or ``~/.aws/credentials``
+  through these fields.
+
+We keep the schemas under ``forensia.mcp.schemas`` (a sibling of the
+catalog) so the catalog stays usable by the existing dispatcher tests that
+never touched MCP.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Annotated, Literal, Optional
+
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
+
+from forensia.cases.manager import case_manager
+
+
+def _validate_confined_path(value: str) -> str:
+    """SEC-1 — reject any auxiliary path that escapes the FORENSIA case tree.
+
+    Acceptable bases:
+    - ``case_manager.root`` (i.e. ``~/.forensia/cases``) — any case's
+      artifact/evidence subtree counts. The dispatcher itself owns the
+      finer-grained checks (artifact path-traversal guard lives in
+      ``forensia.mcp.resources``).
+
+    Anything else — absolute paths to system files, ``~/.ssh``, ``/tmp``
+    outside the FORENSIA tree — fails LOUD at schema validation. RULE 2.
+
+    The check is permissive in one way: it walks ``Path(value).resolve()``
+    so the symlink target is what gets checked, not the lexical string. A
+    symlink inside the case tree pointing at ``/etc/passwd`` is still
+    rejected because the resolved path is the system file.
+    """
+    if not value:
+        raise ValueError("path must be non-empty")
+    resolved = Path(value).resolve(strict=False)
+    root = case_manager.root.resolve()
+    if resolved != root and root not in resolved.parents:
+        raise ValueError(
+            f"path {value!r} (resolved {resolved}) is outside the FORENSIA "
+            f"case tree ({root}); only paths under that tree are accepted "
+            "for auxiliary tool inputs (RULE 2 — no exfiltration of arbitrary "
+            "host files via auxiliary path params)."
+        )
+    return value
+
+
+# Type alias used for every aux-path field. Pydantic v2 picks up the
+# AfterValidator and runs it at parse time.
+ConfinedPath = Annotated[str, AfterValidator(_validate_confined_path)]
+
+
+class _StrictModel(BaseModel):
+    """Common base: reject unknown fields (RULE L2).
+
+    Without ``extra='forbid'`` a malicious or careless caller could pass
+    ``{'image_path': '/etc/passwd', ...}`` and Pydantic would silently drop
+    it. The injection layer in ``toolkit._inject_evidence_path`` would still
+    set the right path, but the request would not have failed loud — and
+    RULE 2 demands fail-loud over fail-quiet. Forbid extras and we get an
+    explicit ``ValidationError`` the moment someone tries it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+
+# ============================================================================
+# 12 SIMPLE TOOLS
+# ============================================================================
+
+
+class FileInfoParams(_StrictModel):
+    """``file`` — identify the file format / MIME type of the evidence.
+
+    The evidence path is injected from the session; the operator can choose to
+    also emit MIME information via ``also_mime``.
+    """
+
+    also_mime: bool = Field(
+        default=False,
+        description="If true, run with --mime to also report the MIME type.",
+    )
+
+
+class XxdHeadParams(_StrictModel):
+    """``xxd`` — hex-dump the first bytes of the evidence."""
+
+    bytes: int = Field(
+        default=512,
+        ge=1,
+        le=16384,
+        description="Number of bytes to dump from the start of the evidence (1..16384).",
+    )
+    skip: int = Field(
+        default=0, ge=0, description="Byte offset where to start the dump."
+    )
+    cols: int = Field(
+        default=16,
+        ge=1,
+        le=256,
+        description="Bytes per row in the hex dump (1..256).",
+    )
+
+
+class StringsHeadParams(_StrictModel):
+    """``strings`` — extract printable strings near the start of the evidence."""
+
+    min_len: int = Field(
+        default=12,
+        ge=1,
+        le=256,
+        description="Minimum length of a string to report (1..256).",
+    )
+    radix: Optional[Literal["d", "o", "x"]] = Field(
+        default=None,
+        description="Radix for the byte offset prefix (decimal, octal, hex).",
+    )
+
+
+class TskMmlsParams(_StrictModel):
+    """``mmls`` — list partitions of a disk image. Evidence path is injected."""
+
+    type: Optional[Literal["dos", "gpt", "mac", "bsd", "sun"]] = Field(
+        default=None,
+        description="Partition-table type. Omit to let mmls auto-detect.",
+    )
+    image_format: Optional[Literal["raw", "ewf", "aff", "vmdk", "vhd"]] = Field(
+        default=None,
+        description="Container format of the image. Omit to auto-detect.",
+    )
+
+
+class TskFlsParams(_StrictModel):
+    """``fls`` — walk the filesystem tree of a partition."""
+
+    partition_offset: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="Partition start offset in sectors (from `tsk_mmls`).",
+    )
+    filesystem: Optional[
+        Literal[
+            "ntfs",
+            "fat",
+            "fat12",
+            "fat16",
+            "fat32",
+            "ext2",
+            "ext3",
+            "ext4",
+            "hfs",
+            "iso9660",
+            "ufs",
+            "yaffs2",
+        ]
+    ] = Field(default=None, description="Filesystem type if auto-detect fails.")
+    image_format: Optional[Literal["raw", "ewf", "aff", "vmdk", "vhd"]] = Field(
+        default=None, description="Container format of the image."
+    )
+    body_format: bool = Field(
+        default=False,
+        description="Emit `body` format for downstream `tsk_mactime`.",
+    )
+    mount_point: str = Field(
+        default="/",
+        description="Mount point prefix for paths in the body output.",
+    )
+    recursive: bool = Field(
+        default=False, description="Walk recursively. Output can be very large."
+    )
+    deleted_only: bool = Field(
+        default=False, description="Only emit deleted entries."
+    )
+    allocated_only: bool = Field(
+        default=False, description="Only emit allocated entries."
+    )
+    long_format: bool = Field(default=False, description="Long output format.")
+
+
+class TskMactimeParams(_StrictModel):
+    """``mactime`` — turn a body file (from `tsk_fls -m`) into a timeline."""
+
+    iso_dates: bool = Field(
+        default=True,
+        description="Use ISO-8601 dates instead of locale-dependent strings.",
+    )
+    timezone: Optional[str] = Field(
+        default=None,
+        max_length=64,
+        description="IANA timezone for date conversion (e.g. `Europe/Madrid`).",
+    )
+    date_range: Optional[str] = Field(
+        default=None,
+        description="Filter range as `YYYY-MM-DD..YYYY-MM-DD`.",
+        pattern=r"^\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}$",
+    )
+
+
+class EwfInfoParams(_StrictModel):
+    """``ewfinfo`` — read metadata of an EWF (E01) container. Evidence injected."""
+
+    # No additional parameters — ewfinfo just reads the container.
+    pass
+
+
+class EvtxECmdParams(_StrictModel):
+    """``EvtxECmd`` — parse Windows EVTX files to CSV. Evidence path injected."""
+
+    # output_dir injected by dispatcher; no other params for v1.
+    pass
+
+
+class MFTECmdParams(_StrictModel):
+    """``MFTECmd`` — parse a NTFS `$MFT` into CSV. Evidence path injected."""
+
+    pass
+
+
+class RegRipperParams(_StrictModel):
+    """``rip`` (RegRipper) — run a registry-analysis plugin against a hive file.
+
+    The hive path is the EVIDENCE — injected from the session. Either supply
+    a single ``plugin`` to run one, a ``profile`` to run a bundle, or set
+    ``list=true`` to query the available plugins.
+    """
+
+    list: bool = Field(
+        default=False,
+        description="If true, list available plugins instead of running.",
+    )
+    plugin: Optional[str] = Field(
+        default=None,
+        max_length=64,
+        pattern=r"^[a-zA-Z0-9_]+$",
+        description="A single RegRipper plugin name (e.g. `userassist`).",
+    )
+    profile: Optional[str] = Field(
+        default=None,
+        max_length=64,
+        pattern=r"^[a-zA-Z0-9_]+$",
+        description="A bundled plugin profile (e.g. `software`, `system`).",
+    )
+
+
+class YaraParams(_StrictModel):
+    """``yara`` — match rules against the evidence (target_path injected).
+
+    ``rules_path`` is a path to a YARA rules file or directory. **Confined**
+    to the FORENSIA case tree (SEC-1 — see ``_validate_confined_path``); the
+    operator stages rule bundles under e.g. ``~/.forensia/cases/<case>/rules/``.
+    """
+
+    rules_path: ConfinedPath = Field(
+        min_length=1,
+        max_length=2048,
+        description=(
+            "Path to a YARA rules file or directory. Must live inside the "
+            "FORENSIA case tree (``~/.forensia/cases/...``)."
+        ),
+    )
+    recursive: bool = Field(
+        default=False, description="Walk subdirectories of the target."
+    )
+    print_strings: bool = Field(
+        default=False,
+        description="Print matched strings, not just rule names.",
+    )
+    disable_warnings: bool = Field(
+        default=False, description="Suppress YARA compiler warnings."
+    )
+
+
+class JqParams(_StrictModel):
+    """``jq`` — query a JSON artifact already on disk (typically a prior run's output).
+
+    ``input_path`` MUST live under the FORENSIA case tree (SEC-1). Typically
+    an artifact at ``~/.forensia/cases/<case>/artifacts/<run>/stdout.txt``
+    (or similar) emitted by an earlier tool call.
+    """
+
+    filter: str = Field(
+        min_length=1,
+        max_length=4096,
+        description="The jq filter expression (e.g. `.[] | select(.severity==\"high\")`).",
+    )
+    input_path: ConfinedPath = Field(
+        min_length=1,
+        max_length=2048,
+        description=(
+            "Path to the JSON file to query. Confined to the FORENSIA case "
+            "tree (``~/.forensia/cases/...``); typically an artifact from a "
+            "previous run."
+        ),
+    )
+    raw_output: bool = Field(
+        default=False, description="Emit raw strings (drop the JSON quotes)."
+    )
+    compact: bool = Field(default=False, description="One-line output.")
+    slurp: bool = Field(
+        default=False, description="Read entire input as a JSON array."
+    )
+    sort_keys: bool = Field(
+        default=False, description="Stable-sort object keys in the output."
+    )
+
+
+# ============================================================================
+# 4 COMPLEX TOOLS — curated enums, validated input
+# ============================================================================
+
+
+# Volatility3 plugin enum — a curated subset that the wrapper actually
+# supports. Adding a new plugin requires extending this list. RULE 2:
+# closed enum, no free-text.
+_VOLATILITY_WINDOWS_PLUGINS = (
+    "windows.info.Info",
+    "windows.pslist.PsList",
+    "windows.pstree.PsTree",
+    "windows.psscan.PsScan",
+    "windows.netscan.NetScan",
+    "windows.malfind.Malfind",
+    "windows.hollowprocesses.HollowProcesses",
+    "windows.cmdline.CmdLine",
+    "windows.handles.Handles",
+    "windows.modules.Modules",
+    "windows.modscan.ModScan",
+    "windows.registry.hivelist.HiveList",
+    "windows.registry.printkey.PrintKey",
+    "windows.registry.userassist.UserAssist",
+    "windows.filescan.FileScan",
+    "windows.dumpfiles.DumpFiles",
+    "windows.envars.Envars",
+    "windows.svcscan.SvcScan",
+    "timeliner.Timeliner",
+)
+_VOLATILITY_LINUX_PLUGINS = (
+    "linux.banner.Banner",
+    "linux.pslist.PsList",
+    "linux.pstree.PsTree",
+    "linux.psscan.PsScan",
+    "linux.sockstat.Sockstat",
+    "linux.bash.Bash",
+    "linux.proc.Maps",
+    "linux.lsmod.Lsmod",
+    "linux.check_modules.Check_modules",
+    "linux.check_syscall.Check_syscall",
+)
+_VOLATILITY_MAC_PLUGINS = (
+    "mac.psaux.PsAux",
+    "mac.proc_maps.Maps",
+)
+_VOLATILITY_PLUGINS = _VOLATILITY_WINDOWS_PLUGINS + _VOLATILITY_LINUX_PLUGINS + _VOLATILITY_MAC_PLUGINS
+
+
+class Volatility3Params(_StrictModel):
+    """``volatility3`` — memory analysis with a curated plugin enum.
+
+    The plugin name is a closed enum of values that the wrapper supports. Add
+    a new plugin to ``_VOLATILITY_PLUGINS`` in ``schemas.py`` to expose it
+    via MCP; otherwise the request is rejected at validation.
+
+    ``plugin_args`` is a flat dict mapping flag name → value, matching the
+    wrapper contract (see ``forensia.toolkit.wrappers.volatility3``). To
+    target a single PID, pass ``{"pid": "1832"}`` — each entry becomes
+    ``--<key> <value>`` after the plugin name in the resolved argv.
+    """
+
+    plugin: Literal[_VOLATILITY_PLUGINS] = Field(  # type: ignore[valid-type]
+        description="Volatility3 plugin name. Curated subset; see schemas.py.",
+    )
+    plugin_args: Optional[dict[str, str]] = Field(
+        default=None,
+        description=(
+            "Extra plugin-specific args as a flat {flag: value} dict. Example "
+            "for targeting PID 1234: `{\"pid\": \"1234\"}`. Keys must match "
+            "[a-zA-Z][a-zA-Z0-9_-]*; values are strings."
+        ),
+    )
+
+
+_BULK_EXTRACTOR_SCANNERS = (
+    "accts",
+    "aes",
+    "base16",
+    "base64",
+    "elf",
+    "email",
+    "exif",
+    "evtx",
+    "facebook",
+    "find",
+    "gps",
+    "gzip",
+    "hashdb",
+    "hiber",
+    "httplogs",
+    "json",
+    "kml",
+    "lightgrep",
+    "msxml",
+    "net",
+    "outlook",
+    "pdf",
+    "rar",
+    "sqlite",
+    "vcard",
+    "winlnk",
+    "winpe",
+    "winprefetch",
+    "windirs",
+    "wordlist",
+    "xor",
+    "zip",
+)
+
+
+class BulkExtractorParams(_StrictModel):
+    """``bulk_extractor`` — carve IoCs from a disk image (target injected)."""
+
+    enable_scanners: Optional[list[Literal[_BULK_EXTRACTOR_SCANNERS]]] = Field(  # type: ignore[valid-type]
+        default=None,
+        max_length=20,
+        description="Specific scanners to enable. If omitted, defaults of bulk_extractor.",
+    )
+    disable_scanners: Optional[list[Literal[_BULK_EXTRACTOR_SCANNERS]]] = Field(  # type: ignore[valid-type]
+        default=None,
+        max_length=20,
+        description="Scanners to disable.",
+    )
+
+
+class HayabusaParams(_StrictModel):
+    """``hayabusa`` — Sigma-rule scan over EVTX dir (injected as evtx_dir)."""
+
+    output_csv: Optional[str] = Field(
+        default=None,
+        max_length=2048,
+        description="Override the output CSV path. If omitted, the dispatcher chooses one.",
+    )
+    min_level: Optional[Literal["info", "low", "medium", "high", "critical"]] = Field(
+        default=None,
+        description="Minimum severity to report.",
+    )
+
+
+class ChainsawParams(_StrictModel):
+    """``chainsaw hunt`` — Sigma rules over EVTX dir (target injected).
+
+    ``sigma_dir`` and ``rules_dir`` MUST live under the FORENSIA case tree
+    (SEC-1). Bundled rule sets go under e.g. ``~/.forensia/cases/<case>/rules/``.
+    """
+
+    sigma_dir: Optional[ConfinedPath] = Field(
+        default=None,
+        max_length=2048,
+        description=(
+            "Path to a Sigma rules directory. Confined to the FORENSIA case "
+            "tree."
+        ),
+    )
+    rules_dir: Optional[ConfinedPath] = Field(
+        default=None,
+        max_length=2048,
+        description=(
+            "Path to a Chainsaw rules directory (e.g. mappings). Confined to "
+            "the FORENSIA case tree."
+        ),
+    )
+    output_format: Optional[Literal["csv", "json"]] = Field(
+        default=None,
+        description="Output format. If omitted, the wrapper picks one.",
+    )
+    output_path: Optional[ConfinedPath] = Field(
+        default=None,
+        max_length=2048,
+        description=(
+            "Override output file path. Confined to the FORENSIA case tree."
+        ),
+    )
+
+
+# ============================================================================
+# REGISTRY
+# ============================================================================
+
+SCHEMA_BY_TOOL: dict[str, type[BaseModel]] = {
+    # 12 simple tools
+    "file_info": FileInfoParams,
+    "xxd_head": XxdHeadParams,
+    "strings_head": StringsHeadParams,
+    "tsk_mmls": TskMmlsParams,
+    "tsk_fls": TskFlsParams,
+    "tsk_mactime": TskMactimeParams,
+    "ewf_info": EwfInfoParams,
+    "evtxecmd": EvtxECmdParams,
+    "mftecmd": MFTECmdParams,
+    "regripper": RegRipperParams,
+    "yara": YaraParams,
+    "jq": JqParams,
+    # 4 complex tools
+    "volatility3": Volatility3Params,
+    "bulk_extractor": BulkExtractorParams,
+    "hayabusa": HayabusaParams,
+    "chainsaw": ChainsawParams,
+}
+
+
+__all__ = [
+    "SCHEMA_BY_TOOL",
+    "FileInfoParams",
+    "XxdHeadParams",
+    "StringsHeadParams",
+    "TskMmlsParams",
+    "TskFlsParams",
+    "TskMactimeParams",
+    "EwfInfoParams",
+    "EvtxECmdParams",
+    "MFTECmdParams",
+    "RegRipperParams",
+    "YaraParams",
+    "JqParams",
+    "Volatility3Params",
+    "BulkExtractorParams",
+    "HayabusaParams",
+    "ChainsawParams",
+]

@@ -35,6 +35,12 @@ class RedactionPattern:
     name: str
     regex: str
     replacement: str
+    # Modes in which this pattern is applied. Defaults to ``("strict",)`` —
+    # i.e. only the strict mode redacts it. Patterns that should also apply
+    # in relaxed mode (e.g. credentials, keys, JWTs — never forensically
+    # useful, always dangerous to leak) must include ``"relaxed"``. The mode
+    # ``"off"`` never applies any pattern by construction.
+    apply_in: tuple[str, ...] = ("strict",)
 
 
 @dataclass(frozen=True)

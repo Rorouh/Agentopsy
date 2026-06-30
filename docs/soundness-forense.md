@@ -50,6 +50,25 @@ añade eventos de nivel-agente que el dispatcher no puede ver, encadenados en la
 (uno por salida a cloud: `consent_ref`, `redacted_payload_sha256`, `message_count`) y
 `agent_finding` (`finding_id`). Nunca registran bytes crudos, sólo hashes/metadatos.
 
+**Concurrencia** (sprint S1, rama `mcp`): el `AuditLog` ahora puede recibir appends de
+múltiples procesos en paralelo (el sidecar HTTP de la UI Electron + el servidor MCP
+standalone `python -m forensia.mcp`, que el cliente externo spawnea). `AuditLog.append`
+usa `fcntl.flock(LOCK_EX)` durante la región crítica leer-prev → calcular hash → escribir
+nueva entrada. Sin esto, dos appends concurrentes leían el mismo `prev_hash` y la cadena
+se bifurcaba silenciosamente. Test: `backend/tests/test_audit_lock.py` con
+`multiprocessing` (4 procesos × 50 entradas) verifica que `AuditLog.verify()` sigue
+devolviendo `True` tras la mezcla.
+
+**MCP transparency** (L1 del servidor MCP): el adaptador MCP **NO** escribe en
+`audit.jsonl` directamente — solo el `dispatcher.execute()` lo hace. Una llamada
+`tools/call` por MCP produce exactamente una entrada `tool_run_start` + una
+`tool_run_finish`. Las únicas entradas adicionales que escribe la capa MCP son las del
+ciclo de sesión: `mcp_session_open` (al arrancar el servidor, con `consent_ref` y
+`redaction_mode`), `mcp_session_select_case` (al seleccionar caso, con `consent_ref` y
+`agent_package`), y `mcp_session_close` (al apagar). El argv literal sigue siendo lo que
+queda registrado por cada ejecución de tool — no la intención del LLM ni el wire JSON-RPC
+del MCP.
+
 ## 4. Separación de volúmenes
 
 - **Evidencia**: solo-lectura (block-level RO). Nunca se escribe aquí.
@@ -80,6 +99,27 @@ por un único punto en `ForensicAgent.run`:
    cualquier egreso cloud sin `consent_ref` (RULE 2, defensa en profundidad).
 3. **Auditoría del egreso.** Cada salida queda encadenada en `audit.jsonl` con el SHA-256 del
    payload **redactado** (nunca los bytes), `consent_ref` y `message_count` (ver §3).
+
+**MCP server con cliente cloud** (sprint S1, rama `mcp`): cuando un cliente MCP cloud como
+Claude Desktop consume el servidor `mcp-toolkit`, los outputs de cada tool fluyen al
+proveedor del cliente en el siguiente turno del LLM — es la misma frontera de egreso. Las
+protecciones:
+
+- **`FORENSIA_CLOUD_CONSENT=<client>` obligatorio** para arrancar el servidor; sin el flag,
+  exit 2. El `consent_ref` se registra como entrada `mcp_session_open` en el audit del primer
+  caso seleccionado.
+- **`FORENSIA_REDACTION_MODE`** controla la agresividad: `strict` (default — todo) redacta
+  IPs, emails, MACs, SIDs, AWS keys, JWTs, private keys. `relaxed` preserva los IoCs
+  forenses (red, identidades) pero sigue redactando credenciales y material criptográfico.
+  `off` no aplica nada (solo apropiado para tests in-process; queda registrado en el audit).
+- La redacción se aplica **antes del wire MCP**, sobre `stdout_sample` y `stderr_sample`,
+  con los patrones de `agentes/<id>/policy/redaction.yaml` del paquete activo. Cada patrón
+  declara `apply_in` con los modos en los que aplica.
+- Schemas Pydantic `extra='forbid'` rechazan que el cliente MCP envíe paths crudos a
+  evidencia (`image_path`, `dump_path`, etc.); el dispatcher los inyecta desde
+  `EvidenceManager`. Los paths auxiliares (yara `rules_path`, jq `input_path`,
+  chainsaw `sigma_dir`/`rules_dir`) están confinados a `~/.forensia/cases/` por un
+  validador Pydantic.
 
 ## 6. Manifiesto del caso (reproducibilidad)
 

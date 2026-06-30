@@ -1,7 +1,7 @@
 """One forensic agent, parametrized by OS profile (not two separate agents).
 
 The agent loop is configured at runtime by an ``AgentPackage`` loaded from
-``agentes/<id>/`` (see ``agentes/README.md`` and ``docs/AGENTS.md``).
+``agentes/<id>/`` (see ``agentes/README.md`` and ``docs/agentes/contrato-paquetes.md``).
 """
 
 from forensia.agent.agent import ForensicAgent

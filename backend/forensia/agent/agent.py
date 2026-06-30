@@ -112,11 +112,8 @@ class ForensicAgent:
         prompt: str,
         case_id: str,
         evidence_id: str,
-<<<<<<< HEAD
         consent_ref: str | None = None,
-=======
         prior_messages: list[dict[str, Any]] | None = None,
->>>>>>> 17070672e0a907351fe0c9e82a2fe06c25b5d2d7
     ) -> AgentLoopResult:
         # Local import to avoid a circular dep that only matters at call time.
         from forensia.toolkit.dispatcher import ToolExecutionError, execute as dispatch_tool

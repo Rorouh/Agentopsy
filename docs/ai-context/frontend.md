@@ -2,10 +2,10 @@
 
 > **This file is operational context for AI assistants (Claude, Codex, etc.) working on
 > the FORENSIA frontend.** It is not a changelog, not a journal, and not a replacement
-> for `CLAUDE.md` or `ARCHITECTURE.md`. It answers one question: *what does an AI session
+> for `CLAUDE.md` or `arquitectura.md`. It answers one question: *what does an AI session
 > need to know to touch frontend code without breaking things?*
 >
-> Keep it current. Do not turn it into a journal — use `docs/FRONTEND_JOURNAL.md` for that.
+> Keep it current. Do not turn it into a journal — use `docs/operacion/frontend-journal.md` for that.
 
 ---
 
@@ -16,8 +16,8 @@ without requiring the human to re-explain architecture, decisions, or constraint
 session. This file should be read **instead of asking the user** how things are wired.
 
 Companions for other areas should follow the same structure:
-- `docs/ai/BACKEND_CONTEXT.md` — sidecar, FastAPI, forensic logic
-- `docs/ai/FORENSIC_LOGIC_CONTEXT.md` — EvidenceManager, audit log, toolkit, agent
+- `docs/ai-context/backend.md` — sidecar, FastAPI, forensic logic
+- `docs/ai-context/forensic-logic.md` — EvidenceManager, audit log, toolkit, agent
 
 ---
 
@@ -36,9 +36,9 @@ Read this file at the start of any session that touches:
 ## Required Reading (in order)
 
 1. `CLAUDE.md` — global rules, RULE 0 (no AI attribution), security invariants, stack lock
-2. `docs/ARCHITECTURE.md` — full system architecture and wiring diagram
-3. `docs/THREAT_MODEL.md` — security model; explains why the renderer must not hold the token
-4. `docs/FRONTEND_JOURNAL.md` — chronological record of frontend decisions and changes
+2. `docs/arquitectura.md` — full system architecture and wiring diagram
+3. `docs/modelo-amenazas.md` — security model; explains why the renderer must not hold the token
+4. `docs/operacion/frontend-journal.md` — chronological record of frontend decisions and changes
 5. **This file** — condensed operational rules for AI sessions
 
 Do not skip `CLAUDE.md`. It contains non-negotiable invariants that override anything here.
@@ -74,7 +74,7 @@ window managed by Electron.
 ```
 
 **The renderer never knows the sidecar URL or token.** That is a security invariant
-documented in `THREAT_MODEL.md` (gate 12). The `main.cjs` process owns both and proxies
+documented in `modelo-amenazas.md` (gate 12). The `main.cjs` process owns both and proxies
 every call. Never introduce a code path that bypasses this.
 
 Electron security config (do not change without security review):
@@ -299,7 +299,7 @@ In priority order, accounting for team coordination requirements:
 
 | What | Why not |
 |---|---|
-| Migrate to SaaS web / remove Electron | Core architecture decision. Locked in `ARCHITECTURE.md`. |
+| Migrate to SaaS web / remove Electron | Core architecture decision. Locked in `arquitectura.md`. |
 | Add React Router | `useState<ViewId>` in `App.tsx` is still sufficient (8 views as of 2026-06-24, see `navItems.ts`). The journal's original threshold ("revisit past 4-5 views") has technically been crossed — flagged as an open question for the team, not yet a decision to act on. Router still adds history/URL complexity with no real benefit in a desktop app with no URLs. |
 | Add Zustand / Redux | State is flat and lives in `App.tsx`. No cross-tree sharing problem yet. |
 | Add a UI component library (MUI, shadcn, etc.) | Adds weight and overrides the CSS token system. Evaluate only if primitive count grows significantly. |
@@ -345,11 +345,11 @@ If you are an AI assistant starting a new session to work on the FORENSIA fronte
 
 1. **Read this file first.** Do not ask the user to explain the architecture.
 2. **Read `CLAUDE.md`.** RULE 0 (no AI attribution) applies to every commit, comment, and doc.
-3. **Check `docs/FRONTEND_JOURNAL.md`** for recent decisions and context not yet reflected here.
+3. **Check `docs/operacion/frontend-journal.md`** for recent decisions and context not yet reflected here.
 4. **Before touching any file**, confirm the scope with the user. Do not apply changes speculatively.
 5. **Show the full proposed change** (file content or diff) before applying. Wait for explicit approval.
 6. **Run `npm run typecheck`** after every change to the renderer. Report the result before continuing.
-7. **Do not treat this file as a journal.** Do not add dated entries here. Use `FRONTEND_JOURNAL.md`.
+7. **Do not treat this file as a journal.** Do not add dated entries here. Use `frontend-journal.md`.
 8. **Do not invent new libraries or patterns.** Match existing conventions in the codebase.
 9. **Do not refactor while moving code.** These are separate operations.
 10. **If unsure about a decision's scope**, ask the user rather than assuming. The Electron security

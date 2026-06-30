@@ -1,251 +1,324 @@
-**FORENSIA**  
-Herramienta con integración de IA para la Práctica Forense
+# FORENSIA — Alcance y Diseño del TFM
 
-**Trabajo Final de Máster — Documento de Alcance y Planificación**
+**Herramienta con integración de IA para la práctica forense**
 
-Versión 1.0  ·  20 de junio de 2026
+Trabajo Final de Máster · Documento de alcance, diseño y planificación
 
-Equipo: Enrique · Daniel · Santiago · Luis · Diego · Miguel Ángel
+| | |
+| :--- | :--- |
+| Equipo | Enrique · Daniel · Santiago · Luis · Diego · Miguel Ángel |
+| Fecha de entrega | 7 de septiembre de 2026 |
+| Versión | v1.1 · 29 de junio de 2026 |
 
-**Entrega: 7 de septiembre de 2026**
+---
 
-# **Índice**
+## 1. Resumen ejecutivo
 
-*(Para actualizar el índice en Word: clic derecho sobre él → «Actualizar campos».)*
+FORENSIA es una herramienta de análisis forense **post-mortem** asistida por IA, distribuida como **aplicación de escritorio universal** (Windows / macOS / Linux) instalable con un único comando. La aplicación empaqueta dentro de sí la interfaz gráfica, un sidecar de backend en Python, un maletín de herramientas forenses CLI y dos sub-agentes de IA especializados por sistema operativo, gobernados por un agente orquestador. Cuando alguna herramienta del maletín no dispone de binario nativo viable en el SO del usuario, la aplicación la ejecuta dentro de un contenedor Docker que despliega de forma transparente; Docker es **capa interna**, no es lo que el usuario instala ni invoca.
 
-# **1\. Resumen ejecutivo**
+El usuario carga evidencias ya extraídas (`.E01` / `.raw` / `.vmdk` / volcado), conduce la investigación mediante prompts y obtiene un informe forense estructurado, su línea temporal y la correlación con MITRE ATT&CK.
 
-FORENSIA es una herramienta de análisis forense post-mortem asistida por IA, desplegable con Docker, que combina un maletín de herramientas forenses de línea de comandos, dos agentes de IA especializados por sistema operativo (Windows y Unix-like), una aplicación web para gestionar evidencias e informes, y una aplicación de terminal para conducir la investigación mediante prompts. El objetivo del TFM es entregar, el 7 de septiembre de 2026, una herramienta funcional junto con la memoria académica y preparar su defensa.
+De hoy (29 de junio) al 7 de septiembre quedan **11 semanas**. La planificación prioriza un MVP estricto en las primeras 6–7 semanas y reserva las últimas para validación, cierre de la memoria académica y preparación de la defensa.
 
-De hoy (20 de junio) al 7 de septiembre hay **11 semanas**. El alcance de la propuesta es ambicioso, por lo que este documento prioriza un **MVP estricto** (lo imprescindible para una demostración y defensa sólidas) y relega a «extras» lo opcional (MCPs, fine-tuning). La estrategia central es construir cuanto antes un flujo extremo-a-extremo mínimo y mejorarlo de forma incremental, reservando las últimas semanas para validación, cierre de la memoria y preparación de la defensa.
+---
 
-# **2\. Decisiones de base acordadas**
+## 2. Modelo de entrega y arquitectura
 
-Estas decisiones, acordadas en la sesión inicial de definición, condicionan toda la planificación:
+### 2.1. Instalación: una sola línea
 
-| Tema | Decisión |
-| :---- | :---- |
-| Agentes de IA | Enfoque por orquestación de LLMs existentes (prompts especializados \+ RAG \+ contexto forense y tool-calling sobre las herramientas CLI). El fine-tuning de modelos open source queda como extra final, solo si el MVP es estable. |
-| Modelos de IA | Capa configurable: el usuario elige modelo local (p. ej. Ollama) o cloud (p. ej. Claude/GPT). Por la sensibilidad de las evidencias, el modelo local es la opción por defecto recomendada. |
-| Entregables | TFM completo: memoria académica \+ herramienta funcional \+ defensa oral. La memoria se redacta de forma continua, no solo al final. |
-| Datos de prueba | No se dispone de imágenes suficientes. Se combinarán datasets públicos (CFReDS, Digital Corpora) con máquinas virtuales propias que aporten «ground truth» para validar a los agentes. |
-| Equipo y stack | 6 personas con reparto por módulos (ver sección 7). Stack propuesto: Python/FastAPI, React, Docker Compose y una capa de IA propia (ver sección 6). |
-| Disponibilidad | Ritmo de trabajo normal durante todo el verano, incluido agosto. |
+La aplicación se entrega como **instalable nativo por SO**, no como un repositorio que el usuario clona y arranca con Docker Compose. Una sola línea por plataforma:
 
-# **3\. Alcance del proyecto**
+```bash
+# Linux / macOS
+curl -fsSL https://forensia.dev/install.sh | bash
 
-## **3.1. MVP — imprescindible**
+# Windows
+# Instalador .exe firmado.
+```
 
-El MVP es la versión mínima que demuestra el valor del proyecto de extremo a extremo y que debe estar terminada antes de la congelación de funcionalidades:
+Esto sustituye al flujo `git clone + cp .env.example .env + docker compose up --build`, más frágil y expuesto a fricciones de entorno. El espíritu de empaquetado *"todo viaja con la app"* se preserva: dentro del instalador van la GUI, el sidecar de Python, los binarios forenses nativos compilados por SO/arch y, cuando aplica, las imágenes OCI pre-construidas que sustituyen a las herramientas que no compilan de forma cross-OS.
 
-* Despliegue reproducible con un único comando (git clone \+ docker compose up \--build) que levante todos los servicios en localhost.
+### 2.2. Topología en runtime
 
-* Maletín forense contenedorizado: conjunto curado de herramientas CLI gratuitas para Windows y Unix-like, con catálogo documentado.
+```
+┌─ APLICACIÓN INSTALADA (Electron) ──────────────────────────┐
+│  Renderer (UI única en los 3 SOs)                          │
+│     ↕  IPC seguro (contextIsolation + sandbox)             │
+│  Main process — controla ciclo de vida del sidecar         │
+│     ↕  127.0.0.1:<puerto efímero> + token de sesión         │
+│  Sidecar Python (FastAPI) — orquestador + agentes          │
+│     ↓                            ↓                          │
+│  Binarios nativos vendoreados    Docker / Podman (host)     │
+│  (vendor/<tool>/<os>-<arch>/)    ↓                          │
+│                                  Imágenes OCI pre-cargadas  │
+│                                  para tools no nativas      │
+└─────────────────────────────────────────────────────────────┘
+```
 
-* Carga de evidencias (.vmdk/.raw) en proyectos, con montaje en solo lectura y hashing de integridad (cadena de custodia).
+- La **GUI** es idéntica en los tres SOs (Chromium dentro de Electron).
+- El **sidecar** habla con la GUI por `127.0.0.1` en puerto efímero, autenticado por token de sesión; nunca expone `0.0.0.0`.
+- Cada herramienta del maletín declara su mecanismo de ejecución: **bundled** (binario nativo dentro del instalador) o **container** (imagen OCI que la app levanta on-demand).
+- Docker o Podman es un **prerequisito documentado del instalador**; el primer arranque lo verifica. Si no está presente, las herramientas en modo *container* se reportan como no disponibles y el resto de la aplicación sigue funcionando.
 
-* Dos agentes (Windows y Unix-like) por orquestación: system prompt especializado, base de conocimiento (RAG) y wrappers de las herramientas.
+### 2.3. Por qué Docker deja de ser la distribución
 
-* Capa de modelos configurable con al menos un proveedor local y uno cloud bajo una interfaz común.
+Docker Compose siempre cumplió la función de empaquetado, pero la cumple **peor** que un instalador nativo desde el punto de vista del investigador:
 
-* Aplicación de terminal: menú de selección de proyecto, agente y modelo; sesión interactiva por prompts; generación de informe con \[proceed-to-report\] y retorno con \[back-to-analysis\].
+| Aspecto | `docker compose up --build` | Instalador nativo |
+| :--- | :--- | :--- |
+| Pasos del usuario | `git clone` + `.env` + `compose` | Una línea (curl o doble click) |
+| Conocimiento exigido | Docker, redes, volúmenes | Ninguno |
+| Interfaz | Browser apuntando a `localhost` | Ventana nativa |
+| Cadena de custodia | Idéntica | Idéntica |
+| Actualizaciones | `git pull` + rebuild | Auto-update firmado |
+| Universalidad | Igual | Igual (gracias a fallback container interno) |
 
-* Aplicación web: creación de proyecto, subida de evidencias, repositorio de informes con previsualización y exportación a PDF, y vista de línea temporal.
+Docker se queda **dentro** del modelo, no fuera: lo usa la aplicación para garantizar que el catálogo de tools es el mismo en Windows, macOS y Linux sin pedirle al investigador que entienda contenedores.
 
-* Generación de informe forense estructurado y su línea temporal.
+---
 
-## **3.2. Extras — opcionales (si el MVP es estable)**
+## 3. La aplicación
 
-* Servidores MCP que envuelvan las herramientas forenses (mencionados como opcionales en la propuesta).
+La aplicación expone seis secciones, accesibles tras crear o seleccionar un caso:
 
-* Exploración de fine-tuning de modelos open source sobre datos forenses.
+- **Guía** — guía de uso y especificaciones técnicas; catálogo de soluciones desplegadas, comandos y prompts detallados, para facilitar los primeros pasos y para maximizar el rendimiento de la plataforma.
+- **Casos y evidencias** — creación de proyectos/casos y carga de evidencias ya extraídas (`.E01` / `.raw` / `.vmdk` / volcado). Montaje en solo lectura a nivel de bloque y hashing SHA-256 baseline en la ingesta (cadena de custodia).
+- **Investigación** — análisis vía prompts contra los sub-agentes (ej.: *"Recopila toda la información de navegación web del usuario entre los días 01/01/2025 y 30/01/2025"*). El prompt `[proceed-to-report]` cierra la investigación y dispara la redacción del informe.
+- **Timeline** — selección de un informe y visualización de su línea temporal.
+- **Documents / reporte** — previsualización del informe generado y exportación a PDF.
+- **Mitre Attack** — correlación de las evidencias del informe con la matriz MITRE ATT&CK; identificación de técnicas, tácticas y posibles grupos / APTs involucrados.
 
-* Mayor cobertura de sistemas, herramientas adicionales y mejoras estéticas avanzadas de la interfaz.
+---
 
-## **3.3. Fuera de alcance**
+## 4. Fase 1 — Selección y empaquetado del maletín forense
 
-* Adquisición/extracción de evidencias del equipo original (se asume que las evidencias llegan ya extraídas).
+Selección de las herramientas forenses CLI (todas gratuitas) para los sistemas operativos en los que trabaja FORENSIA (Windows y Unix-like). Se priorizan herramientas de línea de comandos por encima de GUIs por su control determinista y su mejor integración con LLMs.
 
-* Análisis en vivo (live forensics) o respuesta a incidentes en tiempo real; el foco es post-mortem.
+Cada herramienta se cataloga con uno de dos mecanismos de entrega:
 
-* Validez legal/pericial certificada; el proyecto es académico y de demostración.
+- **Bundled** — binario nativo compilado por SO/arch y embebido directamente en el instalador.
+- **Container** — imagen OCI pre-construida que la aplicación levanta on-demand. Es la vía para herramientas sin build nativa viable cross-OS (RegRipper en Perl, plaso en Windows, etc.).
 
-# **4\. Arquitectura y decisiones técnicas**
+Para las herramientas que funcionen mejor con el protocolo MCP, se expone su capacidad como servidor MCP que la aplicación consume internamente.
 
-## **4.1. Visión general**
+El listado de herramientas candidatas se detalla en el **Anexo**. La selección definitiva se cierra dentro de esta misma fase.
 
-La herramienta se organiza como un conjunto de servicios orquestados por Docker Compose: (1) un frontend web; (2) una API/backend que gestiona proyectos, evidencias e informes; (3) un orquestador de agentes que conecta el modelo de IA con las herramientas forenses mediante tool-calling; (4) el maletín de herramientas contenedorizado; (5) un ejecutor de modelos local (Ollama) y conectores a modelos cloud; y (6) almacenamiento de proyectos e informes. La aplicación de terminal abre una sesión del modelo elegido con el contexto del agente cargado y en la ruta del proyecto.
+---
 
-## **4.2. Capa de modelos y privacidad de las evidencias**
+## 5. Fase 2 — Agente y sub-agentes de IA
 
-Dado que las evidencias forenses son datos sensibles, la capa de modelos abstrae el proveedor tras una interfaz común y prioriza el procesamiento local por defecto. Cuando se seleccione un modelo cloud, la herramienta advertirá de que las evidencias saldrán a una API externa. Se trabajará siempre sobre copias montadas en solo lectura y con verificación de hash, preservando la integridad de la evidencia original.
+El esquema es de un **agente orquestador** que media entre el investigador y dos **sub-agentes** especializados por SO:
 
-## **4.3. Maletín forense**
+- **`forensia-windows`** — sub-agente Windows.
+- **`forensia-unix`** — sub-agente Unix-like.
 
-Selección inicial de herramientas (todas gratuitas y de uso CLI) que se afinará en la Fase 1\. Se partirá también del maletín facilitado por el Prof. Jesús Angosto.
+El orquestador llama al sub-agente correspondiente para cada tarea, recopila y organiza la información que extraigan, redacta el informe, construye la timeline y correlaciona la actividad con MITRE ATT&CK. Los sub-agentes ejecutan herramientas del maletín o las acciones que consideren necesarias y devuelven la información estructurada al orquestador.
 
-| Categoría | Herramientas (CLI) | Sistema |
-| :---- | :---- | :---- |
-| Imagen y montaje | libewf/ewf-tools, qemu-nbd, guestmount; OSFMount | Cross |
-| Integridad / hashing | sha256sum, hashdeep | Cross |
-| Sistema de ficheros y carving | The Sleuth Kit (fls, icat, mmls, mactime), bulk\_extractor, foremost/scalpel | Cross |
-| Línea temporal | plaso / log2timeline \+ psort | Cross |
-| Memoria RAM | Volatility 3 | Cross |
-| Artefactos Windows | RegRipper (registro), hayabusa y chainsaw (Sigma sobre EVTX), parsers de Prefetch/LNK/navegadores | Windows |
-| Artefactos Unix-like | Análisis de /var/log, journald, bash history; TSK sobre EXT/XFS | Unix-like |
+Cada agente se entrega como un **paquete declarativo** (`agentes/<id>/`) con su `agent.yaml`, sus prompts (identidad, sistema, playbook), su policy de herramientas y su política de redacción. El sidecar los descubre al arrancar y los indexa por `os_profile`.
 
-## **4.4. Agentes de IA**
+**Capa de modelos**: el usuario elige modelo **local** (Ollama, recomendado por defecto por la sensibilidad de la evidencia) o **cloud** (Claude, GPT). La capa abstrae al proveedor tras una interfaz común; al elegir cloud, la aplicación advierte explícitamente de que las evidencias saldrán a una API externa.
 
-Cada agente combina un system prompt especializado en su sistema operativo, una base de conocimiento forense recuperable por RAG (incluido el catálogo de herramientas con sus comandos) y un conjunto de wrappers que exponen las herramientas CLI como funciones invocables. Esta fase arranca en cuanto el maletín está listo y es la última en cerrarse: el conocimiento de los agentes se enriquece de forma incremental, lo que mejora la precisión, optimiza el consumo de tokens y la redacción de informes.
+Esta fase arranca en cuanto el maletín está listo y es la última en cerrarse: el conocimiento de los agentes se enriquece de forma incremental, lo que se traduce en **análisis más preciso**, **mejor consumo de tokens** y **mejor redacción de informes**.
 
-## **4.5. Aplicaciones web y de terminal e informes**
+---
 
-La web cubre la interacción previa y posterior al análisis (guía de uso, subida de evidencias, repositorio de informes con previsualización y exportación PDF, y vista de timeline). La terminal conduce el análisis por prompts y dispara la redacción del informe y su línea temporal. El informe se genera a partir de los hallazgos recopilados por el agente más una línea temporal derivada de plaso/psort.
+## 6. Fase 3 — Desarrollo de la aplicación
 
-## **4.6. Stack tecnológico propuesto**
+Implementación de las seis secciones descritas en la sección 3. La superficie es **única**: la aplicación de escritorio. No hay aplicación web pública, ni CLI alternativa para el usuario final; sí utilidades CLI internas para el equipo durante el desarrollo.
 
-| Capa | Tecnologías propuestas |
-| :---- | :---- |
-| Backend / API | Python 3.12, FastAPI, Pydantic, Uvicorn |
-| Orquestación de IA | Conectores a proveedores (Anthropic/OpenAI) \+ Ollama local bajo interfaz común; tool-calling; framework ligero de agentes; MCP como extra |
-| Conocimiento / RAG | Embeddings \+ almacén vectorial (p. ej. Chroma o FAISS) |
-| Frontend | React \+ Vite \+ Tailwind; visualización de timeline (vis-timeline o similar) |
-| Informes / PDF | Plantillas (Jinja2) → exportación a PDF (WeasyPrint o equivalente) |
-| Almacenamiento | Sistema de ficheros \+ SQLite (metadatos de proyectos e índice de informes) |
-| Maletín forense | TSK, Volatility 3, plaso, bulk\_extractor, RegRipper, hayabusa/chainsaw, ewf-tools… |
-| Despliegue | Docker \+ Docker Compose (versiones fijadas) |
-| Control de versiones | Git \+ GitHub/GitLab (issues, project board, PRs, CI) |
+---
 
-# **5\. Estrategia de datos de prueba**
+## 7. Fase 4 — Test y correcciones
 
-Como el equipo no dispone de imágenes suficientes, se trabajará en dos frentes desde la primera semana: descargar datasets públicos bien documentados y construir máquinas virtuales propias con actividad guionizada que aporten «ground truth» (verdad conocida) para validar objetivamente los hallazgos de los agentes.
+Probamos contra **todos los escenarios posibles** para evitar fallos en la ejecución y pulir el resultado final del análisis.
 
-| Fuente | Qué aporta | Uso |
-| :---- | :---- | :---- |
-| CFReDS (NIST) | Conjuntos de referencia documentados para validar herramientas | Validación / pruebas |
-| Digital Corpora | Escenarios completos (p. ej. M57-Patents, M57-Jean) con imágenes de disco | Desarrollo y demos |
-| Forensic Focus — challenges | Imágenes y retos de la comunidad | Escenarios extra |
-| VMs propias | Windows 10 (eval) y Linux con actividad guionizada → exportar .vmdk y adquirir .raw | Ground truth y demos controladas |
+Los tests no esperan a la versión final del proyecto: empiezan antes de que los agentes estén plenamente entrenados y antes de que la interfaz sea estéticamente final. Lo importante es validar cuanto antes el flujo extremo-a-extremo y el catálogo de tools.
 
-# **6\. Organización del equipo**
+**Datos de prueba**: combinación de datasets públicos (CFReDS de NIST, Digital Corpora, Forensic Focus) y **máquinas virtuales propias** con actividad guionizada, que aportan ground truth para validar objetivamente los hallazgos.
 
-Propuesta de seis roles alineados con los módulos del sistema; la asignación de nombres es orientativa y la ajustáis según preferencias y habilidades. La memoria y las pruebas son responsabilidades transversales: cada persona documenta su módulo y participa en el testeo.
+---
 
-| Rol / módulo | Responsabilidades |  |
-| :---- | :---- | :---- |
-| DevOps / Integración | Docker Compose, repositorio y CI, integración entre módulos, compilación de la memoria | Daniel |
-| Maletín \+ Agen te Windows | Selección y contenedorización de herramientas Windows; prompts y RAG del agente Windows |  |
-| Maletín \+ Agente Unix-like | Ídem para Unix-like; artefactos de logs y journald | Enrique |
-| Orquestación IA / capa de modelos | Interfaz común local/cloud, tool-calling, pipeline RAG, optimización de tokens, generación de informes | Luis |
-| Frontend | Frontend, subida de evidencias, repositorio de informes, timeline, export PDF | SantIAgo |
-| Aplicación terminal \+ Datos/QA | Menú CLI, lanzador de sesión, \[proceed-to-report\]/\[back-to-analysis\], datasets y escenarios de prueba |  |
+## 8. Modo de empleo
 
-## **6.1. Metodología de trabajo**
+- **Instalación** — una sola línea o un instalador, según SO.
+- **Iniciar proyecto** — crear nuevo caso y subir las evidencias (`.E01` / `.raw` / `.vmdk` / volcado). Hash SHA-256 baseline en la ingesta.
+- **Investigación** — sesión de prompts contra los sub-agentes en la sección *Investigación*.
+- **Redacción** — `[proceed-to-report]` genera el informe forense y su línea temporal.
+- **Revisión** — previsualización y exportación a PDF del informe y de la timeline desde la sección *Documents / reporte*.
+- En caso de no estar conforme con el resultado, el prompt `[back-to-analysis]` devuelve al investigador a la sección *Investigación*.
 
-* Repositorio Git con ramas por funcionalidad, pull requests y revisión cruzada; tablero de tareas (issues/Kanban).
+---
 
-* Sprints semanales con una reunión de planificación y una de revisión; integración continua para evitar choques de última hora.
+## 9. Fuera de alcance
 
-* Integración temprana: un flujo extremo-a-extremo mínimo en la semana 4, mejorado de forma incremental.
+- **Adquisición o extracción de evidencias** del equipo original — se asume que las evidencias llegan ya extraídas.
+- **Live forensics o respuesta a incidentes en tiempo real** — el foco es exclusivamente post-mortem.
+- **Validez legal o pericial certificada** — el proyecto es académico y de demostración; preservamos rigor (chain of custody, integridad, reproducibilidad) pero no se persigue acreditación.
 
-# **7\. Cronograma (20 jun → 7 sep)**
+---
 
-Plan semana a semana alineado con las cinco fases de la propuesta y con tres líneas transversales (DevOps, memoria y datos de prueba). Las pruebas (Fase 5\) comienzan antes de tener la versión final, tal y como indica la propuesta.
+## 10. Cronograma (29 jun → 7 sep)
 
 | Sem. | Fechas | Foco principal | Hitos / entregables |
-| :---- | :---- | :---- | :---- |
-| 0 | 20–21 jun | Kickoff: aterrizar alcance (este documento), confirmar requisitos del tutor, crear repo y tablero, asignar roles y preparar entornos. | Repo y tablero creados; roles asignados; rúbrica y fecha de defensa confirmadas. |
-| 1 | 22–28 jun | Fundaciones: esqueleto de monorepo y Docker Compose. Fase 1: inventario de herramientas (CLI-first). Elegir dataset público y planificar VMs. Memoria: índice \+ estado del arte. | Esqueleto desplegable; lista de herramientas v0; dataset elegido. |
-| 2 | 29 jun–5 jul | Fase 1: contenedorizar herramientas núcleo; montaje en solo lectura de .vmdk/.raw \+ hashing. Definir contrato de wrappers CLI→JSON. Andamiaje de web, terminal y API. | Maletín v1 contenedorizado; evidencias montables con integridad. |
-| 3 | 6–12 jul | Cierre del maletín (catálogo documentado). Fase 2 arranca: capa de modelos local/cloud con interfaz común; prompts base \+ RAG. Web: crear proyecto y subir evidencias. Terminal: menú y lanzador. | Catálogo del maletín; capa de modelos operativa; subida de evidencias. |
-| 4 | 13–19 jul | Primer flujo extremo-a-extremo (vertical slice) con un agente sobre una imagen pequeña: prompt→herramienta→hallazgo. Fase 5: primeros escenarios. Informe básico con \[proceed-to-report\]. | Demo E2E mínima funcionando; informe básico generado. |
-| 5 | 20–26 jul | Agente Windows a la par del Unix-like; ampliar herramientas y prompts. Timeline con plaso/psort → web. Web: repositorio de informes (preview \+ export PDF). | Dos agentes operativos; timeline visible; export PDF. |
-| 6 | 27 jul–2 ago | Consolidación (objetivo MVP feature-complete). Flujo completo análisis→informe→revisión→\[back-to-analysis\]. Optimización de tokens y redacción. Memoria: diseño e implementación. | MVP funcional completo; flujo cerrado. |
-| 7 | 3–9 ago | Hardening. Fase 5 intensiva: batería de escenarios y casos límite; validación contra ground truth de las VMs. Robustez del despliegue. | Suite de pruebas; despliegue limpio reproducible. |
-| 8 | 10–16 ago | Pulido de UI, guía de usuario y especificaciones técnicas (catálogo de soluciones). Extras opcionales (MCPs / fine-tuning) solo si el MVP es estable. Memoria: resultados. | Guía de usuario; UI presentable; extras (si procede). |
-| 9 | 17–23 ago | Congelación de funcionalidades (feature freeze): solo correcciones. Pruebas de despliegue desde cero en máquinas limpias. Memoria: borrador completo. | Feature freeze; borrador de memoria para revisión. |
-| 10 | 24–30 ago | Validación final E2E con datasets públicos y propios. Cierre de la memoria (revisión cruzada, formato, bibliografía). Preparar defensa (guion de demo, slides). | Memoria casi final; materiales de defensa. |
-| 11 | 31 ago–6 sep | Buffer y cierre. Revisión final de memoria y repo (README, licencia, versión etiquetada). Ensayo de defensa y demo de respaldo grabada. | Todo listo para entregar. |
+| :--- | :--- | :--- | :--- |
+| 1 | 29 jun – 5 jul | Fundaciones: esqueleto del instalable; sidecar Python operativo; CI por SO; inventario inicial del maletín; elegir dataset público y arrancar VMs propias. | Esqueleto desplegable; lista de herramientas v0; dataset elegido. |
+| 2 | 6 – 12 jul | Maletín v1: contenedorización / vendoring de las herramientas core; montaje read-only de `.raw`/`.vmdk` + hashing SHA-256; contrato de wrappers CLI→JSON. | Maletín v1; evidencias con cadena de custodia. |
+| 3 | 13 – 19 jul | Capa de modelos local/cloud bajo interfaz común; prompts base y RAG inicial. UI: creación de casos y subida de evidencias. | Capa de modelos operativa; alta de casos en la UI. |
+| 4 | 20 – 26 jul | **Vertical slice E2E** sobre una imagen pequeña: prompt → sub-agente → herramienta → hallazgo. Informe básico vía `[proceed-to-report]`. | Demo E2E mínima funcionando. |
+| 5 | 27 jul – 2 ago | Segundo sub-agente operativo (Windows y Unix-like al mismo nivel). Timeline (plaso/psort) integrada en la GUI. Exportación a PDF. | Dos sub-agentes; timeline visible; export PDF. |
+| 6 | 3 – 9 ago | Consolidación: **MVP feature-complete**. Flujo completo Investigación → Documents → `[back-to-analysis]`. Sección MITRE ATT&CK v1. | MVP funcional completo. |
+| 7 | 10 – 16 ago | Hardening: batería de escenarios y casos límite; validación contra ground truth de las VMs propias. Robustez del instalador por SO. | Suite de pruebas; instalador limpio en los 3 SOs. |
+| 8 | 17 – 23 ago | Pulido de UI, guía de usuario y especificaciones técnicas. Extras opcionales (MCPs adicionales, fine-tuning) sólo si MVP es estable. Memoria: redacción de resultados. | Guía de usuario; UI presentable. |
+| 9 | 24 – 30 ago | **Feature freeze**: sólo correcciones. Pruebas de instalación desde cero en máquinas limpias (Windows / macOS / Linux). Memoria: borrador completo. | Feature freeze; borrador de memoria para revisión. |
+| 10 | 31 ago – 6 sep | Validación final E2E con datasets públicos y propios. Cierre de la memoria (revisión cruzada, formato, bibliografía). Preparación de la defensa (guion de demo, slides). | Memoria casi final; materiales de defensa. |
+| 11 | 7 sep | Buffer y cierre. Revisión final del repo (README, licencia, versión etiquetada). Ensayo de defensa y grabación de demo de respaldo. | **Entrega del TFM.** |
 
-  **7 de septiembre de 2026 — ENTREGA del TFM (memoria \+ herramienta).**
+> Riesgos identificados (alcance, datos de prueba, integración tardía) se mitigan con MVP estricto, ground truth temprano y feature freeze en la semana 9.
 
-# **8\. Hitos clave**
+---
 
-| Fecha | Hito |
-| :---- | :---- |
-| 28 jun | Fin de fundaciones: repo, Docker y herramientas v0. |
-| 12 jul | Maletín forense v1 \+ capa de modelos operativa. |
-| 19 jul | Primera demo extremo-a-extremo (vertical slice). |
-| 2 ago | MVP funcional completo (feature-complete). |
-| 9 ago | Suite de pruebas y despliegue reproducible. |
-| 23 ago | Feature freeze \+ borrador completo de memoria. |
-| 30 ago | Validación final y memoria casi cerrada. |
-| 6 sep | Cierre total (repo \+ memoria \+ ensayo de defensa). |
-| 7 sep | Entrega del TFM. |
+## 11. Equipo y metodología
 
-# **9\. Riesgos y mitigaciones**
+Equipo de seis personas, con reparto por módulos y responsabilidades transversales (memoria y testeo) compartidas:
 
-| Riesgo | Mitigación |
-| :---- | :---- |
-| Alcance ambicioso para el plazo | MVP estricto; extras opcionales; feature freeze en la semana 9\. |
-| Datos de prueba insuficientes | Datasets públicos \+ VMs propias desde la semana 1, con ground truth. |
-| Privacidad / cadena de custodia con cloud | Modelos locales por defecto; avisos al usar cloud; trabajo sobre copias en solo lectura \+ hashing. |
-| Coste de tokens en cloud | Presupuesto, prompts eficientes, caché y preferencia por modelos locales. |
-| Integración tardía entre módulos | Vertical slice E2E en la semana 4 e integración continua. |
-| Dependencia de herramientas externas | Contenedorizar versiones fijadas; documentar en el catálogo. |
-| Fine-tuning consume demasiado tiempo | Tratarlo como extra; solo si el MVP es estable. |
-| Vacaciones / disponibilidad variable | Tablero claro, buffer en la semana 11 y reparto que evita cuellos de botella. |
+| Módulo | Responsabilidad |
+| :--- | :--- |
+| DevOps / Integración | Instalador, CI/CD por SO, integración entre módulos, compilación de la memoria. |
+| Maletín + Sub-agente Windows | Selección y empaquetado de herramientas Windows; prompts y RAG del sub-agente Windows. |
+| Maletín + Sub-agente Unix-like | Selección y empaquetado de herramientas Unix-like; prompts y RAG del sub-agente Unix-like. |
+| Orquestación IA / Capa de modelos | Interfaz común local/cloud, tool-calling, pipeline RAG, optimización de tokens, generación de informes. |
+| Frontend | UI Electron, sección de casos, repositorio de informes, timeline, export PDF, sección Mitre. |
+| Datos / QA | Datasets, VMs con ground truth, escenarios de prueba, validación contra hallazgos esperados. |
 
-# **10\. Próximos pasos inmediatos (esta semana)**
+**Metodología**:
 
-1. Confirmar la propuesta con los tutores.
+- Git con ramas por funcionalidad, pull requests con revisión cruzada, tablero de tareas.
+- Sprints semanales: una reunión de planificación y una de revisión.
+- Integración continua para evitar choques de última hora.
+- Integración temprana: vertical slice E2E en la semana 4, mejorado de forma incremental.
 
-2. Crear el repositorio, el tablero de tareas y un canal de comunicación del equipo.
+---
 
-3. Asignar los seis roles de la sección 6\.
+## Anexo · Herramientas candidatas
 
-4. Descargar un dataset público (Digital Corpora / CFReDS) y empezar a montar una VM propia.
+Repositorio del proyecto: <https://github.com/Rorouh/Forensia-AI/tree/tools>.
 
-5. Levantar el esqueleto de Docker Compose y la estructura del monorepo.
+Listado-fuente; las inclusiones definitivas se acuerdan en Fase 1 en función del valor forense y de la viabilidad técnica (build nativa o imagen container).
 
-# **11\. Preguntas abiertas y dependencias**
+### 1. Adquisición, procesamiento de imágenes de disco y sistemas de archivos
 
-Puntos a cerrar para afinar el plan; ninguno bloquea el arranque, pero conviene resolverlos pronto:
+- `tsk_loaddb` (The Sleuth Kit)
+- `fls` (The Sleuth Kit)
+- `icat` (The Sleuth Kit)
+- `ils` (The Sleuth Kit)
+- `img_stat` (The Sleuth Kit)
+- `istat` (The Sleuth Kit)
+- `mmstat` (The Sleuth Kit)
+- `blkcalc` / `blkls` / `blkcat` (The Sleuth Kit)
+- `guestfish` (libguestfs)
+- `guestmount` (libguestfs)
+- `ewfinfo` (libewf)
+- `ewfexport` (libewf)
+- `ewfverify` (libewf)
+- `vmdkinfo` (libvmdk)
+- `vmdkmount` (libvmdk)
+- `affuse` (afflib)
+- `affstats` (afflib)
+- `bulk_extractor`
+- `bitlocker-dump` / `dislocker-find`
+- `7z` (p7zip)
+- `hfsutils` (para artefactos heredados de macOS)
 
-* Tutor: rúbrica y criterios de evaluación, formato y longitud esperada de la memoria, y fecha exacta de la defensa.
+### 2. Artefactos, registros y telemetría de Windows (offline / parsers)
 
-* Hardware disponible para modelos locales (GPU/RAM), que condiciona qué modelos open source son viables.
+- `log2timeline.py` (Plaso)
+- `psort.py` (Plaso)
+- `image_export.py` (Plaso)
+- `hayabusa-cli` (versión Rust multi-arch)
+- `chainsaw` (versión Rust multi-arch)
+- `rip.pl` (RegRipper 3.0)
+- `EvtxECmd` (Suite de Eric Zimmerman — vía .NET Core en Linux)
+- `MFTECmd` (Suite de Eric Zimmerman — vía .NET Core en Linux)
+- `RECmd` (Suite de Eric Zimmerman — vía .NET Core en Linux)
+- `AmcacheParser` (Suite de Eric Zimmerman — vía .NET Core en Linux)
+- `LECmd` (Suite de Eric Zimmerman — vía .NET Core en Linux)
+- `JLECmd` (Suite de Eric Zimmerman — vía .NET Core en Linux)
+- `ShellBagsExplorer` (versión CLI — vía .NET Core en Linux)
+- `fred` (Forensic Registry Editor CLI)
+- `hivexget` / `hivexml` / `hivexsh` (libhivex)
+- `evtx_dump` (Rust-evtx)
+- `python-registry` (Reglookup)
+- `srch_strings`
+- `prefetch-parser` (Python/Rust equivalents)
+- `srum-parser`
+- `scca` (Shim Cache Parser)
 
-* Habilidades individuales del equipo, para confirmar la asignación de roles.
+### 3. Artefactos, logs y auditoría de sistemas Unix-like (Linux/macOS)
 
-* Modelos cloud concretos y presupuesto de API, si se usan.
+- `uac` (Unix Artifact Collector)
+- `ausearch` (Auditd)
+- `aureport` (Auditd)
+- `utmpdump` (análisis de `wtmp`/`btmp`)
+- `journalctl` (para entornos con Systemd montados)
+- `logcheck`
+- `logwatch`
+- `linenum.sh` (scripts de enumeración)
+- `lynis` (módulo de auditoría forense)
+- `chkrootkit`
+- `rkhunter`
+- `dumpe2fs`
+- `debugfs`
+- `find` / `stat` / `file` (comandos nativos coreutils con flags forenses)
+- `maclookup` (para análisis de direcciones MAC históricas)
+- `stat` (extracción forense de marcas de tiempo birth/access/modify/change)
 
-* Repositorio: GitHub o GitLab, y política de privacidad del repo.
+### 4. Análisis de memoria RAM volátil
 
-* Confirmar que solo se usarán datos sintéticos/públicos (sin datos personales reales).
+- `vol` (Volatility 3 Framework)
+- `vol.py` (Volatility 2 — entorno Python 2 legacy heredado)
+- `dwarf2json` (generador de firmas ISF para kernels Linux)
+- `rekall` (herramienta CLI de análisis de memoria alternativa)
+- `lime-res` (parser de estructuras LiME)
+- `vmem_parse`
 
-# **12\. Referencias**
+### 5. Análisis de malware, ingeniería inversa estática y firmas
 
-The Sleuth Kit: [https://www.sleuthkit.org/](https://www.sleuthkit.org/)
+- `yara` (CLI con soporte multiplataforma)
+- `capa` (FLARE Capability Analytics)
+- `floss` (FLARE Obfuscated String Solver)
+- `clamscan` (ClamAV Engine CLI)
+- `pecheck`
+- `readelf`
+- `ldd`
+- `objdump`
+- `signcheck` (equivalentes en Python/Go para verificar firmas digitales)
+- `trid` (identificador de formato de archivos CLI)
+- `ssdeep` (fuzzy hashing)
+- `tlsh` (Trend Micro Locality Sensitive Hash)
 
-Volatility 3: [https://github.com/volatilityfoundation/volatility3](https://github.com/volatilityfoundation/volatility3)
+### 6. Correlación de datos, líneas de tiempo y helpers para la IA
 
-plaso / log2timeline: [https://github.com/log2timeline/plaso](https://github.com/log2timeline/plaso)
+- `sqlite3` (manipulación directa de BDs de Plaso, TSK, navegadores)
+- `jq` (filtrado ultra-preciso de JSONs procedentes de Hayabusa/Volatility antes de enviar al LLM)
+- `csvkit` (`csvlook`, `csvformat`, `csvgrep` para procesar outputs masivos de Zimmerman)
+- `timesketch-cli`
+- `grep` / `egrep` / `fgrep`
+- `awk`
+- `sed`
+- `datamash`
+- `diff` / `colordiff` (para comparar estados del registro o del sistema de archivos)
 
-bulk\_extractor: [https://github.com/simsong/bulk\_extractor](https://github.com/simsong/bulk_extractor)
+---
 
-Hayabusa (análisis de EVTX): [https://github.com/Yamato-Security/hayabusa](https://github.com/Yamato-Security/hayabusa)
+## Documentación de referencia
 
-Chainsaw (EVTX / Sigma): [https://github.com/WithSecureLabs/chainsaw](https://github.com/WithSecureLabs/chainsaw)
+Documentación técnica que sostiene cada bloque de este plan. Índice completo en [`docs/README.md`](docs/README.md).
 
-RegRipper: [https://github.com/keydet89/RegRipper3.0](https://github.com/keydet89/RegRipper3.0)
-
-NIST CFReDS: [https://cfreds.nist.gov/](https://cfreds.nist.gov/)
-
-Digital Corpora — Disk Images: [https://digitalcorpora.org/corpora/disk-images/](https://digitalcorpora.org/corpora/disk-images/)
-
-Forensic Focus — Challenges & Images: [https://www.forensicfocus.com/challenges-and-images/](https://www.forensicfocus.com/challenges-and-images/)
-
-Model Context Protocol (MCP): [https://modelcontextprotocol.io/](https://modelcontextprotocol.io/)
-
-Ollama: [https://ollama.com/](https://ollama.com/)
+| Sección de este documento | Documento técnico |
+| :--- | :--- |
+| §2 Modelo de entrega y arquitectura | [`docs/arquitectura.md`](docs/arquitectura.md) · [`docs/modelo-amenazas.md`](docs/modelo-amenazas.md) |
+| §2.2 Topología en runtime · cadena de custodia | [`docs/soundness-forense.md`](docs/soundness-forense.md) · [`docs/storage.md`](docs/storage.md) |
+| §4 Fase 1 — Maletín | [`docs/maletin/inventario-tools.md`](docs/maletin/inventario-tools.md) · [`docs/maletin/inventario-mcps.md`](docs/maletin/inventario-mcps.md) · [`docs/maletin/mcp-toolkit-s1.md`](docs/maletin/mcp-toolkit-s1.md) |
+| §5 Fase 2 — Agentes | [`docs/agentes/contrato-paquetes.md`](docs/agentes/contrato-paquetes.md) · [`docs/agentes/diseno-fase2.md`](docs/agentes/diseno-fase2.md) |
+| §6 Fase 3 — Aplicación | [`docs/ai-context/frontend.md`](docs/ai-context/frontend.md) · [`docs/operacion/frontend-journal.md`](docs/operacion/frontend-journal.md) |
+| §10 Cronograma · deuda técnica | [`docs/operacion/proximos-pasos.md`](docs/operacion/proximos-pasos.md) |

@@ -1,5 +1,5 @@
 # Caso de evaluación sintético para el harness comparativo local-vs-cloud.
-# Formato propuesto en docs/FASE2_AGENTES_DISENO.md §9.4.
+# Formato propuesto en docs/agentes/diseno-fase2.md §9.4.
 # NUNCA contiene evidencia real con datos personales: la fixture es sintética.
 id: case-win-001
 description: "Imagen Windows 11 con persistencia en Run key + proceso inyectado en memoria"

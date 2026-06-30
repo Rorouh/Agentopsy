@@ -1,0 +1,79 @@
+# =============================================================================
+# FORENSIA — docker-compose del maletín forense
+#
+#   Despliegue reproducible:  docker compose up --build -d
+#   Ver herramientas:         docker compose exec toolkit-windows forensia-info
+#                             docker compose exec toolkit-unix    forensia-info
+#
+# Define los DOS maletines contenedorizados (Windows-artefactos y Unix-like),
+# ambos como contenedores Linux. Las evidencias se montan en SOLO LECTURA para
+# preservar la cadena de custodia; los casos/salidas van a ./projects.
+#
+# Los servicios api/web/orquestador/ollama se añadirán en fases posteriores
+# (ver bloque comentado al final).
+# =============================================================================
+name: forensia
+
+# Ajustes comunes a los dos maletines
+x-toolkit-common: &toolkit-common
+  working_dir: /cases
+  restart: unless-stopped
+  stop_grace_period: 5s
+  volumes:
+    - ./evidence:/evidence:ro      # evidencias en SOLO LECTURA (cadena de custodia)
+    - ./projects:/cases            # proyectos, salidas e informes
+  # Capacidades necesarias SOLO para montar imágenes (.vmdk/.raw) en read-only
+  # con guestmount/qemu-nbd dentro del contenedor. Si no vas a montar dentro del
+  # contenedor, puedes comentar cap_add/devices/security_opt.
+  cap_add:
+    - SYS_ADMIN
+  devices:
+    - /dev/fuse
+  security_opt:
+    - apparmor:unconfined
+
+services:
+  toolkit-windows:
+    <<: *toolkit-common
+    build:
+      context: ./docker/forensic-toolkit
+      target: windows
+      args:
+        VOLATILITY3_VERSION: "2.28.0"
+        HAYABUSA_VERSION: "3.9.0"
+        CHAINSAW_VERSION: "2.16.0"
+    image: forensia/toolkit-windows:1.0
+    container_name: forensia-toolkit-windows
+    command: ["sleep", "infinity"]
+
+  toolkit-unix:
+    <<: *toolkit-common
+    build:
+      context: ./docker/forensic-toolkit
+      target: unix
+      args:
+        VOLATILITY3_VERSION: "2.28.0"
+    image: forensia/toolkit-unix:1.0
+    container_name: forensia-toolkit-unix
+    command: ["sleep", "infinity"]
+
+# -----------------------------------------------------------------------------
+# FUTURO (fases posteriores del TFM) — esqueleto para extender el compose:
+#
+#  ollama:            # ejecutor de modelos LOCAL (privacidad por defecto)
+#    image: ollama/ollama:latest
+#    volumes: [ "ollama:/root/.ollama" ]
+#    ports: [ "11434:11434" ]
+#
+#  api:               # backend FastAPI: proyectos, evidencias, informes,
+#    build: ./api     # y orquestador de agentes (tool-calling sobre el maletín)
+#    depends_on: [ toolkit-windows, toolkit-unix ]
+#
+#  web:               # frontend React (subida de evidencias, informes, timeline)
+#    build: ./web
+#    ports: [ "5173:5173" ]
+#    depends_on: [ api ]
+#
+# volumes:
+#   ollama:
+# -----------------------------------------------------------------------------

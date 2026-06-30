@@ -6,8 +6,8 @@
 > **fuente de verdad** del diseño de los agentes y el contrato que el equipo de
 > entrenamiento (este rol) entrega y que el equipo de motor implementa. Se apoya
 > en lo ya construido en la rama `tools` y respeta sin excepción los invariantes
-> de `CLAUDE.md`, `docs/ARCHITECTURE.md`, `docs/THREAT_MODEL.md` y
-> `docs/FORENSIC_SOUNDNESS.md`.
+> de `CLAUDE.md`, `docs/arquitectura.md`, `docs/modelo-amenazas.md` y
+> `docs/soundness-forense.md`.
 
 ---
 
@@ -48,7 +48,7 @@
 | Contrato HTTP del chat | **Hecho** (envelope *skeleton*; request/response definitivos) | `backend/forensia/routers/agent.py` |
 | Catálogo + dispatcher de herramientas | **Hecho** (13 wrappers, *shell-free*, anclado a caso) | `backend/forensia/toolkit/*` |
 | Capa de modelos `local|cloud` | **Interfaz hecha**; backends reales pendientes | `backend/forensia/models/*` |
-| Almacenamiento caso-como-carpeta (evidence/artifacts/chats/audit) | **Hecho** | `docs/STORAGE.md`, `backend/forensia/{cases,artifacts,chats,audit,evidence}` |
+| Almacenamiento caso-como-carpeta (evidence/artifacts/chats/audit) | **Hecho** | `docs/storage.md`, `backend/forensia/{cases,artifacts,chats,audit,evidence}` |
 | **Loop de razonamiento** | **Pendiente** | `ForensicAgent.run()` |
 | **Orquestador / síntesis** (informe, timeline, MITRE) | **Pendiente** (layout reservado) | `forensia.reports` (no existe aún) |
 | **RAG** | **Stub de interfaz**; catálogo en el system prompt | — |
@@ -175,7 +175,7 @@ Reparto propuesto (sobre las 13 herramientas *core* ya implementadas, ampliable)
 
 > Unix-like incluye Linux y macOS; en una fase posterior se añaden parsers
 > nativos Unix del inventario largo (`ausearch`, `journalctl`, `utmpdump`, `uac`,
-> `lynis`, `chkrootkit`) conforme se vendoricen — ver `docs/TOOLS_INVENTORY.md`.
+> `lynis`, `chkrootkit`) conforme se vendoricen — ver `docs/maletin/inventario-tools.md`.
 
 ### 3.3 Contrato de SALIDA del sub-agente (lo que la propuesta llama "estructurar la información para que el orquestador tenga visibilidad")
 
@@ -209,7 +209,7 @@ consume. Esquema canónico (ver §7 para el resto de contratos):
 
 Invariante: **ningún finding sin `provenance` resoluble**. Un hallazgo que no
 apunta a un `artifact_id` con su `sha256` y su entrada de audit **no es
-admisible** (coherente con `FORENSIC_SOUNDNESS.md` §3). El system prompt lo
+admisible** (coherente con `soundness-forense.md` §3). El system prompt lo
 exige y un validador del motor lo verifica antes de persistir.
 
 ---
@@ -239,7 +239,7 @@ sobre los `Finding[]` y los `artifacts` ya producidos. Sus cuatro funciones
 
 - **Código** (motor): nuevo módulo `forensia.reports` con submódulos `report`,
   `timeline`, `mitre` y un `FindingStore`. Layout ya reservado en
-  `~/.forensia/cases/<id>/reports/` (`STORAGE.md`).
+  `~/.forensia/cases/<id>/reports/` (`storage.md`).
 - **Inteligencia** (entrenamiento, mi rol): el orquestador es *tool-light* pero
   *prompt-heavy* (redacta y correlaciona). Sus prompts y su KB MITRE son
   **assets declarativos** que yo entrego. Para no romper el invariante "un
@@ -377,16 +377,16 @@ Notas de proyección (sub-agente/orquestador → UI):
 
 - `InvestigationFinding` es la vista *delgada* del `Finding` (sin `provenance`
   completa); la procedencia vive en el audit log y en el manifest del artifact,
-  consultable por el perito (no se expone por HTTP — `STORAGE.md`).
+  consultable por el perito (no se expone por HTTP — `storage.md`).
 - `TimelineEvent.severity` y `Finding.severity` comparten enum
   (`low|medium|high|critical`) — coherencia directa con los filtros de la UI.
 - `MitreTechniqueMatch.confidence` es 0–100 en la UI; internamente 0–1. La
   proyección multiplica ×100. `relatedFindingIds` no vacío (anti-alucinación §4.3).
 - `ReportDocument.sha256` + `pageCount` los rellena el render PDF del informe; el
-  hash entra en el manifest del caso (reproducibilidad, `FORENSIC_SOUNDNESS.md` §6).
+  hash entra en el manifest del caso (reproducibilidad, `soundness-forense.md` §6).
 - Persistencia: se añade `FindingStore` (JSONL append-only por caso, mismo patrón
   que `chats`/`audit`) en `~/.forensia/cases/<id>/findings.jsonl`. Encaja en el
-  layout sin base de datos de `STORAGE.md`.
+  layout sin base de datos de `storage.md`.
 
 ---
 
@@ -483,7 +483,7 @@ publicable del TFM.
 ## 10. Seguridad y soundness que la capa de agentes DEBE preservar
 
 La capa de agentes hereda y **no puede erosionar** los gates de
-`THREAT_MODEL.md`/`FORENSIC_SOUNDNESS.md`. Los que dependen directamente del
+`modelo-amenazas.md`/`soundness-forense.md`. Los que dependen directamente del
 entrenamiento o del loop:
 
 - **Gate 5/6 (sin shell / enum cerrada):** el prompt nunca induce a "escribir un
@@ -497,7 +497,7 @@ entrenamiento o del loop:
   el `argv` literal, no la intención del modelo.
 - **Contenedores:** un sub-agente Windows que necesite `regripper`/`evtxecmd`
   (entrega *container*) trabaja sobre **artefactos pre-extraídos** con TSK a través
-  del handle read-only — nunca monta la imagen cruda (`FORENSIC_SOUNDNESS.md` §7).
+  del handle read-only — nunca monta la imagen cruda (`soundness-forense.md` §7).
   El playbook lo refleja paso a paso.
 
 ---
@@ -556,5 +556,5 @@ loop siga en esqueleto (el envelope ya lista la allowlist).
 ---
 
 *Fin del diseño de Fase 2. Los invariantes de `CLAUDE.md` (RULES 0–4),
-`THREAT_MODEL.md` (gates 1–12) y `FORENSIC_SOUNDNESS.md` (cadena de custodia) son
+`modelo-amenazas.md` (gates 1–12) y `soundness-forense.md` (cadena de custodia) son
 condiciones de aceptación de cualquier slice descrito arriba.*

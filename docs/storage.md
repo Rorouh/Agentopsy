@@ -128,7 +128,7 @@ el filesystem por un perito autorizado, no por la app.
    por trazabilidad, pero no es accionable desde el dispatcher.
 3. **Read-only en filesystem (`chmod 0o444`) es el v1 mínimo.** El read-only a nivel de
    bloque (`losetup --read-only` + `blockdev --setro`) es Linux-only y se cablea en
-   **Phase 2**; está documentado en `FORENSIC_SOUNDNESS.md` §1.
+   **Phase 2**; está documentado en `soundness-forense.md` §1.
 4. **Hash gate en orden estricto.** SHA-256 del origen → copia → re-hash de la copia →
    `chmod` → `baseline.json` → handle expuesto. Cualquier paso fuera de orden invalida
    la cadena de custodia.

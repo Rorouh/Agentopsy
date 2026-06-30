@@ -2,7 +2,7 @@
 
 Registro técnico de decisiones y cambios en la capa de presentación.
 Propósito: dar contexto a todo el equipo (frontend, backend, lógica forense) más allá de lo que los commits explican.
-No reemplaza ni contradice `ARCHITECTURE.md` ni `THREAT_MODEL.md`; los complementa desde la perspectiva del renderer.
+No reemplaza ni contradice `arquitectura.md` ni `modelo-amenazas.md`; los complementa desde la perspectiva del renderer.
 
 ---
 
@@ -14,7 +14,7 @@ Función definida en `ChatPage.tsx:4-9` que nunca se llamaba desde ningún lado 
 
 ## Entrada 2026-06-25 — CI: alinear typecheck con el script real
 
-`ci.yml` ya corría un `tsc -p renderer/tsconfig.json` equivalente a `npm run typecheck` (el `tsconfig.json` ya tenía `noEmit: true`), así que el ítem de deuda "typecheck no conectado a CI" estaba desactualizado en `FRONTEND_CONTEXT.md` — quedó marcado como resuelto. Se cambió el job `renderer` para llamar literalmente `npm run typecheck` en vez de duplicar el comando, así hay una sola fuente de verdad si alguien cambia las flags del script en `package.json`. Cambio de una línea en `.github/workflows/ci.yml`, sin riesgo, no toca `ChatPage.tsx` ni ningún archivo con restricción de ownership.
+`ci.yml` ya corría un `tsc -p renderer/tsconfig.json` equivalente a `npm run typecheck` (el `tsconfig.json` ya tenía `noEmit: true`), así que el ítem de deuda "typecheck no conectado a CI" estaba desactualizado en `frontend.md` — quedó marcado como resuelto. Se cambió el job `renderer` para llamar literalmente `npm run typecheck` en vez de duplicar el comando, así hay una sola fuente de verdad si alguien cambia las flags del script en `package.json`. Cambio de una línea en `.github/workflows/ci.yml`, sin riesgo, no toca `ChatPage.tsx` ni ningún archivo con restricción de ownership.
 
 ---
 
@@ -154,7 +154,7 @@ Esta sección es la más importante si trabajáis en el backend, el agente o la 
 
 **El renderer nunca llama al sidecar directamente.**
 
-Toda comunicación pasa por la cadena: `React → window.forensia.X() → IPC → main.cjs → HTTP al sidecar`. El renderer no conoce la URL ni el token del sidecar. Este diseño está documentado en `THREAT_MODEL.md` (gate 12) y no debe romperse bajo ningún concepto.
+Toda comunicación pasa por la cadena: `React → window.forensia.X() → IPC → main.cjs → HTTP al sidecar`. El renderer no conoce la URL ni el token del sidecar. Este diseño está documentado en `modelo-amenazas.md` (gate 12) y no debe romperse bajo ningún concepto.
 
 ```
 renderer (React)
@@ -280,7 +280,7 @@ Orden sugerido por impacto/riesgo:
 
 ### Team Communication Notes
 
-- **Para integrar nuevas APIs del sidecar:** no llaméis al backend desde React directamente ni useis `fetch()`. El flujo correcto es siempre `main.cjs` → `preload.cjs` → `global.d.ts` → componente. Cualquier atajo rompe el modelo de seguridad documentado en `THREAT_MODEL.md`.
+- **Para integrar nuevas APIs del sidecar:** no llaméis al backend desde React directamente ni useis `fetch()`. El flujo correcto es siempre `main.cjs` → `preload.cjs` → `global.d.ts` → componente. Cualquier atajo rompe el modelo de seguridad documentado en `modelo-amenazas.md`.
 
 - **Si necesitáis exponer una acción del sidecar nueva**, el PR debe tocar estos cuatro archivos juntos: `backend/forensia/routers/`, `desktop/main.cjs`, `desktop/preload.cjs`, `desktop/renderer/src/global.d.ts`. Un PR que toque solo el backend sin actualizar `preload.cjs` y `global.d.ts` no integra — el frontend no puede llamarlo.
 

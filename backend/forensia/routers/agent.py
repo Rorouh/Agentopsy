@@ -129,11 +129,8 @@ def query(req: QueryRequest) -> dict:
                 prompt=prompt,
                 case_id=req.case_id,
                 evidence_id=req.evidence_id,
-<<<<<<< HEAD
                 consent_ref=consent.ref,
-=======
                 prior_messages=prior_messages,
->>>>>>> 17070672e0a907351fe0c9e82a2fe06c25b5d2d7
             )
         except (KeyError, ValueError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc

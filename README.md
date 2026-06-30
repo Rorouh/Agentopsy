@@ -1,120 +1,147 @@
 # FORENSIA
 
-[![Vite](https://img.shields.io/badge/Vite-5.2.0-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vite.dev/)
-[![React](https://img.shields.io/badge/React-18.3.0-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
-[![Electron](https://img.shields.io/badge/Electron-30.0.0-47848F?style=for-the-badge&logo=electron&logoColor=white)](https://www.electronjs.org/)
-[![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
-[![Ollama](https://img.shields.io/badge/Ollama-Local_AI-FF6F00?style=for-the-badge&logo=ollama&logoColor=white)](https://ollama.com/)
-[![License](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
+[![Electron](https://img.shields.io/badge/Electron-30-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
+[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev/)
+[![Vite](https://img.shields.io/badge/Vite-5-646CFF?logo=vite&logoColor=white)](https://vite.dev/)
+[![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Ollama](https://img.shields.io/badge/Ollama-Local%20AI-FF6F00?logo=ollama&logoColor=white)](https://ollama.com/)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-```text
- ______   ______   ______   ______   __   __   ______   __   ______    
-/\  ___\ /\  __ \ /\  == \ /\  ___\ /\ "-.\ \ /\  ___\ /\ \ /\  __ \   
-\ \  __\ \ \ \/\ \\ \  __< \ \  __\ \ \ \-.  \\ \___  \\ \ \\ \  __ \  
- \ \_\    \ \_____\\ \_\ \_\\ \_____\\ \_\\""_\\/\_____\\ \_\\ \_\ \_\ 
-  \/_/     \/_____/ \/_/ /_/ \/_____/ \/_/ \/_/ \/_____/ \/_/ \/_/\/_/ 
-                                                                       
- [BUILD STATUS: STABLE]  [DEPENDENCIES: BUNDLED]  [PRIVACY: LOCAL-FIRST]
-```
+Herramienta de análisis forense **post-mortem** asistida por IA, distribuida como **aplicación de escritorio universal** (Windows / macOS / Linux) instalable con un único comando.
 
-> **WARNING:** Herramienta de análisis forense post-mortem asistida por IA local de grado profesional.
-> Diseñada para correr en local, sin telemetría, sin nubes comerciales obligatorias, y sin dependencias externas.
+> **Trabajo Final de Máster · Entrega: 7 de septiembre de 2026.**  
+> Documento maestro de alcance y planificación: [`FORENSIA_Alcance_y_Planificacion.md`](FORENSIA_Alcance_y_Planificacion.md).
 
 ---
 
-## 💾 EL MANIFIESTO (Principios del Proyecto)
+## Qué es
 
-*   **Instalación Zero-Config:** Nada de `pip install`, nada de `docker pull`, y nada de pelearse con configuraciones de PATH. Todo el maletín de herramientas forenses nativas y el sidecar de Python viajan empaquetados dentro del binario compilado.
-*   **Privacidad Absoluta u Offline-First:** Las evidencias contienen secretos. Por defecto, FORENSIA habla con motores de inferencia locales (Ollama/Llama3 sobre tu propia CPU/GPU). No enviamos tus dumps de memoria RAM a servidores remotos para ser leídos por terceros.
-*   **Rigor a Nivel de Bloque:** Tratamos la evidencia como sagrada. La lectura se realiza a nivel de bloque en modo estrictamente de solo lectura (`read-only`), calculando hashes baseline SHA-256 en la ingesta y encadenando criptográficamente cada comando en un registro de auditoría (`audit log`) inmutable.
-*   **Aparato de Escritorio Único:** Sin servidores web expuestos, sin APIs públicas en la nube. La aplicación levanta un socket loopback local (`127.0.0.1`) en un puerto efímero con tokens de un solo uso.
+Un investigador carga evidencias ya extraídas (`.E01` / `.raw` / `.vmdk` / volcado), conduce el análisis mediante prompts contra dos **sub-agentes** especializados (Windows y Unix-like) coordinados por un **agente orquestador**, y obtiene un informe forense estructurado, su línea temporal y la correlación con MITRE ATT&CK.
 
----
+**Principios**
 
-## 🛠️ ARQUITECTURA DEL COCKPIT
+- **Instalación en una línea.** No `git clone`, no `docker compose up` — un instalador nativo por SO.
+- **Privacidad por defecto.** Modelo local (Ollama) recomendado. Cloud (Claude / GPT) es opt-in por caso, con consentimiento registrado en el audit log.
+- **Cadena de custodia.** Lectura a nivel de bloque en solo lectura, hash SHA-256 baseline en la ingesta, audit log encadenado por hash, comando literal (argv) registrado por cada ejecución.
+- **Maletín completo en la app.** Las herramientas forenses viajan con el instalador como binarios nativos vendoreados o como imágenes OCI pre-cargadas (RULE 1).
 
-El sistema desacopla la GUI del motor de cómputo forense mediante una arquitectura de sidecar local:
-
-```text
-+-------------------------------------------------------------+
-|               ELECTRON HARNESS (desktop/)                   |
-|  - Proceso principal de Chromium hardened                   |
-|  - Controla el ciclo de vida del sidecar (spawns/kills)      |
-|  - IPC Bridge seguro (ContextIsolation + Sandboxing)        |
-+-------------------------------------------------------------+
-                              | (Local Loopback + Auth Token)
-                              v
-+-------------------------------------------------------------+
-|             PYTHON FASTAPI SIDECAR (backend/)              |
-|  - Compilado via PyInstaller en modo 'onedir'               |
-|  - Expone endpoints JSON para orquestación                  |
-+-------------------------------------------------------------+
-                              | (Subprocess calls, shell=False)
-                              v
-+-------------------------------------------------------------+
-|             MALETÍN DE HERRAMIENTAS VENDORED                |
-|  - Binarios compilados bajo vendor/<tool>/<os>-<arch>/       |
-|  - Volatility3, plaso, Sleuth Kit, bulk_extractor, etc.     |
-+-------------------------------------------------------------+
-```
-
-Documentación adicional para hackers y desarrolladores:
-*   [Especificaciones de Arquitectura](file:///Users/menciagonzalez/workspace/Forensia-AI/docs/ARCHITECTURE.md)
-*   [Modelo de Amenazas y Seguridad](file:///Users/menciagonzalez/workspace/Forensia-AI/docs/THREAT_MODEL.md)
-*   [Preservación Criptográfica y Cadena de Custodia](file:///Users/menciagonzalez/workspace/Forensia-AI/docs/FORENSIC_SOUNDNESS.md)
-
----
-
-## ⌨️ CÓMO COMPILAR Y COMPARTIR EL CÓDIGO (Hacking)
-
-### Requisitos del Sistema
-*   Node.js v20 o superior.
-*   Python v3.12 (para desarrollo del sidecar).
-*   Un editor de texto (Vim/Emacs/VSCode).
-*   Monitor CRT (opcional, pero mejora el estilo retro pixel).
-
-### Preparando el entorno local
+## Instalación
 
 ```bash
-# 1. Clonar el repositorio y configurar el sidecar de Python
+# Linux / macOS
+curl -fsSL https://forensia.dev/install.sh | bash
+
+# Windows
+# Instalador .exe firmado.
+```
+
+Docker o Podman es un **prerequisito del instalador**; FORENSIA lo usa internamente para ejecutar herramientas sin build nativa cross-OS (RegRipper en macOS, plaso en Windows, etc.). El investigador no escribe `docker` jamás.
+
+## Arquitectura
+
+```text
+                                    +----------------------------------+
+                                    | Cliente MCP externo              |
+                                    |  (Claude Desktop, Continue, ...) |
+                                    +-----------------+----------------+
+                                                      | (stdio MCP)
++-------------------------------------------------+   |
+|         INSTALABLE NATIVO (Electron)            |   |
+|  - Renderer Chromium hardened                   |   |
+|  - Main process: ciclo de vida del sidecar      |   |
+|  - IPC seguro (contextIsolation + sandbox)      |   |
++----------------------+--------------------------+   |
+                       | (loopback + token de sesión) |
+                       v                              v
++-------------------------+    +-------------------------------------+
+| Sidecar FastAPI (Python)|    | Servidor MCP standalone             |
+| `python -m forensia     |    | `python -m forensia.mcp`            |
+|   .server`              |    | stdio puro, patrón Jira             |
++-----------+-------------+    +---------------+---------------------+
+            |                                  |
+            +----------------+-----------------+
+                             | mismo núcleo
+                             v
++-------------------------------------------------------------+
+| backend/forensia/  =  núcleo compartido                     |
+|  - dispatcher (resolver, shell=False, argv literal)         |
+|  - EvidenceManager (hash gate, read-only)                   |
+|  - ArtifactStore (manifest + sha256 por run)                |
+|  - AuditLog (hash-chained + fcntl.flock concurrencia)       |
++----------------------+--------------------------------------+
+                       | (subprocess shell=False, argv arrays)
+                       v
++-------------------------------------------------------------+
+|             MALETÍN FORENSE EMPAQUETADO                     |
+|  - vendor/<tool>/<os>-<arch>/      (RULE 1 — bundled)       |
+|  - imágenes OCI per-tool           (RULE 1 — container)     |
++-------------------------------------------------------------+
+```
+
+Documentación técnica:
+
+- [Arquitectura](docs/arquitectura.md) — capas, transporte, decisiones bloqueadas.
+- [Modelo de amenazas](docs/modelo-amenazas.md) — superficie MCP incluida.
+- [Cadena de custodia](docs/soundness-forense.md) — read-only a nivel de bloque, audit log.
+- [Contrato de paquetes de agente](docs/agentes/contrato-paquetes.md)
+- [Inventario de servidores MCP](docs/maletin/inventario-mcps.md) — 13 candidatos priorizados P0–P3.
+- [Plan del MCP toolkit (S1 cerrado)](docs/maletin/mcp-toolkit-s1.md)
+- Índice completo: [`docs/README.md`](docs/README.md).
+
+## Desarrollo local
+
+Sección para contribuidores del proyecto. **El usuario final no necesita nada de esto** — usa el instalador.
+
+Requisitos:
+
+- Node.js v20 o superior.
+- Python 3.12.
+- Docker o Podman (para tools containerizadas durante el desarrollo).
+
+```bash
+# Sidecar Python
 cd backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 
-# 2. Levantar el sidecar en modo standalone (para debugging)
+# Levantarlo en standalone (debug)
 python -m forensia.server
 
-# 3. Lanzar la interfaz en modo hot-reload de desarrollo
+# Interfaz Electron en modo hot-reload
 cd ../desktop
 npm install
 npm run dev
 ```
 
-### Empaquetado de producción (Production Bundling)
+### Servidor MCP standalone
+
+El maletín se expone también como servidor MCP estándar para clientes externos (Claude Desktop, Continue, Cline). Detalle en [`docs/maletin/mcp-toolkit-s1.md`](docs/maletin/mcp-toolkit-s1.md).
 
 ```bash
-# Compilar los assets del renderizador y generar el instalador nativo
+cd backend
+source .venv/bin/activate
+pip install -e ".[mcp]"
+FORENSIA_CLOUD_CONSENT=manual_test python -m forensia.mcp
+```
+
+### Empaquetado de producción
+
+```bash
+cd desktop
 npm run dist
 ```
 
----
+Genera el instalador nativo para el SO actual.
 
-## 🚀 ESTADO DEL PROYECTO
+## Estado del proyecto
 
-*   **GUI & Ventana:** Operativa con un tema RPG Pixel Art personalizado y panel de control de estado integrado.
-*   **Sidecar Bridge:** En funcionamiento. Conexión IPC fluida mediante handshake de puerto efímero.
-*   **Paquetes de Agente:** El loop del agente carga su persona, prompts y allowlist de tools desde una carpeta declarativa `agentes/<id>/` que entrega el equipo de entrenamiento (ver [`agentes/README.md`](agentes/README.md) y [`docs/AGENTS.md`](docs/AGENTS.md)). El loader, la registry y el endpoint `/api/agents` están operativos; los paquetes reales `forensia-unix` y `forensia-windows` viajan en `agentes/`, junto al pack de síntesis `_orchestrator/` (ignorado por la registry por su prefijo `_`, consumido por la futura capa `forensia.reports`).
-*   **Agente Local:** Capas de auditoría e ingesta de evidencias implementadas; algoritmos de inferencia y wrappers específicos de CLI en fase de desarrollo.
+Estado actualizado, deuda técnica y próximos pasos: [`docs/operacion/proximos-pasos.md`](docs/operacion/proximos-pasos.md).
 
----
-
-## 👥 LA COFRADÍA (El Equipo)
+## Equipo
 
 Enrique · Daniel · Santiago · Luis · Diego · Miguel Ángel
 
----
+## Licencia
 
-## 📄 LICENCIA
-
-Consulte el archivo [LICENSE](file:///Users/menciagonzalez/workspace/Forensia-AI/LICENSE) para más detalles.
+Ver [`LICENSE`](LICENSE).

@@ -1,31 +1,65 @@
-# Patrones redactados ANTES de enviar cualquier payload a un backend cloud.
-# Con backend local (por defecto) los datos nunca salen del host y la redacción
-# NO se aplica. Frontera de egreso (THREAT_MODEL §C, gate 9).
+# Patrones redactados antes de enviar el payload de una tool a un cliente
+# externo (Claude Desktop, otro cliente MCP cloud).
+#
+# `apply_in` declara en qué modo redactar:
+#   - strict   → siempre. Modo por defecto del servidor MCP con cliente cloud.
+#   - relaxed  → solo cuando el operador opta a `FORENSIA_REDACTION_MODE=relaxed`
+#                (panel/local, ve los IoCs de red pero sigue scrubbing
+#                credenciales/keys).
+# El modo `off` no aplica ningún patrón. El modo activo queda registrado en
+# el audit (`mcp_session_open.redaction_mode`).
+#
+# Pre-existing pre-round-2 bug fix: el regex IPv6 antiguo
+# `\b(?:[0-9A-Fa-f]{1,4}:){2,7}[0-9A-Fa-f]{1,4}\b` matchea timestamps
+# `HH:MM:SS` porque cada bloque es 1-4 hex. Tighteneado para exigir al menos
+# un grupo con letra hexadecimal o longitud > 2 — los timestamps son sólo
+# dígitos decimales con bloques de 2 chars.
 patterns:
-  - name: email
-    regex: '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
-    replacement: "<EMAIL>"
+  # Identidades de red — útiles forensicamente. STRICT only (relaxed las preserva).
   - name: ipv4
     regex: '\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b'
     replacement: "<IPV4>"
+    apply_in: [strict]
   - name: ipv6
-    regex: '\b(?:[0-9A-Fa-f]{1,4}:){2,7}[0-9A-Fa-f]{1,4}\b'
+    # Mínimo 4 bloques (HH:MM:SS tiene 3 — no matchea). Cubre la mayoría de
+    # representaciones IPv6 sin pillar timestamps. Las direcciones IPv6
+    # heavily compressed (`::1`, `fe80::1`) escapan y vuelven crudas al
+    # cliente cloud; aceptable trade-off — la alternativa era clobber
+    # forensicamente significativos timestamps de cualquier herramienta.
+    regex: '\b(?:[0-9A-Fa-f]{1,4}:){3,7}[0-9A-Fa-f]{1,4}\b'
     replacement: "<IPV6>"
+    apply_in: [strict]
   - name: mac_address
     regex: '\b(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\b'
     replacement: "<MAC>"
+    apply_in: [strict]
+
+  # PII — strict only.
+  - name: email
+    regex: '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
+    replacement: "<EMAIL>"
+    apply_in: [strict]
   - name: phone_e164
     regex: '\+\d{6,15}'
     replacement: "<PHONE>"
+    apply_in: [strict]
   - name: windows_sid
     regex: 'S-1-5-[0-9-]+'
     replacement: "<SID>"
+    apply_in: [strict]
+
+  # Credenciales y material criptográfico — SIEMPRE redactar, incluso en
+  # relaxed. Nunca son forensicamente útiles para el operador como bytes
+  # crudos; sí lo son como "hubo un AWS_KEY en este byte range".
   - name: aws_access_key
     regex: '\bAKIA[0-9A-Z]{16}\b'
     replacement: "<AWS_KEY>"
+    apply_in: [strict, relaxed]
   - name: jwt
     regex: '\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b'
     replacement: "<JWT>"
+    apply_in: [strict, relaxed]
   - name: private_key_block
     regex: '-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----'
     replacement: "<PRIVATE_KEY>"
+    apply_in: [strict, relaxed]

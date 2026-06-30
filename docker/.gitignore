@@ -1,0 +1,15 @@
+# Evidencias y casos: NUNCA versionar datos forenses
+/evidence/*
+!/evidence/.gitkeep
+/projects/*
+!/projects/.gitkeep
+
+# Temporales
+*.log
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/

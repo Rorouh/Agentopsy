@@ -7,7 +7,7 @@ Security (THREAT_MODEL gates 5-7):
 - Argv: still a list[str], shell=False. The container is just the execution venue —
   it does not relax the argv contract enforced by `build_argv` / `allowed_flags`.
 
-Evidence soundness (FORENSIC_SOUNDNESS.md §5):
+Evidence soundness (soundness-forense.md §5):
 - A raw evidence image (`.raw`/`.dd`/`.img`/`.vmdk`/`.E01`/`.aff`) MUST NOT appear in
   any container mount, read-only or otherwise. On macOS/Windows the OCI runtime proxies
   through a journaling VM (HyperKit / WSL2) that can write to the underlying image and

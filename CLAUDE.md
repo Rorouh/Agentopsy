@@ -6,13 +6,20 @@ and the **non-negotiable invariants**. Read it before writing code.
 
 ## What FORENSIA is
 
-FORENSIA is an **AI-assisted post-mortem digital forensics desktop tool** (TFM).
+FORENSIA is an **AI-assisted post-mortem digital forensics desktop application** (TFM).
 A forensic analyst loads already-extracted evidence (`.vmdk` / `.raw` / RAM dumps),
 and one AI agent (parametrized per OS profile) drives a curated toolkit of forensic
 CLI tools to produce a structured, court-style report plus a timeline.
 
+Authoritative source of scope and planning: [`FORENSIA_Alcance_y_Planificacion.md`](FORENSIA_Alcance_y_Planificacion.md).
+
 - **Post-mortem only.** No live forensics, no acquisition from the original machine.
-- **Desktop only.** No CLI surface, no web app. One surface: the desktop app.
+- **Universal desktop app, one-line install.** Native installer per OS
+  (`curl … | bash` on Linux/macOS, signed `.exe` / `.dmg` on Windows/macOS). No
+  `git clone + docker compose up`. The full toolkit ships with the installer — bundled
+  native binaries or pre-loaded OCI images (see RULE 1). Docker is **internal** to the
+  app, never invoked by the user.
+- **One surface.** The installed desktop app — no CLI for the end user, no web app.
 - **Academic.** No certified legal validity — but we hold ourselves to real forensic
   rigor anyway (chain of custody, integrity, reproducibility).
 
@@ -28,7 +35,7 @@ Python sidecar  (backend/)        PyInstaller **onedir** (never onefile), one bu
    forensia/  = ALL the logic. routers/ are thin adapters over it.
    ▼
 vendor/<tool>/<os>-<arch>/        forensic binaries bundled INTO the app
-agentes/<id>/                     trained-agent packages (drop-in; see docs/AGENTS.md)
+agentes/<id>/                     trained-agent packages (drop-in; see docs/agentes/contrato-paquetes.md)
 ```
 
 Two runtimes (Node + Python). **No third runtime.** See the bundling rule.
@@ -43,7 +50,7 @@ it (`forensia.agent.loader`), and indexes it by `os_profile`
 declaring the same profile fails the sidecar at startup (RULE 2). When no
 package is loaded for the requested profile, `/api/agent/query` returns 503 and
 the UI degrades explicitly — there is never a fallback agent. See
-`docs/AGENTS.md` for the full contract and `agentes/README.md` for the
+`docs/agentes/contrato-paquetes.md` for the full contract and `agentes/README.md` for the
 sample-shaped reference.
 
 ## RULE 0 — No AI authorship or attribution
@@ -77,7 +84,7 @@ installer.** If absent at runtime, `capabilities` reports container-delivered to
 unavailable and the UI degrades for those tools only — bundled tools and the rest of the app
 still work.
 
-**Evidence soundness invariant holds inside containers** (`docs/FORENSIC_SOUNDNESS.md`):
+**Evidence soundness invariant holds inside containers** (`docs/soundness-forense.md`):
 a container never mounts the raw `.raw`/`.vmdk` directly. It receives derived artifacts or
 reads through the read-only block-level handle from `EvidenceManager`. Mounting evidence
 inside a Mac/Windows container runtime — which proxies through a journaling VM
@@ -93,6 +100,32 @@ Forbidden: `provider = config.provider or "anthropic"`. If a required value (mod
 provider, API key, target, evidence path, OS profile) is missing or invalid, **fail
 loudly** with an actionable error. Designed parameter defaults (`def f(opts=None)`) are fine.
 
+**No fallbacks — explicit corollaries.** This rule generalises beyond config values:
+
+- **No "try the other tool when this one fails"**: if `tsk_mmls` returns exit≠0, do
+  not silently try `mmstat` "to see if it works". Surface the failure with the exact
+  stderr; let the caller (operator or upstream code) decide the next step.
+- **No "use the latest / single / default case/evidence/agent"**: if the operator
+  didn't select one, the API returns an actionable error. The MCP server requires
+  `select_case` before any tool call; if it's missing, return `INVALID_PARAMS` with
+  "call `select_case` first" — never auto-pick "the only case" or "the most recent".
+- **No "guess from context"**: if a parameter is required, demand it. Inferring
+  `os_profile` from the host platform, `evidence_id` from "the one most recently
+  registered", or `case_id` from "the only active case" — all forbidden. The
+  triage classifier (`forensia.triage`) is allowed to *suggest* a value to the
+  operator via the UI, never to set it silently.
+- **No "default to the cloud / default to the local model"**: the model backend
+  is set explicitly by the operator. An absent `MODEL_BACKEND` is a 503, not a
+  retry against the cloud or the local Ollama.
+- **No "downgrade silently to a degraded mode"**: if a container runtime is
+  missing, the affected tools are unavailable — the others still work, but the
+  unavailable ones return `INVALID_PARAMS` with the missing dependency named.
+  Do NOT substitute with a "best effort" alternative.
+
+Every fallback we ever wrote later had to be unwound because the silent default
+masked a real configuration bug. Fail loud, log the actionable error, exit
+non-zero where appropriate. Operator agency over surprises, always.
+
 ## RULE 3 — Logic lives in `forensia/*`; surfaces stay thin
 
 All orchestration lives in `backend/forensia/` modules (`evidence`, `audit`, `toolkit`,
@@ -103,6 +136,20 @@ adapters** — no business logic, no duplicated orchestration. Keep modules pure
 ## RULE 4 — Keep documentation in sync before committing
 
 Whenever changes are made to the codebase, all corresponding documentation (including READMEs, markdown files, and any other documentation files across the entire project) must be updated to reflect those changes before committing. No code or feature changes should be committed with outdated documentation.
+
+## RULE 5 — Pull from `origin` at the start of every session
+
+At the very start of every session — before reading code, before planning, before
+editing — run `git pull` on the currently checked-out branch to sync with `origin`.
+The remote state has moved since your last context: branches have advanced, commits
+have landed, decisions have been recorded. Your conversational memory of the repo is
+**not** the source of truth; the remote is.
+
+This applies every time you switch branches mid-session as well: `git checkout <branch>`
+is immediately followed by `git pull` for that branch.
+
+If the pull surfaces conflicts, resolve them before doing any other work — never pile
+new commits on top of a divergent local state.
 
 ## FORENSIC INVARIANTS (chain of custody — do not erode these)
 

@@ -32,6 +32,14 @@ models = [
     "openai>=2.0",
     # "ollama>=0.2",
 ]
+# Model Context Protocol — server SDK for `mcp-toolkit` (S1 of MCP_INVENTORY).
+# Optional because the sidecar runs without MCP for users who only use the
+# desktop UI; the MCP server is opt-in for clients like Claude Desktop or the
+# in-process integration in the ForensicAgent loop (S2).
+mcp = [
+    "mcp>=1.0,<2.0",
+    "jsonref>=1.1",   # flatten $ref in Pydantic-derived JSON Schemas (D4)
+]
 
 [tool.setuptools.dynamic]
 version = { attr = "forensia._version.__version__" }
@@ -41,6 +49,8 @@ include = ["forensia*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff]
 target-version = "py312"

@@ -15,48 +15,72 @@ tras un panel de 5 expertos (empaquetado, DFIR, seguridad, orquestación IA, ges
 | Docker / OCI runtime | **Aceptado como mecanismo de entrega peer al bundling** (RULE 1); el runtime es prerequisito del instalador, las imágenes viajan como tarballs y se cargan con `docker load` en el primer arranque | Sin esto no hay forma viable de entregar herramientas Perl (RegRipper) ni .NET (EvtxECmd, MFTECmd) en Linux/Mac sin pedir al usuario que instale .NET o Perl portable |
 | Empaquetado | `electron-builder` (nsis/dmg/AppImage+deb) + PyInstaller **onedir** por OS/arch | PyInstaller no cross-compila; onedir arranca rápido y firma mejor |
 | Modelos | Capa común; **local (Ollama) por defecto**, cloud opt-in | Sensibilidad de evidencias |
-| Agente | **UNO**, parametrizado por un **paquete declarativo** (`agentes/<id>/`) y por `os_profile` (win/unix) | El loop es idéntico; lo que cambia (prompts, modelo, allowlist) viaja en una carpeta que entrega el equipo de entrenamiento — sin código Python suyo, sin dos agentes paralelos. Ver [`AGENTS.md`](AGENTS.md) |
+| Agente | **UNO**, parametrizado por un **paquete declarativo** (`agentes/<id>/`) y por `os_profile` (win/unix) | El loop es idéntico; lo que cambia (prompts, modelo, allowlist) viaja en una carpeta que entrega el equipo de entrenamiento — sin código Python suyo, sin dos agentes paralelos. Ver [`contrato-paquetes.md`](agentes/contrato-paquetes.md) |
 | RAG | **Stub de interfaz**; catálogo en el system prompt | Cabe en prompt; RAG real es fase 2 |
 
 ## 2. Capas
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│ desktop/  Electron — ÚNICA superficie                         │
-│   main.cjs    free port → spawn sidecar → health → window     │
-│   preload.cjs contextBridge → window.forensia.*               │
-│   renderer/   React + TS + Vite                               │
-└───────────────┬──────────────────────────────────────────────┘
-                │ HTTP/WS 127.0.0.1:<efímero> + token de sesión
-┌───────────────▼──────────────────────────────────────────────┐
-│ backend/forensia/  = TODA la lógica                           │
-│   server.py      FastAPI: token, CORS exacto, Host-check      │
-│   capabilities.py contrato de degradación (qué hay disponible)│
-│   config.py      ~/.forensia/config.json + env override       │
-│   routers/       adaptadores FINOS (health, capabilities, …)  │
-│   evidence.py    EvidenceManager — copia inmutable + hash gate│
-│   triage.py      fingerprint_evidence(handle) → (family, kind)│
-│   cases/         CaseManager (caso-como-carpeta, ver STORAGE) │
-│   artifacts/     ArtifactStore (manifest + hashes por run)    │
-│   chats/         ChatStore (JSONL append-only por sesión)     │
-│   audit/         AuditLog encadenado por hash (uno por caso)  │
-│   toolkit/       resolver env→bundled→container→PATH; tools   │
-│   agent/         un agente, parametrizado por AgentPackage    │
-│                  (loader+registry sobre agentes/<id>/)        │
-│   models/        backend cloud|local + capabilities()         │
-│   reports/       hallazgo trazable + timeline (pendiente)     │
-└───────────────┬──────────────────────────────────────────────┘
-                │ resolver: env → bundled → container → PATH
-┌───────────────▼──────────────────────────────────────────────┐
-│ vendor/<tool>/<os>-<arch>/   maletín forense bundleado         │
-│   TSK, bulk_extractor, ewf-tools, hayabusa, chainsaw,         │
-│   RegRipper…   (Volatility3 y plaso van DENTRO del sidecar)   │
-└──────────────────────────────────────────────────────────────┘
+                                              ┌──────────────────────────────┐
+                                              │ Cliente MCP externo          │
+                                              │  (Claude Desktop, Continue,  │
+                                              │   Cline, agente custom...)   │
+                                              └──────────────┬───────────────┘
+                                                             │ stdio (MCP)
+┌──────────────────────────────────────────────┐             │
+│ desktop/  Electron — UI de escritorio        │             │
+│   main.cjs    free port → spawn sidecar      │             │
+│   preload.cjs contextBridge → window.forensia│             │
+│   renderer/   React + TS + Vite              │             │
+└───────────────┬──────────────────────────────┘             │
+                │ HTTP/WS 127.0.0.1:<efímero> + token        │
+┌───────────────▼──────────────────────┐  ┌──────────────────▼───────────────┐
+│ backend/forensia/server.py           │  │ backend/forensia/mcp/__main__.py │
+│  FastAPI sidecar — UI surface        │  │  MCP server — protocol surface   │
+└───────────────┬──────────────────────┘  └──────────────────┬───────────────┘
+                │                                            │
+                └────────────────┬───────────────────────────┘
+                                 │ ambos delegan en lo mismo
+┌────────────────────────────────▼─────────────────────────────────┐
+│ backend/forensia/  =  TODA la lógica forense (núcleo compartido) │
+│   server.py        FastAPI: token, CORS exacto, Host-check       │
+│   mcp/             servidor MCP stdio (mcp-toolkit S1):           │
+│                    Jira-pattern (list/select cases+evidence),     │
+│                    16 tools forenses con Pydantic schemas,        │
+│                    ResourceLinks artifact://, redaction modes     │
+│   capabilities.py  contrato de degradación                       │
+│   config.py        ~/.forensia/config.json + env override         │
+│   routers/         adaptadores FINOS (health, capabilities, …)    │
+│   evidence.py      EvidenceManager — copia inmutable + hash gate  │
+│   triage.py        fingerprint_evidence(handle) → (family, kind)  │
+│   cases/           CaseManager (caso-como-carpeta, ver STORAGE)   │
+│   artifacts/       ArtifactStore (manifest + hashes por run)      │
+│   chats/           ChatStore (JSONL append-only por sesión)       │
+│   audit/           AuditLog encadenado por hash + fcntl.flock     │
+│   toolkit/         resolver env→bundled→container→PATH; tools     │
+│   agent/           un agente, parametrizado por AgentPackage      │
+│                    (loader+registry sobre agentes/<id>/)          │
+│   models/          backend cloud|local + capabilities()           │
+│   reports/         hallazgo trazable + timeline (pendiente)       │
+└───────────────────────────┬──────────────────────────────────────┘
+                            │ resolver: env → bundled → container → PATH
+┌───────────────────────────▼──────────────────────────────────────┐
+│ vendor/<tool>/<os>-<arch>/   maletín forense bundleado            │
+│   TSK, bulk_extractor, ewf-tools, hayabusa, chainsaw,             │
+│   RegRipper…   (Volatility3 y plaso van DENTRO del sidecar)       │
+└──────────────────────────────────────────────────────────────────┘
 ```
+
+**Dos superficies, un núcleo.** El sidecar HTTP (para la UI Electron) y el
+servidor MCP stdio (para clientes externos) son procesos Python
+independientes que comparten el mismo `dispatcher`, `EvidenceManager`,
+`ArtifactStore` y `AuditLog`. Concurrencia segura vía `fcntl.flock` sobre
+`audit.jsonl`. Ver [`mcp-toolkit-s1.md`](maletin/mcp-toolkit-s1.md) y
+[`inventario-mcps.md`](maletin/inventario-mcps.md) para detalle del servidor MCP.
 
 > Detalle del layout en disco (`~/.forensia/cases/<id>/{case.json, evidence/, artifacts/, chats/, audit.jsonl, reports/}`),
 > contrato de cada manager/store, y flujo end-to-end de una ejecución anclada a caso:
-> ver [`STORAGE.md`](STORAGE.md).
+> ver [`storage.md`](storage.md).
 
 ## 3. Por qué el transporte va desacoplado
 
@@ -167,7 +191,7 @@ Distribución: `electron-builder` mete `../agentes` en `extraResources` y
 `asarUnpack`. En dev, el sidecar lee `<repo>/agentes`. En packaged, Electron
 exporta `FORENSIA_AGENTS_DIR=<resourcesPath>/agentes` al spawnear el sidecar.
 
-Detalle completo del contrato y del schema de `agent.yaml`: [`AGENTS.md`](AGENTS.md).
+Detalle completo del contrato y del schema de `agent.yaml`: [`contrato-paquetes.md`](agentes/contrato-paquetes.md).
 
 ## 8. Lo que el esqueleto NO implementa todavía
 
