@@ -47,7 +47,6 @@ from forensia.mcp.jira_tools import (
 from forensia.mcp.redaction import get_redaction_mode
 from forensia.mcp.resources import (
     build_resource_links_for_run,
-    parse_artifact_uri,
     read_artifact,
 )
 from forensia.mcp.schemas import SCHEMA_BY_TOOL
@@ -258,8 +257,8 @@ async def _dispatch_forensic(
     case_id = session.case_id
     if case_id is None:
         return _error(
-            f"no case selected — call `select_case` first. RULE 2 (no fallbacks): "
-            f"the server does not auto-pick a case even if there is only one."
+            "no case selected — call `select_case` first. RULE 2 (no fallbacks): "
+            "the server does not auto-pick a case even if there is only one."
         )
 
     if session.agent_package is None or name not in session.agent_package.policy.allowed_tools:

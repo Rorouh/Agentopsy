@@ -13,7 +13,6 @@ mechanism we care about; a threading test would not exercise that path.
 from __future__ import annotations
 
 import multiprocessing as mp
-import os
 from pathlib import Path
 
 import pytest
@@ -45,7 +44,7 @@ def test_concurrent_appends_keep_chain_intact(tmp_path: Path, workers: int, per_
 
     # Sanity: we wrote exactly workers * per_worker lines.
     lines = log_path.read_text().splitlines()
-    assert len([l for l in lines if l.strip()]) == workers * per_worker
+    assert len([line for line in lines if line.strip()]) == workers * per_worker
 
 
 def test_no_fd_leak_on_exception(tmp_path: Path) -> None:

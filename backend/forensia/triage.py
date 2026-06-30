@@ -257,8 +257,6 @@ def fingerprint_evidence(evidence_path: Path) -> DetectedEvidence:
             # memdumps (page 0 of physical memory is typically unmapped).
             win_hits, unix_hits, pe_hits, kernel_hits = _scan_all_windows(fh, size, head)
             first4k_zero = head[:4096] == b"\x00" * 4096
-            mz_count = head.count(b"MZ\x90\x00")
-            pe_count = head.count(b"PE\x00\x00")
             rsds_count = head.count(b"RSDS")
 
             # ``pe_hits`` from _scan_all_windows is the unique-per-window count
