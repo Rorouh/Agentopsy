@@ -56,7 +56,7 @@ tras un panel de 5 expertos (empaquetado, DFIR, seguridad, orquestación IA, ges
 │   cases/           CaseManager (caso-como-carpeta, ver STORAGE)   │
 │   artifacts/       ArtifactStore (manifest + hashes por run)      │
 │   chats/           ChatStore (JSONL append-only por sesión)       │
-│   audit/           AuditLog encadenado por hash + fcntl.flock     │
+│   audit/           AuditLog encadenado por hash + filelock cross-OS │
 │   toolkit/         resolver env→bundled→container→PATH; tools     │
 │   agent/           un agente, parametrizado por AgentPackage      │
 │                    (loader+registry sobre agentes/<id>/)          │
@@ -74,7 +74,7 @@ tras un panel de 5 expertos (empaquetado, DFIR, seguridad, orquestación IA, ges
 **Dos superficies, un núcleo.** El sidecar HTTP (para la UI Electron) y el
 servidor MCP stdio (para clientes externos) son procesos Python
 independientes que comparten el mismo `dispatcher`, `EvidenceManager`,
-`ArtifactStore` y `AuditLog`. Concurrencia segura vía `fcntl.flock` sobre
+`ArtifactStore` y `AuditLog`. Concurrencia segura vía `filelock` (cross-platform, sidecar `.lock`) sobre
 `audit.jsonl`. Ver [`mcp-toolkit-s1.md`](maletin/mcp-toolkit-s1.md) y
 [`inventario-mcps.md`](maletin/inventario-mcps.md) para detalle del servidor MCP.
 

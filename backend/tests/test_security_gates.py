@@ -35,8 +35,10 @@ def test_gate3_capabilities_requires_token(client: TestClient) -> None:
 
 
 def test_gate5_no_shell_execution_anywhere() -> None:
+    # Explicit UTF-8 because the default encoding on Windows is cp1252 and our
+    # sources contain non-ASCII bytes (Spanish/Unicode in docstrings, comments).
     forbidden = ("shell=True", "os.system(", "os.popen(", "subprocess.getoutput")
     for py in SRC.rglob("*.py"):
-        text = py.read_text()
+        text = py.read_text(encoding="utf-8")
         for needle in forbidden:
             assert needle not in text, f"{needle} found in {py}"

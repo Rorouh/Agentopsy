@@ -53,7 +53,7 @@ añade eventos de nivel-agente que el dispatcher no puede ver, encadenados en la
 **Concurrencia** (sprint S1, rama `mcp`): el `AuditLog` ahora puede recibir appends de
 múltiples procesos en paralelo (el sidecar HTTP de la UI Electron + el servidor MCP
 standalone `python -m forensia.mcp`, que el cliente externo spawnea). `AuditLog.append`
-usa `fcntl.flock(LOCK_EX)` durante la región crítica leer-prev → calcular hash → escribir
+usa un `filelock` cross-platform (POSIX `fcntl` / Windows `msvcrt`) sobre un sidecar `.lock` durante la región crítica leer-prev → calcular hash → escribir
 nueva entrada. Sin esto, dos appends concurrentes leían el mismo `prev_hash` y la cadena
 se bifurcaba silenciosamente. Test: `backend/tests/test_audit_lock.py` con
 `multiprocessing` (4 procesos × 50 entradas) verifica que `AuditLog.verify()` sigue
