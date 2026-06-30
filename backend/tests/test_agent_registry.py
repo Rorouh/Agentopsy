@@ -128,7 +128,11 @@ def test_prompt_path_escape_rejected(tmp_path: Path) -> None:
 
 def test_absolute_prompt_path_rejected(tmp_path: Path) -> None:
     m = _valid_manifest()
-    m["prompts"]["system"] = "/etc/passwd"
+    # tmp_path is guaranteed absolute on every OS (Path.is_absolute() == True),
+    # so this exercises the "RELATIVE" rejection branch uniformly on Win/Mac/Linux.
+    # A bare "/etc/passwd" would be relative on Windows (no drive letter) and would
+    # hit a different validation error.
+    m["prompts"]["system"] = str(tmp_path / "outside.md")
     _write_manifest(tmp_path, m)
     with pytest.raises(AgentPackageError, match="RELATIVE"):
         load_package(tmp_path)

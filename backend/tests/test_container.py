@@ -153,8 +153,11 @@ def test_run_in_container_assembles_expected_argv(monkeypatch, tmp_path) -> None
 
     assert result.returncode == 0
     argv = captured["argv"]
-    # Runtime + run + --rm
-    assert argv[0] == "/usr/bin/true"
+    # Runtime + run + --rm.
+    # On Windows, str(Path("/usr/bin/true")) uses backslashes; compare with
+    # as_posix() so the test means "this is the bundled runtime path",
+    # independent of OS separator conventions.
+    assert Path(argv[0]).as_posix() == "/usr/bin/true"
     assert "run" in argv
     assert "--rm" in argv
     # Network isolation

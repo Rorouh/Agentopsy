@@ -123,7 +123,10 @@ def test_execute_bundled_runs_and_returns_result(monkeypatch) -> None:
 
     result = execute("tsk_mmls", {"image_path": "/tmp/img.raw"})
     assert result["tool_id"] == "tsk_mmls"
-    assert result["argv"][0] == "/usr/bin/mmls"
+    # See test_container.py for the same as_posix() rationale: on Windows the
+    # mocked Path serialises with backslashes; the test means "argv[0] is the
+    # resolved bundled binary path", independent of OS separator.
+    assert Path(result["argv"][0]).as_posix() == "/usr/bin/mmls"
     assert result["argv"][-1] == "/tmp/img.raw"
     assert result["exit_code"] == 0
     # mmls parse with this stdout yields the documented shape
