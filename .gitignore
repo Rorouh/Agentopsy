@@ -13,9 +13,16 @@ vendor/*/
 *.E01
 *.aff4
 *.mem
+*.dmp
 *.dump
 *.plaso
 *_findings.json
+
+# --- Evidence corpus (CTF images: too large / licensed; referenced by URL+SHA-256
+#     in docs/agentes/corpus-windows.md, NEVER stored in git). The folder ignore
+#     also covers companion artefacts with no dedicated extension rule above,
+#     e.g. pagefile.sys and FTK Imager logs.
+evidence-corpus/
 
 # --- Secrets / config ---
 .env
