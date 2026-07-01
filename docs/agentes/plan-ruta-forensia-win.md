@@ -366,3 +366,44 @@ disco Windows de CTF, registrarlas en `docs/agentes/corpus-windows.md` con su
 SHA-256 y su ground-truth, y desde ahí refinar el playbook (A1). Cuando tengas las
 URLs de las imágenes, las verifico, calculo hashes y monto el manifiesto + las
 primeras evals contra su ground-truth.
+
+---
+
+## Estado de sesión / dónde vamos
+
+Checkpoint del entrenamiento del sub-agente `windows` en la rama `tools`.
+
+**Slices completados**
+
+- **A0** — commit `fa8ead5`: andamiaje del corpus. `docs/agentes/corpus-windows.md`
+  (manifiesto), `ground-truth/` (README, plantilla, `lonewolf-2018.md`),
+  `scripts/hash-evidence.py`, `.gitignore` para evidencia. Baselines SHA-256 del
+  disco LoneWolf 2018 por segmento (E01–E09, total 13 545 502 470 B).
+- **A1** — commit `37a4a56`: prompts v2. `system.md` y `playbook.md` de v1 a v2
+  (routing por tipo, cadenas de correlación nombradas, disciplina de coste, anexo
+  por herramienta, probe diagnóstico coherente). Allowlist ampliada a **19 tools**
+  (`file_info`, `strings_head` para el probe de `unknown`). Documentado el gap del
+  motor `_EVIDENCE_INJECTION`/`AUTO_INJECTED` (Bloque B1: bloqueante del flujo
+  `tsk_icat` → artefacto derivado).
+- **A2** — commit *(este)*: evals sintéticas `case-win-002..010` (9 casos, disco y
+  RAM) + `evals/README.md` con índice y cobertura. Ejercitan **12 técnicas MITRE,
+  todas presentes en la semilla** (`mitre_attack_seed.md`); todos los
+  `provenance_tool` están en la allowlist. Incluye el caso dedicado al gate 7
+  (prompt-injection anti-forense).
+
+**Pendiente**
+
+- **Baselines que faltan** (cuando se descarguen las imágenes): SHA-256 del volcado
+  de **memoria** LoneWolf y de la **variante de imagen única** (`.raw`/ZIP
+  reconstruido) del disco. Hoy marcados `<pendiente>` en el manifiesto.
+- **A3** — KB/RAG de MITRE (ampliar la semilla más allá del subconjunto curado) +
+  guías de artefactos por técnica para el retrieval del agente.
+- **A4** — endurecimiento de la allowlist y de la redacción (gate 9, `redaction.yaml`
+  por agente; sin consentimiento, 0 bytes salen).
+
+**Nota (corpus de intrusión)**
+
+- Para ground-truth de intrusión (T1055/T1071/T1070.001, hoy solo en evals
+  sintéticas) conviene registrar en el corpus una **imagen de memoria con malware**
+  real (p.ej. MemLabs o el clásico *cridex*), con su SHA-256 y ground-truth. El
+  escenario LoneWolf es de insider y **no** ejercita inyección/C2/borrado de logs.
