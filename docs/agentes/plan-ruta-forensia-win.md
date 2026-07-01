@@ -30,7 +30,7 @@ escribir una línea nueva, esto es lo que hay y su madurez:
 | Semilla MITRE (enum cerrada, ~35 técnicas) | **v1** | `agentes/_orchestrator/knowledge/mitre_attack_seed.md` |
 | Catálogo de herramientas (`os_profiles` + `delivery`) | **Hecho, ~19 tools** | `backend/forensia/toolkit/catalog.py` |
 | Loader + registry (valida el paquete al arranque) | **Hecho + tests** | `backend/forensia/agent/{loader,registry}.py` |
-| **`ForensicAgent.run()` (loop de razonamiento)** | **`NotImplementedError`** | `backend/forensia/agent/agent.py` |
+| **`ForensicAgent.run()` (loop de razonamiento)** | **`NotImplementedError`** + gap de inyección de paths (ver B1) | `backend/forensia/agent/agent.py` |
 | Backends de modelo reales (Ollama / cloud) | **Interfaz sí, backend no** | `backend/forensia/models/{local,cloud}.py` |
 | `forensia.reports` (síntesis: informe/timeline/MITRE) | **No existe aún** | — |
 
@@ -272,9 +272,23 @@ especifican ya para que el contrato encaje, se ejecutan después.
   emite `Finding` con `provenance` resoluble (§3.3 del diseño) y que un finding
   sin `artifact_id`+`sha256`+`audit_seq` se rechaza. Ajustar prompts si el parser
   real difiere.
+
+  > **Gap motor↔soundness detectado en A1 (bloqueante de B1/B2).** `_EVIDENCE_INJECTION`
+  > (`backend/forensia/agent/agent.py`) inyecta la **imagen cruda** en `hive_path` /
+  > `evtx_path` / `mft_path` para `regripper` / `evtxecmd` / `mftecmd`, y
+  > `AUTO_INJECTED` (`backend/forensia/agent/tool_schemas.py`) **impide al LLM fijar
+  > el artefacto pre-extraído**. Hoy el motor **no puede cumplir** el flujo
+  > `tsk_icat` → artefacto derivado que exige `docs/soundness-forense.md` §7 (un
+  > contenedor nunca recibe la imagen raw). El **prompt ya define el contrato
+  > objetivo correcto** (playbook «regla de oro de custodia» + anexo por
+  > herramienta); falta el wiring del motor. **Coordinar con el rol de motor** —
+  > este es uno de los puntos que hace que `ForensicAgent.run()` siga incompleto
+  > (ver el estado `NotImplementedError` de §0): la validación de B1 debe cubrirlo.
 - **B2 · Schemas MCP de las tools** (D-3): JSON Schema por tool para documentar el
   maletín a los agentes; el contrato `{tool_id, params}` no cambia respecto al
-  dispatcher nativo.
+  dispatcher nativo. Incluye resolver el gap de inyección de paths de B1 (permitir
+  que el path del artefacto derivado, no la imagen raw, llegue a las tools de
+  contenedor).
 - **B3 · Ejecutar el harness** sobre las evals de A2 con backend cloud (fiable) y
   luego local (objetivo de producto). Medir `tool_invocation_accuracy`,
   `findings_recall/precision`, `tokens_per_case`, `iterations_to_solve`,
