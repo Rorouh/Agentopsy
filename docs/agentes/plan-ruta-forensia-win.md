@@ -385,21 +385,40 @@ Checkpoint del entrenamiento del sub-agente `windows` en la rama `tools`.
   (`file_info`, `strings_head` para el probe de `unknown`). Documentado el gap del
   motor `_EVIDENCE_INJECTION`/`AUTO_INJECTED` (Bloque B1: bloqueante del flujo
   `tsk_icat` → artefacto derivado).
-- **A2** — commit *(este)*: evals sintéticas `case-win-002..010` (9 casos, disco y
+- **A2** — commit `3b88060`: evals sintéticas `case-win-002..010` (9 casos, disco y
   RAM) + `evals/README.md` con índice y cobertura. Ejercitan **12 técnicas MITRE,
   todas presentes en la semilla** (`mitre_attack_seed.md`); todos los
   `provenance_tool` están en la allowlist. Incluye el caso dedicado al gate 7
   (prompt-injection anti-forense).
+- **A3** — commit `3cdc9f6`: conocimiento recuperable (RAG). Guía
+  `knowledge/artefactos-windows.md` (artefacto → interpretación → técnica) para
+  Amcache, Prefetch, ShimCache, ShellBags, `$MFT` (SI/FN), USBSTOR y EVTX clave; +4
+  técnicas a la semilla MITRE (`T1110`, `T1083`, `T1052`/`T1052.001`) sin duplicar
+  ids, manteniendo la enum cerrada; `knowledge/README.md` en sync.
+- **A4** — commit *(este)*: cierre de la policy del paquete. Verificado **19/19** de
+  la allowlist contra `catalog.py` (cada `tool_id` existe y declara `os_profile:
+  windows`). `policy/redaction.yaml` endurecida (solo aplica en cloud; local no
+  egresa): + rutas de usuario Windows, UNC, hostname anclado a etiqueta, GUID,
+  NTLM/pwdump; IPv6/MAC/SID ya existían (no duplicados). Nuevo test
+  `backend/tests/test_redaction_windows.py` (compila + ReDoS con presupuesto de
+  tiempo + correctness): 39 passed.
 
-**Pendiente**
+**Bloque A: COMPLETO** salvo dos cosas independientes:
 
 - **Baselines que faltan** (cuando se descarguen las imágenes): SHA-256 del volcado
   de **memoria** LoneWolf y de la **variante de imagen única** (`.raw`/ZIP
   reconstruido) del disco. Hoy marcados `<pendiente>` en el manifiesto.
-- **A3** — KB/RAG de MITRE (ampliar la semilla más allá del subconjunto curado) +
-  guías de artefactos por técnica para el retrieval del agente.
-- **A4** — endurecimiento de la allowlist y de la redacción (gate 9, `redaction.yaml`
-  por agente; sin consentimiento, 0 bytes salen).
+- **Bloque B** (dependiente del motor): loop `ForensicAgent.run` + `FindingStore` +
+  backends `local`/`cloud` reales, y el gap `_EVIDENCE_INJECTION`/`AUTO_INJECTED`
+  (B1) que bloquea el flujo `tsk_icat` → artefacto derivado. Es de otro rol.
+
+**Observaciones para el equipo (redacción, preexistentes)**
+
+- `redaction.yaml`: el patrón `ipv6` también encaja el formato MAC y va antes que
+  `mac_address`, así que una MAC se redacta como `<IPV6>` (se redacta igual, solo
+  etiqueta imprecisa). El patrón `email` es O(n²) sobre inputs largos no-email (no
+  es ReDoS, pero conviene acotarlo). Ninguna se ha reordenado/tocado: se reportan
+  para decisión.
 
 **Nota (corpus de intrusión)**
 

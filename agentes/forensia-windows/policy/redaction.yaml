@@ -1,6 +1,16 @@
 # Patrones redactados antes de enviar el payload de una tool a un cliente
 # externo (Claude Desktop, otro cliente MCP cloud).
 #
+# ALCANCE — la redacción SOLO aplica con backend CLOUD.
+#   Es el único punto de egreso del loop (forensia.agent.redaction ← ForensicAgent.run,
+#   y forensia.mcp.redaction para el servidor MCP). Se aplica a todo lo que cruza a un
+#   backend con `capabilities().is_local == False`. Con backend LOCAL (Ollama, por
+#   defecto) NO se redacta porque **nada sale del host** (modelo-amenazas §C, gate 9).
+#   Cloud es opt-in por caso con consentimiento registrado; sin consentimiento, 0 bytes
+#   salen y ni se construye el backend. La redacción es defensa en profundidad sobre eso.
+#   Regla de diseño: ante la duda, sobre-redactar es el fallo SEGURO (un falso positivo
+#   solo empobrece lo que ve el LLM cloud; un falso negativo filtra datos personales).
+#
 # `apply_in` declara en qué modo redactar:
 #   - strict   → siempre. Modo por defecto del servidor MCP con cliente cloud.
 #   - relaxed  → solo cuando el operador opta a `FORENSIA_REDACTION_MODE=relaxed`
@@ -47,6 +57,31 @@ patterns:
     regex: 'S-1-5-[0-9-]+'
     replacement: "<SID>"
     apply_in: [strict]
+  # Identificadores de HOST / usuario — identifican la máquina o la persona; strict.
+  - name: windows_user_path
+    # C:\Users\<nombre>\...  Preserva la estructura del path y redacta SOLO el
+    # nombre de usuario (backreference \1 = el prefijo "Drive:\Users\"). El motor
+    # aplica re.sub, que soporta \1 en el replacement.
+    regex: '(?i)([A-Za-z]:\\Users\\)[^\\/:*?"<>|\r\n]+'
+    replacement: '\1<USER>'
+    apply_in: [strict]
+  - name: windows_unc_path
+    # \\HOST\share\...  El prefijo \\ ancla el match (evita falsos positivos).
+    regex: '\\\\[A-Za-z0-9._-]{1,63}\\[^\s"''<>|\r\n]*'
+    replacement: "<UNC_PATH>"
+    apply_in: [strict]
+  - name: hostname_labeled
+    # NetBIOS / hostname anclado a su etiqueta (ComputerName:, Hostname=, ...).
+    # Un match de hostname "a pelo" (1-15 chars) redactaría palabras normales:
+    # se ancla al par etiqueta:valor y se conserva la etiqueta (\1\2).
+    regex: '(?i)\b(computer(?:name)?|hostname|dnshostname|workstation(?:name)?|netbios(?:name)?)(\s*[:=]\s*)[A-Za-z0-9][A-Za-z0-9-]{0,62}'
+    replacement: '\1\2<HOST>'
+    apply_in: [strict]
+  - name: guid
+    # UUID/GUID canónico (incl. MachineGuid del registro). Longitudes fijas.
+    regex: '\b[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\b'
+    replacement: "<GUID>"
+    apply_in: [strict]
 
   # Credenciales y material criptográfico — SIEMPRE redactar, incluso en
   # relaxed. Nunca son forensicamente útiles para el operador como bytes
@@ -62,4 +97,20 @@ patterns:
   - name: private_key_block
     regex: '-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----'
     replacement: "<PRIVATE_KEY>"
+    apply_in: [strict, relaxed]
+  - name: credential_dump_line
+    # Volcado tipo pwdump/SAM: usuario:rid:LMhash:NThash:::  Muy específico
+    # (rid numérico + dos hashes de 32 hex + ':::'), casi cero falsos positivos.
+    # Redacta la línea entera porque el usuario y el rid también son sensibles.
+    regex: '(?m)^[^:\r\n]+:\d+:[0-9a-fA-F]{32}:[0-9a-fA-F]{32}:::'
+    replacement: "<CREDENTIAL_DUMP>"
+    apply_in: [strict, relaxed]
+  - name: ntlm_hash
+    # Hash NTLM/LM suelto (32 hex). Cautela documentada: también captura MD5 que
+    # aparezcan en stdout (p.ej. hashdeep, hash de adquisición de ewf_info). Se
+    # acepta: para material de credenciales sobre-redactar es el fallo SEGURO, y
+    # el operador conserva la salida sin redactar en local. Los \b evitan pillar
+    # subcadenas de un SHA-256 (64 hex sin frontera de palabra en medio).
+    regex: '\b[0-9a-fA-F]{32}\b'
+    replacement: "<NTLM_HASH>"
     apply_in: [strict, relaxed]
