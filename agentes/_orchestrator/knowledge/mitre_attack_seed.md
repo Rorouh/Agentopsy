@@ -49,12 +49,14 @@ ampliar).
 |---|---|---|
 | T1003 | OS Credential Dumping | acceso a LSASS, SAM/SECURITY hives, `/etc/shadow` |
 | T1003.001 | LSASS Memory | Volatility3, handles a lsass, minidumps |
+| T1110 | Brute Force | EVTX 4625 en ráfaga (logon fallido), 4771, `auth.log` |
 
 ## TA0007 — Discovery
 | Técnica | Nombre | Se sostiene con |
 |---|---|---|
 | T1057 | Process Discovery | historiales de comando, Sysmon |
 | T1082 | System Information Discovery | comandos de enumeración en historiales |
+| T1083 | File and Directory Discovery | ShellBags (`UsrClass.dat`/`NTUSER.DAT`), LNK/Jump Lists, historiales |
 
 ## TA0008 — Lateral Movement
 | Técnica | Nombre | Se sostiene con |
@@ -72,6 +74,8 @@ ampliar).
 | Técnica | Nombre | Se sostiene con |
 |---|---|---|
 | T1041 | Exfiltration Over C2 Channel | volumen saliente, IOCs, artefactos de staging |
+| T1052 | Exfiltration Over Physical Medium | USBSTOR + acceso a ficheros en medio extraíble |
+| T1052.001 | Exfiltration over USB | USBSTOR/`mountdev` (SYSTEM), `setupapi.dev.log`, LNK/ShellBags |
 
 ## TA0040 — Impact
 | Técnica | Nombre | Se sostiene con |
@@ -85,3 +89,10 @@ ampliar).
 > `relatedFindingIds` no vacío. Mapea a sub-técnica cuando la evidencia lo permita;
 > si no, a la técnica padre. La atribución a grupos/APT no se hace desde esta
 > semilla (requiere el corpus de grupos de S5 y, aun así, con cautela).
+
+> **Ampliación 2026-07 (ATT&CK Enterprise v16):** añadidas para las guías de
+> interpretación de artefactos (`knowledge/artefactos-windows.md`) sin duplicar
+> ids: `T1110` (Brute Force, 4625 en ráfaga), `T1083` (File and Directory
+> Discovery, ShellBags), `T1052` + `T1052.001` (Exfiltration Over Physical
+> Medium / over USB, USBSTOR). Al aterrizar el corpus completo en S5 se revisa la
+> versión y estas filas se reconcilian con él.
