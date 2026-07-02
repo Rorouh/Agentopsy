@@ -69,15 +69,38 @@ presente, síguelo tal cual; esta sección no lo contradice, solo lo traduce a A
 > `unix` (lo lleva FORENSIA-UNIX). Ver regla 9 del system prompt.
 
 1. **Perfil.** `volatility3` con `plugin: "windows.info.Info"` → build y perfil.
-2. **Procesos.** `windows.pslist.PsList`, `windows.pstree.PsTree`,
-   `windows.psscan.PsScan` → cruza para detectar ocultos.
+2. **Procesos.** `windows.pslist.PsList` (recorre la lista enlazada del kernel),
+   `windows.pstree.PsTree` (jerarquía padre-hijo). Si `PsList` da una enumeración
+   **poco fiable** (pocos procesos, símbolos parciales, sospecha de *process
+   hiding*), **crúzalo con pool scan**: `windows.psscan.PsScan` (escanea `_EPROCESS`
+   en el pool, ve procesos desenlazados/terminados) y `windows.psxview.PsXView`
+   (compara varias fuentes de enumeración y marca lo que aparece en unas y no en
+   otras). Un proceso presente en `PsScan`/`PsXView` pero ausente en `PsList` es un
+   indicio de ocultación (proceso desenlazado); trátalo como sospechoso y
+   correlaciónalo con inyección si aplica (`mitre_hints`: `T1055`).
 3. **Inyección.** `windows.malfind.Malfind` (regiones RWX/anómalas),
    `windows.hollowprocesses` cuando sospeches *process hollowing*.
 4. **Red.** `windows.netscan.NetScan` → conexiones y puertos (C2, shells inversas).
 5. **Registro residente.** `windows.registry.hivelist.HiveList` +
    `windows.registry.printkey.PrintKey` → persistencia viva en memoria.
-6. **Comando/credenciales.** `windows.cmdline.CmdLine`, líneas de comando de
-   procesos sospechosos; vuelca regiones de un PID candidato si procede.
+6. **Comando.** `windows.cmdline.CmdLine`, líneas de comando de procesos
+   sospechosos; vuelca regiones de un PID candidato si procede.
+7. **Credenciales.** Material de credenciales residente en memoria, con los plugins
+   Vol3 **totalmente cualificados**:
+   - `windows.hashdump.Hashdump` → hashes de la `SAM` (formato `usuario:rid:LM:NT`).
+   - `windows.lsadump.Lsadump` → secretos LSA (*LSA secrets*).
+   - `windows.cachedump.Cachedump` → credenciales de dominio cacheadas (*MSCACHE*).
+   `mitre_hints`: `T1003` (OS Credential Dumping); `T1003.001` (LSASS Memory) cuando
+   el material provenga de `lsass.exe`. Registra cada volcado con `record_finding`
+   citando el `run_id`; el material crudo **no** va a tu contexto (disciplina de
+   coste y redacción del gate 9 antes de un backend cloud).
+
+   > **Vol2 no es Vol3.** Los nombres SIN prefijo `windows.` — `hashdump`,
+   > `lsadump`, `cachedump` — son plugins de **Volatility 2** y **no existen** en
+   > Volatility 3: emitirlos hace fallar la recuperación (símbolo/plugin
+   > desconocido). Usa **siempre** el id totalmente cualificado
+   > `windows.<plugin>.<Clase>` (p.ej. `windows.hashdump.Hashdump`), nunca el nombre
+   > corto de Vol2.
 
 ---
 
@@ -213,9 +236,17 @@ pongas tú**), coste, errores comunes y cómo leer su salida.
 
 - **`volatility3`** — plugins `windows.*` sobre un memdump. Params: `plugin`
   (obligatorio: `windows.info.Info`, `windows.pslist.PsList`,
-  `windows.pstree.PsTree`, `windows.psscan.PsScan`, `windows.malfind.Malfind`,
-  `windows.netscan.NetScan`, `windows.cmdline.CmdLine`, …), `plugin_args` (mapa
-  string→string). Coste: variable. Salida: `rows` (JSON) — encadénalo con `jq`.
+  `windows.pstree.PsTree`, `windows.psscan.PsScan`, `windows.psxview.PsXView`,
+  `windows.malfind.Malfind`, `windows.netscan.NetScan`, `windows.cmdline.CmdLine`,
+  y para credenciales `windows.hashdump.Hashdump`, `windows.lsadump.Lsadump`,
+  `windows.cachedump.Cachedump`, …), `plugin_args` (mapa string→string). Coste:
+  variable. Salida: `rows` (JSON) — encadénalo con `jq`.
+
+  > **Usa siempre el id de plugin de Volatility 3 totalmente cualificado**
+  > (`windows.<plugin>.<Clase>`). Los nombres cortos de **Volatility 2** —
+  > `hashdump`, `lsadump`, `cachedump`, `pslist`, `psscan`… **sin** el prefijo
+  > `windows.` — **no existen** en Vol3 y hacen fallar la ejecución. Los plugins son
+  > `params` del tool_id `volatility3`, no tool_ids nuevos: la allowlist no cambia.
 
 ### Super-timeline (pesada, opcional)
 
