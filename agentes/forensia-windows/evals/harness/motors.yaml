@@ -1,0 +1,71 @@
+# Registro de MOTORES pluggables para el harness single-shot (run_eval.py).
+#
+# Un "motor" es cualquier CLI o modelo capaz de recibir un prompt en modo NO
+# interactivo y devolver texto por stdout. El harness es AGNÓSTICO del motor:
+# añadir uno nuevo es SOLO añadir un bloque aquí — cero cambios de código.
+#
+# Esquema de cada motor:
+#   ready:          bool. Si es false, run_eval.py falla en seco al seleccionarlo
+#                   (RULE 2: no se ejecuta un motor no verificado en esta máquina;
+#                   se marca ready:true cuando se ha cableado y probado de verdad).
+#   argv:           lista de argumentos (subprocess con shell=False SIEMPRE).
+#                   Tokens sustituibles:
+#                     {model}       -> el modelo resuelto (--model o default_model)
+#                     {prompt}      -> el prompt (solo si prompt_via: arg)
+#                     {prompt_file} -> ruta a un tmp con el prompt (solo prompt_via: file)
+#   prompt_via:     cómo llega el prompt al proceso:
+#                     stdin -> se escribe en la entrada estándar del proceso
+#                     arg   -> se sustituye {prompt} dentro de argv
+#                     file  -> se escribe a un fichero temporal y se sustituye {prompt_file}
+#   default_model:  modelo por defecto si no se pasa --model (opcional).
+#   note:           comentario libre (por qué ready:false, versión a ajustar, etc.).
+#
+# NUNCA se usa shell=True ni cadenas de comando: argv en lista, siempre.
+motors:
+
+  # --- MOTORES VERIFICADOS EN ESTA MÁQUINA (ejecutados de verdad) -------------
+
+  ollama:
+    # Loop local sin egreso (motor privado por defecto del producto, GDPR).
+    # El prompt entra por stdin; el modelo se fija en argv con {model}.
+    ready: true
+    argv: ["ollama", "run", "{model}"]
+    prompt_via: stdin
+    default_model: "qwen2.5:3b"
+
+  ollama_arg:
+    # Mismo engine, adapter DISTINTO: demuestra el camino prompt_via: arg con un
+    # subprocess real (el prompt se sustituye en argv, no va por stdin).
+    ready: true
+    argv: ["ollama", "run", "{model}", "{prompt}"]
+    prompt_via: arg
+    default_model: "qwen2.5:3b"
+
+  # --- MOTORES CLI CABLEADOS PERO NO DISPONIBLES AQUÍ (ready:false) -----------
+  # Se dejan definidos para que activarlos sea SOLO poner ready:true cuando la
+  # herramienta esté instalada y autenticada. El harness no cambia.
+
+  claude:
+    # Claude Code en modo print / no interactivo.
+    ready: false
+    argv: ["claude", "-p", "{prompt}"]
+    prompt_via: arg
+    note: "no instalado en esta máquina; poner ready:true tras verificar 'claude -p'."
+
+  codex:
+    # Codex CLI (ajustar el subcomando a la versión instalada).
+    ready: false
+    argv: ["codex", "exec", "{prompt}"]
+    prompt_via: arg
+    note: "no instalado; validar 'codex exec' headless antes de ready:true."
+
+  gemini:
+    # Gemini CLI headless (-p). Model con -m.
+    ready: false
+    argv: ["gemini", "--skip-trust", "-m", "{model}", "-p", "{prompt}"]
+    prompt_via: arg
+    default_model: "gemini-2.5-flash"
+    note: >-
+      instalado pero NO usable: la cuenta free-tier ya no es elegible
+      (IneligibleTierError) y exige --skip-trust. Poner ready:true cuando haya
+      credenciales válidas.

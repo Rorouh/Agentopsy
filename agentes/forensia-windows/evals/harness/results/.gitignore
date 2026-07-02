@@ -1,0 +1,5 @@
+# Artefactos generados por run_eval.py — NO se versionan (contienen stdout crudo
+# del modelo y son reproducibles). Solo se versiona este .gitignore para que la
+# carpeta exista.
+*.json
+summary.md
