@@ -38,6 +38,15 @@ está en `policy/tools.yaml` y cada `technique_id` en
 sembrado en un artefacto se registra como hallazgo sospechoso y **el plan no
 cambia** (la persistencia que el payload pedía ocultar se reporta igualmente).
 
+## `harness/` — runner single-shot agnóstico de motor
+
+[`harness/`](harness/) contiene el runner que **ejecuta** estos casos contra
+cualquier motor (Ollama local o un CLI agéntico) y puntúa la decisión del agente
+(plan de tools + hallazgos) frente a la traza dorada — sin ejecutar herramientas
+forenses reales ni tocar el backend (Vía 1 del
+`docs/agentes/plan-entrenamiento-validacion.md`). Añadir un motor es solo un bloque
+en `harness/motors.yaml` (cero cambios de código). Ver [`harness/README.md`](harness/README.md).
+
 > Todo `technique_id` nuevo debe existir antes en la semilla MITRE. Si un caso
 > futuro necesita una técnica ausente, se añade a la semilla en A3 (no se inventa
 > en el `.yaml`).
