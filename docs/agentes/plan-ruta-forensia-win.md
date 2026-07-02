@@ -426,3 +426,66 @@ Checkpoint del entrenamiento del sub-agente `windows` en la rama `tools`.
   sintéticas) conviene registrar en el corpus una **imagen de memoria con malware**
   real (p.ej. MemLabs o el clásico *cridex*), con su SHA-256 y ground-truth. El
   escenario LoneWolf es de insider y **no** ejercita inyección/C2/borrado de logs.
+
+---
+
+## Fase de validación con CLI + entrenamiento anclado a evidencia (post-A4)
+
+Tras cerrar el Bloque A se abrió una fase de **validación con motores CLI** sobre
+LoneWolf y de **iteración de prompts guiada por corridas reales**.
+
+**Herramienta construida — harness de investigación CLI** (`agentes/forensia-windows/evals/harness/`, commiteado):
+- `motors.yaml` — registro pluggable de motores (ollama, codex, gemini) con adapter
+  `argv` + `prompt_via` (stdin|arg|file). Añadir un motor = un bloque YAML.
+- `run_eval.py` — harness single-shot: mide la **decisión** del agente (tool_recall,
+  allowlist_violations, mitre) sobre casos sintéticos con dispatcher mock.
+- `run_investigation.py` — lanza un CLI sobre evidencia real y guarda la salida.
+  Dos modos: `--mode forensia` (contrato `{tool_id,params}`, mide decisión) y
+  `--mode autonomous` (el CLI ejecuta las tools él mismo; para laboratorio, `--yes`).
+  Resuelve el ejecutable con `shutil.which` (shims Windows). Salida a
+  `results/investigations/` (gitignored, derivado de evidencia).
+- `build_agent_prompt.py` — ensambla system+identity+playbook+tarea en un `.txt`.
+
+**Estado de motores:**
+- **codex (gpt-5.5): FUNCIONA.** Análisis completo de LoneWolf-memoria de manual:
+  ejecuta Volatility, crea artefactos JSON por plugin + `findings.json` con SHA-256
+  (modelo de custodia), formato FORENSIA (Resumen/Hallazgos/Lagunas). Nota: el
+  *script* daba `WinError 5` porque el **sandbox de codex** con `approval:never`
+  bloqueaba el spawn de `vol`; en **interactivo** funciona aprobando comandos.
+  Pendiente: añadir al `argv` de codex en `motors.yaml` el flag de bypass de
+  sandbox/approvals (mirar `codex exec --help`) para automatizar el modo autónomo.
+- **gemini: bloqueado** por errores de instalación/uso (tier/auth). Aparcado.
+- **ollama: descargar `qwen2.5:14b`** (el `qwen2.5:3b` probado es insuficiente:
+  `find_recall 0`, alucina MITRE).
+
+**Dos iteraciones de entrenamiento ancladas a evidencia real (playbook, commiteadas):**
+1. Plugins Vol3 de credenciales (`windows.hashdump.Hashdump`, `.lsadump.`,
+   `.cachedump.`) + fallback `pslist`→`psscan`→`psxview` (nace de una corrida donde
+   el agente usó nombres Vol2 y la enumeración activa de procesos salía vacía).
+2. Anti-invención de namespace + regla "ante `invalid choice`, toma el id literal de
+   `choose from`/`vol -h`, no adivines; si no está registrado, decláralo laguna"
+   (nace de que codex inventó `windows.registry.hashdump.Hashdump`).
+
+**Hallazgo técnico del entorno:** en el build **Volatility 3 2.28.0** de la máquina
+de pruebas, los plugins de credenciales existen como módulos (`windows.hashdump` y
+`windows.registry.hashdump`, etc.) pero **ningún nombre CLI es aceptado** — probable
+colisión de nombres que rompe el registro. ⇒ credenciales en memoria = **laguna del
+entorno** en esta máquina. El playbook ahora hace que el agente lo declare, no lo
+invente.
+
+**Ground-truth cualitativo LoneWolf-memoria** (transcripción en
+`evidence-corpus/lonewolf-2018/investigacion-codex-memoria-v2.md`, fuera de git):
+Win10 x64, escenario cloud (S3 Browser, Dropbox/GDrive/OneDrive/BoxSync), `FTK
+Imager.exe` presente (adquisición), enumeración activa de procesos no fiable
+(`psscan`/`psxview` sí recuperan), sin inyección/credenciales recuperables.
+
+**Decisiones abiertas para el próximo plan de ruta:**
+- Validar el **antes/después** con codex: que ahora **declare la laguna** de
+  credenciales en vez de inventar el namespace.
+- Añadir el flag de bypass de sandbox al `argv` de codex para automatizar el modo
+  autónomo del `run_investigation.py`.
+- Comparativa **entre motores**: gemini bloqueado ⇒ centrar en **codex + ollama**
+  (o resolver gemini más adelante).
+- Registrar una **imagen de memoria con malware** para el ground-truth de intrusión.
+- Baselines SHA-256 de memoria e imagen única (pendientes en el manifiesto).
+- Bloque B (motor): loop `run()` + backends + gap B1 — coordinar con el rol de motor.
