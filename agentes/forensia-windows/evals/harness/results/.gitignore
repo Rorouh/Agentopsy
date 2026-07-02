@@ -3,4 +3,6 @@
 # carpeta exista.
 *.json
 summary.md
-/results/investigations/
+# Transcripciones de investigación (derivadas de evidencia) — NUNCA a git.
+# Path relativo a ESTE .gitignore (vive en results/), sin '/results/' delante.
+investigations/

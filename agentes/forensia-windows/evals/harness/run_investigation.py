@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -186,6 +187,21 @@ def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     out = OUT_DIR / f"{args.motor}__{mdl}__{ev.stem}__{ts}.md"
 
+    # Resolver el ejecutable real. En Windows, los CLI de npm son shims (codex.cmd /
+    # codex.ps1) que CreateProcess no lanza directamente con el nombre pelado
+    # (WinError 5 "Acceso denegado" / 193). shutil.which respeta PATHEXT y da el path
+    # completo; los .cmd/.bat se ejecutan vía `cmd /c`.
+    exe = shutil.which(argv[0])
+    if exe is None:
+        msg = f"ERROR: '{argv[0]}' no está en PATH. Instálalo o corrige su argv en motors.yaml."
+        out.write_text(f"# Investigación FORENSIA-WIN\n- motor: {args.motor}\n\n{msg}\n",
+                       encoding="utf-8")
+        sys.exit(msg)
+    if exe.lower().endswith((".cmd", ".bat")):
+        argv = ["cmd", "/c", exe] + argv[1:]
+    else:
+        argv = [exe] + argv[1:]
+
     header = (
         f"# Investigación FORENSIA-WIN\n"
         f"- motor: {args.motor}\n- modelo: {args.model or motor.get('default_model','')}\n"
@@ -202,6 +218,12 @@ def main() -> None:
         body = f"## STDOUT\n\n{proc.stdout}\n\n## STDERR\n\n{proc.stderr}\n\n(exit={proc.returncode})\n"
     except FileNotFoundError:
         body = f"ERROR: no encuentro el ejecutable '{argv[0]}'. ¿Está instalado y en PATH?\n"
+    except PermissionError as e:
+        body = (f"ERROR: Windows denegó lanzar '{argv[0]}' ({e}). Suele ser antivirus/EDR "
+                "bloqueando el spawn, un shim .cmd/.ps1, o el binario en actualización. "
+                "Reintenta; si persiste, ejecútalo desde una terminal con permisos o revisa Defender.\n")
+    except OSError as e:
+        body = f"ERROR: no se pudo lanzar '{argv[0]}': {e}\n"
     except subprocess.TimeoutExpired:
         body = f"ERROR: timeout tras {args.timeout}s.\n"
     finally:
