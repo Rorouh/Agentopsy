@@ -17,6 +17,7 @@ vendor/*/
 *.dump
 *.plaso
 *_findings.json
+/results/investigations/
 
 # --- Evidence corpus (CTF images: too large / licensed; referenced by URL+SHA-256
 #     in docs/agentes/corpus-windows.md, NEVER stored in git). The folder ignore

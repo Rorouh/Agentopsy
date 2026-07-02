@@ -52,20 +52,13 @@ motors:
     prompt_via: arg
     note: "no instalado en esta máquina; poner ready:true tras verificar 'claude -p'."
 
+  gemini:
+    ready: true                       # cuando la auth funcione
+    argv: ["gemini", "--yolo", "-m", "{model}", "-p", "{prompt}"]
+    prompt_via: arg
+    default_model: "gemini-3.1-pro"   # pro para calidad; flash si quieres velocidad
+
   codex:
-    # Codex CLI (ajustar el subcomando a la versión instalada).
-    ready: false
+    ready: true                       # cuando 'codex exec' responda headless
     argv: ["codex", "exec", "{prompt}"]
     prompt_via: arg
-    note: "no instalado; validar 'codex exec' headless antes de ready:true."
-
-  gemini:
-    # Gemini CLI headless (-p). Model con -m.
-    ready: false
-    argv: ["gemini", "--skip-trust", "-m", "{model}", "-p", "{prompt}"]
-    prompt_via: arg
-    default_model: "gemini-2.5-flash"
-    note: >-
-      instalado pero NO usable: la cuenta free-tier ya no es elegible
-      (IneligibleTierError) y exige --skip-trust. Poner ready:true cuando haya
-      credenciales válidas.

@@ -3,3 +3,4 @@
 # carpeta exista.
 *.json
 summary.md
+/results/investigations/
