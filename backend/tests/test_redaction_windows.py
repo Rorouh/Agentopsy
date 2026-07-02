@@ -143,14 +143,43 @@ def test_credenciales_tambien_en_relaxed() -> None:
     assert _apply(r"C:\Users\johndoe\x", mode="relaxed") == r"C:\Users\johndoe\x"
 
 
+def _pattern(name: str) -> dict:
+    for p in PATTERNS:
+        if p["name"] == name:
+            return p
+    raise KeyError(name)
+
+
 def test_preexistentes_intactas() -> None:
     assert _apply("correo a@ejemplo.com") == "correo <EMAIL>"
     assert _apply("ip 10.0.0.5 fin") == "ip <IPV4> fin"
     assert "<SID>" in _apply("owner S-1-5-21-1004336348-1177238915-682003330-512")
-    # La MAC se redacta. Precedencia PREEXISTENTE: el patrón `ipv6` (más arriba en
-    # el fichero) también encaja el formato MAC (6 bloques hex:colon) y gana, así
-    # que sale como <IPV6> en vez de <MAC>. No hay fuga (queda redactada); es solo
-    # una imprecisión de etiqueta. Se reporta al equipo, no se reordena aquí.
-    out_mac = _apply("mac 00:1A:2B:3C:4D:5E")
-    assert "00:1A:2B:3C:4D:5E" not in out_mac
-    assert ("<MAC>" in out_mac) or ("<IPV6>" in out_mac)
+
+
+def test_mac_etiquetada_mac_no_ipv6() -> None:
+    # Tras reordenar `mac_address` antes de `ipv6`, una MAC se etiqueta <MAC>
+    # (antes la comía el patrón laxo de ipv6 y salía <IPV6>).
+    assert _apply("mac AA:BB:CC:DD:EE:FF") == "mac <MAC>"
+    assert _apply("00:1a:2b:3c:4d:5e") == "<MAC>"
+
+
+def test_ipv6_sigue_redactada_tras_reorden() -> None:
+    # El reorden no debe dejar ninguna IPv6 real sin redactar: sus bloques de
+    # hasta 4 hex no los consume `mac_address` (que exige exactamente 2).
+    for addr in ("fe80:0000:0000:0000:0204:61ff:fe9d:f156", "2001:db8:85a3:8a2e"):
+        out = _apply(f"addr {addr} fin")
+        assert addr not in out, f"IPv6 {addr} no se redactó"
+        assert "<IPV6>" in out
+
+
+def test_email_no_es_cuadratico_en_input_largo() -> None:
+    # Con los cuantificadores acotados, el email es O(n) sobre un input largo
+    # no-email; el patrón sin topes anterior habría excedido el presupuesto.
+    p = _pattern("email")
+    rx = re.compile(p["regex"])
+    repl = p["replacement"]
+    big = "a" * 100_000  # no contiene '@'
+    elapsed = _run_with_budget(lambda: rx.sub(repl, big), budget_s=1.0)
+    assert elapsed is not None, "email: no terminó en 1s sobre input largo no-email (O(n^2)?)"
+    # Correctness intacta sobre un email válido.
+    assert _apply("correo a@ejemplo.com") == "correo <EMAIL>"

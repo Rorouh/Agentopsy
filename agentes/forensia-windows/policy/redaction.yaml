@@ -30,6 +30,15 @@ patterns:
     regex: '\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b'
     replacement: "<IPV4>"
     apply_in: [strict]
+  - name: mac_address
+    # DEBE ir antes de `ipv6`: una MAC (6 bloques de 2 hex) es un subconjunto del
+    # patrón laxo de IPv6 ({1,4} hex, {3,7} bloques), así que si `ipv6` fuese
+    # primero se la comería y etiquetaría <IPV6>. Al revés no pasa: una IPv6 real
+    # lleva bloques de hasta 4 hex, que `mac_address` (exactamente 2) no consume,
+    # de modo que la IPv6 sigue redactándose por el patrón siguiente.
+    regex: '\b(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\b'
+    replacement: "<MAC>"
+    apply_in: [strict]
   - name: ipv6
     # Mínimo 4 bloques (HH:MM:SS tiene 3 — no matchea). Cubre la mayoría de
     # representaciones IPv6 sin pillar timestamps. Las direcciones IPv6
@@ -39,14 +48,15 @@ patterns:
     regex: '\b(?:[0-9A-Fa-f]{1,4}:){3,7}[0-9A-Fa-f]{1,4}\b'
     replacement: "<IPV6>"
     apply_in: [strict]
-  - name: mac_address
-    regex: '\b(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\b'
-    replacement: "<MAC>"
-    apply_in: [strict]
 
   # PII — strict only.
   - name: email
-    regex: '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
+    # Cuantificadores ACOTADOS a los límites del RFC 5321 (local-part <=64,
+    # dominio <=255, TLD 2-24). Antes eran `+` sin tope: sobre un input largo
+    # no-email (p.ej. 20k chars) el `+` del local-part hacía backtracking O(n^2)
+    # buscando la `@`. Con topes, el trabajo por posición es constante -> O(n), y
+    # los emails válidos siguen matcheando (ningún TLD real supera 24 chars).
+    regex: '[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,255}\.[A-Za-z]{2,24}'
     replacement: "<EMAIL>"
     apply_in: [strict]
   - name: phone_e164
