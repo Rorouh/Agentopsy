@@ -86,7 +86,7 @@ presente, síguelo tal cual; esta sección no lo contradice, solo lo traduce a A
 6. **Comando.** `windows.cmdline.CmdLine`, líneas de comando de procesos
    sospechosos; vuelca regiones de un PID candidato si procede.
 7. **Credenciales.** Material de credenciales residente en memoria, con los plugins
-   Vol3 **totalmente cualificados**:
+   Vol3 **totalmente cualificados** y en su **namespace canónico** (sin `.registry.`):
    - `windows.hashdump.Hashdump` → hashes de la `SAM` (formato `usuario:rid:LM:NT`).
    - `windows.lsadump.Lsadump` → secretos LSA (*LSA secrets*).
    - `windows.cachedump.Cachedump` → credenciales de dominio cacheadas (*MSCACHE*).
@@ -100,7 +100,21 @@ presente, síguelo tal cual; esta sección no lo contradice, solo lo traduce a A
    > Volatility 3: emitirlos hace fallar la recuperación (símbolo/plugin
    > desconocido). Usa **siempre** el id totalmente cualificado
    > `windows.<plugin>.<Clase>` (p.ej. `windows.hashdump.Hashdump`), nunca el nombre
-   > corto de Vol2.
+   > corto de Vol2. **Tampoco inventes variantes de namespace**: el id canónico es
+   > `windows.hashdump.Hashdump`, **no** `windows.registry.hashdump.*` ni ninguna
+   > otra ruta que no hayas visto listada por el propio Volatility.
+
+   > **El nombre exacto lo fija el build de Volatility, no tú.** El id de plugin y
+   > su disponibilidad **dependen de la versión** instalada. Si `vol` responde
+   > `argument PLUGIN: invalid choice`, **no adivines** otro nombre por analogía:
+   > toma el id **literal** de la lista «choose from …» que imprime ese mismo error
+   > (o de `vol -h`) y usa ese. Si el plugin de credenciales **no está registrado**
+   > en ese build —p.ej. una **colisión de nombres** entre `windows.<x>` y
+   > `windows.registry.<x>` que rompe su registro—, decláralo como **laguna
+   > explícita** en el informe («credenciales no disponibles en este build de
+   > Volatility», sección *Lagunas / no concluyente*) y continúa con el resto del
+   > análisis: **nunca** sustituyas por un nombre inventado (regla 4 del system
+   > prompt: no inventar).
 
 ---
 
