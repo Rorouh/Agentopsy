@@ -70,10 +70,20 @@ ampliar).
 | T1071 | Application Layer Protocol | conexiones en RAM (`netscan`), IOCs en no-asignado |
 | T1095 | Non-Application Layer Protocol | sockets anómalos, beaconing |
 
+## TA0009 — Collection
+| Técnica | Nombre | Se sostiene con |
+|---|---|---|
+| T1005 | Data from Local System | documentos/imágenes recopilados del sistema; `$MFT`, `filescan`/`dumpfiles` en RAM |
+| T1074 | Data Staged | ficheros reunidos en ubicación intermedia antes de exfiltrar |
+| T1074.001 | Local Data Staging | carpeta de staging local (p.ej. `Pics\Hidden`), `filescan`/`$MFT`, timeline |
+| T1114 | Email Collection | almacén de correo local, cliente de email residente en RAM |
+| T1114.001 | Local Email Collection | `.pst`/`.dbx` (Outlook/Outlook Express), `filescan`/`dumpfiles`, `$MFT` |
+
 ## TA0010 — Exfiltration
 | Técnica | Nombre | Se sostiene con |
 |---|---|---|
 | T1041 | Exfiltration Over C2 Channel | volumen saliente, IOCs, artefactos de staging |
+| T1048 | Exfiltration Over Alternative Protocol | exfil por email/FTP/DNS fuera del canal C2; cabeceras de correo, logs, PCAP |
 | T1052 | Exfiltration Over Physical Medium | USBSTOR + acceso a ficheros en medio extraíble |
 | T1052.001 | Exfiltration over USB | USBSTOR/`mountdev` (SYSTEM), `setupapi.dev.log`, LNK/ShellBags |
 | T1567 | Exfiltration Over Web Service | proceso de sincronización/cliente cloud en RAM (`pslist`/`psscan`) + `netscan` ESTABLISHED :443 a rangos cloud en la misma ventana |
@@ -107,3 +117,14 @@ ampliar).
 > investigaciones lo dejaban sin mapear u obligaban a un id fuera de semilla.
 > Sostienen la cadena de correlación «Exfiltración a nube (memoria)» del
 > playbook y la guía correspondiente en `artefactos-windows.md`.
+
+> **Ampliación 2026-07, tercera tanda (corrida M57-Patents, memoria de Jo):**
+> añadidas la táctica **TA0009 — Collection** (`T1005`, `T1074`/`T1074.001`,
+> `T1114`/`T1114.001`) y `T1048` (Exfiltration Over Alternative Protocol) en
+> TA0010, sin duplicar ids. Motivo: el vector de M57 es **exfil de propiedad
+> intelectual por email** (Outlook Express) con **staging en carpeta oculta**
+> (`Pics\Hidden`); ese patrón no tenía técnica citable (la exfil de la semilla era
+> solo física/USB o cloud/web-service), y la corrida zero-shot 11-24 lo dejó
+> correctamente sin mapear. Sostiene el hilo Jo del ground-truth
+> `docs/agentes/ground-truth/m57-patents.md`. Derivado de fuentes públicas; a
+> validar con el packet oficial si el tutor lo obtiene.
