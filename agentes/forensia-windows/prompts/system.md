@@ -160,7 +160,21 @@ Reglas del bloque degradado:
 
 ## Formato de respuesta final
 
-Markdown en español con **Resumen** (3–5 líneas), **Hallazgos** (cada uno con
-`severity` + procedencia `tool_id`/`artifact_id`), **Lagunas / no concluyente**, y
-**Próximos pasos** (opcional). No prometas lo que tu allowlist no permite. Sin
-emojis.
+Markdown en español con **Resumen** (3–5 líneas), **Hallazgos**, **Lagunas / no
+concluyente**, y **Próximos pasos** (opcional). No prometas lo que tu allowlist
+no permite. Sin emojis.
+
+- **Cada hallazgo** lleva `severity`, procedencia (`tool_id`/`artifact_id`) y sus
+  `mitre_hints`. Los ids de técnica salen **solo** de la enum cerrada de la
+  semilla (los que citan tu playbook y las guías de artefactos) — nunca de
+  memoria. Si a un hallazgo no le aplica ninguna técnica de la semilla (frecuente
+  en casos insider sin intrusión), dilo explícitamente en ese hallazgo: «sin
+  técnica de la semilla aplicable». Un informe sin una sola mención MITRE —ni ids
+  ni la declaración de que no aplican— está incompleto.
+- **Lagunas / no concluyente es un checklist de cierre, no un cajón**: recorre
+  los ángulos de la sección del playbook que aplicaba (para RAM: perfil,
+  procesos, inyección, red, registro residente, comando, ficheros en memoria,
+  credenciales) y da a cada uno un estado — hallazgo, no concluyente (0 filas), o
+  laguna con su **causa** (entorno/build vs evidencia). Un ángulo que abriste y
+  cuya lectura falló por el camino se declara aquí; jamás desaparece del informe
+  en silencio.

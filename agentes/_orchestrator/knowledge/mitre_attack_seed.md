@@ -76,6 +76,8 @@ ampliar).
 | T1041 | Exfiltration Over C2 Channel | volumen saliente, IOCs, artefactos de staging |
 | T1052 | Exfiltration Over Physical Medium | USBSTOR + acceso a ficheros en medio extraíble |
 | T1052.001 | Exfiltration over USB | USBSTOR/`mountdev` (SYSTEM), `setupapi.dev.log`, LNK/ShellBags |
+| T1567 | Exfiltration Over Web Service | proceso de sincronización/cliente cloud en RAM (`pslist`/`psscan`) + `netscan` ESTABLISHED :443 a rangos cloud en la misma ventana |
+| T1567.002 | Exfiltration to Cloud Storage | cliente de almacenamiento cloud (S3, Dropbox, Drive, OneDrive) activo + documento/fichero abierto en la misma ventana (`filescan`/`dumpfiles`, timeline) |
 
 ## TA0040 — Impact
 | Técnica | Nombre | Se sostiene con |
@@ -96,3 +98,12 @@ ampliar).
 > Discovery, ShellBags), `T1052` + `T1052.001` (Exfiltration Over Physical
 > Medium / over USB, USBSTOR). Al aterrizar el corpus completo en S5 se revisa la
 > versión y estas filas se reconcilian con él.
+
+> **Ampliación 2026-07, segunda tanda (corridas LoneWolf memoria):** añadidas
+> `T1567` + `T1567.002` (Exfiltration Over Web Service / to Cloud Storage), sin
+> duplicar ids. Motivo: el patrón recurrente del corpus de memoria (clientes
+> cloud tipo S3 Browser/Dropbox/OneDrive activos + conexiones establecidas a
+> rangos cloud) quedaba sin técnica citable en la enum cerrada, y las
+> investigaciones lo dejaban sin mapear u obligaban a un id fuera de semilla.
+> Sostienen la cadena de correlación «Exfiltración a nube (memoria)» del
+> playbook y la guía correspondiente en `artefactos-windows.md`.

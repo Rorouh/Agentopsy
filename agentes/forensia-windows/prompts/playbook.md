@@ -75,17 +75,50 @@ presente, síguelo tal cual; esta sección no lo contradice, solo lo traduce a A
    hiding*), **crúzalo con pool scan**: `windows.psscan.PsScan` (escanea `_EPROCESS`
    en el pool, ve procesos desenlazados/terminados) y `windows.psxview.PsXView`
    (compara varias fuentes de enumeración y marca lo que aparece en unas y no en
-   otras). Un proceso presente en `PsScan`/`PsXView` pero ausente en `PsList` es un
-   indicio de ocultación (proceso desenlazado); trátalo como sospechoso y
-   correlaciónalo con inyección si aplica (`mitre_hints`: `T1055`).
+   otras). **Interpreta el cruce según el patrón — no todo hueco es ocultación:**
+   - **Ausencia parcial** (`PsList` enumera bien y a un puñado de procesos solo los
+     ve `PsScan`/`PsXView`): indicio de ocultación (proceso desenlazado); trátalo
+     como sospechoso y correlaciónalo con inyección si `Malfind` lo corrobora
+     (`mitre_hints`: `T1055`).
+   - **Vacío total o casi total** (`PsList`/`PsTree` devuelven 0 o poquísimas filas
+     y `PsScan` recupera cientos): eso NO es ocultación masiva — es una
+     **limitación de símbolos/imagen** (ISF parcial, build raro). Diagnostica la
+     causa con la salida de `windows.info.Info` (build, capas, anomalías tipo
+     `PE TimeDateStamp` incoherente) y decláralo como **laguna de entorno** en el
+     informe; continúa el análisis sobre `PsScan`/`PsXView` sin citar `T1055`.
+     No anclas conclusiones de intrusión en un artefacto de entorno.
 3. **Inyección.** `windows.malfind.Malfind` (regiones RWX/anómalas),
    `windows.hollowprocesses` cuando sospeches *process hollowing*.
 4. **Red.** `windows.netscan.NetScan` → conexiones y puertos (C2, shells inversas).
+   Si devuelve sockets **sin `Owner`/PID** (frecuente en volcados con símbolos
+   parciales), intenta la atribución por la vía alternativa
+   `windows.netstat.NetStat` antes de dar la conexión por «no atribuible»; si aun
+   así no hay dueño, dilo tal cual — una IP establecida sin proceso atado es un
+   dato, no una conclusión de C2.
 5. **Registro residente.** `windows.registry.hivelist.HiveList` +
-   `windows.registry.printkey.PrintKey` → persistencia viva en memoria.
+   `windows.registry.printkey.PrintKey` → persistencia viva en memoria. Este
+   ángulo **siempre termina en el informe**: con hives legibles, sigue con
+   `PrintKey` sobre las claves `Run`/`RunOnce`; si `HiveList` devuelve vacío o el
+   filtrado posterior de su salida falla (un helper que rompe, un JSON ilegible),
+   **declara la laguna** («registro residente no explotado: <causa>») — un ángulo
+   abierto que se cae en silencio es peor que un negativo declarado.
 6. **Comando.** `windows.cmdline.CmdLine`, líneas de comando de procesos
    sospechosos; vuelca regiones de un PID candidato si procede.
-7. **Credenciales.** Material de credenciales residente en memoria, con los plugins
+7. **Ficheros y documentos en memoria.** Cuando la pregunta del caso pasa por
+   **qué documento/fichero estaba abierto** (casos insider, exfiltración, un
+   editor u ofimática activos, un cliente cloud con algo que subir), no te quedes
+   en la lista de procesos: `windows.filescan.FileScan` enumera los `FILE_OBJECT`
+   residentes (coste alto en volcados grandes → artefacto + filtro con `jq` por
+   extensión/ruta: `.docx`, `.pdf`, `Documents`, `Desktop`, carpetas de
+   sincronización), y `windows.dumpfiles.DumpFiles` **acotado** (por `pid` del
+   proceso candidato o por `virtaddr`/`physaddr` de un `FILE_OBJECT` concreto del
+   `filescan`; nunca el volcado completo) recupera el contenido como artefacto
+   derivado. Un documento recuperado y con hash es la pieza que convierte «proceso
+   ofimático activo» en evidencia de contenido; si el volcado no lo conserva,
+   declara la laguna y remite el ángulo al disco par (`$MFT`, papelera, carpeta
+   del cliente cloud). `mitre_hints`: `T1567.002` solo si coincide en ventana con
+   un cliente cloud activo (cadena 5).
+8. **Credenciales.** Material de credenciales residente en memoria, con los plugins
    Vol3 **totalmente cualificados** y en su **namespace canónico** (sin `.registry.`):
    - `windows.hashdump.Hashdump` → hashes de la `SAM` (formato `usuario:rid:LM:NT`).
    - `windows.lsadump.Lsadump` → secretos LSA (*LSA secrets*).
@@ -141,6 +174,19 @@ coinciden en la misma ventana temporal, sube la `confidence` del finding.
 4. **USB conectado.** `regripper` `usbstor` + `mountdev` (hive `SYSTEM`) +
    `setupapi.dev.log` (pre-extraído con `tsk_icat`) ⇒ VID/PID, número de serie y
    primera/última conexión; crúzalo con la timeline (`tsk_mactime`).
+5. **Exfiltración a nube (memoria).** `volatility3` `windows.pslist.PsList`/
+   `windows.psscan.PsScan` (cliente cloud activo: S3 Browser, Dropbox, OneDrive,
+   Google Drive, rclone) + `windows.netscan.NetScan` (ESTABLISHED :443 a rangos
+   del proveedor en la misma ventana) + un documento/fichero en juego
+   (`windows.filescan.FileScan`/`windows.dumpfiles.DumpFiles`, o el proceso
+   ofimático que lo tenía abierto arrancado en la misma ventana) ⇒ hipótesis de
+   exfiltración a almacenamiento cloud con confianza media. `mitre_hints`:
+   `T1567`; con cliente de almacenamiento y fichero identificados, `T1567.002`.
+   **Cautelas duras:** un cliente cloud instalado es actividad normal de usuario —
+   sin la coincidencia temporal de los tres eslabones no subas de `low`; sockets
+   sin `Owner` no atribuyen el tráfico a ese cliente (dilo); dos eslabones =
+   hipótesis a seguir en el disco par (carpeta del cliente, historial web), no
+   conclusión.
 
 Registra cada correlación con `record_finding` citando el `run_id` del eslabón
 principal; los demás eslabones van en el `summary`.
@@ -163,6 +209,18 @@ u otro filtro y trae solo el top-N a tu razonamiento.
   en `hayabusa`) y trae solo las detecciones altas; el resto queda en el CSV.
 - **`volatility3`**: emite JSON; encadénalo con `jq` (`input_path` = el artefacto)
   para quedarte con columnas concretas (PID, PPID, ruta) en vez del array completo.
+  En memoria esto es crítico: `psscan` (cientos de procesos), `netscan` (cientos de
+  sockets, la mayoría CLOSED) y `filescan` (miles de `FILE_OBJECT`) **nunca** se
+  traen enteros al contexto — filtra `netscan` por estado (`ESTABLISHED`/`LISTEN`)
+  y `filescan` por extensión/ruta antes de razonar.
+- **Un plugin caro que devolvió 0 filas no se relanza con variantes** (`--physical`,
+  por offset, otro PID «a ver si suena la flauta») sin una hipótesis nueva que lo
+  justifique y quede escrita en el hallazgo o en la laguna. Dos ejecuciones vacías
+  del mismo ángulo = laguna declarada, no una tercera ejecución.
+- **Ante `invalid choice` de un plugin**, toma el id literal de la lista
+  `choose from …` de ESE error y no reintentes más nombres: cada fallo vuelca la
+  enum completa de plugins (~200 entradas) a tu contexto — dos intentos fallidos
+  del mismo plugin son tu tope antes de declararlo laguna (regla del §B.8).
 - **`bulk_extractor`**: mira primero `feature_counts`; abre un feature file solo si
   tiene hits.
 
@@ -251,16 +309,27 @@ pongas tú**), coste, errores comunes y cómo leer su salida.
 - **`volatility3`** — plugins `windows.*` sobre un memdump. Params: `plugin`
   (obligatorio: `windows.info.Info`, `windows.pslist.PsList`,
   `windows.pstree.PsTree`, `windows.psscan.PsScan`, `windows.psxview.PsXView`,
-  `windows.malfind.Malfind`, `windows.netscan.NetScan`, `windows.cmdline.CmdLine`,
-  y para credenciales `windows.hashdump.Hashdump`, `windows.lsadump.Lsadump`,
-  `windows.cachedump.Cachedump`, …), `plugin_args` (mapa string→string). Coste:
-  variable. Salida: `rows` (JSON) — encadénalo con `jq`.
+  `windows.malfind.Malfind`, `windows.netscan.NetScan`, `windows.netstat.NetStat`,
+  `windows.cmdline.CmdLine`, `windows.filescan.FileScan`,
+  `windows.dumpfiles.DumpFiles`, y para credenciales `windows.hashdump.Hashdump`,
+  `windows.lsadump.Lsadump`, `windows.cachedump.Cachedump`, …), `plugin_args`
+  (mapa string→string). Coste: variable. Salida: `rows` (JSON) — encadénalo con `jq`.
 
   > **Usa siempre el id de plugin de Volatility 3 totalmente cualificado**
   > (`windows.<plugin>.<Clase>`). Los nombres cortos de **Volatility 2** —
   > `hashdump`, `lsadump`, `cachedump`, `pslist`, `psscan`… **sin** el prefijo
   > `windows.` — **no existen** en Vol3 y hacen fallar la ejecución. Los plugins son
   > `params` del tool_id `volatility3`, no tool_ids nuevos: la allowlist no cambia.
+
+  > **Renombres del build (deprecaciones).** Los ids de arriba son orientativos:
+  > el build instalado manda. En builds recientes varios plugins de malware se
+  > reubicaron bajo `windows.malware.*` (p.ej. `windows.malfind.Malfind` →
+  > `windows.malware.malfind.Malfind`, ídem `psxview`, `hollowprocesses`,
+  > `suspicious_threads`). Si la salida avisa «This plugin has been renamed,
+  > please call windows.malware.<X>», **adopta el nombre nuevo en las siguientes
+  > llamadas** (el aviso repetido es ruido de contexto y el alias viejo puede
+  > desaparecer); si un id da `invalid choice`, aplica la regla del §B.8: id
+  > literal del `choose from …`, nunca un nombre compuesto por analogía.
 
 ### Super-timeline (pesada, opcional)
 

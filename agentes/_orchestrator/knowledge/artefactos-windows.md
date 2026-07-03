@@ -279,8 +279,71 @@ de concluir.
 
 ---
 
+## Enumeración de procesos en RAM — PsList vs PsScan/PsXView
+
+**Qué es.** Tres vías de enumerar procesos en un volcado: `windows.pslist.PsList`
+recorre la lista enlazada del kernel (solo procesos enlazados y vivos),
+`windows.psscan.PsScan` escanea estructuras `_EPROCESS` en el pool (ve también
+desenlazados y terminados) y `windows.psxview.PsXView` cruza varias fuentes y
+marca en cuáles aparece cada proceso. La **divergencia entre vías** es el
+artefacto: su patrón distingue ocultación de limitación del volcado.
+
+**Cómo se lee.** `volatility3` (el memdump se lee vía el handle read-only; no hay
+contenedor). Primero `PsList`/`PsTree`; ante una enumeración pobre, `PsScan` y
+`PsXView`. Interpreta el patrón: **ausencia parcial** (la lista enlazada funciona
+y a un puñado solo lo ve el pool scan) frente a **vacío total** (`PsList` = 0
+filas y `PsScan` recupera cientos). Diagnostica el vacío total con
+`windows.info.Info` (build, capas de símbolos, anomalías tipo `PE TimeDateStamp`
+incoherente). Las salidas son grandes: filtra con `jq`, no las vuelques.
+
+**Técnica(s) MITRE.** `T1055` (Process Injection) **solo** para la ausencia
+parcial corroborada (proceso desenlazado + `Malfind`/inyección que lo apoye). El
+vacío total no mapea a técnica alguna: es una laguna de entorno.
+
+**Falsos positivos / cautelas.** Un `PsList` totalmente vacío con `PsScan` lleno
+NO es «ocultación masiva»: es símbolos/ISF parciales o un build raro — decláralo
+como laguna de entorno y sigue el análisis sobre `PsScan`/`PsXView`. Procesos
+terminados aparecen en `PsScan` legítimamente (no son ocultos). No ancles el
+informe entero en la anomalía de enumeración sin haber declarado su causa
+probable.
+
+---
+
+## Procesos de cliente cloud en memoria (sincronizadores y clientes S3)
+
+**Qué es.** Procesos de sincronización o subida a almacenamiento cloud residentes
+en el volcado: `Dropbox.exe`, `OneDrive.exe`, cliente de Google Drive, clientes
+S3 (p.ej. S3 Browser), `rclone`. Señalan un **canal de salida de datos
+disponible** en la ventana del volcado — el vector típico de exfiltración en
+casos insider.
+
+**Cómo se lee.** `volatility3`: `windows.pslist.PsList`/`windows.psscan.PsScan`
+(nombre, PID/PPID, hora de creación y término del proceso) + `windows.netscan.
+NetScan` (ESTABLISHED :443 hacia rangos del proveedor en la misma ventana; si el
+socket no trae `Owner`, intenta `windows.netstat.NetStat` antes de darlo por no
+atribuible) + `windows.filescan.FileScan`/`windows.dumpfiles.DumpFiles` para el
+documento o la config del cliente (acotado por PID o `virtaddr`, nunca el volcado
+completo). En el disco par, corrobora con la carpeta local del cliente, LNK y
+ShellBags (`regripper`).
+
+**Técnica(s) MITRE.** `T1567` (Exfiltration Over Web Service); `T1567.002`
+(Exfiltration to Cloud Storage) cuando el cliente es de almacenamiento y hay un
+fichero/documento identificado en la misma ventana. Con un solo eslabón (solo el
+proceso, o solo la conexión), la técnica queda en hipótesis — no la correlaciones
+como hecho.
+
+**Falsos positivos / cautelas.** Estos clientes son software legítimo y
+omnipresente: su mera presencia (o un autostart) no es exfiltración. Los sockets
+sin `Owner` no atribuyen el tráfico al cliente — dilo en el hallazgo. La
+severidad sube solo con la coincidencia temporal de proceso + conexión + fichero
+(cadena «Exfiltración a nube (memoria)» del playbook); dos eslabones son una
+hipótesis a seguir en el disco, no una conclusión.
+
+---
+
 > **Recordatorio de custodia:** ninguna guía de arriba procesa la imagen cruda con
 > una herramienta de contenedor (`regripper`, `evtxecmd`, `mftecmd`). El flujo es
-> siempre `tsk_fls` → `tsk_icat` → procesar el artefacto derivado (soundness §7).
+> siempre `tsk_fls` → `tsk_icat` → procesar el artefacto derivado (soundness §7);
+> los volcados de memoria se leen con `volatility3` a través del handle read-only.
 > Los artefactos sin parser dedicado (Prefetch, `setupapi.dev.log`) se corroboran
 > por timeline/correlación, nunca inventando un `tool_id` (RULE 2).
