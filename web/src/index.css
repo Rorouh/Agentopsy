@@ -976,6 +976,18 @@ html, body, #root {
   gap: 20px;
   height: 100%;
 }
+/* Columna lateral: apila el panel de Hallazgos y el de Tools (estilo Claude Desktop). */
+.investigation-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  height: 100%;
+  min-height: 0;
+}
+.investigation-sidebar > .findings-panel {
+  flex: 1 1 0;
+  min-height: 120px;
+}
 .findings-panel {
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
@@ -985,6 +997,34 @@ html, body, #root {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+/* Panel Tools: fila compacta por herramienta (nombre + ok/fallo + nº de usos). */
+.tool-usage-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 8px 12px;
+}
+.tool-usage-name {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.tool-usage-meta {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tool-usage-count {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 .findings-panel-title {
   font-family: var(--font-sans);

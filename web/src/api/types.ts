@@ -135,6 +135,14 @@ export interface AgentFinding {
   created_at: string;
 }
 
+// Conteo de uso de herramientas por caso (panel "Tools"), agregado del audit log.
+export interface ToolUsage {
+  tool_id: string;
+  total: number;
+  ok: number;
+  failed: number;
+}
+
 export interface ConfigKeyStatus {
   set: boolean;
   preview: string | null;

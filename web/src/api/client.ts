@@ -19,6 +19,7 @@ import type {
   PersistedChatMessage,
   QueryRequest,
   QueryResponse,
+  ToolUsage,
   VerifyResult,
 } from "./types";
 
@@ -135,6 +136,8 @@ export const api = {
       ),
     listFindings: (caseId: string) =>
       request<AgentFinding[]>(`/api/cases/${encodeURIComponent(caseId)}/findings`),
+    listToolUsage: (caseId: string) =>
+      request<ToolUsage[]>(`/api/cases/${encodeURIComponent(caseId)}/tool-usage`),
     readChat: (caseId: string, sessionId: string) =>
       request<PersistedChatMessage[]>(
         `/api/cases/${encodeURIComponent(caseId)}/chats/${encodeURIComponent(sessionId)}`,
