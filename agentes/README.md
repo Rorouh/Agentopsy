@@ -15,7 +15,7 @@ políticas de redacción) deja aquí su carpeta y FORENSIA la descubre al arranc
 
 | Carpeta | `os_profile` | Rol |
 |---|---|---|
-| [`forensia-unix/`](forensia-unix/) | `unix` | Agente de investigación para imágenes Linux/macOS. **Referencia ejecutable** del contrato: se carga tal cual al arrancar el sidecar en dev. |
+| [`forensia-unix/`](forensia-unix/) | `unix` | Agente de investigación para imágenes Linux/macOS. **Referencia ejecutable** del contrato: se carga tal cual al arrancar el api. |
 | [`forensia-windows/`](forensia-windows/) | `windows` | Agente de investigación para imágenes Windows. **Referencia ejecutable** del contrato. |
 | [`_orchestrator/`](_orchestrator/) | — | Pack de **síntesis** (nivel 2). NO es un agente: la registry lo ignora por su prefijo `_`. No tiene `agent.yaml`; lo consumirá la futura capa `forensia.reports` (informe + timeline + correlación MITRE). Ver [`_orchestrator/README.md`](_orchestrator/README.md). |
 
@@ -58,8 +58,9 @@ authors:                     # equipo de entrenamiento — NO atribución a IA
   - "FORENSIA Team"
 
 model:
-  backend: local             # local (Ollama, por defecto) | cloud (Anthropic / OpenAI)
-  name: "llama3.1:8b"        # id concreto del modelo (Ollama tag o id cloud)
+  # SIN `backend`: el ejecutor (Claude Code | Codex CLI | Gemini CLI | Ollama)
+  # lo selecciona el operador en runtime (contrato v1.2, RULE 2).
+  name: "llama3.1:8b"        # modelo recomendado para el ejecutor `ollama`
   temperature: 0.2
   max_iterations: 12         # tope de iteraciones del loop tool-use (safety)
 
@@ -76,8 +77,9 @@ policy:
 Reglas de validación (las hace `forensia.agent.loader`):
 
 - `id` único en `agentes/`; `os_profile` único en `agentes/`.
-- `model.backend` ∈ {`local`, `cloud`}. `cloud` necesita config explícita por caso
-  (consentimiento + redacción) — ver `docs/modelo-amenazas.md` §C.
+- `model.backend` fue **eliminado en v1.2**: declararlo hace fallar la carga. El
+  ejecutor lo elige el operador en runtime; un ejecutor respaldado por cloud exige
+  advertencia + registro en el audit log — ver `docs/modelo-amenazas.md` §C.
 - `prompts.*` y `policy.*` deben existir como ficheros relativos al directorio del
   agente. Cualquier path absoluto o que se salga de la carpeta del agente es rechazado.
 - `policy.tools` referencia sólo `tool_id`s presentes en
@@ -109,8 +111,9 @@ allowed:
 ## `policy/redaction.yaml` — patrones redactados antes de cloud
 
 ```yaml
-# Aplicados SOLO cuando el case usa un backend cloud. Con backend local los datos
-# nunca salen del host y la redacción no se aplica.
+# Aplicados SOLO cuando el operador eligió un ejecutor respaldado por cloud
+# (Claude Code, Codex CLI, Gemini CLI). Con el ejecutor `ollama` los datos nunca
+# salen del host y la redacción no se aplica.
 patterns:
   - name: email
     regex: '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
@@ -124,7 +127,9 @@ patterns:
 
 ## Cómo lo descubre FORENSIA
 
-1. El sidecar arranca y `forensia.agent.registry.AgentRegistry` escanea esta carpeta.
+1. El servicio `api` arranca y `forensia.agent.registry.AgentRegistry` escanea esta
+   carpeta (el compose la monta en solo lectura en `/opt/forensia/agentes` y fija
+   `FORENSIA_AGENTS_DIR` a esa ruta; en dev con venv se escanea `agentes/` del repo).
 2. Cada subdirectorio se intenta cargar con `forensia.agent.loader.load_package`.
 3. Los paquetes válidos se indexan por `os_profile`. Dos paquetes con el mismo
    `os_profile` → error fatal (RULE 2).
@@ -136,6 +141,7 @@ patterns:
 ## Cómo entrega el resultado el entrenador
 
 1. Empaqueta su carpeta `<id>/` con el layout de arriba.
-2. La copia a `agentes/<id>/` en el repo (o se le pasa a empaquetado vía
-   `electron-builder extraResources`, que ya incluye `agentes/` por defecto).
-3. Reinicia el desktop. El agente queda activo.
+2. La copia a `agentes/<id>/` en el repo. El compose bind-monta `./agentes` en
+   solo lectura dentro del servicio `api` (`/opt/forensia/agentes`, vía
+   `FORENSIA_AGENTS_DIR`) — no hay paso de empaquetado.
+3. Reinicia el api (`docker compose restart api`). El agente queda activo.

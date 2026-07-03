@@ -1,9 +1,12 @@
 """Capability contract: the UI never assumes a platform — it asks here and degrades.
 
-Reports per-tool availability based on the catalog's declared delivery mode for this
-host OS (bundled or container — see CLAUDE.md RULE 1). The `container_runtime` field
-indicates whether docker / podman / nerdctl is present on PATH; container-delivered
-tools require it.
+Reports the maletín truth (CLAUDE.md RULE 1): every forensic tool lives in one or both
+compose maletín images (`toolkit-windows` / `toolkit-unix`), and the api reaches it
+there — it bundles none itself. `forensia.toolkit.maletin` probes each maletín container
+(running? binary present?) and this snapshot surfaces, per tool, `{available, toolkits,
+reason}` plus a per-maletín `toolkits` section, so the UI degrades per capability with an
+actionable reason (RULE 2: never substitute one maletín for another). `container_runtime`
+says whether the api even has an OCI client to consult the maletines with.
 """
 
 from __future__ import annotations
@@ -13,26 +16,30 @@ import sys
 from typing import Any
 
 from forensia.agent.registry import agent_registry
-from forensia.config import config
+from forensia.executors import executors_status
+from forensia.toolkit import maletin
 from forensia.toolkit.catalog import CATALOG
-from forensia.toolkit.resolver import container_runtime, is_tool_available
 
 
 def snapshot() -> dict[str, Any]:
+    maletines = maletin.snapshot(CATALOG)
     return {
         "platform": sys.platform,
         "os": platform.system().lower(),
         "arch": platform.machine().lower(),
         "python": platform.python_version(),
-        "packaged": getattr(sys, "frozen", False),
-        "container_runtime": container_runtime() is not None,
-        "tools": {tool.id: is_tool_available(tool) for tool in CATALOG},
-        "models": {
-            "local_default": True,
-            "ollama": config.get("OLLAMA_HOST") is not None,
-            "anthropic": config.get("ANTHROPIC_API_KEY") is not None,
-            "openai": config.get("OPENAI_API_KEY") is not None,
-        },
+        # Whether the api can talk to an OCI client at all (docker/podman on PATH). The
+        # maletín probe needs it; without it every tool reports its actionable reason.
+        "container_runtime": maletines["client"],
+        # Per-maletín service status (running? / why not) — answers "capabilities does
+        # not report the maletines".
+        "toolkits": maletines["services"],
+        # Per-tool availability: {tool_id: {available, toolkits, via, reason, detail}}.
+        "tools": maletines["tools"],
+        # The four executors of the 2026-07-02 pivot. Each entry carries available + the
+        # ACTIONABLE reason when it is not (binary missing, credentials not mounted,
+        # Ollama unreachable) so the UI degrades explicitly per executor (RULE 2).
+        "executors": executors_status(),
         "agents": {
             "root": str(agent_registry.root),
             "loaded": [pkg.summary() for pkg in agent_registry.list()],

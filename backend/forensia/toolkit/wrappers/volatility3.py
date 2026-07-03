@@ -1,8 +1,8 @@
 """Volatility 3 wrapper — run a plugin against a memory dump.
 
-Bundled cross-platform via the PyInstaller sidecar (Volatility 3 is a Python
-package, shipped as a dependency of the backend per RULE 1). The resolver
-supplies the entry point; this wrapper composes the argv tail only.
+Bundled cross-platform as a Python dependency of the backend (RULE 1: it ships
+inside the api image built by the compose). The resolver supplies the entry
+point; this wrapper composes the argv tail only.
 
 We always request the JSON renderer (`-r json --quiet`) so the agent gets
 structured rows instead of human-formatted columns.

@@ -1,5 +1,6 @@
-"""JSON Schemas que describen los params de cada Tool del catálogo en formato
-compatible con OpenAI tool-calling.
+"""JSON Schemas que describen los params de cada Tool del catálogo en el formato
+de especificación function-calling (el estándar de facto que los cuatro
+ejecutores entienden dentro del prompt estructurado del camino degradado).
 
 El LLM ve estos schemas y propone llamadas tipadas. El agent loop intercepta cada
 llamada, inyecta los paths reales (evidence handle, output_dir del ArtifactRun)
@@ -338,8 +339,8 @@ def internal_tool_specs() -> list[dict[str, Any]]:
     return specs
 
 
-def openai_tool_spec(tool_id: str) -> dict[str, Any] | None:
-    """Return the OpenAI function-calling spec for ``tool_id``, or None if unsupported."""
+def tool_spec(tool_id: str) -> dict[str, Any] | None:
+    """Return the function-calling spec for ``tool_id``, or None if unsupported."""
     if tool_id not in TOOL_PARAM_SCHEMAS:
         return None
     return {
@@ -352,10 +353,10 @@ def openai_tool_spec(tool_id: str) -> dict[str, Any] | None:
     }
 
 
-def openai_tool_specs(tool_ids: list[str] | tuple[str, ...]) -> list[dict[str, Any]]:
+def tool_specs(tool_ids: list[str] | tuple[str, ...]) -> list[dict[str, Any]]:
     specs = []
     for tid in tool_ids:
-        spec = openai_tool_spec(tid)
+        spec = tool_spec(tid)
         if spec is not None:
             specs.append(spec)
     return specs

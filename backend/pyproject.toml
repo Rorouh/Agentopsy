@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "forensia"
 dynamic = ["version"]
-description = "AI-assisted post-mortem digital forensics — desktop sidecar"
+description = "AI-assisted post-mortem digital forensics — backend (servicio api del compose)"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.110",
@@ -24,21 +24,15 @@ dev = [
     "httpx>=0.27",
     "ruff>=0.4",
 ]
-# Forensic engines that ship INSIDE the PyInstaller sidecar (RULE 1).
-# Pinned exact versions before the first packaged build.
-forensics = [
-    # "volatility3==...",
-    # "plaso==...",
-]
-# Model backends. Cloud is OFF by default; these are optional extras.
-models = [
-    # "anthropic>=0.25",
-    "openai>=2.0",
-    # "ollama>=0.2",
-]
+# NOTE: the old [models] extra (openai SDK) is gone — the 2026-07-02 pivot
+# replaced SDK backends with the executor layer (forensia/executors): the three
+# CLIs live in the api image (docker/api/Dockerfile) and Ollama is plain HTTP
+# via stdlib, so no Python dependency is needed. No API keys anywhere
+# (SECURITY INVARIANT 7).
+#
 # Model Context Protocol — server SDK for `mcp-toolkit` (S1 of MCP_INVENTORY).
-# Optional because the sidecar runs without MCP for users who only use the
-# desktop UI; the MCP server is opt-in for clients like Claude Desktop or the
+# Optional because the api runs without MCP for users who only use the
+# web UI; the MCP server is opt-in for clients like Claude Desktop or the
 # in-process integration in the ForensicAgent loop (S2).
 mcp = [
     "mcp>=1.0,<2.0",

@@ -35,7 +35,7 @@ def test_forensia_unix_package_loads() -> None:
     pkg = load_package(AGENTES_DIR / "forensia-unix")
     assert pkg.id == "forensia-unix"
     assert pkg.os_profile == "unix"
-    assert pkg.model.backend == "local"
+    assert pkg.model.name == "llama3.1:8b"
     assert pkg.model.max_iterations == 18
     assert "tsk_mmls" in pkg.policy.allowed_tools
     assert "volatility3" in pkg.policy.allowed_tools
@@ -77,7 +77,6 @@ def _valid_manifest() -> dict:
         "os_profile": "unix",
         "authors": ["Test"],
         "model": {
-            "backend": "local",
             "name": "llama3.1:8b",
             "temperature": 0.2,
             "max_iterations": 8,
@@ -110,11 +109,13 @@ def test_invalid_id_fails(tmp_path: Path) -> None:
         load_package(tmp_path)
 
 
-def test_invalid_model_backend_fails(tmp_path: Path) -> None:
+def test_model_backend_key_rejected(tmp_path: Path) -> None:
+    # 'model.backend' fue eliminado en el contrato v1.2: el ejecutor lo elige
+    # el operador en runtime. Declararlo debe fallar con mensaje accionable.
     m = _valid_manifest()
-    m["model"]["backend"] = "gemini"
+    m["model"]["backend"] = "local"
     _write_manifest(tmp_path, m)
-    with pytest.raises(AgentPackageError, match="model.backend"):
+    with pytest.raises(AgentPackageError, match="model.backend.*eliminado"):
         load_package(tmp_path)
 
 
@@ -221,18 +222,16 @@ def test_list_agents_endpoint(client: TestClient) -> None:
     assert "_orchestrator" not in ids
 
 
-def test_query_returns_skeleton_envelope(client: TestClient) -> None:
+def test_query_without_case_is_actionable_422(client: TestClient) -> None:
+    # RULE 2: sin caso anclado no hay skeleton ni demo loop — error accionable.
     token = client.app.state.token
     r = client.post(
         "/api/agent/query",
         headers={"X-Forensia-Token": token},
         json={"prompt": "hola", "os_profile": "unix", "evidence_id": ""},
     )
-    assert r.status_code == 200
-    body = r.json()
-    assert body["status"] == "skeleton"
-    assert body["agent"]["id"] == "forensia-unix"
-    assert "tsk_mmls" in body["agent"]["allowed_tools"]
+    assert r.status_code == 422
+    assert "case_id" in r.json()["detail"]
 
 
 def test_query_invalid_os_profile(client: TestClient) -> None:

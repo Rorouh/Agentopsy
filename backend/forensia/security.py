@@ -1,4 +1,4 @@
-"""Transport hardening for the local sidecar (THREAT_MODEL gates 1-3, 12).
+"""Transport hardening for the local api service (THREAT_MODEL gates 1-3, 12).
 
 - Per-session token, generated in memory at startup (never written to disk, never in argv).
 - Host-header allowlist (anti DNS-rebinding).

@@ -30,7 +30,6 @@ from forensia.agent.package import (
 from forensia.toolkit.catalog import BY_ID as TOOL_BY_ID
 
 _VALID_OS_PROFILES = frozenset({"unix", "windows"})
-_VALID_MODEL_BACKENDS = frozenset({"local", "cloud"})
 _ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")  # kebab-case
 _SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$")
 
@@ -128,13 +127,14 @@ def _coerce_authors(value: Any, source: Path) -> tuple[str, ...]:
 def _parse_model(value: Any, source: Path) -> AgentPackageModel:
     if not isinstance(value, dict):
         raise AgentPackageError(
-            f"{source}: 'model' must be a mapping with backend/name/temperature/max_iterations"
+            f"{source}: 'model' must be a mapping with name/temperature/max_iterations"
         )
-    backend = _require_str(value, "backend", source)
-    if backend not in _VALID_MODEL_BACKENDS:
+    if "backend" in value:
         raise AgentPackageError(
-            f"{source}: model.backend must be one of {sorted(_VALID_MODEL_BACKENDS)},"
-            f" got {backend!r}"
+            f"{source}: 'model.backend' fue eliminado del contrato v1.2 — el "
+            "ejecutor (Claude Code / Codex CLI / Gemini CLI / Ollama) lo "
+            "selecciona el operador en runtime (RULE 2), el paquete no puede "
+            "fijarlo. Borra la clave del manifiesto."
         )
     name = _require_str(value, "name", source)
     temperature = value.get("temperature", 0.0)
@@ -148,7 +148,6 @@ def _parse_model(value: Any, source: Path) -> AgentPackageModel:
             f"{source}: model.max_iterations must be an int in [1, 100], got {max_iterations!r}"
         )
     return AgentPackageModel(
-        backend=backend,
         name=name,
         temperature=float(temperature),
         max_iterations=max_iterations,

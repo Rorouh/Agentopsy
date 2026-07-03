@@ -1,8 +1,5 @@
-# Evidencias y casos: NUNCA versionar datos forenses
-/evidence/*
-!/evidence/.gitkeep
-/projects/*
-!/projects/.gitkeep
+# (Las carpetas de evidencias y casos viven en la raíz del repo — ./evidence y
+# ./projects — y las ignora el .gitignore raíz.)
 
 # Temporales
 *.log

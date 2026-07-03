@@ -1,15 +1,27 @@
 # FORENSIA — Inventario de herramientas (maletín extendido)
 
 Catálogo candidato de herramientas forenses CLI evaluadas para el maletín de FORENSIA,
-agrupadas por dominio. La selección final de las que se empaquetan (bundled) o se entregan
-vía contenedor OCI vive en `backend/forensia/toolkit/catalog.py` y su estado de vendoring
-por OS/arch en `vendor/CATALOG.md`. Este documento es la lista larga; aquellas son las cortas.
+agrupadas por dominio. La selección final de las que se integran en las imágenes de los
+maletines del compose (`toolkit-windows` / `toolkit-unix` — único mecanismo de entrega,
+RULE 1) vive en `backend/forensia/toolkit/catalog.py`; la construcción de las imágenes,
+con versiones pineadas, en los Dockerfiles de `docker/`. Este documento es la lista
+larga; aquellas son las cortas.
+
+> **Dónde vive cada tool del catálogo.** Desde 2026-07-03 cada entrada de `catalog.py`
+> declara su maletín (`toolkits=`: los del stage `base` en ambos maletines; los artefactos
+> Windows solo en `toolkit-windows`), y `forensia.toolkit.maletin` sondea los contenedores
+> para que `/api/capabilities` reporte cada tool con disponible/no + razón (servicio
+> caído, binario ausente) — sin sustituciones entre maletines (RULE 2). La "Estado local"
+> de abajo es una foto del host de dev; para el usuario final la verdad es la del sondeo a
+> los maletines. Los maletines se fijan a `linux/amd64` (el PPA GIFT no tiene arm64: en
+> Apple Silicon corren bajo emulación) — ver `docker/README.md`.
 
 > Probe ejecutado el **2026-06-26 en macOS (arm64)**, host del desarrollador. La columna
 > "Estado local" refleja la presencia en `PATH` del sistema + el venv `backend/.venv`.
 > "Nativo en" indica los OS donde la herramienta tiene un build nativo viable; los huecos
-> (p. ej. `journalctl` en Win/Mac, EvtxECmd sin .NET en Linux/Mac) son exactamente el caso
-> de uso de la entrega vía contenedor que ahora habilita RULE 1.
+> (p. ej. `journalctl` en Win/Mac, EvtxECmd sin .NET en Linux/Mac) son exactamente lo que
+> resuelven los maletines contenedorizados (RULE 1): al ser imágenes **Linux**, .NET Core,
+> Perl o systemd-utils se instalan una vez en la imagen y valen para los tres SOs del host.
 
 ---
 
@@ -143,5 +155,7 @@ por OS/arch en `vendor/CATALOG.md`. Este documento es la lista larga; aquellas s
 
 La cobertura alta en secciones 1 y 6 viene de Homebrew (`sleuthkit`, `libewf`, `afflib`,
 `jq`, `sqlite3`) y herramientas POSIX. Las secciones 2 (Windows offline) y 3 (Unix logs
-remotos) son las que más demandan entrega vía **contenedor** según RULE 1 — sin .NET ni
-systemd locales, EvtxECmd y `journalctl` no son alcanzables nativamente desde un Mac.
+remotos) son las que más se benefician del maletín contenedorizado (RULE 1) — sin .NET ni
+systemd locales, EvtxECmd y `journalctl` no son alcanzables nativamente desde un Mac;
+dentro de la imagen Linux del maletín, sí. El estado local del host es irrelevante para
+el usuario final: todas las tools le llegan por las imágenes del compose.

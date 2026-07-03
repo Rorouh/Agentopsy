@@ -1,21 +1,23 @@
 # FORENSIA — Arquitectura
 
-Fuente de verdad del diseño. Decisiones tomadas en la fase de planificación (junio 2026)
+Fuente de verdad del diseño. Decisiones tomadas en la fase de planificación (junio–julio 2026)
 tras un panel de 5 expertos (empaquetado, DFIR, seguridad, orquestación IA, gestión).
+Realineada el 2 de julio de 2026 con la propuesta v1.2: **entrega 100 % Docker Compose y capa
+de ejecución por CLIs/Ollama sin API keys** — ver
+[`FORENSIA_Alcance_y_Planificacion.md`](../FORENSIA_Alcance_y_Planificacion.md) §2 y §5.
 
 ## 1. Decisiones bloqueadas
 
 | Tema | Decisión | Por qué |
 |---|---|---|
-| Superficie | **Solo escritorio** (sin CLI ni web) | Petición del propietario |
-| Shell | **Electron** | UI Chromium idéntica en Win/Mac/Linux; el equipo ya conoce Electron |
-| Backend | **Python/FastAPI** como **sidecar** PyInstaller | Ecosistema forense+IA es Python (Volatility3, plaso, RAG) |
-| Transporte | **HTTP/WS a 127.0.0.1 + token**, desacoplado | El shell no importa lógica; el wrapper es intercambiable |
-| Maletín | **Bundleado en el binario** (`vendor/<tool>/<os>-<arch>`) | Regla "instalar y usar"; el bundle nativo es el camino preferido |
-| Docker / OCI runtime | **Aceptado como mecanismo de entrega peer al bundling** (RULE 1); el runtime es prerequisito del instalador, las imágenes viajan como tarballs y se cargan con `docker load` en el primer arranque | Sin esto no hay forma viable de entregar herramientas Perl (RegRipper) ni .NET (EvtxECmd, MFTECmd) en Linux/Mac sin pedir al usuario que instale .NET o Perl portable |
-| Empaquetado | `electron-builder` (nsis/dmg/AppImage+deb) + PyInstaller **onedir** por OS/arch | PyInstaller no cross-compila; onedir arranca rápido y firma mejor |
-| Modelos | Capa común; **local (Ollama) por defecto**, cloud opt-in | Sensibilidad de evidencias |
-| Agente | **UNO**, parametrizado por un **paquete declarativo** (`agentes/<id>/`) y por `os_profile` (win/unix) | El loop es idéntico; lo que cambia (prompts, modelo, allowlist) viaja en una carpeta que entrega el equipo de entrenamiento — sin código Python suyo, sin dos agentes paralelos. Ver [`contrato-paquetes.md`](agentes/contrato-paquetes.md) |
+| Superficie | **Solo web autoalojada** — la UI que sirve el servicio `web` del compose (sin CLI de usuario final, sin app de escritorio, sin SaaS) | Un despliegue, mismo entorno en Win/Mac/Linux; el navegador ya está en todas partes |
+| Frontend | **React** servido por el contenedor `web` | UI idéntica en los 3 SOs; el equipo ya conoce React |
+| Backend | **Python/FastAPI** como servicio `api` del compose | Ecosistema forense+IA es Python (Volatility3, plaso, RAG) |
+| Transporte | **HTTP por la red interna del compose** + token de sesión; puertos publicados **solo en `127.0.0.1`** | El frontend no importa lógica; el backend es intercambiable |
+| Entrega | **`git clone` + `docker compose up --build`** — cinco servicios: `web`, `api`, `ollama`, `toolkit-windows`, `toolkit-unix` | Reproducibilidad (versiones pineadas en Dockerfiles), un solo comando, mismo stack en los 3 SOs vía contenedores Linux |
+| Maletín | **Imágenes `toolkit-windows` / `toolkit-unix`** construidas por el compose — único mecanismo de entrega de tools (RULE 1) | Sin builds nativas por SO/arch ni vendoring; el catálogo es idéntico en las tres plataformas |
+| Ejecutores | **Cuatro, a elección del operador**: Claude Code (`claude -p`), Codex CLI (`codex exec`), Gemini CLI (`gemini -p`) u Ollama (HTTP al servicio del compose). **Sin API keys**: los CLIs se autentican con la sesión del volumen `forensia-cli-auth` (seeded una vez del host o login en el contenedor) | Consumo por suscripción del propio usuario; Ollama = vía 100 % local; RULE 2 — sin ejecutor seleccionado, error accionable |
+| Agente | **UNO**, parametrizado por un **paquete declarativo** (`agentes/<id>/`) y por `os_profile` (win/unix) | El loop es idéntico; lo que cambia (prompts, allowlist, redacción) viaja en una carpeta que entrega el equipo de entrenamiento — sin código Python suyo, sin dos agentes paralelos. Ver [`contrato-paquetes.md`](agentes/contrato-paquetes.md) |
 | RAG | **Stub de interfaz**; catálogo en el system prompt | Cabe en prompt; RAG real es fase 2 |
 
 ## 2. Capas
@@ -28,15 +30,13 @@ tras un panel de 5 expertos (empaquetado, DFIR, seguridad, orquestación IA, ges
                                               └──────────────┬───────────────┘
                                                              │ stdio (MCP)
 ┌──────────────────────────────────────────────┐             │
-│ desktop/  Electron — UI de escritorio        │             │
-│   main.cjs    free port → spawn sidecar      │             │
-│   preload.cjs contextBridge → window.forensia│             │
-│   renderer/   React + TS + Vite              │             │
+│ web — frontend React (contenedor del compose)│             │
+│   navegador → http://127.0.0.1:5173          │             │
 └───────────────┬──────────────────────────────┘             │
-                │ HTTP/WS 127.0.0.1:<efímero> + token        │
+                │ HTTP red interna del compose + token       │
 ┌───────────────▼──────────────────────┐  ┌──────────────────▼───────────────┐
-│ backend/forensia/server.py           │  │ backend/forensia/mcp/__main__.py │
-│  FastAPI sidecar — UI surface        │  │  MCP server — protocol surface   │
+│ api — backend/forensia/server.py     │  │ backend/forensia/mcp/__main__.py │
+│  FastAPI — superficie de la UI web   │  │  MCP server — protocol surface   │
 └───────────────┬──────────────────────┘  └──────────────────┬───────────────┘
                 │                                            │
                 └────────────────┬───────────────────────────┘
@@ -57,38 +57,40 @@ tras un panel de 5 expertos (empaquetado, DFIR, seguridad, orquestación IA, ges
 │   artifacts/       ArtifactStore (manifest + hashes por run)      │
 │   chats/           ChatStore (JSONL append-only por sesión)       │
 │   audit/           AuditLog encadenado por hash + filelock cross-OS │
-│   toolkit/         resolver env→bundled→container→PATH; tools     │
+│   toolkit/         resolver env → maletín declarado en catálogo   │
 │   agent/           un agente, parametrizado por AgentPackage      │
 │                    (loader+registry sobre agentes/<id>/)          │
-│   models/          backend cloud|local + capabilities()           │
+│   PromptExecutor   capa de ejecución — cuatro ejecutores (ver §5) │
 │   reports/         hallazgo trazable + timeline (pendiente)       │
-└───────────────────────────┬──────────────────────────────────────┘
-                            │ resolver: env → bundled → container → PATH
-┌───────────────────────────▼──────────────────────────────────────┐
-│ vendor/<tool>/<os>-<arch>/   maletín forense bundleado            │
-│   TSK, bulk_extractor, ewf-tools, hayabusa, chainsaw,             │
-│   RegRipper…   (Volatility3 y plaso van DENTRO del sidecar)       │
-└──────────────────────────────────────────────────────────────────┘
+└──────────┬─────────────────────────────────────────┬─────────────┘
+           │ docker exec (argv array, shell=False)   │ claude -p | codex exec | gemini -p
+           ▼                                         │   (CLIs en la imagen api;
+┌───────────────────────────────────┐                │    ~/.claude ~/.codex ~/.gemini ro)
+│ toolkit-windows / toolkit-unix    │                │ ollama → HTTP al servicio ollama
+│   maletines forenses del compose  │                ▼
+│   (evidencia montada :ro)         │        CAPA DE EJECUCIÓN
+└───────────────────────────────────┘
 ```
 
-**Dos superficies, un núcleo.** El sidecar HTTP (para la UI Electron) y el
+**Dos superficies, un núcleo.** El servicio HTTP `api` (para la UI web) y el
 servidor MCP stdio (para clientes externos) son procesos Python
 independientes que comparten el mismo `dispatcher`, `EvidenceManager`,
-`ArtifactStore` y `AuditLog`. Concurrencia segura vía `filelock` (cross-platform, sidecar `.lock`) sobre
-`audit.jsonl`. Ver [`mcp-toolkit-s1.md`](maletin/mcp-toolkit-s1.md) y
+`ArtifactStore` y `AuditLog`. Concurrencia segura vía `filelock` (cross-platform,
+fichero `.lock` adyacente) sobre `audit.jsonl`. Ver [`mcp-toolkit-s1.md`](maletin/mcp-toolkit-s1.md) y
 [`inventario-mcps.md`](maletin/inventario-mcps.md) para detalle del servidor MCP.
 
-> Detalle del layout en disco (`~/.forensia/cases/<id>/{case.json, evidence/, artifacts/, chats/, audit.jsonl, reports/}`),
+> Detalle del layout en disco (`<raíz>/cases/<id>/{case.json, evidence/, artifacts/, chats/, audit.jsonl, reports/}`),
 > contrato de cada manager/store, y flujo end-to-end de una ejecución anclada a caso:
-> ver [`storage.md`](storage.md).
+> ver [`storage.md`](storage.md). En el despliegue compose la raíz de datos del `api`
+> se monta en `./projects/` del repo.
 
 ## 3. Por qué el transporte va desacoplado
 
-El renderer habla con el backend **solo por HTTP/WS con token**, nunca por imports ni
-rutas de fichero. Consecuencia: el backend puede ejecutarse como sidecar PyInstaller (app
-empaquetada), como `python -m forensia.server` (desarrollo) o cualquier otra forma, **sin
-tocar el frontend**. Electron deja de estar en el camino crítico: si hiciera falta, se
-podría envolver con otra ventana sin reescribir nada.
+El frontend habla con el backend **solo por HTTP con token**, nunca por imports ni
+rutas de fichero. Consecuencia: el backend puede ejecutarse como servicio `api` del
+compose (producción), como `python -m forensia.server` en un venv (desarrollo) o
+cualquier otra forma, **sin tocar el frontend** — y la UI web es a su vez un contenedor
+estático intercambiable que no está en el camino crítico de la lógica.
 
 ## 4. Contrato de herramienta (toolkit)
 
@@ -98,7 +100,9 @@ Una herramienta del maletín se describe, no se ejecuta libremente:
 Tool {
   id            # enum cerrada — el LLM elige de aquí, nunca escribe un comando
   os_profiles   # ["unix"] | ["windows"] | ["unix","windows"]
-  binary        # resuelto por el resolver (env → bundled → PATH)
+  toolkits      # maletín(es) que lo transportan: ("toolkit-unix",) | ("toolkit-windows",)
+                #   | ambos para tools Cross (resolver: env → maletín declarado; RULE 2:
+                #   sin fallback entre maletines). capabilities sondea y reporta cada uno.
   build_argv()  # construye argv VALIDADO; sin shell, sin concatenar strings
   parse()       # salida → JSON estructurado
   returns       # inline (cabe en contexto) | artifact_ref {id,path,rows,schema,sha256}
@@ -109,74 +113,67 @@ Salidas gigantes (timeline de plaso, `fls -r`) **no** se devuelven al modelo com
 se persisten como **artefacto** y el agente las consulta con herramientas de 2º nivel
 (filtros por rango temporal, top-N, IOC). Si no, no caben en el contexto de ningún modelo.
 
-## 5. Capa de modelos
+## 5. Capa de ejecución (`PromptExecutor`)
 
-Interfaz única `ModelBackend` con un contrato `next_action(state, tools) -> tool_call |
-final` **y** `capabilities()` (`supports_native_tools`, `max_context`, `json_mode`…).
-Dos implementaciones: `cloud` (tool-use nativo robusto) y `local` (Ollama; camino
-degradado: prompt estructurado + parser + allowlist + reintentos). Un **harness de
-evaluación** común mide la tasa de invocación correcta local vs cloud — esa tabla
-comparativa es la contribución científica del TFM.
+Interfaz única `PromptExecutor` (`backend/forensia/executors/`) con contrato
+`is_available() -> disponible | razón accionable` y `run(prompt, context) -> resultado
+estructurado`; el adapter `ExecutorBackend` (`backend/forensia/models/base.py`) la eleva
+al contrato del loop `next_action(state, tools) -> tool_call | final` mediante el camino
+degradado (prompt estructurado + parser JSON estricto), idéntico para los cuatro — así la
+comparativa mantiene una única variable independiente. Cada ejecución queda en el audit
+log del caso con el argv literal (o la petición HTTP literal en Ollama). Cuatro
+implementaciones, elegidas **explícitamente** por el operador — RULE 2: sin selección,
+error accionable; jamás un default silencioso:
 
-> Durante el desarrollo se construye y mide con **cloud** (fiable); **local por defecto**
-> es la postura de privacidad del producto y el objetivo a validar, no la base de arranque.
+- **`claude-code`** (`claude -p`), **`codex`** (`codex exec`), **`gemini`** (`gemini -p`) —
+  subprocesos `shell=False` contra los CLIs instalados en la imagen del servicio `api`,
+  autenticados con la sesión del volumen `forensia-cli-auth` (el HOME del contenedor):
+  el entrypoint la *seedea* una vez desde las credenciales del host montadas read-only
+  como staging bajo `/host-creds/`, o el operador inicia sesión dentro del contenedor
+  (`claude auth login`, `codex login --device-auth`, `gemini` con `NO_BROWSER=true`). El
+  refresh de tokens ocurre en el volumen, nunca en los ficheros del host. Consumo por
+  suscripción/cuenta del propio usuario; **ninguna API key vive en el proyecto**.
+  `is_available()` es una comprobación **real** por CLI (comando de estado de auth o
+  validación del fichero de credenciales), no una mera existencia de directorio, y su
+  razón accionable nombra el comando de login concreto. La revocación es
+  `docker compose down -v` (elimina el volumen).
+- **`ollama`** — HTTP contra el servicio `ollama` del compose: la vía 100 % local. Camino
+  degradado para tool-use: prompt estructurado + parser + allowlist + reintentos.
 
-## 6. Empaquetado y soporte por plataforma
+Elegir un ejecutor respaldado por cloud dispara la advertencia explícita y el registro de
+consentimiento en el audit log; ese consentimiento se **exige en el backend**
+(`/api/agent/query` devuelve 403 si no hay entrada `cloud_executor_consent` para el
+caso + ejecutor — `forensia.consent`), de modo que el gate no vive solo en la UI (ver
+[`modelo-amenazas.md`](modelo-amenazas.md)). Un
+**harness de evaluación** común mide la tasa de invocación correcta de tools y la calidad
+del informe con los cuatro ejecutores — esa tabla comparativa es la contribución
+científica del TFM.
 
-- PyInstaller **onedir** del sidecar, **un build nativo por OS/arch** (no cross-compila):
-  `win-x64`, `linux-x64`, `mac-arm64`, `mac-x64`. Copiado a `desktop/resources/` antes de
-  `electron-builder`.
-- `electron-builder`: `win:[nsis]`, `linux:[AppImage,deb]`, `mac:[dmg,zip] arch[arm64,x64]`.
-- `asarUnpack` para los binarios vendored y cualquier `.sh`/data que se ejecute.
-- Firma de código: **diferida** (no bloquea el TFM). Cuando haya distribución externa:
-  Apple Developer ID + notarización (mac), cert Windows (Azure Trusted Signing). Linux sin firma.
+## 6. Distribución y soporte por plataforma
 
-### Imágenes OCI (entrega vía contenedor)
-
-Las herramientas declaradas con `delivery="container"` en `backend/forensia/toolkit/catalog.py`
-viajan como **tarballs de imagen OCI dentro del instalador** — nunca se descargan desde un
-registro en tiempo de ejecución. Se evaluaron dos modelos de distribución:
-
-- **Modelo A — Pull desde registro en el primer uso** (p.ej. `ghcr.io/forensia/...`):
-  instalador minúsculo, pero exige internet en la máquina del analista. **Descartado**:
-  las estaciones forenses suelen estar air-gapped y bloquear egress de Docker daemon.
-- **Modelo B — Tarball bundleado dentro del instalador (elegido)**: el pipeline de release
-  en CI construye las imágenes, las exporta con `docker save`, y mete los `.tar` resultantes
-  dentro del `.dmg`/`.exe`/AppImage a través de `electron-builder extraResources`. El
-  proceso principal de Electron ejecuta `docker load` para cada tarball en el primer
-  arranque (idempotente vía `docker image inspect`).
-
-Flujo de build:
-
-```
-CI release pipeline (per OS/arch)
-  └─ scripts/build-images.sh
-       └─ docker build images/<tool>/        → forensia/<tool>:latest
-       └─ docker save forensia/<tool>:latest -o desktop/resources/images/<tool>.tar
-  └─ electron-builder (bundles resources/images/ via extraResources)
-
-First launch on user machine
-  └─ desktop/main.cjs: loadBundledImages()
-       └─ for each *.tar: docker image inspect <tag> || docker load -i <tar>
-```
-
-El **runtime de contenedores** (Docker / Podman / nerdctl) es un prerequisito documentado
-del instalador, en coherencia con RULE 1: el equipo no se considera "instalado a medias"
-porque pide *un* runtime de contenedores genérico, no una herramienta forense específica
-por separado. Si el runtime no está presente, `/api/capabilities` reporta
-`container_runtime: false` y marca las herramientas de entrega container como no
-disponibles; el resto de la app (sidecar, herramientas bundleadas, agente, audit log)
-sigue funcionando con normalidad.
+- La distribución **es el repositorio**: `git clone` + `docker compose up --build`.
+  Las imágenes se construyen en la máquina del usuario desde los Dockerfiles del repo,
+  con versiones pineadas (el primer build necesita internet; los siguientes usan caché).
+- Cinco servicios (`web`, `api`, `ollama`, `toolkit-windows`, `toolkit-unix`) sobre la
+  red interna del compose; los puertos publicados hacen bind **solo en `127.0.0.1`**.
+- Prerequisito único: **Docker con el plugin Compose** (Docker Desktop en Windows/macOS —
+  WSL2 como backend en Windows; `docker-ce` + plugin en Linux).
+- No hay PyInstaller, ni electron-builder, ni firma de código, ni auto-update:
+  actualizar es `git pull` + `docker compose up --build`.
+- Degradación explícita (RULE 2): si un CLI ejecutor no está autenticado en el host, o el
+  servicio `ollama` no responde, o un maletín está caído, `/api/capabilities` lo reporta
+  y la UI degrada **esa** capacidad nombrando la dependencia que falta; el resto de la
+  herramienta sigue funcionando. Nunca se sustituye por una alternativa "best effort".
 
 ## 7. Paquetes de agente entrenado (`agentes/`)
 
 El loop del agente NO es código que escriben los entrenadores. Cada agente
 entrenado viaja como una **carpeta declarativa** bajo `agentes/<id>/` con
-manifiesto, prompts y políticas (allowlist de tools, redacción cloud).
+manifiesto, prompts y políticas (allowlist de tools, redacción).
 `forensia.agent.loader` valida el paquete y `forensia.agent.registry` lo indexa
 por `os_profile`. Reglas innegociables:
 
-- **Un paquete por `os_profile`** — duplicados → arranque del sidecar falla.
+- **Un paquete por `os_profile`** — duplicados → el arranque del servicio `api` falla.
 - **Allowlist obligatoria** y cerrada al catálogo de `forensia.toolkit`.
 - **Sin agente fallback**: si no hay paquete para el perfil del caso, el chat
   degrada con un mensaje accionable; nunca se inventa default.
@@ -187,14 +184,20 @@ de síntesis `_orchestrator/`, que la registry ignora por su prefijo `_`: no es 
 agente y no declara `os_profile`; lo consumirá la capa `forensia.reports` (informe
 pericial, timeline y correlación MITRE, aún sin implementar).
 
-Distribución: `electron-builder` mete `../agentes` en `extraResources` y
-`asarUnpack`. En dev, el sidecar lee `<repo>/agentes`. En packaged, Electron
-exporta `FORENSIA_AGENTS_DIR=<resourcesPath>/agentes` al spawnear el sidecar.
+Distribución: el compose monta `agentes/` del repo en el servicio `api`
+(`FORENSIA_AGENTS_DIR` permite sobreescribir la ruta; en desarrollo,
+`python -m forensia.server` lee `<repo>/agentes` directamente).
 
 Detalle completo del contrato y del schema de `agent.yaml`: [`contrato-paquetes.md`](agentes/contrato-paquetes.md).
 
-## 8. Lo que el esqueleto NO implementa todavía
+## 8. Lo que NO está implementado todavía
 
-Loop de razonamiento real, RAG, backends de modelo reales, wrappers de
-herramientas reales, montaje real de evidencia, firma de código. Todo eso tiene
-su interfaz/stub clavado para no reescribir.
+RAG, el orquestador de síntesis (`forensia.reports`: informe, timeline, MITRE), el
+harness de evals entre ejecutores, y la absorción de las imágenes por-herramienta de
+`images/` en los maletines del compose (ver `docs/operacion/proximos-pasos.md`). La
+capa de ejecución (`PromptExecutor` + los cuatro ejecutores, 2026-07-02), el loop de
+razonamiento, los wrappers del catálogo, el compose raíz de cinco servicios y la SPA
+React en `web/` (servida por nginx con proxy `/api`+`/ws` al servicio `api`; token vía
+`GET /api/session`; selector de ejecutor + consentimiento cloud auditado) ya están
+implementados. El modelo de entrega anterior (Electron en `desktop/`, `vendor/`,
+`docker/agent/`, PyInstaller) quedó desmontado el 2026-07-02.

@@ -8,7 +8,11 @@ before the agent tries to dispatch it.
 from __future__ import annotations
 
 from forensia.toolkit.catalog import BY_ID, CATALOG, by_tier, for_profile
+from forensia.toolkit.maletin import MALETINES, TOOLKIT_UNIX, TOOLKIT_WINDOWS
 from forensia.toolkit.tool import _not_built
+
+# os_profile → the maletín that must carry a tool applicable to that profile.
+_PROFILE_MALETIN = {"unix": TOOLKIT_UNIX, "windows": TOOLKIT_WINDOWS}
 
 
 # --------------------------------------------------------------------------- #
@@ -83,6 +87,29 @@ def test_bundled_only_tools_have_no_container_image() -> None:
         assert tool.container_image is None, (
             f"{tool.id} is bundled-only but declares a container_image"
         )
+
+
+# --------------------------------------------------------------------------- #
+# Maletín declaration (CLAUDE.md RULE 1): every tool declares where it lives
+# --------------------------------------------------------------------------- #
+def test_every_tool_declares_a_known_maletin() -> None:
+    for tool in CATALOG:
+        assert tool.toolkits, f"{tool.id} declares no maletín (toolkits empty)"
+        for tk in tool.toolkits:
+            assert tk in MALETINES, f"{tool.id} declares unknown maletín {tk!r}"
+
+
+def test_toolkits_cover_every_os_profile_the_tool_serves() -> None:
+    """A tool applicable to an OS profile must live in that profile's maletín — so a
+    windows tool ships in toolkit-windows, a unix tool in toolkit-unix, a cross tool in
+    both. (RULE 2 is enforced at resolution: a tool is never probed against a maletín it
+    does not declare here.)"""
+    for tool in CATALOG:
+        for profile in tool.os_profiles:
+            expected = _PROFILE_MALETIN[profile]
+            assert expected in tool.toolkits, (
+                f"{tool.id} serves {profile!r} but does not declare {expected!r}"
+            )
 
 
 # --------------------------------------------------------------------------- #

@@ -1,5 +1,23 @@
-"""Model layer: a common interface over local (default) and cloud backends."""
+"""Agent-loop action types + the adapter over the execution layer.
 
-from forensia.models.base import ModelBackend, ModelCapabilities, get_backend
+The concrete executors live in ``forensia.executors`` (operator-selected per
+request; no SDK backends, no API keys — 2026-07-02 pivot).
+"""
 
-__all__ = ["ModelBackend", "ModelCapabilities", "get_backend"]
+from forensia.models.base import (
+    Action,
+    ExecutorBackend,
+    FinalAnswer,
+    ModelBackend,
+    ModelCapabilities,
+    ToolCall,
+)
+
+__all__ = [
+    "Action",
+    "ExecutorBackend",
+    "FinalAnswer",
+    "ModelBackend",
+    "ModelCapabilities",
+    "ToolCall",
+]
