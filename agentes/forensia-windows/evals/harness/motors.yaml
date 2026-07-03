@@ -53,12 +53,25 @@ motors:
     note: "no instalado en esta máquina; poner ready:true tras verificar 'claude -p'."
 
   gemini:
-    ready: true                       # cuando la auth funcione
-    argv: ["gemini", "--yolo", "-m", "{model}", "-p", "{prompt}"]
-    prompt_via: arg
+    # ready:false VERAZ (RULE 2): la auth nunca se verificó en esta máquina
+    # (plan-ruta: "bloqueado por errores de instalación/uso (tier/auth)") y las
+    # 3 corridas de 2026-07-02 murieron en el lanzador sin una sola inferencia.
+    # Además, prompt_via: arg es inviable con este CLI en Windows: el ejecutable
+    # se resuelve al shim npm gemini.CMD (se lanza vía `cmd /c`) y el prompt del
+    # agente (~27 KB) como argumento revienta el límite de 8191 caracteres de
+    # cmd.exe ("La línea de comandos es demasiado larga", corrida 131610). El
+    # prompt pasa a stdin (modo headless del CLI). Antes de poner ready:true:
+    # verificar auth Y que `gemini --yolo -m <model>` lee el prompt por stdin.
+    ready: false
+    argv: ["gemini", "--yolo", "-m", "{model}"]
+    prompt_via: stdin
     default_model: "gemini-3.1-pro"   # pro para calidad; flash si quieres velocidad
 
   codex:
-    ready: true                       # cuando 'codex exec' responda headless
+    # Verificado headless el 2026-07-02 (corrida codex__modelo__memdump__20260702-153138):
+    # 'codex exec' responde con el prompt como argumento. A diferencia de gemini,
+    # el ejecutable se resuelve a codex.EXE (no a un shim .CMD), así que el prompt
+    # como arg queda bajo el límite de CreateProcess (~32K), no el de cmd.exe.
+    ready: true
     argv: ["codex", "exec", "{prompt}"]
-    prompt_via: arg
+    prompt_via: file
