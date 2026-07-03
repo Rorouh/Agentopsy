@@ -1,0 +1,9 @@
+# PENDIENTE — pega aquí la salida de:  claude --help
+# (y si existe, también:  claude -p --help)
+#
+# Qué mirar para el bloque `claude` de motors.yaml:
+#   - modo no interactivo / print  (hoy el bloque usa:  claude -p "{prompt}")
+#   - si acepta el prompt por stdin (para evitar el límite de arg con el prompt ~33K)
+#   - flag para auto-aprobar acciones en modo autónomo (equivalente al bypass de codex)
+#
+# --- salida de `claude --help` (pegar debajo) ---

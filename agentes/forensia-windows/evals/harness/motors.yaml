@@ -68,10 +68,21 @@ motors:
     default_model: "gemini-3.1-pro"   # pro para calidad; flash si quieres velocidad
 
   codex:
-    # Verificado headless el 2026-07-02 (corrida codex__modelo__memdump__20260702-153138):
-    # 'codex exec' responde con el prompt como argumento. A diferencia de gemini,
-    # el ejecutable se resuelve a codex.EXE (no a un shim .CMD), así que el prompt
-    # como arg queda bajo el límite de CreateProcess (~32K), no el de cmd.exe.
+    # Vía 1 (run_eval, decisión): codex emite {tool_id,params}, NO ejecuta tools.
+    # `-` => prompt por stdin (help: "if `-` is used, instructions are read from stdin").
+    # Evita el límite ~32K de CreateProcess con el prompt ensamblado (~33K).
     ready: true
-    argv: ["codex", "exec", "{prompt}"]
-    prompt_via: file
+    argv: ["codex", "exec", "-"]
+    prompt_via: stdin
+    note: "prompt por stdin (-). Sin bypass: en Vía 1 no debe ejecutar comandos."
+    
+  codex_auto:
+    # Vía 2 (run_investigation --mode autonomous): codex SÍ ejecuta vol sobre una COPIA.
+    # --skip-git-repo-check: el cwd es la carpeta de evidencia (fuera del repo git).
+    # --dangerously-bypass-approvals-and-sandbox: sin él, `codex exec` sin TTY no
+    #   aprueba el spawn de `vol` y da WinError 5. SOLO laboratorio, sobre COPIA;
+    #   Volatility es read-only sobre memoria.
+    ready: true
+    argv: ["codex", "exec", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox", "-"]
+    prompt_via: stdin
+    note: "modo autónomo de laboratorio; requiere COPIA de la evidencia (soundness)."

@@ -172,3 +172,45 @@ de verdad (se resuelve a `.EXE`, bajo el límite de CreateProcess).
   `load_mitre_seed_ids()` incluye T1567/T1567.002, los prompts ensamblan
   (32 653 chars — +5 K sobre la versión anterior; vigilar si algún motor de
   contexto corto entra en la comparativa).
+
+## Validación empírica de esta iteración (corrida codex 2026-07-03)
+
+Corrida autónoma nueva sobre LoneWolf-memoria (`codex_auto`, gpt-5.5, modo
+autónomo; transcripción en `results/investigations/`, gitignored) como
+«después» frente a la corrida `153138` («antes»). El prompt entró por **stdin**
+(`codex exec -`) — se verificó que el STDERR reproduce el prompt completo
+(~32.6K) sin truncar, cerrando el riesgo del límite ~32K de CreateProcess.
+
+Resultado por cluster (los 7 aplicables + credenciales, todos anclados a la
+salida real):
+
+1. **B.7 filescan** — el agente lanzó `windows.filescan.FileScan` por iniciativa
+   del playbook pese a una tarea genérica; 0 filas por degradación de entorno →
+   laguna declarada. Pendiente menor: no remitió el ángulo al disco par.
+2. **MITRE** — cada hallazgo con id de la semilla (T1567/.002 hipótesis) o la
+   declaración «sin técnica de la semilla aplicable». Cero ids inventados.
+3. **Cadena 5 exfil-nube** — correlacionó cliente cloud + ESTABLISHED :443 a
+   `162.125.18.133` (Dropbox) + procesos Office; subió a `medium`/hipótesis con
+   las cautelas (sockets sin Owner no atribuyen). No articuló el relevo temporal
+   `s3browser`→`WINWORD` (candidato a refinamiento; con filescan=0 quedarse en
+   hipótesis es correcto).
+4. **pslist vacío** — interpretado como limitación de símbolos (no ocultación),
+   diagnosticado con `windows.info.Info` (usó la anomalía `PE TimeDateStamp
+   2042`), sin citar T1055.
+5. **Checklist de cierre** — Lagunas recorre los 8 ángulos RAM con estado; nada
+   cae en silencio (`hivelist`=0 declarado).
+6. **Coste** — filtros antes de razonar; reintentos `--pid` de malfind/cmdline
+   hipótesis-guiados y de un solo intento. Ruido residual: parseo JSON con
+   PowerShell en vez de `jq` (del modo autónomo, no del paquete).
+7. **Renombres** — usó `windows.malware.malfind.Malfind` de inicio; reconoció el
+   aviso de deprecación de psxview sin spamearlo.
+- **Credenciales** — canónicos `windows.hashdump/lsadump/cachedump.*` → `invalid
+  choice`; **no inventó** `.registry.*`, guardó el inventario de plugins y lo
+  declaró laguna de build. El `choose from` confirma que ninguno de los tres está
+  registrado (colisión de nombres del entorno), validando el hallazgo técnico.
+
+**Constraint de corpus (no del paquete):** en este build/símbolos la imagen de
+memoria está degradada (pslist/pstree/cmdline/hivelist/filescan = 0 filas; solo
+pool-scanners y netscan responden). El agente se comporta bien, pero el
+rendimiento probatorio es bajo. Decisión pendiente del flujo de corpus:
+conseguir símbolos/ISF que casen o registrar la degradación como constraint.
