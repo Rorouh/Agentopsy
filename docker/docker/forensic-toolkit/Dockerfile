@@ -180,7 +180,11 @@ COPY requirements-windows.txt /tmp/requirements-windows.txt
 RUN pip3 install --no-cache-dir -r /tmp/requirements-windows.txt \
  && rm -f /tmp/requirements-windows.txt
 
-CMD ["sleep", "infinity"]
+# exec-agent: el canal api→maletín (§B). Se copia al final del stage para no
+# invalidar las capas caras (hayabusa/chainsaw/pip) del build. El compose lo arranca
+# con `command:`; este CMD es el default para un `docker run` standalone del maletín.
+COPY exec_agent.py /opt/forensia/exec_agent.py
+CMD ["python3", "/opt/forensia/exec_agent.py"]
 
 # =============================================================================
 # STAGE 3 — unix : artefactos de Unix-like
@@ -200,4 +204,8 @@ RUN apt-get update \
       lnav acl attr \
  && rm -rf /var/lib/apt/lists/*
 
-CMD ["sleep", "infinity"]
+# exec-agent: el canal api→maletín (§B). Se copia al final del stage para no
+# invalidar las capas caras (hayabusa/chainsaw/pip) del build. El compose lo arranca
+# con `command:`; este CMD es el default para un `docker run` standalone del maletín.
+COPY exec_agent.py /opt/forensia/exec_agent.py
+CMD ["python3", "/opt/forensia/exec_agent.py"]

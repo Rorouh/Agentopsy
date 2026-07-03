@@ -184,26 +184,33 @@ instalan explícitamente en el stage `base`; puede que falten). Todos estos huec
 delata ahora el sondeo con `reason` = «binario ausente en <maletín>» en vez del antiguo
 `false` silencioso.
 
-### B.bis — Canal api→maletín (ejecución en vivo) **[pendiente — el resto de §A/§B]**
+### B.bis — Canal api→maletín (exec-agent) **[canal + sondeo HECHOS; dispatcher pendiente]**
 
-`capabilities` reporta la verdad *que puede obtener*: con override por env / binario en el
-`PATH` del `api`, disponible; en el compose desplegado el `api` **no tiene canal** para
-consultar los maletines (ni socket docker ni exec-agent), así que el sondeo dice «no
-consultable desde el api — ver §A/§B» (razón accionable, no adivina). Para que el sondeo
-—y sobre todo la **ejecución real** de tools— funcione en vivo hay que cablear uno de:
+Se eligió la **opción §B (exec-agent)** frente al socket docker en `api` (§A). Montar
+`/var/run/docker.sock` en el `api` —componente que procesa evidencia hostil— equivale a
+root en el host y `:ro` sobre el socket no es una frontera real; §B evita esa escalada y
+respeta SECURITY INVARIANT 1.
 
-- **Socket docker en `api`** (`docker exec` a los contenedores de maletín). Es lo más
-  directo y lo que sugería la tarea, pero montar `/var/run/docker.sock` en el `api`
-  (componente que procesa evidencia hostil) es una **decisión de seguridad**: equivale a
-  root en el host, y `:ro` sobre el socket no es una frontera real. No se añade en esta
-  tarjeta sin acuerdo explícito del equipo.
-- **Exec-agent en cada maletín** sobre la red interna del compose (el `api` habla HTTP a un
-  servidor mínimo dentro del maletín que ejecuta el argv allowlisted). Sin socket, respeta
-  SECURITY INVARIANT 1 y el contrato «argv, shell-free». **Opción recomendada.**
+**Hecho:**
 
-Además, unificar el **dispatcher** (`toolkit/dispatcher.py` + `toolkit/container.py`, hoy
-con el path muerto `docker run <container_image>` de imágenes por-tool) sobre ese mismo
-canal, y retirar entonces el `delivery`/`container_image` legacy del `Tool`.
+- **Exec-agent en cada maletín** (`docker/docker/forensic-toolkit/exec_agent.py`): HTTP
+  stdlib en la red interna del compose, **sin puerto publicado** (mismo modelo de
+  confianza que `ollama`). Endpoints `GET /health`, `POST /which` (presencia de binarios)
+  y `POST /exec` (argv shell-free, `subprocess.run(..., shell=False)`); token opcional
+  `FORENSIA_EXEC_AGENT_TOKEN`. Los maletines lo arrancan con `command:` en el compose y
+  publican `FORENSIA_TOOLKIT_UNIX_URL` / `FORENSIA_TOOLKIT_WINDOWS_URL` al `api`.
+- **Sondeo migrado** (`forensia.toolkit.maletin`): `probe_service`/`probe_binaries` hablan
+  HTTP con el exec-agent en vez de `docker inspect`/`docker exec`. `capabilities` reporta
+  la disponibilidad real de cada tool con el compose por defecto — **sin socket, sin
+  cliente docker en el `api`**. Tests: `backend/tests/test_maletin.py`. Diseño y modelo de
+  amenazas: [`exec-agent.md`](exec-agent.md).
+
+**Pendiente (Parte 2):** unificar el **dispatcher** (`toolkit/dispatcher.py` +
+`toolkit/container.py`, hoy con el path muerto `docker run <container_image>` de imágenes
+por-tool) sobre este mismo canal — que `dispatcher.execute()` mande el argv al
+`POST /exec` del maletín correcto (evidencia en `/evidence` ro dentro del maletín, salidas
+a `/cases`) — y retirar entonces el `delivery`/`container_image` legacy del `Tool`. Con
+eso el agente ejecuta herramientas end-to-end desde el chat.
 
 ### B.ter — Maletines fijados a `linux/amd64` **[hecho 2026-07-03]**
 

@@ -5,31 +5,33 @@ images — `toolkit-windows` / `toolkit-unix` — long-running Linux containers 
 `docker compose up --build`. The api service bundles NONE of them; it reaches a tool
 inside its maletín. This module owns:
 
-  - the maletín registry (id → compose service → default container name), and
-  - the probe: is the maletín container running, and is a tool's binary present in it.
+  - the maletín registry (id → compose service → default container name + exec-agent URL), and
+  - the probe: is the maletín's exec-agent reachable, and is a tool's binary present in it.
 
 Resolver order (CLAUDE.md RULE 1): env override (`FORENSIA_<BIN>_BIN`, resolvable where
 the api runs) → the declared maletín(es) in the catalog. RULE 2: the probe NEVER falls
 back from one maletín to the other — a windows-only tool whose maletín is down is
 unavailable, full stop; a Cross tool is reported per maletín it actually lives in.
 
-The probe talks to the maletín through the host OCI client (`docker`/`podman`). The
-current compose does NOT wire an api→maletín exec path (no docker socket in the api, no
-exec-agent), so in the shipped stack the probe reports each maletín as *not consultable
-from the api* with an actionable reason — the honest truth — instead of the old silent
-"all tools false". Whenever the client IS reachable (a dev running the api on a host
-with docker + the maletines up, or once the exec path is wired) the probe returns the
-real per-tool status. Wiring that path is tracked in
-docs/operacion/proximos-pasos.md §A/§B.
+Channel (docs/operacion/exec-agent.md, proximos-pasos.md §B): the api talks to each
+maletín through its **exec-agent** — a tiny HTTP service the maletín runs on the
+compose-internal network (`http://toolkit-unix:8666` / `http://toolkit-windows:8666`,
+no published port). This replaces the earlier need for the host Docker socket in the
+api (§A): the api never controls the host daemon; it just calls the exec-agent, the
+same trust model it uses for `ollama`. When the URL is not configured (standalone dev
+without the compose) the probe reports each maletín as *not consultable* with an
+actionable reason — the honest truth — instead of guessing availability.
 """
 
 from __future__ import annotations
 
+import json
 import os
-import subprocess
+import urllib.error
+import urllib.request
 from typing import TYPE_CHECKING, Any
 
-from forensia.toolkit.resolver import container_runtime, resolve
+from forensia.toolkit.resolver import resolve
 
 if TYPE_CHECKING:  # avoid an import cycle — snapshot() takes the catalog as an argument
     from collections.abc import Iterable
@@ -43,13 +45,21 @@ MALETINES: tuple[str, ...] = (TOOLKIT_UNIX, TOOLKIT_WINDOWS)
 
 # compose service → default container_name (docker-compose.yml pins these). Overridable
 # per-service via FORENSIA_TOOLKIT_WINDOWS_CONTAINER / FORENSIA_TOOLKIT_UNIX_CONTAINER
-# so a non-default compose project name still resolves.
+# so a non-default compose project name still resolves. Kept for the display `container`
+# field; the exec-agent channel is addressed by URL, not by container name.
 _DEFAULT_CONTAINER = {
     TOOLKIT_WINDOWS: "forensia-toolkit-windows",
     TOOLKIT_UNIX: "forensia-toolkit-unix",
 }
 
-# Probe subprocess budget: a maletín that does not answer quickly is treated as
+# compose service → env var carrying its exec-agent base URL. The compose `api` service
+# sets these to the internal-network URLs; standalone runs export them explicitly.
+_URL_ENV = {
+    TOOLKIT_WINDOWS: "FORENSIA_TOOLKIT_WINDOWS_URL",
+    TOOLKIT_UNIX: "FORENSIA_TOOLKIT_UNIX_URL",
+}
+
+# Probe HTTP budget: a maletín whose exec-agent does not answer quickly is treated as
 # unreachable rather than blocking the capabilities snapshot.
 _PROBE_TIMEOUT = 5
 
@@ -61,78 +71,93 @@ def container_name(service: str) -> str:
     return os.environ.get(key) or _DEFAULT_CONTAINER[service]
 
 
-def _run(argv: list[str]) -> subprocess.CompletedProcess:
-    """Single shell-free choke point so tests can monkeypatch the OCI calls."""
-    return subprocess.run(  # noqa: S603 — argv list, shell=False, no interpolation
-        argv,
-        capture_output=True,
-        text=True,
-        timeout=_PROBE_TIMEOUT,
-        shell=False,
-    )
+def service_url(service: str) -> str | None:
+    """Base URL of a maletín's exec-agent, or None when it is not configured."""
+    if service not in _URL_ENV:
+        raise ValueError(f"unknown maletín service {service!r} (expected one of {MALETINES})")
+    val = os.environ.get(_URL_ENV[service])
+    return val.strip().rstrip("/") if val and val.strip() else None
 
 
-def _no_client_reason() -> str:
+def _request(method: str, url: str, payload: dict | None = None) -> tuple[int, dict]:
+    """Single shell-free HTTP choke point so tests can monkeypatch the exec-agent calls.
+
+    Returns (status_code, parsed_json). Raises urllib/OSError on a transport failure and
+    ValueError on an unparseable body — callers translate those into an actionable reason.
+    """
+    data = None
+    headers: dict[str, str] = {}
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    token = os.environ.get("FORENSIA_EXEC_AGENT_TOKEN")
+    if token:
+        headers["X-Forensia-Exec-Token"] = token
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    with urllib.request.urlopen(req, timeout=_PROBE_TIMEOUT) as resp:  # noqa: S310 — fixed internal URL
+        body = resp.read().decode("utf-8")
+        return resp.status, (json.loads(body) if body else {})
+
+
+def _no_url_reason(service: str) -> str:
     return (
-        "el servicio api no puede consultar los maletines: no hay cliente OCI "
-        "(docker/podman) ni un canal api→maletín cableado — ver "
-        "docs/operacion/proximos-pasos.md §A/§B"
+        f"el servicio api no tiene configurada la URL del exec-agent del maletín "
+        f"('{_URL_ENV[service]}'). En el compose la fija el servicio api "
+        f"(http://{service}:8666); en ejecución standalone expórtala. Ver "
+        f"docs/operacion/exec-agent.md"
     )
 
 
-def probe_service(service: str, *, client: str | None) -> dict[str, Any]:
-    """Report whether a maletín container is running.
+def probe_service(service: str, *, base_url: str | None) -> dict[str, Any]:
+    """Report whether a maletín's exec-agent is reachable.
 
-    `running` is True/False when we could ask, or None when the api has no way to
-    consult the maletín (then `reason` names why).
+    `running` is True when the exec-agent answers, False when it answers with an error,
+    and None when the api has no way to consult it (no URL, or a transport failure) —
+    then `reason` names why.
     """
     name = container_name(service)
-    base: dict[str, Any] = {"service": service, "container": name}
-    if client is None:
-        return {**base, "running": None, "reason": _no_client_reason()}
+    base: dict[str, Any] = {"service": service, "container": name, "url": base_url}
+    if not base_url:
+        return {**base, "running": None, "reason": _no_url_reason(service)}
     try:
-        proc = _run([client, "inspect", "-f", "{{.State.Running}}", name])
-    except (OSError, subprocess.SubprocessError) as exc:
-        return {**base, "running": None, "reason": f"no se pudo consultar '{name}': {type(exc).__name__}"}
-    if proc.returncode != 0:
-        detail = (proc.stderr or "").strip().splitlines()
-        why = detail[-1][:200] if detail else "contenedor no encontrado o daemon inaccesible"
-        return {**base, "running": False, "reason": f"maletín '{name}' inaccesible: {why}"}
-    running = proc.stdout.strip().lower() == "true"
-    reason = None if running else f"maletín '{name}' existe pero no está en ejecución"
-    return {**base, "running": running, "reason": reason}
+        status, body = _request("GET", f"{base_url}/health")
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        return {
+            **base,
+            "running": None,
+            "reason": (
+                f"no se pudo consultar el exec-agent en {base_url} "
+                f"({type(exc).__name__}) — ¿está el maletín '{name}' levantado?"
+            ),
+        }
+    if status == 200 and isinstance(body, dict) and body.get("ok"):
+        return {**base, "running": True, "reason": None}
+    return {
+        **base,
+        "running": False,
+        "reason": f"exec-agent en {base_url} respondió estado {status} — maletín '{name}' inaccesible",
+    }
 
 
-def probe_binaries(service: str, binaries: Iterable[str], *, client: str) -> set[str] | None:
-    """Return the subset of `binaries` present on PATH inside the maletín container.
+def probe_binaries(service: str, binaries: Iterable[str], *, base_url: str) -> set[str] | None:
+    """Return the subset of `binaries` present on PATH inside the maletín.
 
-    One `exec` per maletín (batched). Binaries are passed as positional args to an
-    in-container `sh` (never interpolated into the command string). None if the exec
-    itself could not run — the caller then reports the binaries as un-checkable.
+    One POST /which per maletín (batched). None if the call itself could not complete —
+    the caller then reports the binaries as un-checkable.
     """
     names = list(binaries)
     if not names:
         return set()
-    name = container_name(service)
-    # The trailing `:` forces the script to exit 0 whatever the last `command -v` did —
-    # a `for` loop otherwise inherits the status of its final iteration, so a missing
-    # LAST binary would look like an exec failure. Binaries are positional args ($@),
-    # never interpolated into the command string.
-    argv = [
-        client, "exec", name,
-        "sh", "-c",
-        'for b in "$@"; do command -v "$b" >/dev/null 2>&1 && printf "%s\\n" "$b"; done; :',
-        "sh", *names,
-    ]
     try:
-        proc = _run(argv)
-    except (OSError, subprocess.SubprocessError):
+        status, body = _request("POST", f"{base_url}/which", {"binaries": names})
+    except (urllib.error.URLError, OSError, ValueError):
         return None
-    # A non-zero code now means `docker exec` itself could not launch (container not
-    # running, 125/126/127) — we could not check, so the caller degrades truthfully.
-    if proc.returncode != 0:
+    if status != 200 or not isinstance(body, dict):
         return None
-    return {line.strip() for line in proc.stdout.splitlines() if line.strip()}
+    present = body.get("present")
+    if not isinstance(present, list):
+        return None
+    return {b for b in present if isinstance(b, str)}
 
 
 def _tool_status(
@@ -210,25 +235,28 @@ def _tool_status(
 def snapshot(catalog: Iterable[Tool]) -> dict[str, Any]:
     """Full maletín view for `capabilities`: per-maletín status + per-tool availability.
 
-    Probes each maletín once and batches the binary check per running maletín, so a
-    snapshot costs at most 2 `inspect` + 2 `exec` calls (and zero when the api has no
-    OCI client). Takes the catalog as an argument to avoid an import cycle.
+    Probes each maletín's exec-agent once and batches the binary check per reachable
+    maletín, so a snapshot costs at most 2 GET /health + 2 POST /which calls (and zero
+    when no maletín URL is configured). Takes the catalog as an argument to avoid an
+    import cycle.
     """
     tools = list(catalog)
-    runtime = container_runtime()
-    client = str(runtime) if runtime is not None else None
+    urls = {svc: service_url(svc) for svc in MALETINES}
+    any_url = any(u is not None for u in urls.values())
 
-    services = {svc: probe_service(svc, client=client) for svc in MALETINES}
+    services = {svc: probe_service(svc, base_url=urls[svc]) for svc in MALETINES}
 
     present: dict[str, set[str] | None] = {}
-    if client is not None:
-        for svc, info in services.items():
-            if info["running"]:
-                wanted = sorted({t.binary for t in tools if svc in t.toolkits})
-                present[svc] = probe_binaries(svc, wanted, client=client)
+    for svc, info in services.items():
+        if info["running"]:
+            wanted = sorted({t.binary for t in tools if svc in t.toolkits})
+            present[svc] = probe_binaries(svc, wanted, base_url=urls[svc])
 
     return {
-        "client": client is not None,
+        # True when at least one maletín exec-agent URL is configured — i.e. the api has
+        # a channel to consult the maletines at all. Per-maletín reachability is in
+        # `services`.
+        "client": any_url,
         "services": services,
         "tools": {t.id: _tool_status(t, services, present) for t in tools},
     }

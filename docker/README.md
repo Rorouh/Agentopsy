@@ -90,20 +90,24 @@ Catálogo completo de herramientas y ejemplos: [`docs/CATALOGO_MALETIN.md`](docs
 
 ## Cómo lo consulta la IA (tool-calling)
 
-El maletín queda **habilitado para que el agente lo consulte** así:
+El maletín queda **habilitado para que el `api` lo consulte** así:
 
-- Cada contenedor se mantiene vivo (`sleep infinity`) con todas las herramientas
-  en el `PATH`, las evidencias en `/evidence:ro` y las salidas en `/cases`.
-- El orquestador de IA expone cada herramienta CLI como una función invocable y,
-  cuando el modelo decide usarla, ejecuta el comando dentro del contenedor:
+- Cada contenedor corre el **exec-agent** (`python3 /opt/forensia/exec_agent.py`) con
+  todas las herramientas en el `PATH`, las evidencias en `/evidence:ro` y las salidas en
+  `/cases`. El exec-agent es un HTTP mínimo en la red interna del compose (`:8666`, **sin
+  puerto publicado**) — es el canal api→maletín §B, sin socket de Docker. Ver
+  [`docs/operacion/exec-agent.md`](../docs/operacion/exec-agent.md).
+- El `api` consulta presencia de tools (`GET /health`, `POST /which`) por HTTP a
+  `http://toolkit-unix:8666` / `http://toolkit-windows:8666` — es lo que reporta
+  `capabilities`. La ejecución de tools (`POST /exec`) está lista en el agente; el
+  dispatcher del `api` se realineará sobre ella (Parte 2, `proximos-pasos.md` §B.bis).
+- A mano, para depurar, también puedes ejecutar directamente dentro del contenedor:
 
   ```bash
-  docker exec forensia-toolkit-windows <herramienta> <args...>
+  docker compose exec toolkit-windows <herramienta> <args...>
   ```
 
-  La salida (stdout/stderr/JSON) se devuelve al modelo como resultado de la
-  llamada. El agente Windows apunta a `toolkit-windows` y el Unix-like a
-  `toolkit-unix`.
+  El agente Windows apunta a `toolkit-windows` y el Unix-like a `toolkit-unix`.
 - Este es el «contrato CLI→JSON» del documento. La capa de *wrappers* que
   formaliza ese contrato y los *system prompts* de cada agente se implementan en
   la siguiente fase (no incluidos en esta entrega, que cubre Dockerfile + compose).
