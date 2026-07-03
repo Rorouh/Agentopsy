@@ -56,7 +56,7 @@ reproduce el mismo digest para poder anotarlo aquí.
 |---|---|---|---|---|---|---|---|---|---|---|
 | `lonewolf-2018-disk` | LoneWolf (Windows 10) — disco | [2018 Lone Wolf Scenario](https://digitalcorpora.org/corpora/scenarios/2018-lone-wolf-scenario/) | uso educativo/investigación (ver *Lone Wolf Scenario Copyright.pdf*) | disk | `.E01` (multi-segmento) | Windows 10 | 13 545 502 470 B (~12.62 GiB, E01–E09) | variante (a) E01: **9 segmentos verificados** (tabla por segmento en «Detalle»); variante (b) imagen única `.raw`/ZIP: `<pendiente>` | `evidence-corpus/lonewolf-2018/` | [lonewolf-2018.md](ground-truth/lonewolf-2018.md) |
 | `lonewolf-2018-memory` | LoneWolf (Windows 10) — memoria RAM | [2018 Lone Wolf Scenario](https://digitalcorpora.org/corpora/scenarios/2018-lone-wolf-scenario/) | uso educativo/investigación (ver *Lone Wolf Scenario Copyright.pdf*) | memory | `.mem` (raw, Volatility3) | Windows 10 | ~17 GB | `<pendiente: computar tras descarga con scripts/hash-evidence.py>` | `evidence-corpus/lonewolf-2018/` | [lonewolf-2018.md](ground-truth/lonewolf-2018.md) |
-| `m57-patents-jo-mem-20091124` | M57-Patents (Jo, Windows XP) — memoria RAM 2009-11-24 | [2009 M57-Patents](https://digitalcorpora.org/corpora/scenarios/m57-patents-scenario/) | uso educativo/investigación (solución restringida a faculty) | memory | `.mddramimage` (raw mdd, dentro de ZIP) | Windows XP | 1 071 632 384 B (~1.02 GiB) | `5abe455dd05b0a8728e8e155212c49b4a78f3cf1b695c463938c0431eaf959ec` | `evidence-corpus/m57-patents/ram/jo-2009-11-24/` | `<pendiente: ground-truth/m57-patents.md (instructor packet)>` |
+| `m57-patents-jo-mem-20091124` | M57-Patents (Jo, Windows XP) — memoria RAM 2009-11-24 | [2009 M57-Patents](https://digitalcorpora.org/corpora/scenarios/m57-patents-scenario/) | uso educativo/investigación (solución restringida a faculty) | memory | `.mddramimage` (raw mdd, dentro de ZIP) | Windows XP | 1 071 632 384 B (~1.02 GiB) | `5abe455dd05b0a8728e8e155212c49b4a78f3cf1b695c463938c0431eaf959ec` | `evidence-corpus/m57-patents/ram/jo-2009-11-24/` | [m57-patents.md](ground-truth/m57-patents.md) (derivado de fuentes públicas) |
 
 ### Hash de adquisición (FTK) — solo entrada de disco
 
@@ -163,6 +163,8 @@ Tamaño total verificado: 13545502470 bytes (~12.62 GiB).
 | `jo-2009-11-24/jo-2009-11-24.mddramimage` (raw, corre M2) | `5abe455dd05b0a8728e8e155212c49b4a78f3cf1b695c463938c0431eaf959ec` | 1071632384 |
 | `jo-2009-11-24.mddramimage.zip` (procedencia) | `5a760961f21ae1b3af3fbed4ee083428437a7a0f0c8da94b355a1fb45e6913f7` | 499046715 |
 
-- **Ground-truth**: `<pendiente>` — `ground-truth/m57-patents.md` se monta desde la
-  sección *Exfiltration* del instructor packet (restringido a faculty; solo resumen
-  derivado en git, no el packet verbatim).
+- **Ground-truth**: [m57-patents.md](ground-truth/m57-patents.md) — traza dorada
+  **derivada de fuentes públicas** (diapositivas `M57-Patents-Exfiltration.pdf`,
+  detective report, affidavit; NO del instructor packet cifrado). Hilo Jo /
+  exfiltración de patentes vía Outlook Express + staging en `Pics\Hidden`; incluye
+  el scoring de la corrida zero-shot 11-24 y las ampliaciones MITRE propuestas.
