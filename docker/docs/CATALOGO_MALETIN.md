@@ -131,6 +131,15 @@ docker compose exec toolkit-windows prefetch.py -c -f /evidence/Windows/Prefetch
 docker compose exec toolkit-windows hindsight.py -i "/cases/mnt/Users/jdoe/AppData/Local/Google/Chrome/User Data/Default" -o /cases/hindsight
 ```
 
+> **Defectos conocidos (self-test 2026-07-01, ver
+> `docker/projects/_selftest/REPORT.md`):** `evtx_dump` no arranca (el wheel de
+> PyPI `python-evtx==0.8.1` referencia un módulo `scripts` que no empaqueta),
+> `hayabusa` no arranca en `ubuntu:22.04` (el binario `v3.9.0` requiere
+> GLIBC ≥ 2.39, la base trae 2.35) y `hindsight.py` no arranca (`pyhindsight`
+> importa `ccl_chromium_reader`, que no está publicado en PyPI). Los tres
+> requieren una decisión de fijación de versión/empaquetado antes de darse por
+> funcionales; no se corrigen con un cambio de flags.
+
 ## Artefactos Unix-like — maletín `toolkit-unix`
 
 | Herramienta | Comando | Para qué |

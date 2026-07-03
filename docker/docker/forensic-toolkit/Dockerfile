@@ -115,7 +115,8 @@ echo "  volatility3                       : $(command -v vol || echo 'NO')"
 echo "===================================================================="
 EOF
 
-RUN chmod +x /opt/forensia/bin/forensia-hash /opt/forensia/bin/forensia-info
+RUN sed -i 's/\r$//' /opt/forensia/bin/forensia-hash /opt/forensia/bin/forensia-info \
+ && chmod +x /opt/forensia/bin/forensia-hash /opt/forensia/bin/forensia-info
 
 WORKDIR /cases
 
@@ -145,7 +146,8 @@ RUN git clone --depth 1 https://github.com/keydet89/RegRipper3.0.git /opt/regrip
 # Wrapper de RegRipper 3.0: se ejecuta desde su carpeta para localizar plugins.
 cd /opt/regripper && exec perl rip.pl "$@"
 EOF
-RUN chmod +x /usr/local/bin/rip.pl && ln -sf /usr/local/bin/rip.pl /usr/local/bin/regripper
+RUN sed -i 's/\r$//' /usr/local/bin/rip.pl \
+ && chmod +x /usr/local/bin/rip.pl && ln -sf /usr/local/bin/rip.pl /usr/local/bin/regripper
 
 # --- hayabusa (Sigma sobre EVTX) ---------------------------------------------
 # El zip incluye el binario + rules/ + config/. Reglas en /opt/hayabusa/rules.
@@ -178,7 +180,9 @@ ENV CHAINSAW_RULES=/opt/chainsaw-src/rules \
 # --- Parsers de artefactos Windows (Python) ----------------------------------
 COPY requirements-windows.txt /tmp/requirements-windows.txt
 RUN pip3 install --no-cache-dir -r /tmp/requirements-windows.txt \
- && rm -f /tmp/requirements-windows.txt
+ && rm -f /tmp/requirements-windows.txt \
+ # pyhindsight instala hindsight.py como script de datos sin bit +x (defecto del paquete)
+ && chmod +x /usr/local/bin/hindsight.py
 
 CMD ["sleep", "infinity"]
 
