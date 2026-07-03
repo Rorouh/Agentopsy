@@ -63,6 +63,17 @@ _URL_ENV = {
 # unreachable rather than blocking the capabilities snapshot.
 _PROBE_TIMEOUT = 5
 
+# Default wall-clock for a tool run when the caller does not pass one. The HTTP read
+# timeout is set above the tool timeout so the transport never trips before the tool.
+_EXEC_DEFAULT_TIMEOUT = 600
+
+
+class MaletinExecError(RuntimeError):
+    """The exec-agent could not run the argv (URL not configured, unreachable, or a
+    malformed response). Raised by `run_argv_in_maletin`; the dispatcher translates it
+    into a `ToolExecutionError`. A tool that RUNS and fails is NOT this — that returns a
+    non-zero exit code."""
+
 
 def container_name(service: str) -> str:
     if service not in _DEFAULT_CONTAINER:
@@ -79,11 +90,14 @@ def service_url(service: str) -> str | None:
     return val.strip().rstrip("/") if val and val.strip() else None
 
 
-def _request(method: str, url: str, payload: dict | None = None) -> tuple[int, dict]:
+def _request(
+    method: str, url: str, payload: dict | None = None, *, timeout: float = _PROBE_TIMEOUT
+) -> tuple[int, dict]:
     """Single shell-free HTTP choke point so tests can monkeypatch the exec-agent calls.
 
     Returns (status_code, parsed_json). Raises urllib/OSError on a transport failure and
     ValueError on an unparseable body — callers translate those into an actionable reason.
+    `timeout` defaults to the short probe budget; `/exec` passes a longer one.
     """
     data = None
     headers: dict[str, str] = {}
@@ -94,9 +108,41 @@ def _request(method: str, url: str, payload: dict | None = None) -> tuple[int, d
     if token:
         headers["X-Forensia-Exec-Token"] = token
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    with urllib.request.urlopen(req, timeout=_PROBE_TIMEOUT) as resp:  # noqa: S310 — fixed internal URL
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 — fixed internal URL
         body = resp.read().decode("utf-8")
         return resp.status, (json.loads(body) if body else {})
+
+
+def run_argv_in_maletin(
+    service: str, argv: list[str], *, timeout: float | None = None
+) -> tuple[int, str, str]:
+    """Run a fully-resolved argv inside a maletín via its exec-agent `POST /exec`.
+
+    `argv` is `[binary, *args]` as the tool sees it inside the maletín — paths must
+    reference the maletín's mounts (`/evidence` ro, `/cases`), which are the SAME host
+    dirs the api mounts, so no path translation is needed. Returns (exit, stdout, stderr).
+    Raises `MaletinExecError` when the exec-agent cannot be reached / is not configured;
+    a tool that runs and fails returns a non-zero exit code (not an exception).
+    """
+    base_url = service_url(service)
+    if not base_url:
+        raise MaletinExecError(_no_url_reason(service))
+    if not isinstance(argv, list) or not argv or not all(isinstance(a, str) for a in argv):
+        raise MaletinExecError("argv debe ser una list[str] no vacía (shell-free)")
+    http_timeout = (float(timeout) if timeout else _EXEC_DEFAULT_TIMEOUT) + 30
+    try:
+        status, body = _request(
+            "POST", f"{base_url}/exec", {"argv": argv, "timeout": timeout}, timeout=http_timeout
+        )
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        raise MaletinExecError(
+            f"no se pudo ejecutar en el exec-agent {base_url} ({type(exc).__name__}): {exc}"
+        ) from exc
+    if status != 200 or not isinstance(body, dict) or "exit" not in body:
+        raise MaletinExecError(
+            f"el exec-agent {base_url} devolvió una respuesta inesperada (estado {status})"
+        )
+    return int(body["exit"]), str(body.get("stdout", "")), str(body.get("stderr", ""))
 
 
 def _no_url_reason(service: str) -> str:

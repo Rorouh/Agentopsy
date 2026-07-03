@@ -184,7 +184,7 @@ instalan explícitamente en el stage `base`; puede que falten). Todos estos huec
 delata ahora el sondeo con `reason` = «binario ausente en <maletín>» en vez del antiguo
 `false` silencioso.
 
-### B.bis — Canal api→maletín (exec-agent) **[canal + sondeo HECHOS; dispatcher pendiente]**
+### B.bis — Canal api→maletín (exec-agent) **[HECHO — canal + sondeo + dispatcher]**
 
 Se eligió la **opción §B (exec-agent)** frente al socket docker en `api` (§A). Montar
 `/var/run/docker.sock` en el `api` —componente que procesa evidencia hostil— equivale a
@@ -205,12 +205,21 @@ respeta SECURITY INVARIANT 1.
   cliente docker en el `api`**. Tests: `backend/tests/test_maletin.py`. Diseño y modelo de
   amenazas: [`exec-agent.md`](exec-agent.md).
 
-**Pendiente (Parte 2):** unificar el **dispatcher** (`toolkit/dispatcher.py` +
-`toolkit/container.py`, hoy con el path muerto `docker run <container_image>` de imágenes
-por-tool) sobre este mismo canal — que `dispatcher.execute()` mande el argv al
-`POST /exec` del maletín correcto (evidencia en `/evidence` ro dentro del maletín, salidas
-a `/cases`) — y retirar entonces el `delivery`/`container_image` legacy del `Tool`. Con
-eso el agente ejecuta herramientas end-to-end desde el chat.
+- **Dispatcher unificado (Parte 2)** — `toolkit/dispatcher.py` ejecuta las tools por el
+  exec-agent: si el binario no está en el PATH del `api` (RULE 1), `execute()` selecciona
+  el maletín por `os_profile` (`_select_maletin`, sin fallback entre maletines — RULE 2) y
+  manda `[binary, *argv]` al `POST /exec` vía `maletin.run_argv_in_maletin`. Rutas sin
+  traducción: `/evidence` (ro) y `/cases` están montados en las MISMAS rutas en api y
+  maletín. Se retiró el path muerto `docker run <container_image>` (el `delivery`/
+  `container_image` legacy del `Tool` queda sin usar). `os_profile` se cablea desde los
+  dos llamadores (`agent.py`, `mcp/toolkit.py`). Verificado end-to-end sobre una imagen
+  real (`tsk_fls` → 22 entradas, ArtifactRun + audit hash-chained). Tests:
+  `backend/tests/test_dispatcher.py`. **Con esto el agente ejecuta herramientas end-to-end
+  desde el chat.**
+
+**Pendiente menor:** retirar formalmente los campos `delivery`/`container_image` del
+`Tool` y `toolkit/container.py` (hoy sin consumidores en el dispatcher; los conserva
+`test_container.py`).
 
 ### B.ter — Maletines fijados a `linux/amd64` **[hecho 2026-07-03]**
 

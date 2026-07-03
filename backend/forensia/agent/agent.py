@@ -213,7 +213,9 @@ class ForensicAgent:
                 )
 
                 try:
-                    result = dispatch_tool(action.tool_id, params, case_id=case_id)
+                    result = dispatch_tool(
+                        action.tool_id, params, case_id=case_id, os_profile=self.os_profile
+                    )
                 except ToolExecutionError as exc:
                     messages.append(
                         self._tool_result_msg(action, {"error": f"ToolExecutionError: {exc}"})

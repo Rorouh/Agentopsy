@@ -276,10 +276,14 @@ maletín); the two toolkit images are pinned to `linux/amd64` (the GIFT PPA has 
 arm64 — emulated on Apple Silicon). The api→maletín channel is wired via the **exec-agent**
 (§B): each maletín runs `exec_agent.py` (stdlib HTTP, internal network, no published port,
 no host Docker socket) exposing `/health`, `/which` and `/exec`; the api reaches it at
-`FORENSIA_TOOLKIT_{UNIX,WINDOWS}_URL` (see docs/operacion/exec-agent.md). Remaining:
-realign the **dispatcher** (`toolkit/dispatcher.py`, still on the dead per-tool `docker run`
-path) onto `POST /exec` so the agent executes tools end-to-end, and absorb the last Windows
-tools into the maletín Dockerfiles (docs/operacion/proximos-pasos.md §B.bis / §A). The SPA talks to the api
+`FORENSIA_TOOLKIT_{UNIX,WINDOWS}_URL` (see docs/operacion/exec-agent.md). The **dispatcher**
+now runs tools through that channel: `dispatcher.execute()` resolves a binary on the api
+PATH (dev) or else routes `[binary, *argv]` to the tool's maletín via `POST /exec`
+(`maletin.run_argv_in_maletin`), choosing the maletín by `os_profile` with no cross-maletín
+fallback (RULE 2) — so the agent executes tools end-to-end from the chat (verified: `tsk_fls`
+over a real image → 22 entries + ArtifactRun + hash-chained audit). Remaining: absorb the
+last Windows tools into the maletín Dockerfiles, and drop the now-unused legacy
+`delivery`/`container_image` on `Tool` (docs/operacion/proximos-pasos.md §B.bis / §A). The SPA talks to the api
 through
 `web/src/api/client.ts` (token from `GET /api/session`, memory-only), carries the
 executor selector + audited cloud-consent flow, and registers evidence from the
