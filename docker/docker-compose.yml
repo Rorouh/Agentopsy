@@ -15,13 +15,20 @@
 name: forensia
 
 # Ajustes comunes a los dos maletines
+#
+# La carpeta de evidencias es CONFIGURABLE: el operador define
+# FORENSIA_EVIDENCE_DIR (export o fichero .env junto a este compose) apuntando a
+# la carpeta única del caso — el diseño de la app final es "una carpeta de
+# evidencia elegida por el usuario". Sin variable definida se usa ./evidence
+# (default de diseño, documentado en README.md). Nunca rutas absolutas
+# hardcodeadas de un host concreto en ficheros versionados.
 x-toolkit-common: &toolkit-common
   working_dir: /cases
   restart: unless-stopped
   stop_grace_period: 5s
   volumes:
-    - ./evidence:/evidence:ro      # evidencias en SOLO LECTURA (cadena de custodia)
-    - ./projects:/cases            # proyectos, salidas e informes
+    - ${FORENSIA_EVIDENCE_DIR:-./evidence}:/evidence:ro   # evidencias en SOLO LECTURA (cadena de custodia)
+    - ${FORENSIA_CASES_DIR:-./projects}:/cases            # proyectos, salidas e informes
   # Capacidades necesarias SOLO para montar imágenes (.vmdk/.raw) en read-only
   # con guestmount/qemu-nbd dentro del contenedor. Si no vas a montar dentro del
   # contenedor, puedes comentar cap_add/devices/security_opt.

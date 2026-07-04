@@ -20,6 +20,15 @@ Unix-like). Es la base sobre la que los agentes de IA harán *tool-calling*
 - Conexión a Internet en el primer build (descarga paquetes, hayabusa y chainsaw).
 - Linux o Windows/macOS con Docker Desktop. En Windows usa WSL2 como backend.
 
+> **En Linux usa el Docker Engine nativo** (contexto `default`), no Docker
+> Desktop. Docker Desktop —también en Linux— ejecuta los contenedores dentro de
+> una VM y los bind-mounts pasan por su capa de compartición de ficheros: eso
+> rompe el invariante de soundness para montar evidencia (ver
+> `docs/soundness-forense.md` del repo raíz) y además su file-sharing no cubre
+> rutas fuera de `$HOME` (p. ej. `/mnt`). Si tienes ambos instalados:
+> `docker context use default` o prefija los comandos con
+> `docker --context default …`.
+
 ## Estructura
 
 ```
@@ -51,10 +60,29 @@ docker compose exec toolkit-unix    forensia-info
 Debería listar cada herramienta con su ruta. El primer build tarda (compila e
 instala plaso y descarga ~50 MB de binarios); los siguientes usan caché.
 
+## Carpeta de evidencia configurable
+
+La aplicación final centraliza todas las evidencias del caso en **una única
+carpeta que elige el usuario**. El compose refleja ese diseño: la carpeta que
+se monta en `/evidence` (solo lectura) se configura con la variable
+`FORENSIA_EVIDENCE_DIR`, y la de salidas (`/cases`) con `FORENSIA_CASES_DIR`.
+Sin variables definidas se usan `./evidence` y `./projects` (defaults de
+diseño, relativos a este directorio). Nunca escribas rutas absolutas de tu
+host en los ficheros versionados.
+
+```bash
+# Opción A: variable de entorno puntual
+FORENSIA_EVIDENCE_DIR=/ruta/al/caso/evidencia docker compose up -d
+
+# Opción B: fichero .env junto al docker-compose.yml (ignorado por git)
+echo 'FORENSIA_EVIDENCE_DIR=/ruta/al/caso/evidencia' > .env
+docker compose up -d
+```
+
 ## Uso básico
 
-1. Copia la evidencia a `./evidence/` (se monta en `/evidence` en **solo
-   lectura**).
+1. Apunta `FORENSIA_EVIDENCE_DIR` a la carpeta de evidencia del caso (o copia
+   la evidencia a `./evidence/`). Se monta en `/evidence` en **solo lectura**.
 2. Verifica integridad (cadena de custodia):
 
    ```bash

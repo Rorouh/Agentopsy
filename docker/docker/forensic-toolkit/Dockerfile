@@ -57,8 +57,18 @@ RUN apt-get update \
       plaso-tools \
  && rm -rf /var/lib/apt/lists/*
 
-# --- Volatility 3 (memoria RAM, Cross) ---------------------------------------
-RUN pip3 install --no-cache-dir "volatility3==${VOLATILITY3_VERSION}"
+# --- pip moderno + Volatility 3 (memoria RAM, Cross) -------------------------
+# Versión de pip (fijada). El pip 22.0.2 de Ubuntu 22.04 (parcheado por Debian)
+# siembra el build-isolation con el setuptools 59.6 del sistema
+# (/usr/share/python-wheels), anterior a PEP 621: los paquetes que declaran su
+# metadata solo en [project] de pyproject.toml (p. ej. ccl_chromium_reader)
+# construyen como "UNKNOWN-0.0.0" y la instalación falla. El pip de PyPI
+# resuelve setuptools>=61 desde el índice y no tiene ese defecto.
+# (ARG declarado aquí y no arriba: añadirlo antes del RUN de apt invalidaría
+# la caché de esa capa, que es la más costosa del build.)
+ARG PIP_VERSION=26.1.2
+RUN pip3 install --no-cache-dir "pip==${PIP_VERSION}" \
+ && pip3 install --no-cache-dir "volatility3==${VOLATILITY3_VERSION}"
 
 # --- Layout de trabajo -------------------------------------------------------
 #   /evidence -> evidencias montadas en SOLO LECTURA (cadena de custodia)
@@ -128,8 +138,11 @@ FROM base AS windows
 ENV FORENSIA_STAGE=windows
 
 # Versiones fijadas de binarios descargados (override con --build-arg)
+# hayabusa: build MUSL (enlazado estático). El build gnu de 3.9.0 exige
+# GLIBC >= 2.38 y ubuntu:22.04 trae 2.35 — el binario ni arranca (FAIL 2 del
+# self-test 2026-07-01). El musl no depende de la libc de la base.
 ARG HAYABUSA_VERSION=3.9.0
-ARG HAYABUSA_SHA256=ffb31e02bd47d840d999d964d4663287cdb194a22ea856904348786acba414d7
+ARG HAYABUSA_SHA256=c2fa65e4f255db17615c7c9d0acc9030c27db73f27b097499718930a48e420a3
 ARG CHAINSAW_VERSION=2.16.0
 ARG CHAINSAW_SHA256=5d46cd140838413aeb5711451a282b3922443d9ec6afaea3e6b6b220454fd807
 
@@ -152,11 +165,11 @@ RUN sed -i 's/\r$//' /usr/local/bin/rip.pl \
 # --- hayabusa (Sigma sobre EVTX) ---------------------------------------------
 # El zip incluye el binario + rules/ + config/. Reglas en /opt/hayabusa/rules.
 RUN cd /tmp \
- && wget -q "https://github.com/Yamato-Security/hayabusa/releases/download/v${HAYABUSA_VERSION}/hayabusa-${HAYABUSA_VERSION}-lin-x64-gnu.zip" -O hayabusa.zip \
+ && wget -q "https://github.com/Yamato-Security/hayabusa/releases/download/v${HAYABUSA_VERSION}/hayabusa-${HAYABUSA_VERSION}-lin-x64-musl.zip" -O hayabusa.zip \
  && echo "${HAYABUSA_SHA256}  hayabusa.zip" | sha256sum -c - \
  && mkdir -p /opt/hayabusa \
  && unzip -q hayabusa.zip -d /opt/hayabusa \
- && BIN="$(find /opt/hayabusa -type f -name 'hayabusa-*-lin-x64-gnu' | head -n1)" \
+ && BIN="$(find /opt/hayabusa -type f -name 'hayabusa-*-lin-x64-musl' | head -n1)" \
  && chmod +x "$BIN" \
  && ln -sf "$BIN" /usr/local/bin/hayabusa \
  && rm -f hayabusa.zip
@@ -183,6 +196,49 @@ RUN pip3 install --no-cache-dir -r /tmp/requirements-windows.txt \
  && rm -f /tmp/requirements-windows.txt \
  # pyhindsight instala hindsight.py como script de datos sin bit +x (defecto del paquete)
  && chmod +x /usr/local/bin/hindsight.py
+
+# --- evtx_dump: wrapper vendorizado sobre python-evtx -------------------------
+# El wheel de PyPI de python-evtx (0.8.1) declara sus console_scripts contra un
+# paquete `scripts.*` que NO se incluye en el wheel: todos los entrypoints
+# evtx_* mueren con ModuleNotFoundError (FAIL 1 del self-test 2026-07-01).
+# Se eliminan los entrypoints rotos y se vendoriza un wrapper equivalente al
+# scripts/evtx_dump.py upstream sobre la librería Evtx (esa sí empaquetada).
+RUN rm -f /usr/local/bin/evtx_* \
+ && cat > /usr/local/bin/evtx_dump <<'EOF'
+#!/usr/bin/env python3
+"""Vuelca un log de eventos .evtx de Windows a XML por stdout.
+
+Wrapper propio de FORENSIA equivalente al scripts/evtx_dump.py del repo
+upstream de python-evtx, cuyos entrypoints el wheel de PyPI empaqueta rotos.
+"""
+import argparse
+import sys
+
+import Evtx.Evtx as evtx
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Vuelca un fichero EVTX (log de eventos de Windows) a XML."
+    )
+    parser.add_argument("evtx", help="ruta al fichero .evtx")
+    args = parser.parse_args()
+
+    with evtx.Evtx(args.evtx) as log:
+        sys.stdout.write(
+            '<?xml version="1.0" encoding="utf-8" standalone="yes" ?>\n<Events>\n'
+        )
+        for record in log.records():
+            sys.stdout.write(record.xml())
+            sys.stdout.write("\n")
+        sys.stdout.write("</Events>\n")
+
+
+if __name__ == "__main__":
+    main()
+EOF
+RUN sed -i 's/\r$//' /usr/local/bin/evtx_dump \
+ && chmod +x /usr/local/bin/evtx_dump
 
 CMD ["sleep", "infinity"]
 

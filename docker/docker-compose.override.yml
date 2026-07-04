@@ -1,7 +1,0 @@
-services:
-  toolkit-windows:
-    volumes:
-      - "F:/forense/gkape/D:/evidence/D:ro"
-  toolkit-unix:
-    volumes:
-      - "F:/forense/gkape/D:/evidence/D:ro"

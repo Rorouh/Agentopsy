@@ -38,22 +38,21 @@ bien construido, usando como evidencia una colección KAPE real de Windows.
 1. Comprueba `docker --version` y `docker compose version`. Si falta alguno, para
    y dímelo.
 2. Sitúate en la carpeta `docker/` del repo.
-3. Monta la evidencia KAPE en solo lectura SIN tocar el compose base. Crea
-   `docker/docker-compose.override.yml` con este contenido (ajústame la ruta si mi
-   unidad no es `F:`):
+3. Monta la evidencia en solo lectura SIN tocar el compose base: define la
+   variable `FORENSIA_EVIDENCE_DIR` apuntando a la carpeta de evidencia del
+   caso (el compose la monta en `/evidence:ro`). Nada de rutas absolutas
+   hardcodeadas en ficheros versionados.
 
-   ```yaml
-   services:
-     toolkit-windows:
-       volumes:
-         - "F:/forense/gkape/D:/evidence/D:ro"
-     toolkit-unix:
-       volumes:
-         - "F:/forense/gkape/D:/evidence/D:ro"
+   ```bash
+   # variable puntual…
+   FORENSIA_EVIDENCE_DIR=/ruta/a/la/evidencia docker compose up -d
+   # …o fichero .env junto al docker-compose.yml (ignorado por git)
+   echo 'FORENSIA_EVIDENCE_DIR=/ruta/a/la/evidencia' > .env
    ```
 
-   (Docker Desktop debe tener compartida la unidad `F:`. Si el bind falla, cópiame
-   el árbol a `docker/evidence/D` y usa `/evidence/D` igualmente.)
+   (En Linux usa el Docker Engine nativo — contexto `default` —, no Docker
+   Desktop; ver README. Si el bind falla, cópiame la evidencia a
+   `docker/evidence/` y usa `/evidence` igualmente.)
 4. Construye y levanta: `docker compose up --build -d`. El primer build tarda
    (compila plaso, descarga hayabusa/chainsaw). Espera a que ambos servicios estén
    `running`.
