@@ -21,10 +21,7 @@ tracked in `docs/operacion/proximos-pasos.md` §A/§B.
 from __future__ import annotations
 
 from forensia.toolkit.maletin import MALETINES, TOOLKIT_WINDOWS
-from forensia.toolkit.tool import (
-    DELIVERY_WINDOWS_NATIVE,
-    Tool,
-)
+from forensia.toolkit.tool import Tool
 from forensia.toolkit.wrappers import (
     bulk_extractor as _bulk_extractor,
 )
@@ -240,9 +237,9 @@ CATALOG: tuple[Tool, ...] = (
         parse=_chainsaw.parse,
     ),
 
-    # --- Eric Zimmerman .NET tools: viven en el maletín windows (pendiente de
-    #     absorberlos en su Dockerfile — proximos-pasos §A). El legacy `delivery`/
-    #     `container_image` queda hasta realinear la ejecución. ---
+    # --- Eric Zimmerman .NET tools: viven en el maletín windows (EvtxECmd/MFTECmd,
+    #     .dll net9 sobre el runtime .NET absorbido en su Dockerfile), ejecutados por
+    #     el exec-agent como el resto (2026-07-04). ---
     Tool(
         "evtxecmd",
         "EvtxECmd",
@@ -250,12 +247,9 @@ CATALOG: tuple[Tool, ...] = (
         returns="artifact",
         tier="core",
         toolkits=_WINDOWS,
-        delivery=DELIVERY_WINDOWS_NATIVE,
-        container_image="forensia/evtxecmd:latest",
         allowed_flags=_evtxecmd.ALLOWED_FLAGS,
         build_argv=_evtxecmd.build_argv,
         parse=_evtxecmd.parse,
-        host_mounts=_evtxecmd.host_mounts,
     ),
     Tool(
         "mftecmd",
@@ -264,12 +258,9 @@ CATALOG: tuple[Tool, ...] = (
         returns="artifact",
         tier="core",
         toolkits=_WINDOWS,
-        delivery=DELIVERY_WINDOWS_NATIVE,
-        container_image="forensia/mftecmd:latest",
         allowed_flags=_mftecmd.ALLOWED_FLAGS,
         build_argv=_mftecmd.build_argv,
         parse=_mftecmd.parse,
-        host_mounts=_mftecmd.host_mounts,
     ),
 
     # --- Registry (Perl): vive en el maletín windows, ejecutado por el exec-agent ---

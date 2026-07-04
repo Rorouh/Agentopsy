@@ -103,6 +103,8 @@ echo "  volatility3                       : $(command -v vol || echo 'NO')"
   echo "  rip.pl (RegRipper)              : $(command -v rip.pl || echo 'NO')"
   echo "  hayabusa                        : $(command -v hayabusa || echo 'NO')"
   echo "  chainsaw                        : $(command -v chainsaw || echo 'NO')"
+  echo "  EvtxECmd (EZ, .NET)             : $(command -v EvtxECmd || echo 'NO')"
+  echo "  MFTECmd (EZ, .NET)              : $(command -v MFTECmd || echo 'NO')"
   echo "  evtx_dump (python-evtx)         : $(command -v evtx_dump || echo 'NO')"
   echo "  lnkparse (LnkParse3)            : $(command -v lnkparse || echo 'NO')"
   echo "  regipy                          : $(command -v regipy-dump || echo 'NO')"
@@ -133,6 +135,12 @@ ARG HAYABUSA_VERSION=3.9.0
 ARG HAYABUSA_SHA256=c2fa65e4f255db17615c7c9d0acc9030c27db73f27b097499718930a48e420a3
 ARG CHAINSAW_VERSION=2.16.0
 ARG CHAINSAW_SHA256=5d46cd140838413aeb5711451a282b3922443d9ec6afaea3e6b6b220454fd807
+# EZ tools (.NET): la URL sirve SIEMPRE el último build net9, así que el SHA hay que
+# re-pinnearlo cuando Eric Zimmerman publique una versión nueva (el build falla en claro
+# si no coincide — igual que hayabusa/chainsaw).
+ARG DOTNET_CHANNEL=9.0
+ARG EVTXECMD_SHA256=4d740e51c4532c340d080f832c766c2acb0351832dae118d1abe9bb49203faa4
+ARG MFTECMD_SHA256=60ae857a554b830243e38e91fafdfdf6066f31c703282c5c6f40daf3b64d3160
 
 # --- Perl + módulo de registro para RegRipper --------------------------------
 RUN apt-get update \
@@ -178,6 +186,44 @@ RUN cd /tmp \
  && git clone --depth 1 --branch "v${CHAINSAW_VERSION}" https://github.com/WithSecureLabs/chainsaw.git /opt/chainsaw-src || true
 ENV CHAINSAW_RULES=/opt/chainsaw-src/rules \
     CHAINSAW_MAPPING=/opt/chainsaw-src/mappings/sigma-event-logs-all.yml
+
+# --- .NET 9 runtime (para las EZ tools) --------------------------------------
+# EvtxECmd/MFTECmd son framework-dependent (.dll, sin apphost nativo): necesitan el
+# runtime .NET. libicu es dependencia de .NET para globalización. Instalamos SOLO el
+# runtime base (no el SDK) con el script oficial, en /usr/share/dotnet.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libicu70 \
+ && rm -rf /var/lib/apt/lists/* \
+ && curl -sSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
+ && chmod +x /tmp/dotnet-install.sh \
+ && /tmp/dotnet-install.sh --runtime dotnet --channel "${DOTNET_CHANNEL}" --install-dir /usr/share/dotnet \
+ && ln -sf /usr/share/dotnet/dotnet /usr/local/bin/dotnet \
+ && rm -f /tmp/dotnet-install.sh \
+ && dotnet --info | head -5
+
+# --- EZ tools: EvtxECmd (EVTX→CSV) + MFTECmd ($MFT→CSV) -----------------------
+# Builds net9 del CDN oficial (download.ericzimmermanstools.com). El zip de EvtxECmd
+# extrae en subcarpeta EvtxeCmd/ (incluye Maps/); MFTECmd.dll queda en la raíz. Se
+# envuelven en scripts en el PATH para que el catálogo los resuelva por nombre.
+RUN cd /tmp \
+ && wget -q "https://download.ericzimmermanstools.com/net9/EvtxECmd.zip" -O EvtxECmd.zip \
+ && echo "${EVTXECMD_SHA256}  EvtxECmd.zip" | sha256sum -c - \
+ && mkdir -p /opt/evtxecmd \
+ && unzip -q EvtxECmd.zip -d /opt/evtxecmd \
+ && wget -q "https://download.ericzimmermanstools.com/net9/MFTECmd.zip" -O MFTECmd.zip \
+ && echo "${MFTECMD_SHA256}  MFTECmd.zip" | sha256sum -c - \
+ && mkdir -p /opt/mftecmd \
+ && unzip -q MFTECmd.zip -d /opt/mftecmd \
+ && rm -f EvtxECmd.zip MFTECmd.zip \
+ && EVTX_DLL="$(find /opt/evtxecmd -name 'EvtxECmd.dll' | head -n1)" \
+ && MFTE_DLL="$(find /opt/mftecmd  -name 'MFTECmd.dll'  | head -n1)" \
+ && printf '#!/bin/sh\nexec dotnet %s "$@"\n' "$EVTX_DLL" > /usr/local/bin/EvtxECmd \
+ && printf '#!/bin/sh\nexec dotnet %s "$@"\n' "$MFTE_DLL" > /usr/local/bin/MFTECmd \
+ && chmod +x /usr/local/bin/EvtxECmd /usr/local/bin/MFTECmd
+# El JIT de .NET segfaulta bajo emulación QEMU (linux/amd64 en Apple Silicon) por la
+# feature W^X; desactivarla lo estabiliza. En amd64 nativo es inocuo (solo relaja un
+# endurecimiento del JIT en un contenedor forense aislado). Sin esto, EvtxECmd casca.
+ENV DOTNET_EnableWriteXorExecute=0
 
 # --- Parsers de artefactos Windows (Python) ----------------------------------
 COPY requirements-windows.txt /tmp/requirements-windows.txt

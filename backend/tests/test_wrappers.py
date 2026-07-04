@@ -11,14 +11,12 @@ For each of the 13 core-tier wrappers we exercise:
       wrapper documents.
     - parse with empty stdout returns a dict (no exceptions).
 
-Container-delivered wrappers (regripper / evtxecmd / mftecmd) also have their
-host_mounts contract verified: the host key is a resolved pathlib.Path and the
-read-only mount is exposed at the documented target.
+The formerly container-delivered wrappers (regripper / evtxecmd / mftecmd) were
+realigned to the maletín exec-agent model: they no longer expose `host_mounts`, and
+`build_argv` references the real evidence/output paths instead of `/in/*` mounts.
 """
 
 from __future__ import annotations
-
-from pathlib import Path
 
 import pytest
 
@@ -745,20 +743,20 @@ class TestRegripper:
 class TestEvtxECmd:
     def test_build_argv_single_file(self):
         argv = evtxecmd.build_argv(
-            {"evtx_path": "/tmp/Security.evtx", "output_dir": "/tmp/out"}
+            {"evtx_path": "/evidence/Security.evtx", "output_dir": "/tmp/out"}
         )
-        # single .evtx selects -f
+        # single .evtx selects -f; realineado al maletín: rutas reales, no /in/evtx·/out
         assert "-f" in argv
-        assert "/in/evtx" in argv
-        assert "--csv" in argv and "/out" in argv
+        assert "/evidence/Security.evtx" in argv
+        assert "--csv" in argv and "/tmp/out" in argv
         assert "--csvf" in argv and "evtx.csv" in argv
 
     def test_build_argv_directory(self):
         argv = evtxecmd.build_argv(
-            {"evtx_path": "/tmp/logs", "output_dir": "/tmp/out"}
+            {"evtx_path": "/evidence/logs", "output_dir": "/tmp/out"}
         )
         # no .evtx suffix → -d
-        assert "-d" in argv
+        assert "-d" in argv and "/evidence/logs" in argv
 
     def test_build_argv_missing_evtx_path_raises(self):
         with pytest.raises(ValueError, match="evtx_path"):
@@ -788,23 +786,9 @@ class TestEvtxECmd:
         result = evtxecmd.parse("")
         assert result == {"summary": {}, "summary_count": 0}
 
-    def test_host_mounts(self, tmp_path):
-        evtx = tmp_path / "Security.evtx"
-        evtx.write_bytes(b"x")
-        out = tmp_path / "out"
-        out.mkdir()
-        ro, rw = evtxecmd.host_mounts(
-            {"evtx_path": str(evtx), "output_dir": str(out)}
-        )
-        assert len(ro) == 1 and len(rw) == 1
-        ro_key = next(iter(ro))
-        rw_key = next(iter(rw))
-        assert isinstance(ro_key, Path)
-        assert isinstance(rw_key, Path)
-        assert ro_key.is_absolute()
-        assert rw_key.is_absolute()
-        assert ro[ro_key] == "/in/evtx"
-        assert rw[rw_key] == "/out"
+    def test_no_legacy_host_mounts(self):
+        # Realineado al maletín: ya no hay host_mounts (modelo container-por-tool muerto).
+        assert not hasattr(evtxecmd, "host_mounts")
 
 
 # --------------------------------------------------------------------------- #
@@ -812,9 +796,10 @@ class TestEvtxECmd:
 # --------------------------------------------------------------------------- #
 class TestMftECmd:
     def test_build_argv_minimum_valid(self):
-        argv = mftecmd.build_argv({"mft_path": "/tmp/$MFT", "output_dir": "/tmp/o"})
-        assert "-f" in argv and "/in/mft" in argv
-        assert "--csv" in argv and "/out" in argv
+        argv = mftecmd.build_argv({"mft_path": "/evidence/mft/$MFT", "output_dir": "/tmp/o"})
+        # realineado al maletín: rutas reales, no /in/mft·/out
+        assert "-f" in argv and "/evidence/mft/$MFT" in argv
+        assert "--csv" in argv and "/tmp/o" in argv
         assert "--csvf" in argv and "mft.csv" in argv
 
     def test_build_argv_missing_mft_path_raises(self):
@@ -843,23 +828,9 @@ class TestMftECmd:
         result = mftecmd.parse("")
         assert result == {"summary": {}, "summary_count": 0}
 
-    def test_host_mounts(self, tmp_path):
-        mft = tmp_path / "MFT"
-        mft.write_bytes(b"x")
-        out = tmp_path / "out"
-        out.mkdir()
-        ro, rw = mftecmd.host_mounts(
-            {"mft_path": str(mft), "output_dir": str(out)}
-        )
-        assert len(ro) == 1 and len(rw) == 1
-        ro_key = next(iter(ro))
-        rw_key = next(iter(rw))
-        assert isinstance(ro_key, Path)
-        assert isinstance(rw_key, Path)
-        assert ro_key.is_absolute()
-        assert rw_key.is_absolute()
-        assert ro[ro_key] == "/in/mft"
-        assert rw[rw_key] == "/out"
+    def test_no_legacy_host_mounts(self):
+        # Realineado al maletín: ya no hay host_mounts (modelo container-por-tool muerto).
+        assert not hasattr(mftecmd, "host_mounts")
 
 
 # --------------------------------------------------------------------------- #

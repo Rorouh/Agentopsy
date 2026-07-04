@@ -159,12 +159,15 @@ sin sustituciones. La SPA (`SystemStatusPage`, `SettingsPage`) consume la nueva 
 - ~~**RegRipper**~~ ✅ **reconciliado (2026-07-04):** el catálogo apunta a `rip.pl` (el binario
   real del maletín) y se retiró su `delivery`/`container_image`/`host_mounts` legacy; ahora se
   ejecuta por el exec-agent como el resto (verificado: 7 plugins sobre las 5 hives → findings).
-- **EvtxECmd / MFTECmd** (.NET) **aún no están** en el Dockerfile del maletín — el catálogo
-  todavía referencia las imágenes OCI muertas (`forensia/evtxecmd:latest`, `forensia/
-  mftecmd:latest`) por el `delivery`/`container_image` legacy. Absorber .NET Core + esas
-  tools en el stage `windows`.
-- Retirar `scripts/build-images.sh` (ya eliminado en el desmontaje) y el `delivery`/
-  `container_image` legacy del catálogo cuando la ejecución se unifique (ver más abajo).
+- ~~**EvtxECmd / MFTECmd**~~ ✅ **absorbidos (2026-07-04):** el stage `windows` instala el
+  runtime **.NET 9** + los builds net9 de ambas tools (SHA pinneado, envueltas en scripts en el
+  PATH) con `DOTNET_EnableWriteXorExecute=0` (segfault del JIT bajo emulación QEMU). Catálogo/
+  wrappers realineados al maletín (sin `delivery`/`container_image`/`host_mounts`). Verificado:
+  EvtxECmd sobre 16 EVTX (279 eventos) y MFTECmd sobre el `$MFT` de la NIST Hacking Case (12.181
+  registros). **Con esto, las 22 tools del catálogo están operativas** — ver `docs/tools/`.
+- Retirar `scripts/build-images.sh` (ya eliminado en el desmontaje). El `delivery`/
+  `container_image` legacy del `Tool` **ya no lo usa ninguna tool del catálogo** (todas migradas
+  al maletín); queda solo el campo en la dataclass, pendiente de retirar formalmente.
 
 ### B. ~~Instalar el maletín bundled en el Mac de dev~~ **[SUPERSEDIDO por el pivote 2026-07-02]**
 

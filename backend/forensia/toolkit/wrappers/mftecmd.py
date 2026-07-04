@@ -1,26 +1,26 @@
 """MFTECmd wrapper — parse a pre-extracted NTFS `$MFT` file.
 
-Container-only delivery (`forensia/mftecmd:latest`). FORENSIC_SOUNDNESS §5 forbids
-mounting the raw image inside the container, so the caller must pre-extract the
-`$MFT` on the host (TSK `icat -o <offset> <image> 0`) and pass the resulting file.
-The wrapper mounts it read-only at `/in/mft` and a writable scratch directory at
-`/out` for the CSV report.
+Runs `MFTECmd` (Eric Zimmerman, .NET net9 on the runtime bundled in the maletín) via
+the exec-agent. FORENSIC_SOUNDNESS §5 forbids mounting the raw image inside the
+container, so the caller pre-extracts the `$MFT` (TSK `icat -o <offset> <image> 0`)
+under the read-only `/evidence` mount and passes the resulting file; the argv references
+that real path. The CSV report lands in `output_dir` (`--csv`).
 """
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 ALLOWED_FLAGS = frozenset({"-f", "--csv", "--csvf"})
 
 
 def build_argv(params: dict[str, Any]) -> list[str]:
-    """Compose argv for MFTECmd as it runs INSIDE the container.
+    """Compose argv for MFTECmd.
 
     params:
-        mft_path (str, required): host path to the pre-extracted `$MFT` file.
-        output_dir (str, required): host scratch directory for the CSV report.
+        mft_path (str, required): path to the pre-extracted `$MFT` file, under the
+            maletín's read-only `/evidence` mount.
+        output_dir (str, required): directory for the CSV report (`--csv`).
     """
     mft_path = params.get("mft_path")
     if not mft_path or not isinstance(mft_path, str):
@@ -29,7 +29,7 @@ def build_argv(params: dict[str, Any]) -> list[str]:
     if not output_dir or not isinstance(output_dir, str):
         raise ValueError("mftecmd requires params.output_dir: str")
 
-    return ["-f", "/in/mft", "--csv", "/out", "--csvf", "mft.csv"]
+    return ["-f", mft_path, "--csv", output_dir, "--csvf", "mft.csv"]
 
 
 def parse(stdout: str) -> dict[str, Any]:
@@ -50,10 +50,3 @@ def parse(stdout: str) -> dict[str, Any]:
             if key and value and len(key) <= 64:
                 summary[key] = value
     return {"summary": summary, "summary_count": len(summary)}
-
-
-def host_mounts(params: dict[str, Any]) -> tuple[dict[Path, str], dict[Path, str]]:
-    """ro: $MFT file at /in/mft ; rw: scratch output dir at /out."""
-    mft = Path(params["mft_path"]).resolve()
-    out = Path(params["output_dir"]).resolve()
-    return ({mft: "/in/mft"}, {out: "/out"})
