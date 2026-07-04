@@ -24,6 +24,36 @@ export interface ExecutorModels {
   note: string | null;
 }
 
+// Eventos del stream de progreso del agente (/api/agent/query/stream, NDJSON).
+// Uno por línea; el terminal `done` trae la respuesta final + metadatos para
+// persistir el turno igual que el endpoint bloqueante.
+export type StreamEvent =
+  | { type: "reasoning"; iteration: number; text: string }
+  | { type: "tool_call"; iteration: number; tool_id: string; params?: Record<string, unknown> }
+  | {
+      type: "tool_result";
+      iteration: number;
+      tool_id: string;
+      status: "ok" | "nonzero" | "error" | "refused" | "blocked";
+      exit_code?: number | null;
+      run_id?: string;
+      summary?: string;
+    }
+  | { type: "finding"; iteration: number; title: string; severity: string }
+  | { type: "final"; iteration: number; text: string; exhausted?: boolean }
+  | {
+      type: "done";
+      reply: string;
+      iterations?: number;
+      tool_calls?: unknown[];
+      evidence_id: string;
+      case_id: string;
+      os_profile: string;
+      executor: { id: ExecutorId; name: string; local: boolean };
+      agent: AgentSummary;
+    }
+  | { type: "error"; detail: string };
+
 export interface AgentSummary {
   id: string;
   name: string;

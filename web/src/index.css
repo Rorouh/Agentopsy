@@ -455,6 +455,55 @@ html, body, #root {
   outline: none;
 }
 .composer-popover-input input:focus { border-color: var(--accent); }
+
+/* Actividad del agente en vivo (estilo Claude Code: cabecera + árbol monoespaciado) */
+.agent-activity {
+  margin-bottom: 10px;
+  border-left: 2px solid var(--border);
+  padding-left: 12px;
+}
+.agent-activity-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: default;
+  list-style: none;
+}
+details.agent-activity > summary.agent-activity-header {
+  cursor: pointer;
+  user-select: none;
+}
+details.agent-activity > summary::-webkit-details-marker { display: none; }
+.agent-activity-header.live { color: var(--text-primary); }
+.agent-activity-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: agent-pulse 1s ease-in-out infinite;
+  flex-shrink: 0;
+}
+@keyframes agent-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.1); }
+}
+.agent-activity-body {
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.agent-activity-body .al { color: var(--text-secondary); }
+.agent-activity-body .al-reason { color: var(--text-muted); font-style: italic; }
+.agent-activity-body .al-call strong { color: var(--text-primary); font-weight: 600; }
+.agent-activity-body .al-ok { color: #3fae6b; }
+.agent-activity-body .al-err { color: #d9534f; }
+.agent-activity-body .al-find { color: var(--accent-text, var(--accent)); }
 .system-title {
   margin: 0;
   font-family: var(--font-sans);

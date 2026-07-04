@@ -8,6 +8,7 @@ import type {
   ExecutorId,
   ExecutorModels,
   ExecutorStatus,
+  StreamEvent,
 } from "../api/types";
 import { Button } from "../ui/Button";
 
@@ -112,6 +113,82 @@ interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   pending?: boolean;
+  // Progreso en vivo del agente (streaming): eventos acumulados + si sigue en curso.
+  activity?: StreamEvent[];
+  streaming?: boolean;
+}
+
+// Una línea del log de actividad (estilo Claude Code: árbol monoespaciado).
+function ActivityLine({ ev }: { ev: StreamEvent }) {
+  if (ev.type === "reasoning") {
+    return <div className="al al-reason">· {ev.text}</div>;
+  }
+  if (ev.type === "tool_call") {
+    const params = ev.params
+      ? Object.entries(ev.params)
+          .map(([k, v]) => `${k}=${String(v)}`)
+          .join(" ")
+      : "";
+    const shown = params.length > 90 ? params.slice(0, 89) + "…" : params;
+    return (
+      <div className="al al-call">
+        ▸ <strong>{ev.tool_id}</strong>
+        {shown ? ` ${shown}` : ""}
+      </div>
+    );
+  }
+  if (ev.type === "tool_result") {
+    const ok = ev.status === "ok";
+    return (
+      <div className={`al ${ok ? "al-ok" : "al-err"}`}>
+        {"  "}
+        {ok ? "✓" : "✗"} {ev.summary ?? ev.status}
+        {ev.status === "nonzero" && ev.exit_code != null ? ` (exit ${ev.exit_code})` : ""}
+      </div>
+    );
+  }
+  if (ev.type === "finding") {
+    return (
+      <div className="al al-find">
+        {"  "}★ [{ev.severity}] {ev.title}
+      </div>
+    );
+  }
+  return null;
+}
+
+// Bloque de actividad del agente: cabecera con spinner mientras trabaja (● …),
+// colapsable ("✓ N pasos") al terminar. Estilo Claude Code.
+function AgentActivity({ activity, streaming }: { activity: StreamEvent[]; streaming: boolean }) {
+  const lines = activity.map((ev, i) => <ActivityLine key={i} ev={ev} />);
+  const steps = activity.filter((e) => e.type === "tool_call").length;
+
+  if (streaming) {
+    const last = activity[activity.length - 1];
+    let status = "trabajando";
+    if (last?.type === "tool_call") status = `ejecutando ${last.tool_id}`;
+    else if (last?.type === "reasoning") status = "razonando";
+    else if (last?.type === "tool_result") status = "procesando resultado";
+    else if (last?.type === "finding") status = "registrando hallazgo";
+    return (
+      <div className="agent-activity">
+        <div className="agent-activity-header live">
+          <span className="agent-activity-dot" />
+          {status}…
+        </div>
+        {lines.length > 0 && <div className="agent-activity-body">{lines}</div>}
+      </div>
+    );
+  }
+  if (!activity.length) return null;
+  return (
+    <details className="agent-activity">
+      <summary className="agent-activity-header">
+        ✓ {steps} paso{steps === 1 ? "" : "s"} · ver actividad
+      </summary>
+      <div className="agent-activity-body">{lines}</div>
+    </details>
+  );
 }
 
 // One session id per case is enough for v1 — múltiples investigaciones por caso
@@ -329,8 +406,11 @@ export function ChatPage({ caps, activeCase, activeEvidence, onTurnComplete }: C
     setBusy(true);
     setMsgs((prev) => [...prev, { role: "user", content: text }]);
 
-    // Add typing state
-    setMsgs((prev) => [...prev, { role: "assistant", content: "Pensando...", pending: true }]);
+    // Add typing state (streaming: se irá rellenando con la actividad en vivo).
+    setMsgs((prev) => [
+      ...prev,
+      { role: "assistant", content: "", pending: true, streaming: true, activity: [] },
+    ]);
 
     // Persist user turn upfront so a crash/disconnect during query() doesn't
     // erase what the analyst asked. The assistant turn gets appended below
@@ -348,22 +428,55 @@ export function ChatPage({ caps, activeCase, activeEvidence, onTurnComplete }: C
     // the tool ledger; without it the backend can't replay "what you already
     // ran" into the next turn's context.
     let toolCalls: unknown[] | null = null;
-    try {
-      const res = await api.query({
-        prompt: text,
-        os_profile: activeProfile,
-        evidence_id: activeEvidence?.evidence_id ?? "",
-        case_id: activeCase?.id,
-        executor: executor || undefined,
-        session_id: CHAT_SESSION_ID,
-      });
-      assistantReply = res.reply;
-      toolCalls = res.tool_calls ?? null;
+
+    const patchLast = (patch: Partial<ChatMessage>) =>
       setMsgs((prev) => {
         const next = [...prev];
-        next[next.length - 1] = { role: "assistant", content: res.reply };
+        next[next.length - 1] = { ...next[next.length - 1], ...patch };
         return next;
       });
+    const pushActivity = (ev: StreamEvent) =>
+      setMsgs((prev) => {
+        const next = [...prev];
+        const last = next[next.length - 1];
+        next[next.length - 1] = { ...last, activity: [...(last.activity ?? []), ev] };
+        return next;
+      });
+
+    try {
+      await api.queryStream(
+        {
+          prompt: text,
+          os_profile: activeProfile,
+          evidence_id: activeEvidence?.evidence_id ?? "",
+          case_id: activeCase?.id,
+          executor: executor || undefined,
+          session_id: CHAT_SESSION_ID,
+        },
+        (ev) => {
+          switch (ev.type) {
+            case "reasoning":
+            case "tool_call":
+            case "tool_result":
+            case "finding":
+              pushActivity(ev);
+              break;
+            case "final":
+              assistantReply = ev.text;
+              patchLast({ content: ev.text });
+              break;
+            case "done":
+              assistantReply = ev.reply || assistantReply;
+              toolCalls = (ev.tool_calls as unknown[]) ?? null;
+              patchLast({ content: ev.reply || assistantReply, pending: false, streaming: false });
+              break;
+            case "error":
+              assistantReply = ev.detail;
+              patchLast({ content: ev.detail, pending: false, streaming: false });
+              break;
+          }
+        },
+      );
     } catch (e) {
       // El backend responde SIEMPRE con detail accionable (RULE 2) — se muestra
       // tal cual, sin sustituirlo por un mensaje genérico que lo enmascare.
@@ -372,12 +485,9 @@ export function ChatPage({ caps, activeCase, activeEvidence, onTurnComplete }: C
           ? e.detail
           : "No se pudo conectar con el servicio api. ¿Está levantado el compose?";
       assistantReply = friendly;
-      setMsgs((prev) => {
-        const next = [...prev];
-        next[next.length - 1] = { role: "assistant", content: friendly };
-        return next;
-      });
+      patchLast({ content: friendly, pending: false, streaming: false });
     } finally {
+      patchLast({ pending: false, streaming: false });
       setBusy(false);
       if (activeCase && assistantReply) {
         api.cases
@@ -693,8 +803,15 @@ export function ChatPage({ caps, activeCase, activeEvidence, onTurnComplete }: C
             {msgs.map((msg, i) => (
               <div key={i} className={`msg-wrapper ${msg.role}`}>
                 {msg.role === "assistant" ? (
-                  <div style={{ opacity: msg.pending ? 0.6 : 1 }}>
-                    {formatMessageContent(msg.content)}
+                  <div>
+                    {(msg.activity?.length || msg.streaming) && (
+                      <AgentActivity activity={msg.activity ?? []} streaming={!!msg.streaming} />
+                    )}
+                    {msg.content && (
+                      <div style={{ opacity: msg.pending ? 0.6 : 1 }}>
+                        {formatMessageContent(msg.content)}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <span>{msg.content}</span>
