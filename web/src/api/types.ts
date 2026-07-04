@@ -13,6 +13,17 @@ export interface ExecutorStatus {
   reason: string | null;
 }
 
+// Modelos que el selector del composer ofrece para un ejecutor
+// (/api/executors/{id}/models). Solo `ollama` es `editable` (lista real de modelos
+// instalados; se persiste como OLLAMA_MODEL). Los CLIs cloud gestionan su propio
+// modelo → `editable:false` + `note` accionable (RULE 2).
+export interface ExecutorModels {
+  executor: ExecutorId;
+  editable: boolean;
+  models: string[];
+  note: string | null;
+}
+
 export interface AgentSummary {
   id: string;
   name: string;

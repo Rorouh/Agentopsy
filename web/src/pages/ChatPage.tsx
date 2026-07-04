@@ -6,6 +6,7 @@ import type {
   Case,
   EvidenceHandle,
   ExecutorId,
+  ExecutorModels,
   ExecutorStatus,
 } from "../api/types";
 import { Button } from "../ui/Button";
@@ -156,8 +157,18 @@ export function ChatPage({ caps, activeCase, activeEvidence, onTurnComplete }: C
   const [consentBusy, setConsentBusy] = useState(false);
   const [consentError, setConsentError] = useState<string | null>(null);
 
+  // Composer option menus (proveedor / modelo) y el modelo elegido para Ollama.
+  const [openMenu, setOpenMenu] = useState<null | "provider" | "model">(null);
+  const [modelConfigured, setModelConfigured] = useState<string>("");
+  const [modelDraft, setModelDraft] = useState<string>("");
+  const [modelSaving, setModelSaving] = useState(false);
+  // Modelos que ofrece el ejecutor elegido (Ollama: lista real; cloud: nota).
+  const [providerModels, setProviderModels] = useState<ExecutorModels | null>(null);
+  const [modelsLoading, setModelsLoading] = useState(false);
+
   const logRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const actionsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     api.config
@@ -167,11 +178,65 @@ export function ChatPage({ caps, activeCase, activeEvidence, onTurnComplete }: C
         if (def?.set && def.preview) {
           setExecutor((prev) => prev || (def.preview as ExecutorId));
         }
+        const mdl = snap.keys.OLLAMA_MODEL;
+        if (mdl?.set && mdl.preview) setModelConfigured(mdl.preview);
       })
       .catch(() => {
         /* sin config aún — el operador elige a mano */
       });
   }, []);
+
+  // El selector de modelos cambia con el proveedor: al elegir ejecutor, pide sus
+  // modelos (Ollama devuelve los instalados; los CLIs cloud, la nota de RULE 2).
+  useEffect(() => {
+    if (!executor) {
+      setProviderModels(null);
+      return;
+    }
+    let alive = true;
+    setModelsLoading(true);
+    api
+      .executorModels(executor)
+      .then((m) => {
+        if (alive) setProviderModels(m);
+      })
+      .catch(() => {
+        if (alive) setProviderModels(null);
+      })
+      .finally(() => {
+        if (alive) setModelsLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [executor]);
+
+  // Cerrar el menú abierto al hacer clic fuera del grupo de acciones.
+  useEffect(() => {
+    if (!openMenu) return;
+    const onDown = (e: MouseEvent) => {
+      if (actionsRef.current && !actionsRef.current.contains(e.target as Node)) {
+        setOpenMenu(null);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [openMenu]);
+
+  const saveOllamaModel = async (value: string) => {
+    const v = value.trim();
+    if (!v) return;
+    setModelSaving(true);
+    try {
+      await api.config.set("OLLAMA_MODEL", v);
+      setModelConfigured(v);
+      setOpenMenu(null);
+    } catch {
+      /* el backend degrada; se deja el menú abierto para reintentar */
+    } finally {
+      setModelSaving(false);
+    }
+  };
 
   // Source of truth for the agent selection: the CASE's os_profile, not the
   // host's. Only when no case is open we fall back to host detection. RULE 2 in
@@ -344,50 +409,6 @@ export function ChatPage({ caps, activeCase, activeEvidence, onTurnComplete }: C
   // Selector de ejecutor: los cuatro del pivote, visibles siempre en la sesión.
   // Los no disponibles se deshabilitan y el tooltip lleva la razón accionable
   // que reporta capabilities (RULE 2: degradación explícita, nunca sustituto).
-  const executorBar = (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        flexWrap: "wrap",
-        padding: "6px 0",
-      }}
-    >
-      <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--text-muted)" }}>
-        Ejecutor:
-      </span>
-      {executorEntries.length === 0 && (
-        <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--text-muted)" }}>
-          consultando capacidades…
-        </span>
-      )}
-      {executorEntries.map(([id, status]) => (
-        <Button
-          key={id}
-          variant="chip"
-          className={id === executor ? "active" : undefined}
-          disabled={!status.available}
-          title={
-            status.available
-              ? status.local
-                ? "100 % local — el contenido del caso no sale de esta máquina"
-                : "Cloud — el contenido derivado del caso sale al proveedor bajo tu suscripción"
-              : status.reason ?? "No disponible"
-          }
-          onClick={() => setExecutor(id)}
-        >
-          {status.name}
-          {status.local ? " ⌂" : ""}
-        </Button>
-      ))}
-      {!executor && executorEntries.length > 0 && (
-        <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--text-muted)" }}>
-          selecciona uno — FORENSIA no elige por ti (RULE 2)
-        </span>
-      )}
-    </div>
-  );
 
   const cloudNotice = isCloud && (
     <div
@@ -439,6 +460,177 @@ export function ChatPage({ caps, activeCase, activeEvidence, onTurnComplete }: C
     ? "Confirma el aviso del ejecutor cloud para poder enviar"
     : undefined;
 
+  const providerLabel = executor ? executorStatus?.name ?? executor : "Proveedor";
+  const recommendedModel = activeAgent?.model.name ?? "";
+  const effectiveModel = modelConfigured || recommendedModel;
+  const modelEditable = providerModels?.editable ?? false;
+  const modelLabel = !executor
+    ? "Modelo"
+    : !modelEditable
+      ? executorStatus?.name ?? "CLI"
+      : effectiveModel || "Modelo";
+
+  const composerFooter = (
+    <div className="composer-footer">
+      <div className="composer-left">
+        {/* Adjuntar evidencia — maqueta (aún sin funcionalidad) */}
+        <button
+          type="button"
+          className="composer-opt composer-opt--icon"
+          title="Adjuntar evidencia (próximamente)"
+          aria-label="Adjuntar evidencia"
+          onClick={() => {
+            /* mock: pendiente de cablear la subida/selección de evidencia */
+          }}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+          </svg>
+        </button>
+        <span className="composer-tip">Enter para enviar · Shift+Enter para nueva línea</span>
+      </div>
+
+      <div className="composer-actions" ref={actionsRef}>
+        {/* Proveedor (ejecutor) — funcional */}
+        <div className="composer-opt-wrap">
+          <button
+            type="button"
+            className={`composer-opt${openMenu === "provider" ? " active" : ""}`}
+            title="Proveedor de ejecución"
+            onClick={() => setOpenMenu(openMenu === "provider" ? null : "provider")}
+          >
+            <span className="composer-opt-label">
+              {providerLabel}
+              {executorStatus?.local ? " ⌂" : ""}
+            </span>
+            <span className="composer-opt-caret">▾</span>
+          </button>
+          {openMenu === "provider" && (
+            <div className="composer-popover">
+              <div className="composer-popover-title">Proveedor</div>
+              {executorEntries.length === 0 && (
+                <div className="composer-popover-note">consultando capacidades…</div>
+              )}
+              {executorEntries.map(([id, status]) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={`composer-popover-item${id === executor ? " active" : ""}`}
+                  disabled={!status.available}
+                  title={status.available ? undefined : status.reason ?? "No disponible"}
+                  onClick={() => {
+                    setExecutor(id);
+                    setOpenMenu(null);
+                  }}
+                >
+                  <span>
+                    {status.name}
+                    {status.local ? " ⌂" : ""}
+                  </span>
+                  {id === executor && <span aria-hidden>✓</span>}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Modelo — funcional; la lista depende del proveedor */}
+        <div className="composer-opt-wrap">
+          <button
+            type="button"
+            className={`composer-opt${openMenu === "model" ? " active" : ""}`}
+            title={executor ? "Modelo del proveedor" : "Elige primero un proveedor"}
+            disabled={!executor}
+            onClick={() => {
+              setModelDraft(effectiveModel);
+              setOpenMenu(openMenu === "model" ? null : "model");
+            }}
+          >
+            <span className="composer-opt-label">{modelLabel}</span>
+            <span className="composer-opt-caret">▾</span>
+          </button>
+          {openMenu === "model" && (
+            <div className="composer-popover">
+              <div className="composer-popover-title">
+                Modelo · {executorStatus?.name ?? executor}
+              </div>
+              {modelsLoading && <div className="composer-popover-note">cargando modelos…</div>}
+              {!modelsLoading && !modelEditable && (
+                <div className="composer-popover-note">
+                  {providerModels?.note ??
+                    "El modelo lo gestiona el CLI de este proveedor."}
+                </div>
+              )}
+              {!modelsLoading && modelEditable && (
+                <>
+                  {(providerModels?.models ?? []).length === 0 && (
+                    <div className="composer-popover-note">
+                      {providerModels?.note ?? "Sin modelos instalados en Ollama."}
+                    </div>
+                  )}
+                  {(providerModels?.models ?? []).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      className={`composer-popover-item${m === effectiveModel ? " active" : ""}`}
+                      disabled={modelSaving}
+                      onClick={() => saveOllamaModel(m)}
+                    >
+                      <span>{m}</span>
+                      {m === recommendedModel && (
+                        <span className="composer-popover-tag">recomendado</span>
+                      )}
+                    </button>
+                  ))}
+                  <div className="composer-popover-input">
+                    <input
+                      value={modelDraft}
+                      onChange={(e) => setModelDraft(e.target.value)}
+                      placeholder="otro modelo (p. ej. qwen2.5:7b-instruct)"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          saveOllamaModel(modelDraft);
+                        }
+                      }}
+                    />
+                    <Button
+                      variant="chip"
+                      disabled={modelSaving || !modelDraft.trim()}
+                      onClick={() => saveOllamaModel(modelDraft)}
+                    >
+                      {modelSaving ? "…" : "OK"}
+                    </Button>
+                  </div>
+                  <div className="composer-popover-note">
+                    Se guarda como <code>OLLAMA_MODEL</code>.
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Enviar */}
+        <Button variant="icon" onClick={send} disabled={sendDisabled} title={sendTitle}>
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <line x1="22" y1="2" x2="11" y2="13" />
+            <polygon points="22 2 15 22 11 13 2 9 22 2" />
+          </svg>
+        </Button>
+      </div>
+    </div>
+  );
+
   return (
     <div className="chat-container">
       {msgs.length === 0 ? (
@@ -467,7 +659,6 @@ export function ChatPage({ caps, activeCase, activeEvidence, onTurnComplete }: C
 
           {/* Composer inside welcome */}
           <div className="composer-wrapper" style={{ width: "100%" }}>
-            {executorBar}
             {cloudNotice}
             <div className="composer">
               <textarea
@@ -479,24 +670,7 @@ export function ChatPage({ caps, activeCase, activeEvidence, onTurnComplete }: C
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
               />
-              <div className="composer-footer">
-                <span className="composer-tip">Enter para enviar · Shift+Enter para nueva línea</span>
-                <Button variant="icon" onClick={send} disabled={sendDisabled} title={sendTitle}>
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <line x1="22" y1="2" x2="11" y2="13" />
-                    <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                  </svg>
-                </Button>
-              </div>
+              {composerFooter}
             </div>
           </div>
 
@@ -530,7 +704,6 @@ export function ChatPage({ caps, activeCase, activeEvidence, onTurnComplete }: C
           </div>
 
           <div className="composer-wrapper">
-            {executorBar}
             {cloudNotice}
             <div className="composer">
               <textarea
@@ -542,24 +715,7 @@ export function ChatPage({ caps, activeCase, activeEvidence, onTurnComplete }: C
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
               />
-              <div className="composer-footer">
-                <span className="composer-tip">Enter para enviar · Shift+Enter para nueva línea</span>
-                <Button variant="icon" onClick={send} disabled={sendDisabled} title={sendTitle}>
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <line x1="22" y1="2" x2="11" y2="13" />
-                    <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                  </svg>
-                </Button>
-              </div>
+              {composerFooter}
             </div>
           </div>
         </div>

@@ -16,6 +16,7 @@ import type {
   EvidenceHandle,
   EvidenceSource,
   ExecutorId,
+  ExecutorModels,
   PersistedChatMessage,
   QueryRequest,
   QueryResponse,
@@ -166,4 +167,9 @@ export const api = {
       post<{ key: string; set: boolean; preview: string }>("/api/config", { key, value }),
     executors: () => request<{ executors: ExecutorId[] }>("/api/config/executors"),
   },
+
+  // Modelos que ofrece el selector del composer para un ejecutor (solo `ollama`
+  // devuelve lista editable; los CLIs cloud gestionan su modelo — RULE 2).
+  executorModels: (id: ExecutorId) =>
+    request<ExecutorModels>(`/api/executors/${id}/models`),
 };

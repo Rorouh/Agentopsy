@@ -349,6 +349,112 @@ html, body, #root {
   opacity: 0.35;
   cursor: not-allowed;
 }
+/* Composer footer: adjuntar (izq) · tip · [proveedor][modelo][enviar] (der) */
+.composer-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.composer-actions { display: flex; align-items: center; gap: 8px; }
+.composer-opt-wrap { position: relative; }
+.composer-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 190px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--text-secondary);
+  padding: 6px 11px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.composer-opt:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent-text);
+  background: var(--accent-bg);
+}
+.composer-opt.active {
+  border-color: var(--accent);
+  color: var(--accent-text);
+  background: var(--accent-bg);
+}
+.composer-opt:disabled { opacity: 0.45; cursor: not-allowed; }
+.composer-opt--icon { padding: 6px; }
+.composer-opt-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.composer-opt-caret { opacity: 0.55; font-size: 10px; }
+.composer-popover {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  min-width: 210px;
+  max-width: 300px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
+  padding: 6px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.composer-popover-title {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 5px 8px;
+}
+.composer-popover-note {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 6px 8px;
+  line-height: 1.4;
+}
+.composer-popover-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  text-align: left;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.composer-popover-item:hover:not(:disabled) {
+  background: var(--accent-bg);
+  color: var(--accent-text);
+}
+.composer-popover-item.active { color: var(--accent-text); font-weight: 600; }
+.composer-popover-item:disabled { opacity: 0.5; cursor: not-allowed; }
+.composer-popover-tag {
+  font-size: 10px;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 1px 6px;
+}
+.composer-popover-input { display: flex; gap: 6px; padding: 6px 4px; }
+.composer-popover-input input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  padding: 6px 8px;
+  outline: none;
+}
+.composer-popover-input input:focus { border-color: var(--accent); }
 .system-title {
   margin: 0;
   font-family: var(--font-sans);
