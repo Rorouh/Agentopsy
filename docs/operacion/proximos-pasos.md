@@ -156,9 +156,9 @@ ninguna tool). RULE 2 intacta: un tool solo se resuelve contra los maletines que
 sin sustituciones. La SPA (`SystemStatusPage`, `SettingsPage`) consume la nueva forma.
 
 **Restante concreto de §A** (el sondeo lo delata ahora con razón accionable):
-- **RegRipper** está en el Dockerfile windows como `rip.pl` + symlink `regripper`, pero el
-  catálogo usa el binario `rip` → reconciliar el nombre (o el símil) para que el sondeo lo
-  vea presente.
+- ~~**RegRipper**~~ ✅ **reconciliado (2026-07-04):** el catálogo apunta a `rip.pl` (el binario
+  real del maletín) y se retiró su `delivery`/`container_image`/`host_mounts` legacy; ahora se
+  ejecuta por el exec-agent como el resto (verificado: 7 plugins sobre las 5 hives → findings).
 - **EvtxECmd / MFTECmd** (.NET) **aún no están** en el Dockerfile del maletín — el catálogo
   todavía referencia las imágenes OCI muertas (`forensia/evtxecmd:latest`, `forensia/
   mftecmd:latest`) por el `delivery`/`container_image` legacy. Absorber .NET Core + esas

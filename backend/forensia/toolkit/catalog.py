@@ -22,7 +22,6 @@ from __future__ import annotations
 
 from forensia.toolkit.maletin import MALETINES, TOOLKIT_WINDOWS
 from forensia.toolkit.tool import (
-    DELIVERY_ALL_CONTAINER,
     DELIVERY_WINDOWS_NATIVE,
     Tool,
 )
@@ -273,20 +272,17 @@ CATALOG: tuple[Tool, ...] = (
         host_mounts=_mftecmd.host_mounts,
     ),
 
-    # --- Registry (Perl): vive en el maletín windows ---
+    # --- Registry (Perl): vive en el maletín windows, ejecutado por el exec-agent ---
     Tool(
         "regripper",
-        "rip",
+        "rip.pl",
         ("windows",),
         returns="artifact",
         tier="core",
         toolkits=_WINDOWS,
-        delivery=DELIVERY_ALL_CONTAINER,
-        container_image="forensia/regripper:latest",
         allowed_flags=_regripper.ALLOWED_FLAGS,
         build_argv=_regripper.build_argv,
         parse=_regripper.parse,
-        host_mounts=_regripper.host_mounts,
     ),
 
     # --- Helper de filtrado JSON para el agente (stage base de ambos maletines) ---

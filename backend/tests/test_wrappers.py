@@ -683,8 +683,10 @@ class TestChainsaw:
 # --------------------------------------------------------------------------- #
 class TestRegripper:
     def test_build_argv_minimum_valid(self):
-        argv = regripper.build_argv({"hive_path": "/tmp/SYSTEM"})
-        assert argv == ["-r", "/in/hive"]
+        # Realineado al maletín: -r referencia la ruta real de la hive (bajo /evidence),
+        # no el mount /in/hive del difunto modelo container-por-tool.
+        argv = regripper.build_argv({"hive_path": "/evidence/hives/SYSTEM"})
+        assert argv == ["-r", "/evidence/hives/SYSTEM"]
 
     def test_build_argv_with_plugin(self):
         argv = regripper.build_argv(
@@ -732,21 +734,9 @@ class TestRegripper:
         assert result["lines"] == 0
         assert result["looks_empty"] is True
 
-    def test_host_mounts_returns_resolved_path(self, tmp_path):
-        hive = tmp_path / "SYSTEM"
-        hive.write_bytes(b"hive-data")
-        ro, rw = regripper.host_mounts({"hive_path": str(hive)})
-        assert rw == {}
-        assert len(ro) == 1
-        host_key = next(iter(ro))
-        assert isinstance(host_key, Path)
-        # resolve() returns an absolute path
-        assert host_key.is_absolute()
-        assert ro[host_key] == "/in/hive"
-
-    def test_host_mounts_list_mode_empty(self):
-        ro, rw = regripper.host_mounts({"list": True})
-        assert ro == {} and rw == {}
+    def test_no_legacy_host_mounts(self):
+        # Realineado al maletín: ya no hay host_mounts (modelo container-por-tool muerto).
+        assert not hasattr(regripper, "host_mounts")
 
 
 # --------------------------------------------------------------------------- #
