@@ -1,0 +1,5 @@
+# file_info — identificación de la evidencia dvwa-disk.raw
+# Modo descripción (file -b):
+Linux rev 1.0 ext4 filesystem data, UUID=b632c5f5-a170-4dec-990e-c17ae97874af, volume name "DVWA" (extents) (64bit) (large files) (huge files)
+# Modo MIME (file -b --mime) [run 72ea3c8c-1145-4e74-8865-c1221f0f38cf]:
+application/octet-stream; charset=binary
