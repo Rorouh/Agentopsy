@@ -39,6 +39,7 @@ from forensia.executors import (
     ExecutorError,
     GeminiExecutor,
     OllamaExecutor,
+    executor_models,
     get_executor,
     resolve_timeout,
 )
@@ -333,3 +334,62 @@ def test_no_api_key_strings_anywhere_in_backend() -> None:
             if needle in text:
                 offenders.append(f"{path}: {needle}")
     assert not offenders, "API keys reintroducidas (SECURITY INVARIANT 7): " + "; ".join(offenders)
+
+
+# --------------------------------------------------------------------------- #
+# executor_models — selector de modelos del composer (por proveedor)
+# --------------------------------------------------------------------------- #
+def test_executor_models_cloud_is_not_editable_and_notes_cli() -> None:
+    """Los CLIs cloud gestionan su modelo; FORENSIA no lo sobrescribe (RULE 2)."""
+    for cid in ("claude-code", "codex", "gemini"):
+        res = executor_models(cid)
+        assert res["editable"] is False
+        assert res["models"] == []
+        assert isinstance(res["note"], str) and res["note"]
+
+
+def test_executor_models_ollama_lists_installed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(OllamaExecutor, "list_models", lambda self: ["a:8b", "b:7b"])
+    res = executor_models("ollama")
+    assert res["editable"] is True
+    assert res["models"] == ["a:8b", "b:7b"]
+    assert res["note"] is None
+
+
+def test_executor_models_ollama_degrades_on_host_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Host caído → lista vacía + la razón accionable en note (no un fallo mudo)."""
+    def boom(self: OllamaExecutor) -> list[str]:
+        raise ExecutorError("Ollama no responde en http://x")
+
+    monkeypatch.setattr(OllamaExecutor, "list_models", boom)
+    res = executor_models("ollama")
+    assert res["editable"] is True
+    assert res["models"] == []
+    assert "Ollama no responde" in str(res["note"])
+
+
+def test_executor_models_unknown_id_fails_loud() -> None:
+    with pytest.raises(ValueError, match="desconocido"):
+        executor_models("gpt5")
+
+
+def test_models_endpoint_ollama(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(OllamaExecutor, "list_models", lambda self: ["qwen2.5:7b-instruct"])
+    r = client.get(
+        "/api/executors/ollama/models",
+        headers={"X-Forensia-Token": client.app.state.token},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["executor"] == "ollama"
+    assert body["editable"] is True
+    assert body["models"] == ["qwen2.5:7b-instruct"]
+
+
+def test_models_endpoint_unknown_id_is_400(client: TestClient) -> None:
+    r = client.get(
+        "/api/executors/nope/models",
+        headers={"X-Forensia-Token": client.app.state.token},
+    )
+    assert r.status_code == 400
+    assert "desconocido" in r.json()["detail"]

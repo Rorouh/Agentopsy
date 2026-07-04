@@ -28,7 +28,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from forensia.config import CONFIG_DIR, CONFIG_FILE, config
-from forensia.executors import EXECUTOR_IDS
+from forensia.executors import EXECUTOR_IDS, executor_models
 from forensia.security import require_token
 
 router = APIRouter()
@@ -128,3 +128,14 @@ def list_executors() -> dict[str, Any]:
     """Closed enum of executor ids for the Settings dropdown. Availability (with
     the actionable reason when one is down) lives in ``/api/capabilities``."""
     return {"executors": list(EXECUTOR_IDS)}
+
+
+@router.get("/api/executors/{executor_id}/models", dependencies=[Depends(require_token)])
+def list_models(executor_id: str) -> dict[str, Any]:
+    """Models the composer's model picker offers for ``executor_id``. Ollama returns
+    its installed models (editable); the cloud CLIs return a note (their CLI owns the
+    model — RULE 2). Unknown id → 400 with the valid ids."""
+    try:
+        return executor_models(executor_id)
+    except ValueError as exc:  # unknown executor id
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
