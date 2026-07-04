@@ -6,6 +6,94 @@ No reemplaza ni contradice `arquitectura.md` ni `modelo-amenazas.md`; los comple
 
 ---
 
+## Entrada 2026-07-04 — Migración visual selectiva desde `dev/local-changes`
+
+Se traslada a la SPA de `web/` la organización, jerarquía y acabado visual más reciente
+de la rama `dev/local-changes` (`desktop/renderer/src/`), usada **solo como referencia
+visual**: su lógica (Electron/IPC, `window.forensia`, `ActiveCaseContext`, diálogos
+nativos, proveedores con API keys, `caps.models`) es anterior al pivote y NO se copia.
+Backend, Docker, nginx, contratos REST, seguridad y la capa de ejecutores CLI quedan
+intactos — cero cambios fuera de `web/src/` y esta documentación.
+
+### Navegación y primera pantalla
+
+- `DEFAULT_VIEW` pasa de `guide` a `investigation`. Orden primario: Chat
+  Investigación, Casos y evidencias, Timeline, Documentos, MITRE ATT&CK; secundario:
+  Estado del Sistema, Configuración, Guía (`navigation/navItems.ts`).
+- `Sidebar.tsx`: `aria-current="page"` en el ítem activo. El footer (conexión +
+  versión) se retira; ambos datos siguen accesibles en **Estado del Sistema**, que
+  ahora recibe `isConnected`/`version` como props opcionales y los pinta en la tarjeta
+  Plataforma. `AppShell` deja de recibir `isConnected`/`version`.
+- `ChatPage.tsx` (solo copy, ownership respetado): encabezado inicial
+  "¿Qué analizamos hoy?" (fuera el nombre personal) y placeholder genérico
+  "Escribe una consulta sobre el caso". Selector de ejecutores, razones de
+  indisponibilidad, aviso cloud, consentimiento RGPD y bloqueo del envío: sin cambios.
+
+### SettingsPage: rediseño completo con pestañas
+
+`SettingsPage.tsx` se reorganiza en 4 pestañas accesibles (`tablist`/`tab`/`tabpanel`
+con `aria-selected` + `aria-controls`):
+
+1. **Ejecutores / IA** — bloque de estado de los 4 ejecutores desde `caps.executors`
+   (indicador local/cloud, disponibilidad, razón accionable), botón explícito de
+   refresh de capabilities, select de `DEFAULT_EXECUTOR`, campos `OLLAMA_HOST` /
+   `OLLAMA_MODEL` / `FORENSIA_EXECUTOR_TIMEOUT` y explicación de la sesión CLI en el
+   volumen `forensia-cli-auth` (privacidad + revocación). La lógica de guardado es la
+   misma (`api.config.get`/`set`, allowlist cerrada, `onCapsRefresh`, errores tal
+   cual); solo se añade el flash UI "✓ Guardado" por clave.
+2. **Operador y reportes** — los campos y toggles existentes, marcados con
+   `demo-banner` como vista previa sin persistencia (siguen `disabled`; no se inventa
+   persistencia). Placeholders genéricos: "Nombre completo", "Organización o
+   institución (opcional)", "Rol profesional (opcional)".
+3. **Apariencia** — ThemeToggle + tema actual + nota de persistencia `localStorage`.
+4. **Sistema** — seguridad/privacidad, diagnóstico (versión incluida), alcance
+   académico y CTA a Estado del Sistema.
+
+La prop `activeCase` de SettingsPage desaparece (solo alimentaba un `defaultValue`
+con nombre personal).
+
+### Otras pantallas
+
+- `RepositoryPage`: misma lógica y handlers (bandeja `/api/evidence/sources`,
+  `registerSelectedSource`, verify, close); visualmente el dropzone pasa a tarjeta
+  `fullWidth` arriba, labels con `htmlFor`/`id`, CTAs principales con la nueva
+  variante `primary`, placeholders genéricos ("Nombre o referencia del caso",
+  "Nombre completo", "Descripción breve del caso (opcional)", "Selecciona una fuente
+  de evidencia").
+- `Timeline`/`Documentos`/`MITRE`: banner `demo-banner` "Vista demo" porque consumen
+  mocks.
+- `GuidePage`: se conserva íntegra (comandos Docker, login CLI, revocación, avisos);
+  solo se ajusta la referencia a la pestaña "Ejecutores / IA". (La referencia visual
+  había borrado esa tarjeta; aquí se mantiene deliberadamente.)
+- Mocks: fuera "S. Bravo" y el caso aparentemente real → "Caso de demostración ·
+  Equipo comprometido" / "Analista forense".
+
+### Sistema visual
+
+Portado selectivo del CSS de referencia (no `index.css` completo): token
+`--focus-ring` (light+dark), `.btn-primary` (+ variante `primary` en `ui/Button.tsx`),
+`.demo-banner`, reglas `:focus-visible` (inputs, nav, chips, tabs), `.chip:disabled`,
+pestañas y formularios `.settings-tabs`/`.settings-tab`/`.settings-panel`/
+`.settings-form`/`.field-hint`/`.field-error`/`.settings-save-row`/`.settings-saved`/
+`.settings-form-error`, y el bloque de disponibilidad adaptado a ejecutores
+(`.settings-exec-*`, renombrado desde `.settings-model-*` porque aquí no hay
+"modelos/proveedores"). Se elimina `outline: none` de textarea/inputs (lo sustituye el
+foco visible). NO se porta `.input-with-toggle` (era para API keys — aquí no existen).
+CSS muerto eliminado: `.sidebar-footer`, `.system-status-indicator`,
+`.status-label-group`, `.app-version`, `.settings-grid`, `.settings-current-theme`.
+Cero hex nuevos: todo consume tokens existentes.
+
+### Verificación
+
+`npm run typecheck` limpio, `npm run build` OK (vite, 59 módulos), `git diff --check`
+sin problemas. Backend sin tocar (nada fuera de `web/` y docs). Revisión visual real a
+1440×900 en claro y oscuro (api standalone en 127.0.0.1:8000 + vite dev + Chrome
+headless): Investigación, Settings (las 4 pestañas), Casos y evidencias, Timeline,
+MITRE y Estado del Sistema — sin overflow ni textos cortados; los banners demo, el
+foco visible y la variante `primary` renderizan correctamente en ambos temas.
+
+---
+
 ## Entrada 2026-07-02 (3) — Desmontaje: `desktop/` eliminado; `web/` es el único frontend
 
 Cierre del pivote: se eliminan `desktop/` (main.cjs, preload.cjs, electron-builder),

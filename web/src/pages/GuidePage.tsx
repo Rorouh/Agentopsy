@@ -56,7 +56,7 @@ docker compose exec -it api codex login --device-auth  # Codex CLI (device-code)
 docker compose exec -it -e NO_BROWSER=true api gemini  # Gemini CLI (URL + código)`}</code>
           </pre>
           <p style={{ marginBottom: 0 }}>
-            Comprueba el estado en <strong>Configuración → Ejecutores</strong>. Para revocar la sesión:
+            Comprueba el estado en <strong>Configuración → Ejecutores / IA</strong>. Para revocar la sesión:
             <code> docker compose down -v</code>. Elegir un ejecutor cloud envía contenido derivado del caso a
             ese proveedor bajo tu cuenta; la aplicación lo advierte y lo registra en el audit log.
           </p>

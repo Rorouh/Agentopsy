@@ -7,9 +7,13 @@ import { LoadingState } from "../ui/LoadingState";
 
 interface SystemStatusPageProps {
   caps: Capabilities | null;
+  // Estado de conexión + versión del api: antes vivían en el footer del
+  // sidebar; ahora esta página es su único punto de consulta.
+  isConnected?: boolean;
+  version?: string;
 }
 
-export function SystemStatusPage({ caps }: SystemStatusPageProps) {
+export function SystemStatusPage({ caps, isConnected, version }: SystemStatusPageProps) {
   return (
     <div>
       <PageHeader
@@ -23,6 +27,16 @@ export function SystemStatusPage({ caps }: SystemStatusPageProps) {
             <h3>Plataforma</h3>
             <KeyValueList
               items={[
+                {
+                  label: "Conexión con el api",
+                  value: (
+                    <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <StatusDot online={isConnected === true} />
+                      {isConnected ? "Conectado" : "Sin conexión"}
+                    </span>
+                  ),
+                },
+                { label: "Versión", value: version ? `v${version}` : "—" },
                 { label: "Sistema Operativo", value: caps.os },
                 { label: "Arquitectura", value: caps.arch },
                 { label: "Python (servicio api)", value: caps.python },

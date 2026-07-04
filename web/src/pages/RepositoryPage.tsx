@@ -359,66 +359,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
       </div>
 
       <div className="status-grid">
-        <Card>
-          <h3>Nuevo caso</h3>
-          <div className="form-grid">
-            <div className="form-field full-width">
-              <label className="form-label">Nombre del caso</label>
-              <input
-                className="form-input"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                maxLength={200}
-                placeholder="Caso 2026-014 · Estación de trabajo comprometida"
-              />
-            </div>
-            <div className="form-field">
-              <label className="form-label">Examinador</label>
-              <input
-                className="form-input"
-                value={form.examiner}
-                onChange={(e) => setForm({ ...form, examiner: e.target.value })}
-                maxLength={200}
-                placeholder="S. Bravo"
-              />
-            </div>
-            <div className="form-field">
-              <label className="form-label">Perfil de SO</label>
-              <select
-                className="form-select"
-                value={form.os_profile}
-                onChange={(e) =>
-                  setForm({ ...form, os_profile: e.target.value as "unix" | "windows" })
-                }
-              >
-                <option value="unix">Unix-like</option>
-                <option value="windows">Windows</option>
-              </select>
-            </div>
-            <div className="form-field full-width">
-              <label className="form-label">Descripción / notas</label>
-              <textarea
-                className="form-textarea"
-                rows={3}
-                value={form.notes}
-                onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                placeholder="Imagen forense de disco + volcado de memoria de un equipo Windows 11 con sospecha de exfiltración."
-              />
-            </div>
-          </div>
-          {createError && (
-            <div className="error-state" style={{ marginTop: 8 }}>
-              <strong>No se pudo crear el caso:</strong> {createError}
-            </div>
-          )}
-          <div className="cta-row">
-            <Button variant="chip" disabled={!formValid || creating} onClick={submitCase}>
-              {creating ? "Guardando…" : "Guardar caso"}
-            </Button>
-          </div>
-        </Card>
-
-        <Card>
+        <Card fullWidth>
           <h3>Registrar evidencia</h3>
           <div className="dropzone">
             <div className="dropzone-title">
@@ -436,11 +377,12 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
               <div className="form-field full-width" style={{ marginTop: 10 }}>
                 <select
                   className="form-select"
+                  aria-label="Fuente de evidencia"
                   value={selectedSourcePath}
                   onChange={(e) => setSelectedSourcePath(e.target.value)}
                   disabled={registering}
                 >
-                  <option value="">Selecciona un fichero de la bandeja…</option>
+                  <option value="">Selecciona una fuente de evidencia</option>
                   {sources.map((s) => (
                     <option key={s.path} value={s.path}>
                       {s.name} · {formatBytes(s.size)}
@@ -468,7 +410,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
                     : "Actualizar bandeja"}
               </Button>
               <Button
-                variant="chip"
+                variant="primary"
                 disabled={!activeCase || !selectedSourcePath || registering}
                 onClick={registerSelectedSource}
               >
@@ -488,7 +430,70 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
           )}
         </Card>
 
-        <Card fullWidth>
+        <Card>
+          <h3>Nuevo caso</h3>
+          <div className="form-grid">
+            <div className="form-field full-width">
+              <label className="form-label" htmlFor="case-name">Nombre del caso</label>
+              <input
+                id="case-name"
+                className="form-input"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                maxLength={200}
+                placeholder="Nombre o referencia del caso"
+              />
+            </div>
+            <div className="form-field">
+              <label className="form-label" htmlFor="case-examiner">Examinador</label>
+              <input
+                id="case-examiner"
+                className="form-input"
+                value={form.examiner}
+                onChange={(e) => setForm({ ...form, examiner: e.target.value })}
+                maxLength={200}
+                placeholder="Nombre completo"
+              />
+            </div>
+            <div className="form-field">
+              <label className="form-label" htmlFor="case-os-profile">Perfil de SO</label>
+              <select
+                id="case-os-profile"
+                className="form-select"
+                value={form.os_profile}
+                onChange={(e) =>
+                  setForm({ ...form, os_profile: e.target.value as "unix" | "windows" })
+                }
+              >
+                <option value="unix">Unix-like</option>
+                <option value="windows">Windows</option>
+              </select>
+            </div>
+            <div className="form-field full-width">
+              <label className="form-label" htmlFor="case-notes">Descripción / notas</label>
+              <textarea
+                id="case-notes"
+                className="form-textarea"
+                rows={3}
+                value={form.notes}
+                onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                placeholder="Descripción breve del caso (opcional)"
+              />
+            </div>
+          </div>
+          {createError && (
+            <div className="error-state" style={{ marginTop: 8 }}>
+              <strong>No se pudo crear el caso:</strong> {createError}
+            </div>
+          )}
+          <div className="cta-row">
+            <Button variant="primary" disabled={!formValid || creating} onClick={submitCase}>
+              {creating ? "Guardando…" : "Guardar caso"}
+            </Button>
+          </div>
+        </Card>
+
+        <Card>
           <h3>Evidencias del caso ({evidence.length})</h3>
           {evidence.length === 0 ? (
             <div className="empty-state">

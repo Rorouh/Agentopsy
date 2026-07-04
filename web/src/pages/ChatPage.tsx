@@ -746,7 +746,7 @@ export function ChatPage({ caps, activeCase, activeEvidence, onTurnComplete }: C
       {msgs.length === 0 ? (
         // Welcome / empty state
         <div className="chat-welcome">
-          <div className="welcome-title">Bueno Santi a trabajar ...</div>
+          <div className="welcome-title">¿Qué analizamos hoy?</div>
 
           <div className="agent-badge" title={activeAgent?.path ?? ""}>
             {activeAgent ? (
@@ -774,7 +774,7 @@ export function ChatPage({ caps, activeCase, activeEvidence, onTurnComplete }: C
               <textarea
                 ref={inputRef}
                 className="composer-textarea"
-                placeholder="Pregunta a FORENSIA sobre tu caso..."
+                placeholder="Escribe una consulta sobre el caso"
                 rows={1}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -826,7 +826,7 @@ export function ChatPage({ caps, activeCase, activeEvidence, onTurnComplete }: C
               <textarea
                 ref={inputRef}
                 className="composer-textarea"
-                placeholder="Haz una pregunta o consulta forense..."
+                placeholder="Escribe una consulta sobre el caso"
                 rows={1}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}

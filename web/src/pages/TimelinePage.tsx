@@ -48,6 +48,7 @@ export function TimelinePage({ activeCase, activeEvidence, events, onNavigate }:
       />
 
       <ContextBanner activeCase={activeCase} activeEvidence={activeEvidence} />
+      <div className="demo-banner">⚠ Vista demo · los eventos mostrados son datos de ejemplo hasta que el backend genere la línea de tiempo real.</div>
 
       {!activeEvidence ? (
         <EmptyState
