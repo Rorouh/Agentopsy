@@ -30,7 +30,7 @@ una imagen con `tsk_icat`/`tsk_fls` o se descargan sueltos.
 | `foremost` | ambos | carving por cabecera/pie desde espacio no asignado | imagen con ficheros borrados/no asignado | Digital Corpora `nps-2009-canon2` (SD FAT, con borrados) | 📥 |
 | `hashdeep` | ambos | hashing recursivo + audit contra set conocido | cualquier fichero/dir | ficheros extraídos del DVWA, o NSRL set | ✅ |
 | `qemu_nbd` | ambos | exponer raw/qcow2 como block device (helper de montaje) | imagen `.raw`/`.qcow2` | DVWA (raw) · o qcow2 de abajo | ✅ |
-| `volatility3` | ambos | plugins de memoria: pslist/pstree/psscan/netscan/malfind/… | **volcado de RAM** + ISF/símbolos del kernel | Volatility Memory Samples (Windows) — ver URL | 📥 |
+| `volatility3` | ambos | plugins de memoria: pslist/pstree/psscan/netscan/malfind/… | **volcado de RAM** + ISF/símbolos del kernel | Volatility Memory Samples (Windows) — ver URL | ✅ |
 | `hayabusa` | windows | EVTX → detecciones Sigma + timeline (`csv-timeline`) | logs `.evtx` de Windows | hayabusa-sample-evtx · EVTX-ATTACK-SAMPLES | 📥 |
 | `chainsaw` | windows | hunt Sigma sobre EVTX/MFT/registro (`hunt`) | logs `.evtx` (y opcional `$MFT`/hives) | EVTX-ATTACK-SAMPLES | ✅ |
 | `plaso_log2timeline` | ambos | super-timeline multi-fuente (disco/EVTX/registro) → `.plaso` | imagen de disco o artefactos | CFReDS Hacking Case · o `test_data` de plaso | 📥 |

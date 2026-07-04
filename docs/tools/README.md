@@ -9,8 +9,8 @@ probada**, agrupada por fase forense. La columna **Ficha** enlaza al documento d
 > hay que **actualizar esta tabla**: alta/baja de fila, cambio de descripción y enlace a su ficha.
 > No listar aquí una tool que no arranque todavía.
 
-Estado: **19/22** tools del catálogo instaladas y probadas. Las 3 restantes
-(`volatility3`, `evtxecmd`, `mftecmd`) **aún no están operativas** (ver [pendientes](#pendientes-de-instalar))
+Estado: **20/22** tools del catálogo instaladas y probadas. Las 2 restantes
+(`evtxecmd`, `mftecmd`) **aún no están operativas** (ver [pendientes](#pendientes-de-instalar))
 y por eso no aparecen en las tablas.
 
 ---
@@ -49,6 +49,12 @@ y por eso no aparecen en las tablas.
 | `bulk_extractor` | Escanea **toda** la imagen (incl. no asignado) buscando **emails, URLs, IPs, tarjetas, EXIF** | ✅ | [A](../pruebas/grupo-a/dvwa-container-rootfs/bulk_extractor.md) · [B](../pruebas/grupo-b/metasploitable2-linux/bulk_extractor.md) |
 | `yara` | Aplica **reglas/firmas** (webshells, malware, persistencia) a ficheros | ✅ | [ver](../pruebas/grupo-a/dvwa-container-rootfs/yara.md) |
 
+## 🧠 Memoria RAM
+
+| Tool | Para qué sirve | Estado | Ficha |
+|------|----------------|:------:|-------|
+| `volatility3` | Análisis de un **volcado de RAM** (procesos y árbol padre/hijo, líneas de comando, conexiones de red, **código inyectado**) | ✅ | [ver](../pruebas/grupo-c/windows7-x64-ram-dump/volatility3.md) |
+
 ## 🪟 Windows: eventos, registro, timeline
 
 | Tool | Para qué sirve | Estado | Ficha |
@@ -68,6 +74,5 @@ como recordatorio; se moverán a la tabla que les corresponda cuando queden oper
 
 | Tool | Para qué sirve | Bloqueo |
 |------|----------------|---------|
-| `volatility3` | Análisis de **memoria RAM** (procesos ocultos, conexiones C2, malware fileless, hashes en RAM) | falta volcado de RAM (evidencia externa) |
 | `evtxecmd` | EVTX → **CSV/JSON normalizado** (todos los eventos crudos, no alertas) — Eric Zimmerman | .NET sin absorber en el Dockerfile del maletín |
 | `mftecmd` | Parsea el **`$MFT`** de NTFS → timeline, timestomping, ADS, borrados residentes — Eric Zimmerman | .NET sin absorber en el Dockerfile del maletín |
