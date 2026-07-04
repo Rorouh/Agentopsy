@@ -9,9 +9,7 @@ probada**, agrupada por fase forense. La columna **Ficha** enlaza al documento d
 > hay que **actualizar esta tabla**: alta/baja de fila, cambio de descripción y enlace a su ficha.
 > No listar aquí una tool que no arranque todavía.
 
-Estado: **20/22** tools del catálogo instaladas y probadas. Las 2 restantes
-(`evtxecmd`, `mftecmd`) **aún no están operativas** (ver [pendientes](#pendientes-de-instalar))
-y por eso no aparecen en las tablas.
+Estado: **22/22** tools del catálogo instaladas y probadas. 🎯
 
 ---
 
@@ -64,15 +62,10 @@ y por eso no aparecen en las tablas.
 | `regripper` | Plugins sobre **hives del registro** (cuentas, USB, persistencia, ejecución) | ✅ | [ver](../pruebas/grupo-c/windows-registry-hives-ericzimmerman/regripper.md) |
 | `plaso_log2timeline` | **Super-timeline**: fusiona disco+EVTX+registro+navegador en un `.plaso` | ✅ | [ver](../pruebas/grupo-b/metasploitable2-linux/plaso.md) |
 | `plaso_psort` | Post-procesa el `.plaso` → CSV filtrable por rango de fechas | ✅ | [ver](../pruebas/grupo-b/metasploitable2-linux/plaso.md) |
+| `evtxecmd` | EVTX → **CSV/JSON normalizado** (todos los eventos crudos, no alertas) — Eric Zimmerman | ✅ | [ver](../pruebas/grupo-c/windows-evtx-hayabusa-samples/evtxecmd.md) |
+| `mftecmd` | Parsea el **`$MFT`** de NTFS → árbol, timeline, timestomping (`$SI`/`$FN`), ADS, borrados — Eric Zimmerman | ✅ | [ver](../pruebas/grupo-c/windows-ntfs-mft-nist/mftecmd.md) |
 
 ---
 
-## Pendientes de instalar
-
-No están en las tablas de arriba porque **aún no arrancan** en el maletín. Se listan aquí solo
-como recordatorio; se moverán a la tabla que les corresponda cuando queden operativos.
-
-| Tool | Para qué sirve | Bloqueo |
-|------|----------------|---------|
-| `evtxecmd` | EVTX → **CSV/JSON normalizado** (todos los eventos crudos, no alertas) — Eric Zimmerman | .NET sin absorber en el Dockerfile del maletín |
-| `mftecmd` | Parsea el **`$MFT`** de NTFS → timeline, timestomping, ADS, borrados residentes — Eric Zimmerman | .NET sin absorber en el Dockerfile del maletín |
+**Catálogo completo:** las 22 tools del maletín están instaladas, probadas y con ficha. No
+quedan pendientes de instalar.
