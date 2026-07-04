@@ -7,6 +7,7 @@ At least one rule source — `sigma_dir` or `rules_dir` — must be provided.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 ALLOWED_FLAGS = frozenset({"hunt", "-s", "-r", "--csv", "--json", "--output"})
@@ -57,11 +58,28 @@ def build_argv(params: dict[str, Any]) -> list[str]:
     return argv
 
 
-def parse(stdout: str) -> dict[str, Any]:
-    """Count Chainsaw's detection lines (it prefixes findings with `[+]`)."""
-    detections = 0
-    for line in stdout.splitlines():
-        s = line.lstrip()
-        if s.startswith("[+]"):
-            detections += 1
-    return {"detections": detections, "lines": stdout.count("\n")}
+_DETECTIONS_RE = re.compile(r"(?P<n>\d+)\s+Detections?\s+found", re.IGNORECASE)
+_CREATED_RE = re.compile(r"\bCreated\s+(?P<name>[\w .()\-]+?\.csv)\b")
+
+
+def parse(stdout: str, stderr: str = "") -> dict[str, Any]:
+    """Summarise a Chainsaw hunt.
+
+    Bug 007: Chainsaw prints its banner, progress and the ``[+] N Detections found``
+    summary to **stderr** (with ``--output`` the per-rule tables go to CSV files, so
+    stdout is empty). The dispatcher passes ``stderr`` to wrappers whose ``parse``
+    accepts it; we read the count from there, falling back to stdout for safety.
+    """
+    stream = "\n".join(s for s in (stdout, stderr) if s)
+
+    detections: int | None = None
+    if m := _DETECTIONS_RE.search(stream):
+        detections = int(m.group("n"))
+
+    categories = [m.group("name").strip() for m in _CREATED_RE.finditer(stream)]
+
+    # Legacy fallback: count `[+]`-prefixed lines if the summary line is absent.
+    if detections is None:
+        detections = sum(1 for ln in stream.splitlines() if ln.lstrip().startswith("[+]"))
+
+    return {"detections": detections, "categories": categories}

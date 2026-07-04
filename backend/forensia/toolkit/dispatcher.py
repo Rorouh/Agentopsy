@@ -22,6 +22,7 @@ When ``case_id`` is ``None`` the behaviour is identical to the original signatur
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import asdict
 from typing import Any
 
@@ -205,6 +206,24 @@ def _run_maletin(
     return argv, exit_code, stdout, stderr
 
 
+def _parse_wants_stderr(parse_fn: Any) -> bool:
+    """True when a wrapper's ``parse`` accepts a second positional arg (stderr).
+
+    Wrappers whose useful summary lands on stderr (chainsaw) opt in by declaring
+    ``parse(stdout, stderr)``; the default ``parse(stdout)`` keeps working unchanged.
+    """
+    try:
+        params = inspect.signature(parse_fn).parameters
+    except (TypeError, ValueError):
+        return False
+    positional = [
+        p
+        for p in params.values()
+        if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+    ]
+    return len(positional) >= 2
+
+
 def _build_result(
     tool: Tool,
     argv: list[str],
@@ -215,7 +234,13 @@ def _build_result(
     parsed: Any | None = None
     if exit_code == 0:
         try:
-            parsed = tool.parse(stdout)
+            # Bug 007: algunas tools (chainsaw) emiten su resumen por STDERR, no stdout.
+            # Los wrappers que necesitan stderr declaran `parse(stdout, stderr)`; el resto
+            # sigue con `parse(stdout)`. Elegimos por aridad para no romper el contrato.
+            if _parse_wants_stderr(tool.parse):
+                parsed = tool.parse(stdout, stderr)
+            else:
+                parsed = tool.parse(stdout)
         except Exception as exc:  # noqa: BLE001 — parser bugs become structured errors, not crashes
             parsed = {"parse_error": f"{type(exc).__name__}: {exc}"}
     return {

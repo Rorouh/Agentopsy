@@ -184,6 +184,39 @@ def test_build_result_nonzero_exit_skips_parse() -> None:
     assert result["parsed"] is None
 
 
+def test_build_result_passes_stderr_to_two_arg_parser() -> None:
+    """Bug 007: wrappers whose useful summary lands on stderr declare
+    parse(stdout, stderr); the dispatcher must feed stderr in that case."""
+
+    def parse_with_stderr(stdout, stderr=""):
+        return {"saw_stderr": stderr}
+
+    tool = Tool(
+        id="fake_stderr_parser",
+        binary="x",
+        os_profiles=("windows",),
+        parse=parse_with_stderr,
+    )
+    result = _build_result(tool, ["x"], 0, "", "[+] 56 Detections found")
+    assert result["parsed"] == {"saw_stderr": "[+] 56 Detections found"}
+
+
+def test_build_result_single_arg_parser_gets_only_stdout() -> None:
+    """A classic parse(stdout) must keep receiving stdout alone — no arity break."""
+
+    def parse_stdout_only(stdout):
+        return {"seen": stdout}
+
+    tool = Tool(
+        id="fake_stdout_parser",
+        binary="x",
+        os_profiles=("unix",),
+        parse=parse_stdout_only,
+    )
+    result = _build_result(tool, ["x"], 0, "hello", "ignored-stderr")
+    assert result["parsed"] == {"seen": "hello"}
+
+
 def test_build_result_parser_exception_becomes_structured_error() -> None:
     """If a wrapper's parse() raises, the dispatcher must NOT crash — the
     structured error is what reaches the audit log."""

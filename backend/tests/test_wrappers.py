@@ -652,14 +652,30 @@ class TestChainsaw:
                 {"target_dir": "/in", "sigma_dir": "/s", "output_format": "csv"}
             )
 
-    def test_parse_detection_lines(self):
+    def test_parse_summary_from_stderr(self):
+        # Bug 007: chainsaw emite el resumen y las líneas `Created X.csv` por STDERR.
+        stderr = (
+            "[+] Loading detection rules\n"
+            "[+] Created credential_access.csv\n"
+            "[+] Created lateral_movement.csv\n"
+            "[+] 56 Detections found on 56 documents\n"
+        )
+        result = chainsaw.parse("", stderr)
+        assert result["detections"] == 56
+        assert result["categories"] == [
+            "credential_access.csv",
+            "lateral_movement.csv",
+        ]
+
+    def test_parse_detection_lines_fallback(self):
+        # Sin la línea de resumen, cae al conteo legacy de líneas `[+]`.
         sample = "[*] Loading rules\n[+] Hit one\n[+] Hit two\nrandom\n"
         result = chainsaw.parse(sample)
         assert result["detections"] == 2
 
     def test_parse_empty(self):
         result = chainsaw.parse("")
-        assert result == {"detections": 0, "lines": 0}
+        assert result == {"detections": 0, "categories": []}
 
 
 # --------------------------------------------------------------------------- #

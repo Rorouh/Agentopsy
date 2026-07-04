@@ -17,3 +17,4 @@ con su reproducción y causa raíz.
 | [004](004-exec-agent-utf8-crash.md) | El exec-agent crashea con salida no-UTF-8 (RemoteDisconnected) — `errors="replace"` | alta | resuelto |
 | [005](005-hayabusa-glibc-gnu-build.md) | hayabusa (build gnu) no arranca en Ubuntu 22.04 (`GLIBC_2.38`) — usar build musl | alta | resuelto |
 | [006](006-hayabusa-wizard-no-tty.md) | hayabusa panica sin TTY (`not a terminal`, exit 101) — falta `--no-wizard` en el wrapper | alta | resuelto |
+| [007](007-chainsaw-parser-lee-stdout-no-stderr.md) | El parser de `chainsaw` leía stdout, pero chainsaw resume por stderr (parsed=0 con artefacto correcto) — dispatcher pasa stderr por aridad | media | resuelto |
