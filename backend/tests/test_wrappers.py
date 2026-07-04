@@ -27,11 +27,14 @@ from forensia.toolkit.wrappers import (
     chainsaw,
     evtxecmd,
     ewf_info,
+    foremost,
+    hashdeep,
     hayabusa,
     jq,
     mftecmd,
     regripper,
     tsk_fls,
+    tsk_icat,
     tsk_mactime,
     tsk_mmls,
     volatility3,
@@ -848,3 +851,153 @@ class TestMftECmd:
         assert rw_key.is_absolute()
         assert ro[ro_key] == "/in/mft"
         assert rw[rw_key] == "/out"
+
+
+# --------------------------------------------------------------------------- #
+# hashdeep
+# --------------------------------------------------------------------------- #
+class TestHashdeep:
+    def test_build_argv_minimum_valid(self):
+        argv = hashdeep.build_argv({"image_path": "/ev/img.raw"})
+        assert isinstance(argv, list) and all(isinstance(a, str) for a in argv)
+        # default algorithms md5,sha256
+        assert argv[:2] == ["-c", "md5,sha256"]
+        assert argv[-1] == "/ev/img.raw"
+
+    def test_build_argv_custom_algorithms_and_recursive(self):
+        argv = hashdeep.build_argv(
+            {"image_path": "/d", "algorithms": ["sha1", "sha256"], "recursive": True}
+        )
+        assert "-c" in argv and "sha1,sha256" in argv
+        assert "-r" in argv
+        assert argv[-1] == "/d"
+
+    def test_build_argv_missing_image_path_raises(self):
+        with pytest.raises(ValueError, match="image_path"):
+            hashdeep.build_argv({})
+
+    def test_build_argv_invalid_algorithm_raises(self):
+        with pytest.raises(ValueError, match="algorithm"):
+            hashdeep.build_argv({"image_path": "/x", "algorithms": ["crc32"]})
+
+    def test_build_argv_non_list_algorithms_raises(self):
+        with pytest.raises(ValueError, match="list"):
+            hashdeep.build_argv({"image_path": "/x", "algorithms": "md5"})
+
+    def test_parse_csv_with_header(self):
+        sample = (
+            "%%%% HASHDEEP-1.0\n"
+            "%%%% size,md5,sha256,filename\n"
+            "## Invoked from: /cases\n"
+            "231,e54785ec,f276816f,/cases/main.sh\n"
+            "1859,04f2e2ae,b36cf9f4,/cases/config.inc.php\n"
+        )
+        out = hashdeep.parse(sample)
+        assert out["files_count"] == 2
+        assert out["algorithms"] == ["md5", "sha256"]
+        first = out["files"][0]
+        assert first["path"] == "/cases/main.sh"
+        assert first["size"] == "231"
+        assert first["hashes"] == {"md5": "e54785ec", "sha256": "f276816f"}
+
+    def test_parse_empty_returns_dict(self):
+        out = hashdeep.parse("")
+        assert out["files_count"] == 0
+        assert out["files"] == []
+
+
+# --------------------------------------------------------------------------- #
+# foremost
+# --------------------------------------------------------------------------- #
+class TestForemost:
+    def test_build_argv_minimum_valid(self):
+        argv = foremost.build_argv({"image_path": "/ev/img.raw", "output_dir": "/run/out"})
+        assert isinstance(argv, list) and all(isinstance(a, str) for a in argv)
+        # carves into a FRESH subdir (foremost refuses an existing dir)
+        assert "-o" in argv and "/run/out/foremost" in argv
+        assert "-i" in argv and "/ev/img.raw" in argv
+
+    def test_build_argv_types_and_quick(self):
+        argv = foremost.build_argv(
+            {"image_path": "/x", "output_dir": "/o", "types": ["jpg", "pdf"], "quick": True}
+        )
+        assert "-t" in argv and "jpg,pdf" in argv
+        assert "-q" in argv
+
+    def test_build_argv_missing_image_path_raises(self):
+        with pytest.raises(ValueError, match="image_path"):
+            foremost.build_argv({"output_dir": "/o"})
+
+    def test_build_argv_missing_output_dir_raises(self):
+        with pytest.raises(ValueError, match="output_dir"):
+            foremost.build_argv({"image_path": "/x"})
+
+    def test_build_argv_invalid_type_raises(self):
+        with pytest.raises(ValueError, match="type"):
+            foremost.build_argv({"image_path": "/x", "output_dir": "/o", "types": ["iso"]})
+
+    def test_parse_finished_and_markers(self):
+        sample = "Processing: /ev/img.raw\nfoundat=abc\nfoundat=def\nForemost finished at 2026\n"
+        out = foremost.parse(sample)
+        assert out["finished"] is True
+        assert out["foundat_markers"] == 2
+
+    def test_parse_empty_returns_dict(self):
+        out = foremost.parse("")
+        assert out["finished"] is False
+        assert out["foundat_markers"] == 0
+
+
+# --------------------------------------------------------------------------- #
+# tsk_icat
+# --------------------------------------------------------------------------- #
+class TestTskIcat:
+    def test_build_argv_minimum_valid(self):
+        argv = tsk_icat.build_argv({"image_path": "/ev/img.raw", "inode": 13552})
+        assert argv == ["/ev/img.raw", "13552"]
+
+    def test_build_argv_inode_as_tsk_address(self):
+        argv = tsk_icat.build_argv({"image_path": "/x", "inode": "12-128-4"})
+        assert argv[-1] == "12-128-4"
+
+    def test_build_argv_full_flags(self):
+        argv = tsk_icat.build_argv(
+            {
+                "image_path": "/x",
+                "inode": 5,
+                "partition_offset": 2048,
+                "filesystem": "ext4",
+                "image_format": "raw",
+                "recover": True,
+                "slack": True,
+            }
+        )
+        for flag in ("-o", "-f", "-i", "-r", "-s"):
+            assert flag in argv
+        assert argv[-2:] == ["/x", "5"]
+
+    def test_build_argv_missing_image_path_raises(self):
+        with pytest.raises(ValueError, match="image_path"):
+            tsk_icat.build_argv({"inode": 1})
+
+    def test_build_argv_missing_inode_raises(self):
+        with pytest.raises(ValueError, match="inode"):
+            tsk_icat.build_argv({"image_path": "/x"})
+
+    def test_build_argv_bad_inode_raises(self):
+        with pytest.raises(ValueError, match="inode"):
+            tsk_icat.build_argv({"image_path": "/x", "inode": "1; rm -rf"})
+
+    def test_build_argv_invalid_filesystem_raises(self):
+        with pytest.raises(ValueError, match="filesystem"):
+            tsk_icat.build_argv({"image_path": "/x", "inode": 1, "filesystem": "btrfs"})
+
+    def test_parse_text_file(self):
+        out = tsk_icat.parse("root:x:0:0:root:/root:/bin/bash\n")
+        assert out["is_text"] is True
+        assert out["content_length"] > 0
+        assert "root" in out["preview"]
+
+    def test_parse_empty(self):
+        out = tsk_icat.parse("")
+        assert out["content_length"] == 0

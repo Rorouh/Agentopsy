@@ -33,6 +33,12 @@ from forensia.toolkit.wrappers import (
     file_info as _file_info,
 )
 from forensia.toolkit.wrappers import (
+    foremost as _foremost,
+)
+from forensia.toolkit.wrappers import (
+    hashdeep as _hashdeep,
+)
+from forensia.toolkit.wrappers import (
     strings_head as _strings_head,
 )
 from forensia.toolkit.wrappers import (
@@ -61,6 +67,9 @@ from forensia.toolkit.wrappers import (
 )
 from forensia.toolkit.wrappers import (
     tsk_fls as _tsk_fls,
+)
+from forensia.toolkit.wrappers import (
+    tsk_icat as _tsk_icat,
 )
 from forensia.toolkit.wrappers import (
     tsk_mactime as _tsk_mactime,
@@ -286,15 +295,42 @@ CATALOG: tuple[Tool, ...] = (
     # ====== EXTENDED TIER — se añaden tras estabilizar el core ======
 
     # Extracción puntual de ficheros (TSK, stage base)
-    Tool("tsk_icat", "icat", ("unix", "windows"), returns="artifact", toolkits=_BOTH),
+    Tool(
+        "tsk_icat",
+        "icat",
+        ("unix", "windows"),
+        returns="artifact",
+        toolkits=_BOTH,
+        allowed_flags=_tsk_icat.ALLOWED_FLAGS,
+        build_argv=_tsk_icat.build_argv,
+        parse=_tsk_icat.parse,
+    ),
 
     # Super-timeline (Plaso, stage base) — lento, kit "primera tarde"
     Tool("plaso_log2timeline", "log2timeline.py", ("unix", "windows"), returns="artifact", toolkits=_BOTH),
     Tool("plaso_psort", "psort.py", ("unix", "windows"), returns="artifact", toolkits=_BOTH),
 
     # Hashing / carving extra (stage base)
-    Tool("hashdeep", "hashdeep", ("unix", "windows"), returns="artifact", toolkits=_BOTH),
-    Tool("foremost", "foremost", ("unix",), returns="artifact", toolkits=_BOTH),
+    Tool(
+        "hashdeep",
+        "hashdeep",
+        ("unix", "windows"),
+        returns="artifact",
+        toolkits=_BOTH,
+        allowed_flags=_hashdeep.ALLOWED_FLAGS,
+        build_argv=_hashdeep.build_argv,
+        parse=_hashdeep.parse,
+    ),
+    Tool(
+        "foremost",
+        "foremost",
+        ("unix",),
+        returns="artifact",
+        toolkits=_BOTH,
+        allowed_flags=_foremost.ALLOWED_FLAGS,
+        build_argv=_foremost.build_argv,
+        parse=_foremost.parse,
+    ),
 
     # Montaje auxiliar (side-effecting; qemu-utils en el stage base)
     Tool("qemu_nbd", "qemu-nbd", ("unix",), side_effecting=True, toolkits=_BOTH),
