@@ -29,9 +29,10 @@ confirmada.**
 | `qemu_nbd` | ✅ integrado (wrapper) | ⚠️ runtime bloqueado en el compose (nbd+privilegios); documentado |
 | `yara` | ✅ **PROBADO** (DVWA) | ✅ binario instalado + regla propia matchea (run `177b21da`) |
 | `xxd_head` | ✅ **PROBADO** (DVWA) | ✅ binario instalado; hex del superbloque (run `cc56b3e9`) |
-| `volatility3` | ❌ no (no hay RAM) | **descargar** un volcado de memoria |
-| `hayabusa` / `chainsaw` | ❌ no (no hay Windows) | **descargar** `.evtx` (samples pequeños de GitHub) |
-| `regripper` / `evtxecmd` / `mftecmd` | ❌ no (no hay Windows) | **descargar** hives/`$MFT` o imagen Windows (+ arreglar catálogo `rip`→`rip.pl` / absorber .NET) |
+| `volatility3` | ❌ no (no hay RAM) | **descargar** un volcado (externo, NO en GitHub → curl desde la wiki de Volatility) |
+| `hayabusa` / `chainsaw` | ✅ **traído** (`windows-evtx-hayabusa-samples/`, 16 evtx) | listo para probar |
+| `regripper` | ✅ **traído** (`windows-registry-hives-ericzimmerman/`, 5 hives) | arreglar catálogo `rip`→`rip.pl` |
+| `evtxecmd` / `mftecmd` | ⚠️ EVTX sí; $MFT no | absorber tools .NET en el maletín (proximos-pasos §A) |
 
 ## Resumen
 
