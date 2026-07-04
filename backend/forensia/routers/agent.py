@@ -19,7 +19,13 @@ silent degradations that RULE 2 forbids.
 
 from __future__ import annotations
 
+import asyncio
+import json
+import threading
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from forensia.agent.agent import ForensicAgent
@@ -58,8 +64,12 @@ class QueryRequest(BaseModel):
     session_id: str = "main"
 
 
-@router.post("/api/agent/query", dependencies=[Depends(require_token)])
-def query(req: QueryRequest) -> dict:
+def _prepare_run(req: QueryRequest) -> tuple[ForensicAgent, str, list, dict]:
+    """Validate the request and build the agent (shared by /query and /query/stream).
+
+    Returns ``(agent, prompt, prior_messages, meta)``; raises ``HTTPException`` with the
+    actionable reason on any RULE-2 / consent / availability failure — identical checks
+    for both surfaces so the streaming path can't bypass them (SECURITY INVARIANT 7)."""
     prompt = (req.prompt or "").strip()
     if not prompt:
         raise HTTPException(status_code=422, detail="prompt is empty")
@@ -70,9 +80,6 @@ def query(req: QueryRequest) -> dict:
             detail=f"os_profile must be one of {sorted(_VALID_OS_PROFILES)}, "
                    f"got {req.os_profile!r}",
         )
-
-    # RULE 2: the operator anchors the query — FORENSIA never picks "the only
-    # case" or "the most recent evidence".
     if not req.case_id:
         raise HTTPException(
             status_code=422,
@@ -114,14 +121,8 @@ def query(req: QueryRequest) -> dict:
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
-        # case_id malformado (no UUID4) — petición inválida, no "caso no encontrado".
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    # SECURITY INVARIANT 7 / RGPD: a cloud-backed executor sends case-derived
-    # content to its vendor under the operator's account. The UI warns and the
-    # operator confirms (recorded via /api/agent/cloud-consent); enforce that
-    # here so an API client cannot bypass the UI-only warning. Ollama is local
-    # and never requires consent.
     if not executor.is_local and not has_cloud_consent(audit, req.case_id, executor.id):
         raise HTTPException(
             status_code=403,
@@ -136,25 +137,30 @@ def query(req: QueryRequest) -> dict:
             ),
         )
 
-    # Every executor run is audited with the literal argv / HTTP request; this
-    # also records the operator's (possibly cloud-backed) choice per SECURITY
-    # INVARIANT 7 — the UI shows the cloud warning based on `local` below.
     run_context: dict = {
         "audit": audit,
         "case_id": req.case_id,
         "temperature": float(pkg.model.temperature),
     }
     if executor.id == "ollama":
-        # Resolution order (both operator-explicit, RULE 2-safe): OLLAMA_MODEL
-        # from Settings wins; else the model the package recommends.
         run_context["model"] = config.get("OLLAMA_MODEL") or pkg.model.name
 
     model = ExecutorBackend(executor, run_context=run_context)
     agent = ForensicAgent(package=pkg, model=model, evidence=evidence_manager, audit=audit)
-
-    # Replay prior chat history (tool ledger + findings + user/assistant text)
-    # so the agent doesn't restart from scratch every turn.
     prior_messages = build_replay_messages(req.case_id, req.session_id)
+    meta = {
+        "evidence_id": req.evidence_id,
+        "case_id": req.case_id,
+        "os_profile": req.os_profile,
+        "executor": {"id": executor.id, "name": executor.name, "local": executor.is_local},
+        "agent": pkg.summary(),
+    }
+    return agent, prompt, prior_messages, meta
+
+
+@router.post("/api/agent/query", dependencies=[Depends(require_token)])
+def query(req: QueryRequest) -> dict:
+    agent, prompt, prior_messages, meta = _prepare_run(req)
     try:
         result = agent.run(
             prompt=prompt,
@@ -170,12 +176,63 @@ def query(req: QueryRequest) -> dict:
         "reply": result.get("reply", ""),
         "iterations": result.get("iterations"),
         "tool_calls": result.get("tool_calls", []),
-        "evidence_id": req.evidence_id,
-        "case_id": req.case_id,
-        "os_profile": req.os_profile,
-        "executor": {"id": executor.id, "name": executor.name, "local": executor.is_local},
-        "agent": pkg.summary(),
+        **meta,
     }
+
+
+@router.post("/api/agent/query/stream", dependencies=[Depends(require_token)])
+async def query_stream(req: QueryRequest) -> StreamingResponse:
+    """Same as /api/agent/query but streams the agent's progress as NDJSON: one JSON
+    object per line for each reasoning step / tool_call / tool_result / finding, then a
+    terminal ``{"type":"done", ...}`` carrying the final reply + metadata (so the UI can
+    persist the turn exactly like the blocking endpoint). The agent runs in a worker
+    thread; events cross to the event loop through a thread-safe queue."""
+    agent, prompt, prior_messages, meta = _prepare_run(req)
+
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+    _DONE = object()
+
+    def push(event: dict[str, Any]) -> None:
+        loop.call_soon_threadsafe(queue.put_nowait, event)
+
+    def worker() -> None:
+        try:
+            result = agent.run(
+                prompt=prompt,
+                case_id=req.case_id,
+                evidence_id=req.evidence_id,
+                prior_messages=prior_messages,
+                on_event=push,
+            )
+            push({
+                "type": "done",
+                "reply": result.get("reply", ""),
+                "iterations": result.get("iterations"),
+                "tool_calls": result.get("tool_calls", []),
+                **meta,
+            })
+        except (KeyError, ValueError) as exc:
+            push({"type": "error", "detail": str(exc)})
+        except Exception as exc:  # noqa: BLE001 — surface, never hang the stream
+            push({"type": "error", "detail": f"{type(exc).__name__}: {exc}"})
+        finally:
+            loop.call_soon_threadsafe(queue.put_nowait, _DONE)
+
+    async def ndjson():
+        threading.Thread(target=worker, name="agent-stream", daemon=True).start()
+        while True:
+            item = await queue.get()
+            if item is _DONE:
+                break
+            yield json.dumps(item, ensure_ascii=False) + "\n"
+
+    return StreamingResponse(
+        ndjson(),
+        media_type="application/x-ndjson",
+        # Defeat proxy/response buffering so events reach the browser as they happen.
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
 
 
 @router.get("/api/agents", dependencies=[Depends(require_token)])

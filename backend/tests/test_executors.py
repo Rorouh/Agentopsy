@@ -393,3 +393,18 @@ def test_models_endpoint_unknown_id_is_400(client: TestClient) -> None:
     )
     assert r.status_code == 400
     assert "desconocido" in r.json()["detail"]
+
+
+def test_stream_endpoint_requires_executor_like_query(
+    client: TestClient, clean_config: None
+) -> None:
+    """/query/stream aplica la MISMA validación RULE-2 que /query (no se puede
+    saltar los checks de ejecutor/consentimiento por la vía de streaming)."""
+    token = client.app.state.token
+    r = client.post(
+        "/api/agent/query/stream",
+        headers={"X-Forensia-Token": token},
+        json={"prompt": "analiza", "os_profile": "unix", "case_id": "c1", "evidence_id": "e1"},
+    )
+    assert r.status_code == 422
+    assert "executor" in r.json()["detail"]
