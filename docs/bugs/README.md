@@ -15,3 +15,5 @@ con su reproducción y causa raíz.
 | [002](002-tsk-fls-parser-recursivo-subcuenta.md) | El parser de `tsk_fls` recursivo subcuenta (14.234 → 22) por el prefijo de profundidad | media | abierto |
 | [003](003-tools-stub-sin-wrapper.md) | Tools stub sin wrapper (las 6 integradas: hashdeep/foremost/tsk_icat/plaso*/qemu_nbd) | alta | resuelto |
 | [004](004-exec-agent-utf8-crash.md) | El exec-agent crashea con salida no-UTF-8 (RemoteDisconnected) — `errors="replace"` | alta | resuelto |
+| [005](005-hayabusa-glibc-gnu-build.md) | hayabusa (build gnu) no arranca en Ubuntu 22.04 (`GLIBC_2.38`) — usar build musl | alta | resuelto |
+| [006](006-hayabusa-wizard-no-tty.md) | hayabusa panica sin TTY (`not a terminal`, exit 101) — falta `--no-wizard` en el wrapper | alta | resuelto |

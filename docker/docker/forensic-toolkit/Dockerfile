@@ -130,7 +130,7 @@ ENV FORENSIA_STAGE=windows
 
 # Versiones fijadas de binarios descargados (override con --build-arg)
 ARG HAYABUSA_VERSION=3.9.0
-ARG HAYABUSA_SHA256=ffb31e02bd47d840d999d964d4663287cdb194a22ea856904348786acba414d7
+ARG HAYABUSA_SHA256=c2fa65e4f255db17615c7c9d0acc9030c27db73f27b097499718930a48e420a3
 ARG CHAINSAW_VERSION=2.16.0
 ARG CHAINSAW_SHA256=5d46cd140838413aeb5711451a282b3922443d9ec6afaea3e6b6b220454fd807
 
@@ -151,12 +151,14 @@ RUN chmod +x /usr/local/bin/rip.pl && ln -sf /usr/local/bin/rip.pl /usr/local/bi
 
 # --- hayabusa (Sigma sobre EVTX) ---------------------------------------------
 # El zip incluye el binario + rules/ + config/. Reglas en /opt/hayabusa/rules.
+# Usamos el build MUSL (static-pie): el build gnu se enlaza dinámicamente y exige
+# glibc >= 2.38, pero la base es Ubuntu 22.04 (glibc 2.35) → GLIBC_2.38 not found (Bug 005).
 RUN cd /tmp \
- && wget -q "https://github.com/Yamato-Security/hayabusa/releases/download/v${HAYABUSA_VERSION}/hayabusa-${HAYABUSA_VERSION}-lin-x64-gnu.zip" -O hayabusa.zip \
+ && wget -q "https://github.com/Yamato-Security/hayabusa/releases/download/v${HAYABUSA_VERSION}/hayabusa-${HAYABUSA_VERSION}-lin-x64-musl.zip" -O hayabusa.zip \
  && echo "${HAYABUSA_SHA256}  hayabusa.zip" | sha256sum -c - \
  && mkdir -p /opt/hayabusa \
  && unzip -q hayabusa.zip -d /opt/hayabusa \
- && BIN="$(find /opt/hayabusa -type f -name 'hayabusa-*-lin-x64-gnu' | head -n1)" \
+ && BIN="$(find /opt/hayabusa -type f -name 'hayabusa-*-lin-x64-musl' | head -n1)" \
  && chmod +x "$BIN" \
  && ln -sf "$BIN" /usr/local/bin/hayabusa \
  && rm -f hayabusa.zip
