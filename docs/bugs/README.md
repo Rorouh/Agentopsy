@@ -14,3 +14,4 @@ con su reproducción y causa raíz.
 | [001](001-agente-bucle-mmls-fs-sin-particiones.md) | El agente entra en bucle con `tsk_mmls` en imágenes de FS sin tabla de particiones | media | mitigado |
 | [002](002-tsk-fls-parser-recursivo-subcuenta.md) | El parser de `tsk_fls` recursivo subcuenta (14.234 → 22) por el prefijo de profundidad | media | abierto |
 | [003](003-tools-stub-sin-wrapper.md) | Tools stub sin wrapper (`hashdeep`+`foremost`+`tsk_icat` ✅ integradas; quedan `plaso_*`, `qemu_nbd`) | alta | en curso |
+| [004](004-exec-agent-utf8-crash.md) | El exec-agent crashea con salida no-UTF-8 (RemoteDisconnected) — `errors="replace"` | alta | resuelto |

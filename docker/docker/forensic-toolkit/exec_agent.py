@@ -111,8 +111,11 @@ class Handler(BaseHTTPRequestHandler):
             except (TypeError, ValueError):
                 return self._send(400, {"error": "'timeout' must be a number or null"})
         try:
+            # errors="replace": la salida forense (nombres de fichero, bytes crudos) a
+            # menudo NO es UTF-8 válido; sin esto, text=True lanzaría UnicodeDecodeError y
+            # el hilo moriría dejando al api con "RemoteDisconnected" (Bug 004).
             proc = subprocess.run(  # noqa: S603 — argv list, shell=False, resolved by the api allowlist
-                argv, capture_output=True, text=True, timeout=timeout, shell=False
+                argv, capture_output=True, text=True, errors="replace", timeout=timeout, shell=False
             )
         except FileNotFoundError:
             return self._send(
