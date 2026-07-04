@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from typing import Any
 
 from forensia.agent.package import AgentPackage
@@ -50,6 +51,17 @@ from forensia.toolkit.tool import Tool
 logger = logging.getLogger(__name__)
 
 
+def _max_tool_attempts() -> int:
+    """Anti-loop guardrail (Bug 001): how many times a tool may FAIL (exit≠0 or an
+    execution error) in one session before the loop refuses to run it again. Keeps the
+    model from fixating on a tool that keeps failing instead of changing approach.
+    Default 3; per-deployment override via ``FORENSIA_MAX_TOOL_ATTEMPTS``."""
+    try:
+        return max(1, int(os.environ.get("FORENSIA_MAX_TOOL_ATTEMPTS", "3")))
+    except ValueError:
+        return 3
+
+
 # Map tool_id → which auto-injected key receives the resolved evidence path.
 # Tools not in this map don't take the evidence directly (e.g. jq accepts an
 # operator-supplied input_path that points to another artifact).
@@ -59,9 +71,12 @@ _EVIDENCE_INJECTION: dict[str, str] = {
     "strings_head": "image_path",
     "tsk_mmls": "image_path",
     "tsk_fls": "image_path",
+    "tsk_icat": "image_path",
     "tsk_mactime": "bodyfile_path",
     "ewf_info": "image_path",
     "bulk_extractor": "image_path",
+    "hashdeep": "image_path",
+    "foremost": "image_path",
     "yara": "target_path",
     "volatility3": "dump_path",
     "hayabusa": "evtx_dir",
@@ -149,6 +164,9 @@ class ForensicAgent:
 
         max_iter = max(1, int(self.package.model.max_iterations or 8))
         tool_calls_log: list[dict[str, Any]] = []
+        # Anti-loop guardrail (Bug 001): failures per tool_id in this session.
+        max_attempts = _max_tool_attempts()
+        tool_failures: dict[str, int] = {}
 
         for iteration in range(max_iter):
             try:
@@ -208,6 +226,26 @@ class ForensicAgent:
                     )
                     continue
 
+                # Guardrail anti-bucle (Bug 001): no reintentes una tool que ya falló
+                # `max_attempts` veces en esta sesión — fuerza al modelo a cambiar de
+                # herramienta o a cerrar, en vez de repetir un exit≠0 hasta agotar
+                # iteraciones. Solo cuentan los FALLOS: una tool que va bien puede
+                # llamarse cuantas veces haga falta (p. ej. tsk_icat por inodo).
+                if tool_failures.get(action.tool_id, 0) >= max_attempts:
+                    blocked = (
+                        f"El tool `{action.tool_id}` ya se intentó {max_attempts} veces en "
+                        f"esta sesión y todas fallaron (exit≠0). NO lo reintentes: elige OTRA "
+                        f"herramienta del allowlist o, si ya tienes suficiente, responde con tu "
+                        f"análisis final."
+                    )
+                    messages.append(
+                        self._tool_result_msg(action, {"error": blocked, "blocked": True})
+                    )
+                    tool_calls_log.append(
+                        {"tool_id": action.tool_id, "blocked": True, "reason": "max_failed_attempts"}
+                    )
+                    continue
+
                 params = self._inject_runtime_paths(
                     action.tool_id, dict(action.params), evidence_path
                 )
@@ -217,6 +255,7 @@ class ForensicAgent:
                         action.tool_id, params, case_id=case_id, os_profile=self.os_profile
                     )
                 except ToolExecutionError as exc:
+                    tool_failures[action.tool_id] = tool_failures.get(action.tool_id, 0) + 1
                     messages.append(
                         self._tool_result_msg(action, {"error": f"ToolExecutionError: {exc}"})
                     )
@@ -225,6 +264,7 @@ class ForensicAgent:
                     )
                     continue
                 except Exception as exc:  # noqa: BLE001 — never crash the loop
+                    tool_failures[action.tool_id] = tool_failures.get(action.tool_id, 0) + 1
                     messages.append(
                         self._tool_result_msg(action, {"error": f"{type(exc).__name__}: {exc}"})
                     )
@@ -233,12 +273,16 @@ class ForensicAgent:
                     )
                     continue
 
+                exit_code = result.get("exit_code")
+                if isinstance(exit_code, int) and exit_code != 0:
+                    tool_failures[action.tool_id] = tool_failures.get(action.tool_id, 0) + 1
+
                 messages.append(self._tool_result_msg(action, self._tool_result_payload(result)))
                 tool_calls_log.append(
                     {
                         "tool_id": action.tool_id,
                         "run_id": result.get("run_id"),
-                        "exit_code": result.get("exit_code"),
+                        "exit_code": exit_code,
                     }
                 )
                 continue

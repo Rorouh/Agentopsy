@@ -1,7 +1,7 @@
 # Bug 001 — El agente entra en bucle con `tsk_mmls` en imágenes de FS sin tabla de particiones
 
 - **Severidad:** media (no corrompe datos ni evidencia; degrada la usabilidad y quema iteraciones/coste)
-- **Estado:** abierto (documentado, sin corregir)
+- **Estado:** mitigado (guardrail de reintentos) — causa raíz (prompt) aún abierta
 - **Componente:** paquete de agente `agentes/forensia-unix/prompts/` (prompt), no el cableado de ejecución
 - **Detectado:** 2026-07-04, sesión de prueba con la evidencia `dvwa-disk.raw` (rootfs de contenedor Docker → ext4 **sin** tabla de particiones)
 
@@ -80,6 +80,20 @@ para cubrir el caso explícitamente, algo como:
 > reintentes `mmls` ni saltes a Volatility."*
 
 Y resolver la contradicción del hint de Volatility (que solo aplica a `kind=memory`).
+
+## Mitigación aplicada (guardrail de reintentos)
+
+Se añadió un tope en el loop del agente (`backend/forensia/agent/agent.py`): una tool que
+**falla** (exit≠0 o error de ejecución) no se reintenta más de **`max_attempts` veces por
+sesión** (default 3, override `FORENSIA_MAX_TOOL_ATTEMPTS`). Al superar el tope, el loop
+**bloquea** nuevas llamadas a ese `tool_id` y le devuelve al modelo un mensaje pidiéndole
+que cambie de herramienta o cierre. Solo cuenta fallos: una tool que va bien puede llamarse
+cuantas veces haga falta (p. ej. `tsk_icat` por inodo). Tests:
+`backend/tests/test_agent_loop.py`.
+
+Esto **acota el desperdicio** (de ~10-18 reintentos a 3) pero **no resuelve la causa
+raíz**: el modelo sigue empezando por `mmls` y sigue sin saber que debe usar `fls` en un FS
+plano. El fix de fondo (editar el playbook) sigue pendiente.
 
 ## Notas
 
