@@ -45,6 +45,8 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       python3 python3-pip python3-venv \
       file less jq ripgrep sqlite3 coreutils \
+      # --- Primer vistazo / firmas (Cross): xxd (hex), yara (reglas) ---
+      xxd yara \
       # --- Imagen y montaje (Cross) ---
       # libewf-tools (de GIFT) aporta ewfmount/ewfinfo SIN arrastrar libewf2,
       # evitando el conflicto con el libewf del PPA. NO usar el ewf-tools de Ubuntu.
