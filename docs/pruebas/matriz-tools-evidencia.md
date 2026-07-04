@@ -35,7 +35,7 @@ una imagen con `tsk_icat`/`tsk_fls` o se descargan sueltos.
 | `chainsaw` | windows | hunt Sigma sobre EVTX/MFT/registro (`hunt`) | logs `.evtx` (y opcional `$MFT`/hives) | EVTX-ATTACK-SAMPLES | ✅ |
 | `plaso_log2timeline` | ambos | super-timeline multi-fuente (disco/EVTX/registro) → `.plaso` | imagen de disco o artefactos | CFReDS Hacking Case · o `test_data` de plaso | 📥 |
 | `plaso_psort` | ambos | post-proceso `.plaso` → CSV/l2tcsv, filtros por rango | un `.plaso` de `log2timeline` | derivado del paso anterior | 📥 |
-| `regripper` | windows | plugins sobre hives (SYSTEM/SOFTWARE/NTUSER) | hives de registro de Windows | extraer de CFReDS con `icat`, o samples | ⛔ (ver Bloqueos) |
+| `regripper` | windows | plugins sobre hives (SYSTEM/SOFTWARE/NTUSER) | hives de registro de Windows | extraer de CFReDS con `icat`, o samples | ✅ |
 | `evtxecmd` | windows | EVTX → CSV/JSON estructurado (Eric Zimmerman) | logs `.evtx` | EVTX-ATTACK-SAMPLES | ⛔ (no absorbido) |
 | `mftecmd` | windows | `$MFT` → timeline NTFS (creación/mod, ADS) | fichero `$MFT` de un NTFS | extraer de CFReDS NTFS con `icat`, o sample | ⛔ (no absorbido) |
 | `yara` | ambos | match de reglas (webshells/malware/persistencia) | reglas YARA + fichero objetivo | signature-base + fichero de test (EICAR) | ⛔ (binario ausente) |
@@ -83,7 +83,7 @@ Probar destapa lo que no está cableado. Cinco tools no arrancan hoy:
 | ~~`xxd_head`~~ ✅ | ~~binario no instalado~~ **RESUELTO**: `xxd` añadido al Dockerfile; probado (magic ext4) | — |
 | `evtxecmd` | herramienta .NET (Eric Zimmerman) no absorbida | absorber `EvtxECmd` en el stage `windows` (dotnet) |
 | `mftecmd` | `MFTECmd` .NET no absorbida | absorber `MFTECmd` en el stage `windows` (dotnet) |
-| `regripper` | **desajuste de catálogo**: declara binario `rip`, el maletín tiene `rip.pl` | alinear `catalog.py` (`binary="rip.pl"`) o crear symlink `rip→rip.pl` |
+| ~~`regripper`~~ ✅ | **resuelto (2026-07-04)**: desajuste de catálogo `rip`→`rip.pl` + realineado al maletín (retirado `delivery`/`container_image`/`host_mounts` legacy) | — |
 
 > Nota: `evtxecmd`/`mftecmd` son .NET; su ausencia coincide con "absorber las últimas
 > tools Windows en los Dockerfiles" (proximos-pasos §A). `chainsaw` cubre parte de su

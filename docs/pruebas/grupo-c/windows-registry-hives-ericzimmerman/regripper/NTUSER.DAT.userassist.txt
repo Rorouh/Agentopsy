@@ -1,0 +1,5 @@
+UserAssist
+Software\Microsoft\Windows\CurrentVersion\Explorer\UserAssist
+LastWrite Time 2014-05-20 14:31:27Z
+
+UNKBE9
