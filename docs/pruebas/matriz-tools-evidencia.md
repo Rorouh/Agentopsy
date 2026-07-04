@@ -79,8 +79,8 @@ Probar destapa lo que no está cableado. Cinco tools no arrancan hoy:
 
 | Tool | Causa | Arreglo |
 |------|-------|---------|
-| `yara` | binario `yara` no instalado en los maletines | añadir `yara` al `Dockerfile` (stage base) |
-| `xxd_head` | binario `xxd` no instalado | añadir `xxd` (paquete `xxd`/`vim-common`) al `Dockerfile` |
+| ~~`yara`~~ ✅ | ~~binario no instalado~~ **RESUELTO**: `yara` 4.1.3 añadido al Dockerfile; probado (match sobre DVWA) | — |
+| ~~`xxd_head`~~ ✅ | ~~binario no instalado~~ **RESUELTO**: `xxd` añadido al Dockerfile; probado (magic ext4) | — |
 | `evtxecmd` | herramienta .NET (Eric Zimmerman) no absorbida | absorber `EvtxECmd` en el stage `windows` (dotnet) |
 | `mftecmd` | `MFTECmd` .NET no absorbida | absorber `MFTECmd` en el stage `windows` (dotnet) |
 | `regripper` | **desajuste de catálogo**: declara binario `rip`, el maletín tiene `rip.pl` | alinear `catalog.py` (`binary="rip.pl"`) o crear symlink `rip→rip.pl` |
@@ -89,11 +89,10 @@ Probar destapa lo que no está cableado. Cinco tools no arrancan hoy:
 > tools Windows en los Dockerfiles" (proximos-pasos §A). `chainsaw` cubre parte de su
 > función mientras tanto.
 
-Además, había **6 tools *stub* de catálogo** (sin `build_argv`/`parse` → `NotImplementedError`
-por el dispatcher), aunque su binario está en el maletín. **`hashdeep`, `foremost` y
-`tsk_icat` ya integradas** ✅; quedan `plaso_log2timeline`, `plaso_psort`, `qemu_nbd`. Ver
-[Bug 003](../bugs/003-tools-stub-sin-wrapper.md). Regla de sesión: cada stub que toque la
-campaña se **integra** (wrapper + catálogo + test) antes de probarlo por el dispatcher.
+Había **6 tools *stub* de catálogo** (sin `build_argv`/`parse` → `NotImplementedError`). **Las
+6 ya integradas** ✅ (`hashdeep`, `foremost`, `tsk_icat`, `plaso_*`, `qemu_nbd`) — Bug 003
+**resuelto**. `qemu_nbd` tiene wrapper pero su runtime (nbd+privilegios) no está en el compose
+(documentado). Ver [Bug 003](../bugs/003-tools-stub-sin-wrapper.md).
 
 ---
 

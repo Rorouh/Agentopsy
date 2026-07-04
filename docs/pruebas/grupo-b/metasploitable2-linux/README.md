@@ -34,3 +34,5 @@ grande con el rootfs plano del Grupo A.
 | [`foremost`](foremost.md) | ✅ | **3.967 ficheros** carveados (1738 png, 388 htm web, zip/jar…) — ~14× más que el DVWA; disco usado |
 | [`bulk_extractor`](bulk_extractor.md) | ✅ | 496k dominios/350k emails + **artefactos de uso real**: 160 httplogs, 91 sesiones utmp, 5 ccn |
 | [`ewf_info`](ewf_info.md) | ✅ | Leyó la ficha de adquisición del E01 (caso, examiner, EnCase 6) + MD5 embebido `1cd5cd2f…` |
+| [`plaso_log2timeline`+`plaso_psort`](plaso.md) | ✅ | **Integradas**; super-timeline `/boot`→CSV l2tcsv con SHA-256 por evento (acotado a /boot) |
+| [`qemu_nbd`](qemu_nbd.md) | ⚠️ | **Wrapper integrado** (último stub) pero no ejecutable en el compose (necesita `nbd`+privilegios); documentado como caso especial |

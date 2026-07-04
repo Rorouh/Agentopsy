@@ -40,3 +40,5 @@ herramienta probada.
 | [`foremost`](foremost.md) | ✅ | **Integrada** (fix Bug 003); carveó 277 ficheros por firma (160 png/111 gif/5 jpg/1 pdf) = assets embebidos; el resumen está en audit.txt, no en `parsed` |
 | [`bulk_extractor`](bulk_extractor.md) | ✅ | 87k dominios/70k emails/16k URLs (provenencia de software, no actividad); trampa: `url` no es escáner válido en BE 2.1.0 (exit 5) |
 | [`jq`](jq.md) | ✅ | Filtró `baseline.json` → campos de custodia; utilidad *downstream* (brilla con JSON grande de volatility/plaso); sin finding |
+| [`xxd_head`](xxd_head.md) | ✅ | **Desbloqueada** (instalado `xxd`); hex del superbloque → magic ext4 `53ef` en 0x430 |
+| [`yara`](yara.md) | ✅ | **Desbloqueada** (instalado `yara` 4.1.3); regla propia matchea credenciales DVWA (parse estructurado) |
