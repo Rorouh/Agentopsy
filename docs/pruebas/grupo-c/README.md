@@ -19,7 +19,7 @@ Plan general: [`../matriz-tools-evidencia.md`](../matriz-tools-evidencia.md).
 | Tool | Estado | Nota |
 |------|--------|------|
 | [`hayabusa`](windows-evtx-hayabusa-samples/hayabusa.md) | ✅ | **129 detecciones Sigma** (1 crit, 17 high) → cadena de ataque MITRE real; 2 fixes (Bug 005 musl + Bug 006 wizard) |
-| `chainsaw` | ⏳ | hunt Sigma sobre EVTX |
+| [`chainsaw`](windows-evtx-hayabusa-samples/chainsaw.md) | ✅ | **56 detecciones** (148 filas) segmentadas por categoría; Kerberoasting + borrado de logs + RDP externo; 1 fix (Bug 007 parser stderr) |
 | `regripper` | ⏳ | plugins sobre hives (requiere fix catálogo `rip`→`rip.pl`) |
 | `evtxecmd` / `mftecmd` | ⛔ | .NET sin absorber en el maletín |
 
@@ -27,3 +27,6 @@ Plan general: [`../matriz-tools-evidencia.md`](../matriz-tools-evidencia.md).
 
 - **Bug 005**: `hayabusa` gnu no arranca en Ubuntu 22.04 (glibc 2.35 < 2.38) → se pasó al
   build **musl** (static-pie). `chainsaw` no sufre esto.
+- **Bug 007**: `chainsaw` resume por **stderr** y escribe las tablas a **ficheros**, no a
+  stdout → el parser reportaba 0 con el artefacto correcto. El dispatcher ahora pasa `stderr`
+  a los `parse` que lo aceptan (por aridad). Patrón a vigilar en toda CLI que use `--output`.

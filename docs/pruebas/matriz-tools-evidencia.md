@@ -32,7 +32,7 @@ una imagen con `tsk_icat`/`tsk_fls` o se descargan sueltos.
 | `qemu_nbd` | ambos | exponer raw/qcow2 como block device (helper de montaje) | imagen `.raw`/`.qcow2` | DVWA (raw) · o qcow2 de abajo | ✅ |
 | `volatility3` | ambos | plugins de memoria: pslist/pstree/psscan/netscan/malfind/… | **volcado de RAM** + ISF/símbolos del kernel | Volatility Memory Samples (Windows) — ver URL | 📥 |
 | `hayabusa` | windows | EVTX → detecciones Sigma + timeline (`csv-timeline`) | logs `.evtx` de Windows | hayabusa-sample-evtx · EVTX-ATTACK-SAMPLES | 📥 |
-| `chainsaw` | windows | hunt Sigma sobre EVTX/MFT/registro (`hunt`) | logs `.evtx` (y opcional `$MFT`/hives) | EVTX-ATTACK-SAMPLES | 📥 |
+| `chainsaw` | windows | hunt Sigma sobre EVTX/MFT/registro (`hunt`) | logs `.evtx` (y opcional `$MFT`/hives) | EVTX-ATTACK-SAMPLES | ✅ |
 | `plaso_log2timeline` | ambos | super-timeline multi-fuente (disco/EVTX/registro) → `.plaso` | imagen de disco o artefactos | CFReDS Hacking Case · o `test_data` de plaso | 📥 |
 | `plaso_psort` | ambos | post-proceso `.plaso` → CSV/l2tcsv, filtros por rango | un `.plaso` de `log2timeline` | derivado del paso anterior | 📥 |
 | `regripper` | windows | plugins sobre hives (SYSTEM/SOFTWARE/NTUSER) | hives de registro de Windows | extraer de CFReDS con `icat`, o samples | ⛔ (ver Bloqueos) |

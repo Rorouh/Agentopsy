@@ -1,0 +1,6 @@
+timestamp,detections,path,Event ID,Channel,Computer,HostName,HostVersion,HostApplication,PipelineId,CommandName,CommandType,ScriptName,CommandPath,CommandLine
+2021-01-28T09:58:44.538760+00:00,PowerShell - Engine state is changed from None to Available,/evidence/windows-evtx-hayabusa-samples/ImpairDefenses/T1562.010_DowngradeAttack_PowerShell.evtx,400,Windows PowerShell,DESKTOP-ST69BPO,,,,,,,,,
+2021-01-28T09:58:44.835547+00:00,PowerShell - Engine state is changed from Available to Stopped,/evidence/windows-evtx-hayabusa-samples/ImpairDefenses/T1562.010_DowngradeAttack_PowerShell.evtx,403,Windows PowerShell,DESKTOP-ST69BPO,,,,,,,,,
+2021-01-28T10:22:26.382672+00:00,PowerShell - Engine state is changed from None to Available,/evidence/windows-evtx-hayabusa-samples/ImpairDefenses/T1562.010_DowngradeAttack_PowerShell.evtx,400,Windows PowerShell,DESKTOP-ST69BPO,,,,,,,,,
+2021-01-28T10:40:54.884442+00:00,PowerShell - Engine state is changed from None to Available,/evidence/windows-evtx-hayabusa-samples/ImpairDefenses/T1562.010_DowngradeAttack_PowerShell.evtx,400,Windows PowerShell,DESKTOP-ST69BPO,,,,,,,,,
+2021-01-28T10:40:54.946866+00:00,PowerShell - Engine state is changed from Available to Stopped,/evidence/windows-evtx-hayabusa-samples/ImpairDefenses/T1562.010_DowngradeAttack_PowerShell.evtx,403,Windows PowerShell,DESKTOP-ST69BPO,,,,,,,,,
