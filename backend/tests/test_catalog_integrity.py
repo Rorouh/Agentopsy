@@ -57,9 +57,8 @@ def test_core_tools_have_real_build_argv_and_parse() -> None:
 # Extended-tier tools not yet wired: they MUST keep _not_built so the dispatcher
 # fails loudly (RULE 2) if the agent picks one before it is implemented. As each is
 # wired (build_argv + parse + wrapper + test), remove it from this set.
-_EXTENDED_STILL_STUB = frozenset(
-    {"plaso_log2timeline", "plaso_psort", "qemu_nbd"}
-)
+# Todas las tools extended están ya integradas (campaña de pruebas 2026-07-04).
+_EXTENDED_STILL_STUB: frozenset[str] = frozenset()
 
 
 def test_extended_tier_stubs_and_wired_are_consistent() -> None:

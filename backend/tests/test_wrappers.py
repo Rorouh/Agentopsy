@@ -32,6 +32,9 @@ from forensia.toolkit.wrappers import (
     hayabusa,
     jq,
     mftecmd,
+    plaso_log2timeline,
+    plaso_psort,
+    qemu_nbd,
     regripper,
     tsk_fls,
     tsk_icat,
@@ -1001,3 +1004,104 @@ class TestTskIcat:
     def test_parse_empty(self):
         out = tsk_icat.parse("")
         assert out["content_length"] == 0
+
+
+# --------------------------------------------------------------------------- #
+# plaso_log2timeline
+# --------------------------------------------------------------------------- #
+class TestPlasoLog2timeline:
+    def test_build_argv_minimum_valid(self):
+        argv = plaso_log2timeline.build_argv({"image_path": "/ev/img.raw", "output_dir": "/run/out"})
+        assert "--storage_file" in argv and "/run/out/timeline.plaso" in argv
+        assert "--partitions" in argv and "all" in argv
+        assert argv[-1] == "/ev/img.raw"  # SOURCE positional last
+
+    def test_build_argv_partitions_and_parsers(self):
+        argv = plaso_log2timeline.build_argv(
+            {"image_path": "/x", "output_dir": "/o", "partitions": "1", "parsers": "filestat"}
+        )
+        assert "--partitions" in argv and "1" in argv
+        assert "--parsers" in argv and "filestat" in argv
+
+    def test_build_argv_missing_image_path_raises(self):
+        with pytest.raises(ValueError, match="image_path"):
+            plaso_log2timeline.build_argv({"output_dir": "/o"})
+
+    def test_build_argv_missing_output_dir_raises(self):
+        with pytest.raises(ValueError, match="output_dir"):
+            plaso_log2timeline.build_argv({"image_path": "/x"})
+
+    def test_build_argv_bad_partitions_raises(self):
+        with pytest.raises(ValueError, match="partitions"):
+            plaso_log2timeline.build_argv({"image_path": "/x", "output_dir": "/o", "partitions": "; rm"})
+
+    def test_build_argv_bad_parsers_raises(self):
+        with pytest.raises(ValueError, match="parsers"):
+            plaso_log2timeline.build_argv({"image_path": "/x", "output_dir": "/o", "parsers": "a b;c"})
+
+    def test_parse_empty(self):
+        out = plaso_log2timeline.parse("")
+        assert "note" in out and out["completed"] is False
+
+
+# --------------------------------------------------------------------------- #
+# plaso_psort
+# --------------------------------------------------------------------------- #
+class TestPlasoPsort:
+    def test_build_argv_minimum_valid(self):
+        argv = plaso_psort.build_argv({"plaso_path": "/run/out/timeline.plaso", "output_dir": "/run/out"})
+        assert argv[:2] == ["-o", "l2tcsv"]
+        assert "-w" in argv and "/run/out/timeline.csv" in argv
+        assert argv[-1] == "/run/out/timeline.plaso"
+
+    def test_build_argv_json_format(self):
+        argv = plaso_psort.build_argv(
+            {"plaso_path": "/p.plaso", "output_dir": "/o", "output_format": "json_line"}
+        )
+        assert "json_line" in argv
+        assert "/o/timeline.json_line" in argv
+
+    def test_build_argv_missing_plaso_path_raises(self):
+        with pytest.raises(ValueError, match="plaso_path"):
+            plaso_psort.build_argv({"output_dir": "/o"})
+
+    def test_build_argv_bad_format_raises(self):
+        with pytest.raises(ValueError, match="output_format"):
+            plaso_psort.build_argv({"plaso_path": "/p", "output_dir": "/o", "output_format": "pdf"})
+
+    def test_parse_empty(self):
+        out = plaso_psort.parse("")
+        assert "note" in out
+
+
+# --------------------------------------------------------------------------- #
+# qemu_nbd (mount helper, side-effecting — no ejecutable en el maletín del compose)
+# --------------------------------------------------------------------------- #
+class TestQemuNbd:
+    def test_build_argv_minimum_valid(self):
+        argv = qemu_nbd.build_argv({"image_path": "/ev/img.raw"})
+        # read-only por defecto (soundness), formato raw, device /dev/nbd0
+        assert argv == ["-r", "-f", "raw", "-c", "/dev/nbd0", "/ev/img.raw"]
+
+    def test_build_argv_qcow2_writable_custom_device(self):
+        argv = qemu_nbd.build_argv(
+            {"image_path": "/x.qcow2", "image_format": "qcow2", "nbd_device": "/dev/nbd3", "read_only": False}
+        )
+        assert "-r" not in argv
+        assert "qcow2" in argv and "/dev/nbd3" in argv
+
+    def test_build_argv_missing_image_path_raises(self):
+        with pytest.raises(ValueError, match="image_path"):
+            qemu_nbd.build_argv({})
+
+    def test_build_argv_bad_device_raises(self):
+        with pytest.raises(ValueError, match="nbd_device"):
+            qemu_nbd.build_argv({"image_path": "/x", "nbd_device": "/dev/sda"})
+
+    def test_build_argv_bad_format_raises(self):
+        with pytest.raises(ValueError, match="image_format"):
+            qemu_nbd.build_argv({"image_path": "/x", "image_format": "iso"})
+
+    def test_parse_returns_note(self):
+        out = qemu_nbd.parse("")
+        assert "note" in out

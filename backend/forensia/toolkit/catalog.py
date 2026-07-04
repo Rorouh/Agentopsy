@@ -39,6 +39,15 @@ from forensia.toolkit.wrappers import (
     hashdeep as _hashdeep,
 )
 from forensia.toolkit.wrappers import (
+    plaso_log2timeline as _plaso_log2timeline,
+)
+from forensia.toolkit.wrappers import (
+    plaso_psort as _plaso_psort,
+)
+from forensia.toolkit.wrappers import (
+    qemu_nbd as _qemu_nbd,
+)
+from forensia.toolkit.wrappers import (
     strings_head as _strings_head,
 )
 from forensia.toolkit.wrappers import (
@@ -307,8 +316,26 @@ CATALOG: tuple[Tool, ...] = (
     ),
 
     # Super-timeline (Plaso, stage base) — lento, kit "primera tarde"
-    Tool("plaso_log2timeline", "log2timeline.py", ("unix", "windows"), returns="artifact", toolkits=_BOTH),
-    Tool("plaso_psort", "psort.py", ("unix", "windows"), returns="artifact", toolkits=_BOTH),
+    Tool(
+        "plaso_log2timeline",
+        "log2timeline.py",
+        ("unix", "windows"),
+        returns="artifact",
+        toolkits=_BOTH,
+        allowed_flags=_plaso_log2timeline.ALLOWED_FLAGS,
+        build_argv=_plaso_log2timeline.build_argv,
+        parse=_plaso_log2timeline.parse,
+    ),
+    Tool(
+        "plaso_psort",
+        "psort.py",
+        ("unix", "windows"),
+        returns="artifact",
+        toolkits=_BOTH,
+        allowed_flags=_plaso_psort.ALLOWED_FLAGS,
+        build_argv=_plaso_psort.build_argv,
+        parse=_plaso_psort.parse,
+    ),
 
     # Hashing / carving extra (stage base)
     Tool(
@@ -333,7 +360,16 @@ CATALOG: tuple[Tool, ...] = (
     ),
 
     # Montaje auxiliar (side-effecting; qemu-utils en el stage base)
-    Tool("qemu_nbd", "qemu-nbd", ("unix",), side_effecting=True, toolkits=_BOTH),
+    Tool(
+        "qemu_nbd",
+        "qemu-nbd",
+        ("unix",),
+        side_effecting=True,
+        toolkits=_BOTH,
+        allowed_flags=_qemu_nbd.ALLOWED_FLAGS,
+        build_argv=_qemu_nbd.build_argv,
+        parse=_qemu_nbd.parse,
+    ),
 )
 
 BY_ID = {tool.id: tool for tool in CATALOG}

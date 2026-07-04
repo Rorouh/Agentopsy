@@ -1,8 +1,8 @@
 # Bug 003 — 6 tools del catálogo son *stubs* (declaradas sin wrapper)
 
-- **Severidad:** alta para la campaña de pruebas (esas tools **no se pueden ejecutar** por el
+- **Severidad:** alta para la campaña de pruebas (esas tools **no se podían ejecutar** por el
   dispatcher/agente, aunque el binario existe en el maletín)
-- **Estado:** abierto (conocido; el `## Status` de CLAUDE.md ya decía "6 extended (stubs)")
+- **Estado:** ✅ **resuelto** (2026-07-04) — las 6 integradas con wrapper + catálogo + test
 - **Componente:** `backend/forensia/toolkit/catalog.py` + `wrappers/` (faltan)
 - **Detectado:** 2026-07-04, probando `tsk_icat` sobre `dvwa-container-rootfs`
 
@@ -17,15 +17,16 @@ NotImplementedError: tool wrapper not implemented yet (skeleton)
 Porque en el catálogo se declaran **sin `build_argv` ni `parse`**, y el default de `Tool` es
 `_not_built`, que lanza esa excepción.
 
-## Tools afectadas (quedan 3)
+## Tools afectadas (las 6, TODAS integradas)
 
-`plaso_log2timeline` · `plaso_psort` · `qemu_nbd`
+`hashdeep` (run `a2a8925b`) · `foremost` (`f907b737`) · `tsk_icat` (`6f352052`) ·
+`plaso_log2timeline` + `plaso_psort` (`5ef3afbd`/`50748d14`) · `qemu_nbd` (wrapper integrado).
 
-**Integradas** (ya no stub, 2026-07-04): `hashdeep` ✅ (run `a2a8925b`) · `foremost` ✅ (run
-`f907b737`, carva en subdir fresco por rechazar dirs existentes) · `tsk_icat` ✅ (run
-`6f352052`, inode validado). Cada una con wrapper + catálogo + `_EVIDENCE_INJECTION` + test.
-Regla de sesión: cada stub que toque en la campaña se **integra** antes de probarlo.
-`test_catalog_integrity._EXTENDED_STILL_STUB` lista las que faltan (`plaso_*`, `qemu_nbd`).
+Cada una con wrapper + catálogo + `_EVIDENCE_INJECTION` + test. `_EXTENDED_STILL_STUB` queda
+**vacío**. Cinco se probaron por el dispatcher; **`qemu_nbd`** tiene el wrapper listo pero su
+**runtime** (módulo `nbd` + privilegios) no está disponible en el maletín del compose — es una
+limitación de entorno **aparte** del stub, documentada en
+`docs/pruebas/grupo-b/.../qemu_nbd.md`.
 
 (Las otras 16 del catálogo **sí** tenían wrapper real desde el principio.)
 
