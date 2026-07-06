@@ -27,6 +27,7 @@ from forensia.audit.log import AuditLog
 from forensia.cases.manager import CaseManager, CloudConsent
 from forensia.evidence import EvidenceManager
 from forensia.executors import ClaudeCodeExecutor, ExecutorAvailability
+from forensia.executors.base import ExecutorResult
 from forensia.findings.store import FindingStore
 from forensia.models.base import FinalAnswer, ModelBackend, ModelCapabilities, ToolCall
 from forensia.server import create_app
@@ -403,8 +404,17 @@ class TestConsentGate:
         assert "cloud-consent" in detail
         assert "claude-code" in detail
 
-    def test_cloud_query_with_consent_passes_the_gate(self, tmp_path, monkeypatch):
-        _, case, handle, client, auth = self._wire(tmp_path, monkeypatch)
+    def test_cloud_query_with_consent_runs_and_anchors_consent_ref(
+        self, tmp_path, monkeypatch
+    ):
+        """Regresión del fallo E2E 2026-07-06 (chat con claude-code): el router
+        validaba el consentimiento (403 sin él) pero NO pasaba ``consent_ref`` a
+        ``ForensicAgent.run``, cuyo borde de egress rechazaba entonces TODO run
+        cloud con consentimiento ya registrado (422 «cloud egress requires a
+        recorded consent_ref»). Con consentimiento registrado, el run debe
+        ejecutarse y el audit debe anclar el ``entry_hash`` de la línea de
+        consentimiento en ``agent_run_start`` y en cada ``agent_cloud_egress``."""
+        cases, case, handle, client, auth = self._wire(tmp_path, monkeypatch)
 
         # Record consent for this case + executor through the real endpoint
         # (exercises the /api/agent/cloud-consent wiring, not a shortcut).
@@ -415,6 +425,28 @@ class TestConsentGate:
         )
         assert g.status_code == 200, g.text
         assert g.json()["recorded"] is True
+
+        audit = AuditLog(cases.case_dir(case.id) / "audit.jsonl")
+        consent_entry = next(
+            e for e in audit.entries() if e.get("action") == "cloud_executor_consent"
+        )
+        consent_hash = consent_entry["entry_hash"]
+        assert consent_hash
+
+        # The executor answers the response contract's final-answer envelope —
+        # the shape ExecutorBackend._parse_action demands (models/base.py).
+        def _scripted_run(self, prompt, context=None):
+            text = json.dumps({"action": "final", "text": "hola operador"})
+            return ExecutorResult(
+                executor="claude-code",
+                text=text,
+                argv=("claude", "-p", "<prompt>", "--output-format", "json"),
+                exit_code=0,
+                duration_ms=1,
+                raw=text,
+            )
+
+        monkeypatch.setattr(ClaudeCodeExecutor, "run", _scripted_run)
 
         r = client.post(
             "/api/agent/query",
@@ -427,9 +459,14 @@ class TestConsentGate:
             },
             headers=auth,
         )
-        # Consent opened the 403 gate: the request no longer stops there. It now
-        # fails downstream (the router hands the cloud run to ForensicAgent.run,
-        # whose egress border refuses without a consent_ref → 422) — the point is
-        # precisely that the HTTP consent gate was PASSED and never returns 403.
-        assert r.status_code != 403, r.text
-        assert r.status_code == 422
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["reply"] == "hola operador"
+        assert body["iterations"] == 1
+
+        events = audit.entries()
+        run_start = next(e for e in events if e.get("event") == "agent_run_start")
+        assert run_start["consent_ref"] == consent_hash
+        egress = next(e for e in events if e.get("event") == "agent_cloud_egress")
+        assert egress["consent_ref"] == consent_hash
+        assert audit.verify() is True

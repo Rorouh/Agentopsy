@@ -36,6 +36,7 @@ from forensia.executors import (
     EXECUTOR_IDS,
     ClaudeCodeExecutor,
     CodexExecutor,
+    ExecutorAvailability,
     ExecutorError,
     GeminiExecutor,
     OllamaExecutor,
@@ -210,6 +211,77 @@ def test_run_aborts_fast_without_session(monkeypatch: pytest.MonkeyPatch) -> Non
     with pytest.raises(ExecutorError) as exc:
         ClaudeCodeExecutor().run("analiza", {})
     assert "claude auth login" in str(exc.value)
+
+
+# ---- claude -p: salida real vs contrato de parseo (aislamiento E2E 2026-07-06)
+
+# Salida REAL capturada en el contenedor api (claude 2.1.187, sin sesión):
+#   $ claude -p "Responde con la palabra: hola" --output-format json
+#   exit code 1; stdout vacío; stderr:
+_CLAUDE_NOT_LOGGED_IN = "Not logged in · Please run /login"
+
+
+def test_claude_run_exit_nonzero_surfaces_literal_stderr(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Si la sesión cae ENTRE el probe de auth y el run (probe OK, `claude -p`
+    exit 1), el error lleva el exit code y el stderr LITERAL del CLI — sin
+    reintentos ni sustitución (RULE 2)."""
+    monkeypatch.setattr(
+        ClaudeCodeExecutor,
+        "is_available",
+        lambda self: ExecutorAvailability(available=True),
+    )
+
+    def run_fails(argv, **kwargs):  # noqa: ANN001, ANN003
+        return subprocess.CompletedProcess(
+            argv, 1, stdout="", stderr=_CLAUDE_NOT_LOGGED_IN
+        )
+
+    monkeypatch.setattr(executors_base.subprocess, "run", run_fails)
+    with pytest.raises(ExecutorError) as exc:
+        ClaudeCodeExecutor().run("Responde con la palabra: hola", {})
+    msg = str(exc.value)
+    assert "exit code 1" in msg
+    assert _CLAUDE_NOT_LOGGED_IN in msg
+
+
+def test_claude_extract_text_non_json_names_the_contract() -> None:
+    """Capa executor↔parser: un stdout que no es el envelope de
+    `--output-format json` produce un error que NOMBRA el contrato y muestra la
+    salida real — accionable, nunca críptico."""
+    with pytest.raises(ExecutorError) as exc:
+        ClaudeCodeExecutor()._extract_text(_CLAUDE_NOT_LOGGED_IN)
+    msg = str(exc.value)
+    assert "--output-format json" in msg
+    assert "Not logged in" in msg
+
+
+def test_claude_extract_text_happy_envelope_returns_result() -> None:
+    """Envelope de éxito de `--output-format json` (campos documentados:
+    `result` + `is_error` + metadata de sesión): se extrae `result` tal cual —
+    es el texto que ExecutorBackend._parse_action parsea después."""
+    inner = '{"action": "final", "text": "hola"}'
+    envelope = json.dumps(
+        {
+            "type": "result",
+            "subtype": "success",
+            "is_error": False,
+            "result": inner,
+            "session_id": "sess-0001",
+            "total_cost_usd": 0.0007,
+        }
+    )
+    assert ClaudeCodeExecutor()._extract_text(envelope) == inner
+
+
+def test_claude_extract_text_is_error_envelope_fails_loud() -> None:
+    envelope = json.dumps({"is_error": True, "result": "API Error: overloaded"})
+    with pytest.raises(ExecutorError) as exc:
+        ClaudeCodeExecutor()._extract_text(envelope)
+    msg = str(exc.value)
+    assert "is_error" in msg
+    assert "overloaded" in msg
 
 
 def test_ollama_unavailable_without_host(clean_config: None) -> None:

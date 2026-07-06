@@ -34,7 +34,7 @@ from forensia.agent.registry import agent_registry
 from forensia.audit.log import AuditLog
 from forensia.cases.manager import case_manager
 from forensia.config import config
-from forensia.consent import has_cloud_consent, record_cloud_consent
+from forensia.consent import get_cloud_consent, record_cloud_consent
 from forensia.evidence import evidence_manager
 from forensia.executors import EXECUTOR_IDS, get_executor
 from forensia.models.base import ExecutorBackend
@@ -64,12 +64,16 @@ class QueryRequest(BaseModel):
     session_id: str = "main"
 
 
-def _prepare_run(req: QueryRequest) -> tuple[ForensicAgent, str, list, dict]:
+def _prepare_run(req: QueryRequest) -> tuple[ForensicAgent, str, list, str | None, dict]:
     """Validate the request and build the agent (shared by /query and /query/stream).
 
-    Returns ``(agent, prompt, prior_messages, meta)``; raises ``HTTPException`` with the
-    actionable reason on any RULE-2 / consent / availability failure — identical checks
-    for both surfaces so the streaming path can't bypass them (SECURITY INVARIANT 7)."""
+    Returns ``(agent, prompt, prior_messages, consent_ref, meta)``; raises
+    ``HTTPException`` with the actionable reason on any RULE-2 / consent /
+    availability failure — identical checks for both surfaces so the streaming
+    path can't bypass them (SECURITY INVARIANT 7). ``consent_ref`` is the
+    ``entry_hash`` of the recorded consent for a cloud executor (``None`` for a
+    local one): ``ForensicAgent.run`` refuses a cloud run without it, so the
+    ref MUST reach the ``agent.run`` call."""
     prompt = (req.prompt or "").strip()
     if not prompt:
         raise HTTPException(status_code=422, detail="prompt is empty")
@@ -123,19 +127,25 @@ def _prepare_run(req: QueryRequest) -> tuple[ForensicAgent, str, list, dict]:
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    if not executor.is_local and not has_cloud_consent(audit, req.case_id, executor.id):
-        raise HTTPException(
-            status_code=403,
-            detail=(
-                f"El ejecutor '{executor.id}' está respaldado por cloud: enviará "
-                "contenido derivado del caso (posibles datos personales) a su "
-                "proveedor bajo tu cuenta. Falta el consentimiento registrado para "
-                "este caso. Regístralo con POST /api/agent/cloud-consent "
-                f'{{"case_id": "{req.case_id}", "executor": "{executor.id}"}} '
-                "(la UI lo hace al confirmar el aviso de privacidad) antes de "
-                "consultar — SECURITY INVARIANT 7."
-            ),
-        )
+    consent_ref: str | None = None
+    if not executor.is_local:
+        consent = get_cloud_consent(audit, req.case_id, executor.id)
+        if consent is None:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"El ejecutor '{executor.id}' está respaldado por cloud: enviará "
+                    "contenido derivado del caso (posibles datos personales) a su "
+                    "proveedor bajo tu cuenta. Falta el consentimiento registrado para "
+                    "este caso. Regístralo con POST /api/agent/cloud-consent "
+                    f'{{"case_id": "{req.case_id}", "executor": "{executor.id}"}} '
+                    "(la UI lo hace al confirmar el aviso de privacidad) antes de "
+                    "consultar — SECURITY INVARIANT 7."
+                ),
+            )
+        # The entry_hash anchors the run to the exact audit line that recorded
+        # the consent; ForensicAgent.run refuses a cloud run without it.
+        consent_ref = consent.get("entry_hash")
 
     run_context: dict = {
         "audit": audit,
@@ -155,17 +165,18 @@ def _prepare_run(req: QueryRequest) -> tuple[ForensicAgent, str, list, dict]:
         "executor": {"id": executor.id, "name": executor.name, "local": executor.is_local},
         "agent": pkg.summary(),
     }
-    return agent, prompt, prior_messages, meta
+    return agent, prompt, prior_messages, consent_ref, meta
 
 
 @router.post("/api/agent/query", dependencies=[Depends(require_token)])
 def query(req: QueryRequest) -> dict:
-    agent, prompt, prior_messages, meta = _prepare_run(req)
+    agent, prompt, prior_messages, consent_ref, meta = _prepare_run(req)
     try:
         result = agent.run(
             prompt=prompt,
             case_id=req.case_id,
             evidence_id=req.evidence_id,
+            consent_ref=consent_ref,
             prior_messages=prior_messages,
         )
     except (KeyError, ValueError) as exc:
@@ -187,7 +198,7 @@ async def query_stream(req: QueryRequest) -> StreamingResponse:
     terminal ``{"type":"done", ...}`` carrying the final reply + metadata (so the UI can
     persist the turn exactly like the blocking endpoint). The agent runs in a worker
     thread; events cross to the event loop through a thread-safe queue."""
-    agent, prompt, prior_messages, meta = _prepare_run(req)
+    agent, prompt, prior_messages, consent_ref, meta = _prepare_run(req)
 
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue = asyncio.Queue()
@@ -202,6 +213,7 @@ async def query_stream(req: QueryRequest) -> StreamingResponse:
                 prompt=prompt,
                 case_id=req.case_id,
                 evidence_id=req.evidence_id,
+                consent_ref=consent_ref,
                 prior_messages=prior_messages,
                 on_event=push,
             )
