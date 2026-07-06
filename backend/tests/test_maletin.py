@@ -3,20 +3,21 @@
 The probe is what `capabilities` reports (CLAUDE.md RULE 1). Two invariants matter
 most here and are pinned below:
 
-- **Truthful degradation**: when the api has no OCI client / no way to reach a maletín,
-  the probe says so with an actionable reason — it never guesses availability.
+- **Truthful degradation**: when the api has no channel to a maletín (exec-agent URL not
+  configured, or unreachable), the probe says so with an actionable reason — it never
+  guesses availability.
 - **RULE 2 (no fallback between maletines)**: a tool is only ever resolved against the
   maletín(es) it declares. A windows-only tool whose maletín is down stays unavailable
   even if the *other* maletín is up and happens to carry the same binary.
 
-Every subprocess call goes through `maletin._run`, monkeypatched here so no test needs
-docker or a running maletín.
+Since the §B wiring, the channel is the maletín **exec-agent** over HTTP (no host Docker
+socket). Every HTTP call goes through `maletin._request`, monkeypatched here so no test
+needs docker or a running maletín.
 """
 
 from __future__ import annotations
 
-import subprocess
-from types import SimpleNamespace
+import urllib.error
 
 import pytest
 
@@ -24,9 +25,8 @@ from forensia.toolkit import maletin
 from forensia.toolkit.maletin import TOOLKIT_UNIX, TOOLKIT_WINDOWS
 from forensia.toolkit.tool import Tool
 
-
-def _proc(returncode: int = 0, stdout: str = "", stderr: str = "") -> SimpleNamespace:
-    return SimpleNamespace(returncode=returncode, stdout=stdout, stderr=stderr)
+_UNIX_URL = "http://toolkit-unix:8666"
+_WIN_URL = "http://toolkit-windows:8666"
 
 
 # --------------------------------------------------------------------------- #
@@ -48,83 +48,96 @@ def test_container_name_rejects_unknown_service() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# service_url
+# --------------------------------------------------------------------------- #
+def test_service_url_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FORENSIA_TOOLKIT_UNIX_URL", "http://toolkit-unix:8666/")
+    # trailing slash trimmed
+    assert maletin.service_url(TOOLKIT_UNIX) == "http://toolkit-unix:8666"
+
+
+def test_service_url_absent_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("FORENSIA_TOOLKIT_WINDOWS_URL", raising=False)
+    assert maletin.service_url(TOOLKIT_WINDOWS) is None
+
+
+# --------------------------------------------------------------------------- #
 # probe_service
 # --------------------------------------------------------------------------- #
-def test_probe_service_without_client_is_unknown_with_actionable_reason() -> None:
-    out = maletin.probe_service(TOOLKIT_WINDOWS, client=None)
+def test_probe_service_without_url_is_unknown_with_actionable_reason() -> None:
+    out = maletin.probe_service(TOOLKIT_WINDOWS, base_url=None)
     assert out["running"] is None
-    assert "proximos-pasos" in out["reason"]
+    assert "exec-agent" in out["reason"]
     assert out["container"] == "forensia-toolkit-windows"
 
 
 def test_probe_service_running(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(maletin, "_run", lambda argv: _proc(0, "true\n"))
-    out = maletin.probe_service(TOOLKIT_UNIX, client="/usr/bin/docker")
+    monkeypatch.setattr(maletin, "_request", lambda m, u, p=None: (200, {"ok": True, "stage": "unix"}))
+    out = maletin.probe_service(TOOLKIT_UNIX, base_url=_UNIX_URL)
     assert out["running"] is True
     assert out["reason"] is None
 
 
-def test_probe_service_stopped(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(maletin, "_run", lambda argv: _proc(0, "false\n"))
-    out = maletin.probe_service(TOOLKIT_UNIX, client="/usr/bin/docker")
-    assert out["running"] is False
-    assert "no está en ejecución" in out["reason"]
-
-
-def test_probe_service_absent_container(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        maletin, "_run", lambda argv: _proc(1, "", "Error: No such object: forensia-toolkit-unix")
-    )
-    out = maletin.probe_service(TOOLKIT_UNIX, client="/usr/bin/docker")
+def test_probe_service_error_status_is_inaccessible(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(maletin, "_request", lambda m, u, p=None: (503, {}))
+    out = maletin.probe_service(TOOLKIT_UNIX, base_url=_UNIX_URL)
     assert out["running"] is False
     assert "inaccesible" in out["reason"]
 
 
-def test_probe_service_timeout_is_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
-    def _boom(argv: list[str]):
-        raise subprocess.TimeoutExpired(cmd=argv, timeout=5)
+def test_probe_service_transport_failure_is_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _boom(method: str, url: str, payload=None):
+        raise urllib.error.URLError("connection refused")
 
-    monkeypatch.setattr(maletin, "_run", _boom)
-    out = maletin.probe_service(TOOLKIT_UNIX, client="/usr/bin/docker")
+    monkeypatch.setattr(maletin, "_request", _boom)
+    out = maletin.probe_service(TOOLKIT_UNIX, base_url=_UNIX_URL)
     assert out["running"] is None
-    assert "TimeoutExpired" in out["reason"]
+    assert "no se pudo consultar" in out["reason"]
 
 
 # --------------------------------------------------------------------------- #
 # probe_binaries
 # --------------------------------------------------------------------------- #
 def test_probe_binaries_parses_present_set(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured: dict[str, list[str]] = {}
+    captured: dict[str, object] = {}
 
-    def fake_run(argv: list[str]) -> SimpleNamespace:
-        captured["argv"] = argv
-        return _proc(0, "fls\nvol\n")  # the absent one (hayabusa, LAST) is simply not echoed
+    def fake_request(method: str, url: str, payload=None):
+        captured["method"] = method
+        captured["url"] = url
+        captured["payload"] = payload
+        return 200, {"present": ["fls", "vol"]}  # hayabusa absent
 
-    monkeypatch.setattr(maletin, "_run", fake_run)
-    found = maletin.probe_binaries(TOOLKIT_UNIX, ["fls", "vol", "hayabusa"], client="/usr/bin/docker")
+    monkeypatch.setattr(maletin, "_request", fake_request)
+    found = maletin.probe_binaries(TOOLKIT_UNIX, ["fls", "vol", "hayabusa"], base_url=_UNIX_URL)
     assert found == {"fls", "vol"}
-    # The in-container script must force exit 0 (trailing `:`) so a MISSING LAST binary
-    # is not mistaken for an exec failure. Binaries travel as positional args, not text.
-    script = captured["argv"][captured["argv"].index("-c") + 1]
-    assert script.rstrip().endswith(":"), "script must end with `:` to force exit 0"
-    assert captured["argv"][-3:] == ["fls", "vol", "hayabusa"]
+    assert captured["method"] == "POST"
+    assert captured["url"] == f"{_UNIX_URL}/which"
+    assert captured["payload"] == {"binaries": ["fls", "vol", "hayabusa"]}
 
 
-def test_probe_binaries_empty_input_skips_exec(monkeypatch: pytest.MonkeyPatch) -> None:
-    def _fail(argv: list[str]):
-        raise AssertionError("must not exec for an empty binary list")
+def test_probe_binaries_empty_input_skips_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _fail(method: str, url: str, payload=None):
+        raise AssertionError("must not call the exec-agent for an empty binary list")
 
-    monkeypatch.setattr(maletin, "_run", _fail)
-    assert maletin.probe_binaries(TOOLKIT_UNIX, [], client="/usr/bin/docker") == set()
+    monkeypatch.setattr(maletin, "_request", _fail)
+    assert maletin.probe_binaries(TOOLKIT_UNIX, [], base_url=_UNIX_URL) == set()
 
 
-def test_probe_binaries_exec_failure_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(maletin, "_run", lambda argv: _proc(126, "", "exec failed"))
-    assert maletin.probe_binaries(TOOLKIT_UNIX, ["fls"], client="/usr/bin/docker") is None
+def test_probe_binaries_transport_failure_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _boom(method: str, url: str, payload=None):
+        raise urllib.error.URLError("connection refused")
+
+    monkeypatch.setattr(maletin, "_request", _boom)
+    assert maletin.probe_binaries(TOOLKIT_UNIX, ["fls"], base_url=_UNIX_URL) is None
+
+
+def test_probe_binaries_error_status_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(maletin, "_request", lambda m, u, p=None: (500, {}))
+    assert maletin.probe_binaries(TOOLKIT_UNIX, ["fls"], base_url=_UNIX_URL) is None
 
 
 # --------------------------------------------------------------------------- #
-# _tool_status — RULE 1 order + RULE 2 no-fallback
+# _tool_status — RULE 1 order + RULE 2 no-fallback (transport-independent)
 # --------------------------------------------------------------------------- #
 def _win_tool() -> Tool:
     return Tool("hayabusa", "hayabusa", ("windows",), toolkits=(TOOLKIT_WINDOWS,))
@@ -148,7 +161,7 @@ def test_rule2_no_fallback_between_maletines(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(maletin, "resolve", lambda binary: None)
     services = {
         TOOLKIT_WINDOWS: {"service": TOOLKIT_WINDOWS, "container": "c-win", "running": False,
-                          "reason": "maletín 'c-win' existe pero no está en ejecución"},
+                          "reason": "maletín 'c-win' inaccesible"},
         TOOLKIT_UNIX: {"service": TOOLKIT_UNIX, "container": "c-unix", "running": True, "reason": None},
     }
     present = {TOOLKIT_UNIX: {"hayabusa"}}  # present in the WRONG maletín
@@ -191,42 +204,41 @@ def test_tool_without_declared_toolkit_is_unavailable(monkeypatch: pytest.Monkey
 
 
 # --------------------------------------------------------------------------- #
-# snapshot — end to end with a faked OCI client
+# snapshot — end to end with a faked exec-agent
 # --------------------------------------------------------------------------- #
-def test_snapshot_without_client_probes_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(maletin, "container_runtime", lambda: None)
+def test_snapshot_without_urls_probes_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("FORENSIA_TOOLKIT_UNIX_URL", raising=False)
+    monkeypatch.delenv("FORENSIA_TOOLKIT_WINDOWS_URL", raising=False)
     monkeypatch.setattr(maletin, "resolve", lambda binary: None)
 
-    def _fail(argv: list[str]):
-        raise AssertionError("no OCI client → must not run any subprocess")
+    def _fail(method: str, url: str, payload=None):
+        raise AssertionError("no maletín URL configured → must not make any HTTP call")
 
-    monkeypatch.setattr(maletin, "_run", _fail)
+    monkeypatch.setattr(maletin, "_request", _fail)
 
     snap = maletin.snapshot([_win_tool(), _cross_tool()])
     assert snap["client"] is False
     assert all(svc["running"] is None for svc in snap["services"].values())
     assert snap["tools"]["hayabusa"]["available"] is False
-    assert "proximos-pasos" in snap["tools"]["hayabusa"]["reason"]
+    assert "exec-agent" in snap["tools"]["hayabusa"]["reason"]
 
 
 def test_snapshot_reports_real_presence_when_maletines_up(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(maletin, "container_runtime", lambda: "/usr/bin/docker")
+    monkeypatch.setenv("FORENSIA_TOOLKIT_UNIX_URL", _UNIX_URL)
+    monkeypatch.setenv("FORENSIA_TOOLKIT_WINDOWS_URL", _WIN_URL)
     monkeypatch.setattr(maletin, "resolve", lambda binary: None)
 
-    def fake_run(argv: list[str]) -> SimpleNamespace:
-        if "inspect" in argv:
-            return _proc(0, "true\n")  # both maletines running
-        if "exec" in argv:
-            # Emulate `command -v` loop: echo whichever wanted binaries "exist". The
-            # wanted names are the positional args after the inner-`sh` $0 placeholder
-            # (the LAST "sh" token — argv is [..., "-c", LOOP, "sh", *names]).
-            last_sh = len(argv) - 1 - argv[::-1].index("sh")
-            wanted = argv[last_sh + 1 :]
-            installed = {"fls", "vol", "hayabusa"}
-            return _proc(0, "\n".join(b for b in wanted if b in installed) + "\n")
-        raise AssertionError(f"unexpected argv: {argv}")
+    installed = {"fls", "vol", "hayabusa"}
 
-    monkeypatch.setattr(maletin, "_run", fake_run)
+    def fake_request(method: str, url: str, payload=None):
+        if url.endswith("/health"):
+            return 200, {"ok": True, "stage": "x"}
+        if url.endswith("/which"):
+            wanted = payload["binaries"]
+            return 200, {"present": [b for b in wanted if b in installed]}
+        raise AssertionError(f"unexpected call: {method} {url}")
+
+    monkeypatch.setattr(maletin, "_request", fake_request)
 
     win, cross = _win_tool(), _cross_tool()
     snap = maletin.snapshot([win, cross])

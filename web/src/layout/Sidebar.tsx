@@ -1,12 +1,9 @@
 import type { ReactNode } from "react";
-import { StatusDot } from "../ui/StatusDot";
 import { NAV_ITEMS, type ViewId } from "../navigation/navItems";
 
 interface SidebarProps {
   activeView: ViewId;
   onViewChange: (view: ViewId) => void;
-  isConnected: boolean;
-  version: string;
 }
 
 const ICON_PROPS = {
@@ -81,7 +78,7 @@ const NAV_ICONS: Record<ViewId, ReactNode> = {
   ),
 };
 
-export function Sidebar({ activeView, onViewChange, isConnected, version }: SidebarProps) {
+export function Sidebar({ activeView, onViewChange }: SidebarProps) {
   const primaryItems = NAV_ITEMS.filter((item) => item.section === "primary");
   const secondaryItems = NAV_ITEMS.filter((item) => item.section === "secondary");
 
@@ -97,6 +94,7 @@ export function Sidebar({ activeView, onViewChange, isConnected, version }: Side
           <button
             key={item.id}
             className={`nav-item ${activeView === item.id ? "active" : ""}`}
+            aria-current={activeView === item.id ? "page" : undefined}
             onClick={() => onViewChange(item.id)}
           >
             {NAV_ICONS[item.id]}
@@ -111,6 +109,7 @@ export function Sidebar({ activeView, onViewChange, isConnected, version }: Side
               <button
                 key={item.id}
                 className={`nav-item ${activeView === item.id ? "active" : ""}`}
+                aria-current={activeView === item.id ? "page" : undefined}
                 onClick={() => onViewChange(item.id)}
               >
                 {NAV_ICONS[item.id]}
@@ -119,16 +118,6 @@ export function Sidebar({ activeView, onViewChange, isConnected, version }: Side
             ))}
           </>
         )}
-      </div>
-
-      <div className="sidebar-footer">
-        <div className="system-status-indicator">
-          <div className="status-label-group">
-            <StatusDot online={isConnected} />
-            <span>{isConnected ? "Conectado" : "Sin Conexión"}</span>
-          </div>
-          <span className="app-version">{version ? `v${version}` : "offline"}</span>
-        </div>
       </div>
     </aside>
   );

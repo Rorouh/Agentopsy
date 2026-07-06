@@ -1,0 +1,63 @@
+timestamp,detections,path,Event ID,Channel,Computer,Information
+2024-11-04T13:55:34.657965+00:00,RD Gateway - A user disconnected from a resource,/evidence/windows-evtx-hayabusa-samples/IntialAccess/ValidAccounts/ID302 RDS Gateway Logon Logoff.evtx,303,Microsoft-Windows-TerminalServices-Gateway/Operational,EC2AMAZ-6C3C9U6,"ConnectionProtocol: HTTP
+ErrorCode: 1226
+Username: EC2AMAZ-6C3C9U6\Administrator
+BytesTransfered: '678033'
+BytesReceived: '810679'
+AuthType: null
+IpAddress: 219.100.37.243
+SessionDuration: '122'
+Resource: ec2-18-179-8-103.ap-northeast-1.compute.amazonaws.com
+"
+2024-11-04T13:58:27.978647+00:00,RD Gateway - RD CAP requirements met,/evidence/windows-evtx-hayabusa-samples/IntialAccess/ValidAccounts/ID302 RDS Gateway Logon Logoff.evtx,200,Microsoft-Windows-TerminalServices-Gateway/Operational,EC2AMAZ-6C3C9U6,"AuthType: NTLM
+IpAddress: 219.100.37.243
+ConnectionProtocol: HTTP
+Resource: null
+ErrorCode: 0
+Username: EC2AMAZ-6C3C9U6\Administrator
+"
+2024-11-04T13:58:28.028452+00:00,RD Gateway - RD RAP requirements met,/evidence/windows-evtx-hayabusa-samples/IntialAccess/ValidAccounts/ID302 RDS Gateway Logon Logoff.evtx,300,Microsoft-Windows-TerminalServices-Gateway/Operational,EC2AMAZ-6C3C9U6,"AuthType: null
+IpAddress: 219.100.37.243
+ConnectionProtocol: null
+Resource: ec2-18-179-8-103.ap-northeast-1.compute.amazonaws.com
+ErrorCode: 0
+Username: EC2AMAZ-6C3C9U6\Administrator
+"
+2024-11-04T13:58:28.031964+00:00,RD Gateway - A user connected to a resource,/evidence/windows-evtx-hayabusa-samples/IntialAccess/ValidAccounts/ID302 RDS Gateway Logon Logoff.evtx,302,Microsoft-Windows-TerminalServices-Gateway/Operational,EC2AMAZ-6C3C9U6,"AuthType: null
+IpAddress: 219.100.37.243
+ConnectionProtocol: HTTP
+Resource: ec2-18-179-8-103.ap-northeast-1.compute.amazonaws.com
+ErrorCode: 0
+Username: EC2AMAZ-6C3C9U6\Administrator
+"
+2024-11-04T13:59:25.431624+00:00,RD Gateway - A user disconnected from a resource,/evidence/windows-evtx-hayabusa-samples/IntialAccess/ValidAccounts/ID302 RDS Gateway Logon Logoff.evtx,303,Microsoft-Windows-TerminalServices-Gateway/Operational,EC2AMAZ-6C3C9U6,"ConnectionProtocol: HTTP
+ErrorCode: 1226
+Username: EC2AMAZ-6C3C9U6\Administrator
+BytesTransfered: '241242'
+BytesReceived: '391624'
+AuthType: null
+IpAddress: 219.100.37.243
+SessionDuration: '57'
+Resource: ec2-18-179-8-103.ap-northeast-1.compute.amazonaws.com
+"
+2024-11-04T13:59:32.400586+00:00,RD Gateway - RD CAP requirements met,/evidence/windows-evtx-hayabusa-samples/IntialAccess/ValidAccounts/ID302 RDS Gateway Logon Logoff.evtx,200,Microsoft-Windows-TerminalServices-Gateway/Operational,EC2AMAZ-6C3C9U6,"AuthType: NTLM
+IpAddress: 219.100.37.243
+ConnectionProtocol: HTTP
+Resource: null
+ErrorCode: 0
+Username: EC2AMAZ-6C3C9U6\Administrator
+"
+2024-11-04T13:59:32.621299+00:00,RD Gateway - RD RAP requirements met,/evidence/windows-evtx-hayabusa-samples/IntialAccess/ValidAccounts/ID302 RDS Gateway Logon Logoff.evtx,300,Microsoft-Windows-TerminalServices-Gateway/Operational,EC2AMAZ-6C3C9U6,"AuthType: null
+IpAddress: 219.100.37.243
+ConnectionProtocol: null
+Resource: ec2-18-179-8-103.ap-northeast-1.compute.amazonaws.com
+ErrorCode: 0
+Username: EC2AMAZ-6C3C9U6\Administrator
+"
+2024-11-04T13:59:32.624373+00:00,RD Gateway - A user connected to a resource,/evidence/windows-evtx-hayabusa-samples/IntialAccess/ValidAccounts/ID302 RDS Gateway Logon Logoff.evtx,302,Microsoft-Windows-TerminalServices-Gateway/Operational,EC2AMAZ-6C3C9U6,"AuthType: null
+IpAddress: 219.100.37.243
+ConnectionProtocol: HTTP
+Resource: ec2-18-179-8-103.ap-northeast-1.compute.amazonaws.com
+ErrorCode: 0
+Username: EC2AMAZ-6C3C9U6\Administrator
+"

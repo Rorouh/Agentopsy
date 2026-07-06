@@ -52,13 +52,7 @@ export function App() {
 
   return (
     <ThemeProvider>
-      <AppShell
-        activeView={activeView}
-        onViewChange={setActiveView}
-        isConnected={isConnected}
-        version={version}
-        error={error}
-      >
+      <AppShell activeView={activeView} onViewChange={setActiveView} error={error}>
         {/* Demo visual con mock data — ver src/mocks/frontendPreviewData.ts.
             Cuando exista backend real, cada página recibirá sus props desde
             llamadas a forensia/routers/* en lugar de los arrays mock. */}
@@ -86,12 +80,13 @@ export function App() {
         {activeView === "mitre" && (
           <MitreAttackPage activeCase={mockActiveCase} activeEvidence={mockActiveEvidence} matches={mockMitreMatches} />
         )}
-        {activeView === "system" && <SystemStatusPage caps={caps} />}
+        {activeView === "system" && (
+          <SystemStatusPage caps={caps} isConnected={isConnected} version={version} />
+        )}
         {activeView === "settings" && (
           <SettingsPage
             caps={caps}
             version={version}
-            activeCase={mockActiveCase}
             onNavigate={setActiveView}
             onCapsRefresh={refreshCaps}
           />

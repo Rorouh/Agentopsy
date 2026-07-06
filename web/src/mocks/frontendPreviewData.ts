@@ -15,13 +15,13 @@ import type {
 } from "../types/domain";
 
 export const mockActiveCase: CaseSummary = {
-  id: "case-2026-014",
-  name: "Caso 2026-014 · Estación de trabajo comprometida",
-  examiner: "S. Bravo",
+  id: "case-demo-001",
+  name: "Caso de demostración · Equipo comprometido",
+  examiner: "Analista forense",
   createdAt: "2026-06-18T09:12:00Z",
   status: "open",
   evidenceCount: 3,
-  description: "Imagen forense de disco + volcado de memoria de un equipo Windows 11 con sospecha de exfiltración.",
+  description: "Imagen forense de disco + volcado de memoria de un equipo Windows con sospecha de exfiltración (datos de ejemplo).",
 };
 
 export const mockEvidenceFiles: EvidenceFile[] = [

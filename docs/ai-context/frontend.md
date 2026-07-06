@@ -132,17 +132,17 @@ web/src/                       ← the SPA (own package.json + vite.config.ts at
 │   └── frontendPreviewData.ts  All mock data. Imported ONLY in App.tsx and passed down as typed props — pages never import mocks directly.
 ├── layout/
 │   ├── AppShell.tsx        Visual frame: CSS grid (sidebar 260px + main), error banner via ErrorState. No topbar/ThemeToggle here anymore.
-│   └── Sidebar.tsx         Brand, full nav list (8 items, primary + secondary sections), connection status dot + backend version.
+│   └── Sidebar.tsx         Brand + full nav list (8 items, primary + secondary sections) with aria-current="page" on the active item. No footer: connection + version moved to SystemStatusPage (2026-07-04).
 ├── pages/
 │   ├── ChatPage.tsx        Full chat UI + send logic via api.query(). Executor selector (4 chips; unavailable ones disabled with the actionable reason as tooltip) + cloud warning/consent flow (blocks send until the operator confirms; consent recorded in the case audit via /api/agent/cloud-consent). Has ownership constraint (see below).
 │   ├── GuidePage.tsx       Static onboarding/flow explainer. CTA → repository.
 │   ├── RepositoryPage.tsx  "Casos y evidencias". Real case CRUD + evidence registration from the /api/evidence/sources inbox (./evidence on the host) + hash verify. CTA → investigation.
 │   ├── InvestigationPage.tsx  Wraps ChatPage, adds ContextBanner + findings side panel. CTA → timeline.
-│   ├── TimelinePage.tsx    Mock chronological events with severity filter. CTA → document-viewer.
-│   ├── DocumentViewerPage.tsx  Mock report list + viewer pane. CTA → mitre.
-│   ├── MitreAttackPage.tsx Mock MITRE technique correlation grid. Last step in the flow, no onNavigate.
-│   ├── SettingsPage.tsx    Apariencia (real theme toggle + persistence), Operador/Reportes (mock forms), Ejecutores/IA (real: status of the 4 executors with reasons, DEFAULT_EXECUTOR select, OLLAMA_HOST/OLLAMA_MODEL/FORENSIA_EXECUTOR_TIMEOUT — no API keys anywhere), Seguridad, Diagnóstico (CTA → system), Acerca de.
-│   └── SystemStatusPage.tsx  Capabilities dashboard. Renders caps.tools and caps.executors from the capabilities endpoint.
+│   ├── TimelinePage.tsx    Mock chronological events with severity filter ("Vista demo" banner). CTA → document-viewer.
+│   ├── DocumentViewerPage.tsx  Mock report list + viewer pane ("Vista demo" banner). CTA → mitre.
+│   ├── MitreAttackPage.tsx Mock MITRE technique correlation grid ("Vista demo" banner). Last step in the flow, no onNavigate.
+│   ├── SettingsPage.tsx    4 accessible tabs (tablist/tab/tabpanel): Ejecutores/IA (real: status of the 4 executors with local/cloud + reasons, capabilities refresh, DEFAULT_EXECUTOR select, OLLAMA_HOST/OLLAMA_MODEL/FORENSIA_EXECUTOR_TIMEOUT, CLI-session/forensia-cli-auth explainer — no API keys anywhere), Operador y reportes (preview forms, disabled), Apariencia (real theme toggle + persistence), Sistema (security notes, diagnostics, about; CTA → system).
+│   └── SystemStatusPage.tsx  Capabilities dashboard. Renders caps.tools, caps.toolkits and caps.executors from the capabilities endpoint + connection/version (ex-sidebar-footer).
 └── ui/
     ├── Button.tsx, Card.tsx, StatusDot.tsx   Original primitives, unchanged.
     ├── Badge.tsx, EmptyState.tsx, LoadingState.tsx, ErrorState.tsx   Visual state primitives.
@@ -266,6 +266,7 @@ ThemeProvider (React context)
 | `--accent-bg` | Accent tint background |
 | `--accent-text` | Accent text on light surfaces |
 | `--success` / `--danger` / `--warning` | Semantic status colors |
+| `--focus-ring` | Keyboard :focus-visible outline color (aliases `--accent`) |
 | `--font-sans` | System UI font stack (no network font) |
 | `--font-mono` | Monospace stack |
 | `--radius-card` | 8px — card corners |

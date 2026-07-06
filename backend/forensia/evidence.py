@@ -427,9 +427,13 @@ def list_source_files() -> list[dict]:
     La UI web no puede abrir rutas arbitrarias del host (no hay diálogo nativo
     de archivos), así que el operador deja el fichero
     en la bandeja y lo ELIGE aquí (agencia del operador — RULE 2: nunca se
-    registra "el único" ni "el más reciente"). Solo se listan ficheros
-    regulares dentro de la raíz; los symlinks se omiten porque ``register()``
-    los rechaza (SECURITY INVARIANT 6).
+    registra "el único" ni "el más reciente").
+
+    Se listan los ficheros regulares bajo la bandeja de forma **recursiva** (``rglob``),
+    con la ruta relativa como ``name`` (p. ej. ``metasploitable2-linux/…vmdk``), para
+    poder organizar la bandeja en subcarpetas por máquina/fuente. Se omiten los ficheros
+    y carpetas ocultos (cualquier parte que empiece por ``.``) y los symlinks (``register()``
+    los rechaza, SECURITY INVARIANT 6).
 
     Sin ``FORENSIA_EVIDENCE_DIR`` no hay bandeja que listar: error accionable,
     jamás un directorio adivinado (RULE 2).

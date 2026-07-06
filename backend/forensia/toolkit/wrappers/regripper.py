@@ -1,14 +1,13 @@
 """RegRipper wrapper — run a plugin against a pre-extracted Windows registry hive.
 
-Container-only delivery (`forensia/regripper:latest`). FORENSIC_SOUNDNESS §5 forbids
-mounting the raw image inside the container, so the caller must pre-extract the hive
-(TSK `icat` on the host) and provide the path to the resulting file. The wrapper then
-mounts that single file read-only at `/in/hive` inside the container.
+Runs `rip.pl` inside the `toolkit-windows` maletín via the exec-agent. FORENSIC_SOUNDNESS
+§5 forbids mounting the raw image inside the container, so the caller must pre-extract the
+hive (TSK `icat`) and pass the path to the resulting file (already under the read-only
+`/evidence` mount); the argv references that path directly.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 ALLOWED_FLAGS = frozenset({"-r", "-p", "-l", "-f"})
@@ -20,8 +19,8 @@ def build_argv(params: dict[str, Any]) -> list[str]:
     """Compose argv for rip.pl as it runs INSIDE the container.
 
     params:
-        hive_path (str, required for plugin/profile runs): host path to the
-            pre-extracted hive. The wrapper mounts it as `/in/hive` read-only.
+        hive_path (str, required for plugin/profile runs): path to the pre-extracted
+            hive under the maletín's read-only `/evidence` mount; passed to `-r`.
         plugin (str, optional): name of a single RegRipper plugin to run.
         profile (str, optional): name of a plugin profile (`-f`).
         list (bool, optional): `True` to list plugins; ignores other params.
@@ -38,7 +37,7 @@ def build_argv(params: dict[str, Any]) -> list[str]:
     if plugin and profile:
         raise ValueError("regripper: pass either 'plugin' or 'profile', not both")
 
-    argv = ["-r", "/in/hive"]
+    argv = ["-r", hive_path]
     if plugin:
         if not _is_valid_plugin_name(plugin):
             raise ValueError(f"invalid regripper plugin name: {plugin!r}")
@@ -62,14 +61,6 @@ def parse(stdout: str) -> dict[str, Any]:
         "lines": len(lines),
         "looks_empty": all(not ln.strip() or ln.startswith("Launching") for ln in lines),
     }
-
-
-def host_mounts(params: dict[str, Any]) -> tuple[dict[Path, str], dict[Path, str]]:
-    """Mounts for `container.run_in_container`: read-only hive, no writable volume."""
-    if params.get("list"):
-        return ({}, {})
-    hive = Path(params["hive_path"]).resolve()
-    return ({hive: "/in/hive"}, {})
 
 
 def _is_valid_plugin_name(name: str) -> bool:

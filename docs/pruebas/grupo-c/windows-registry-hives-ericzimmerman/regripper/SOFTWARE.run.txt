@@ -1,0 +1,42 @@
+run v.20200511
+(Software, NTUSER.DAT) [Autostart] Get autostart key contents from Software hive
+
+Microsoft\Windows\CurrentVersion\Run
+LastWrite Time 2013-10-10 01:35:26Z
+  VMware User Process - "C:\Program Files\VMware\VMware Tools\vmtoolsd.exe" -n vmusr
+
+Microsoft\Windows\CurrentVersion\Run has no subkeys.
+
+Microsoft\Windows\CurrentVersion\RunOnce
+LastWrite Time 2013-10-24 01:56:28Z
+Microsoft\Windows\CurrentVersion\RunOnce has no values.
+Microsoft\Windows\CurrentVersion\RunOnce has no subkeys.
+
+Microsoft\Windows\CurrentVersion\RunServices not found.
+
+Wow6432Node\Microsoft\Windows\CurrentVersion\Run
+LastWrite Time 2013-10-10 03:03:04Z
+Wow6432Node\Microsoft\Windows\CurrentVersion\Run has no values.
+
+Wow6432Node\Microsoft\Windows\CurrentVersion\Run\OptionalComponents
+LastWrite Time 2013-10-10 03:03:04Z
+
+Wow6432Node\Microsoft\Windows\CurrentVersion\RunOnce
+LastWrite Time 2009-07-14 04:53:25Z
+Wow6432Node\Microsoft\Windows\CurrentVersion\RunOnce has no values.
+Wow6432Node\Microsoft\Windows\CurrentVersion\RunOnce has no subkeys.
+
+Microsoft\Windows\CurrentVersion\Policies\Explorer\Run not found.
+
+Wow6432Node\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run not found.
+
+Microsoft\Windows NT\CurrentVersion\Terminal Server\Install\Software\Microsoft\Windows\CurrentVersion\Run not found.
+
+Microsoft\Windows NT\CurrentVersion\Terminal Server\Install\Software\Microsoft\Windows\CurrentVersion\RunOnce not found.
+
+Microsoft\Windows\CurrentVersion\StartupApproved\Run not found.
+
+Microsoft\Windows\CurrentVersion\StartupApproved\Run32 not found.
+
+Microsoft\Windows\CurrentVersion\StartupApproved\StartupFolder not found.
+

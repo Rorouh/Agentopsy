@@ -54,13 +54,23 @@ def test_core_tools_have_real_build_argv_and_parse() -> None:
         assert tool.allowed_flags, f"{tool.id} ALLOWED_FLAGS is empty"
 
 
-def test_extended_tier_tools_use_stub_for_now() -> None:
-    """Extended-tier tools are skeleton entries: they MUST keep _not_built
-    so the dispatcher fails loudly (RULE 2) if the agent picks one before it
-    is wired."""
+# Extended-tier tools not yet wired: they MUST keep _not_built so the dispatcher
+# fails loudly (RULE 2) if the agent picks one before it is implemented. As each is
+# wired (build_argv + parse + wrapper + test), remove it from this set.
+# Todas las tools extended están ya integradas (campaña de pruebas 2026-07-04).
+_EXTENDED_STILL_STUB: frozenset[str] = frozenset()
+
+
+def test_extended_tier_stubs_and_wired_are_consistent() -> None:
+    """Extended tools still in `_EXTENDED_STILL_STUB` keep the `_not_built` stub;
+    any extended tool wired since (e.g. `hashdeep`) must have a real build_argv+parse."""
     for tool in by_tier("extended"):
-        assert tool.build_argv is _not_built, f"{tool.id} should still be stub"
-        assert tool.parse is _not_built, f"{tool.id} should still be stub"
+        if tool.id in _EXTENDED_STILL_STUB:
+            assert tool.build_argv is _not_built, f"{tool.id} should still be stub"
+            assert tool.parse is _not_built, f"{tool.id} should still be stub"
+        else:
+            assert tool.build_argv is not _not_built, f"{tool.id} wired: needs real build_argv"
+            assert tool.parse is not _not_built, f"{tool.id} wired: needs real parse"
 
 
 # --------------------------------------------------------------------------- #

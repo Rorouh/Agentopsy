@@ -1,0 +1,50 @@
+# bulk_extractor — resumen de IOCs (run 6fc0d77b-50ad-4baa-bf34-d17eca2cc787, todos los escáneres)
+# counts: domain 86960 | email 69731 | url 16038 | telephone 30 | ether 5
+
+## Top dominios (url)
+   2321 https://mariadb.com
+   1674 http://www.gnu.org
+   1067 http://php.net
+    671 http://bugs.debian.org
+    549 http://gnu.org
+    534 http://lists.gnu.org
+    370 http://docbook.sf.net
+    364 http://bugs.gnu.org
+    285 http://pear.php.net
+    280 http://bugzilla.remotesensing.org
+    266 http://translationproject.org
+    257 http://www.w3.org
+    240 https://github.com
+    235 http://opensource.org
+    216 http://php-ids.org
+
+## Top emails (histograma)
+n=4736	guillem@debian.org
+n=3202	simon@josefsson.org
+n=2471	daniel@veillard.com
+n=1664	nmav@redhat.com
+n=1220	nicolas.francois@centraliens.net
+n=1163	meyering@redhat.com
+n=1118	doko@debian.org
+n=1061	lasse.collin@tukaani.org
+n=1011	nmav@gnutls.org
+n=897	alan.coopersmith@oracle.com
+
+## Teléfonos
+(123)
+(412)
+(617)
++9223372036854775807
++9223372036854775808
+014672432452
+022959099644
+0355426200428
+037777777777
+04150524197463018
+
+## MAC (ether)
+405311488-GZIP-2115	c6:19:52:8f:e6:a0	rt 1234 address c6:19:52:8f:e6:a0\012.PP\012.SS Configu
+405319680-GZIP-1516	00:04:23:df:2f:d0	dev eth0 lladdr 00:04:23:df:2f:d0 REACHABLE\012[LINK
+405319680-GZIP-1647	52:54:00:12:34:57	\012    link/ether 52:54:00:12:34:57 brd ff:ff:ff:ff
+405311488-GZIP-2222	c6:19:52:8f:e6:a0	rt 1234 address c6:19:52:8f:e6:a0 sa 0 pn 1 on ke
+405319680-GZIP-2003	00:04:23:df:2f:d0	dev eth0 lladdr 00:04:23:df:2f:d0 REACHABLE\012.in -

@@ -16,9 +16,12 @@ import type {
   EvidenceHandle,
   EvidenceSource,
   ExecutorId,
+  ExecutorModels,
   PersistedChatMessage,
+  StreamEvent,
   QueryRequest,
   QueryResponse,
+  ToolUsage,
   VerifyResult,
 } from "./types";
 
@@ -108,6 +111,54 @@ export const api = {
 
   query: (req: QueryRequest) => post<QueryResponse>("/api/agent/query", req),
 
+  // Igual que query() pero recibe el progreso del agente en vivo: llama a
+  // `onEvent` por cada evento NDJSON (reasoning / tool_call / tool_result /
+  // finding / final) y termina con el evento `done`.
+  queryStream: async (
+    req: QueryRequest,
+    onEvent: (ev: StreamEvent) => void,
+    signal?: AbortSignal,
+  ): Promise<void> => {
+    const doFetch = (token: string) =>
+      fetch("/api/agent/query/stream", {
+        method: "POST",
+        headers: { "X-Forensia-Token": token, "Content-Type": "application/json" },
+        body: JSON.stringify(req),
+        signal,
+      });
+    let res = await doFetch(await getToken());
+    if (res.status === 401) {
+      tokenPromise = null;
+      res = await doFetch(await getToken());
+    }
+    if (!res.ok) throw new ApiError(res.status, await readDetail(res));
+    if (!res.body) throw new ApiError(0, "el api no devolvió cuerpo de streaming");
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    const flush = (line: string) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      try {
+        onEvent(JSON.parse(trimmed) as StreamEvent);
+      } catch {
+        /* línea parcial o corrupta: se ignora */
+      }
+    };
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let nl: number;
+      while ((nl = buffer.indexOf("\n")) !== -1) {
+        flush(buffer.slice(0, nl));
+        buffer = buffer.slice(nl + 1);
+      }
+    }
+    flush(buffer);
+  },
+
   // Consentimiento explícito del operador para un ejecutor cloud-backed:
   // queda registrado en el audit.jsonl del caso (SECURITY INVARIANT 7 / RGPD).
   consentCloud: (caseId: string, executor: ExecutorId) =>
@@ -135,6 +186,8 @@ export const api = {
       ),
     listFindings: (caseId: string) =>
       request<AgentFinding[]>(`/api/cases/${encodeURIComponent(caseId)}/findings`),
+    listToolUsage: (caseId: string) =>
+      request<ToolUsage[]>(`/api/cases/${encodeURIComponent(caseId)}/tool-usage`),
     readChat: (caseId: string, sessionId: string) =>
       request<PersistedChatMessage[]>(
         `/api/cases/${encodeURIComponent(caseId)}/chats/${encodeURIComponent(sessionId)}`,
@@ -163,4 +216,9 @@ export const api = {
       post<{ key: string; set: boolean; preview: string }>("/api/config", { key, value }),
     executors: () => request<{ executors: ExecutorId[] }>("/api/config/executors"),
   },
+
+  // Modelos que ofrece el selector del composer para un ejecutor (solo `ollama`
+  // devuelve lista editable; los CLIs cloud gestionan su modelo — RULE 2).
+  executorModels: (id: ExecutorId) =>
+    request<ExecutorModels>(`/api/executors/${id}/models`),
 };

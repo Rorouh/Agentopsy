@@ -1,28 +1,27 @@
 """EvtxECmd wrapper — parse a pre-extracted `.evtx` file (or a directory of them).
 
-Container-only delivery (`forensia/evtxecmd:latest`). FORENSIC_SOUNDNESS §5 forbids
-mounting the raw image inside the container, so the caller must pre-extract the
-event log(s) on the host (TSK `icat` or similar) and pass either a single file or
-a directory. The wrapper mounts that read-only at `/in/evtx` and a writable scratch
-directory at `/out` for the CSV report.
+Runs `EvtxECmd` (Eric Zimmerman, .NET net9 on the runtime bundled in the maletín) via
+the exec-agent. FORENSIC_SOUNDNESS §5 forbids mounting the raw image inside the
+container, so the caller pre-extracts the event log(s) (TSK `icat` or similar) under the
+read-only `/evidence` mount and passes either a single file or a directory; the argv
+references those real paths. The CSV report lands in `output_dir` (`--csv`).
 """
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 ALLOWED_FLAGS = frozenset({"-d", "--csv", "--csvf", "-f"})
 
 
 def build_argv(params: dict[str, Any]) -> list[str]:
-    """Compose argv for EvtxECmd as it runs INSIDE the container.
+    """Compose argv for EvtxECmd.
 
     params:
-        evtx_path (str, required): host path to a single `.evtx` file OR a directory
-            containing multiple `.evtx` files. The wrapper picks `-f` vs `-d` based
-            on the file extension.
-        output_dir (str, required): host scratch directory for the CSV report.
+        evtx_path (str, required): path to a single `.evtx` file OR a directory of
+            them, under the maletín's read-only `/evidence` mount. The wrapper picks
+            `-f` vs `-d` based on the file extension.
+        output_dir (str, required): directory for the CSV report (`--csv`).
     """
     evtx_path = params.get("evtx_path")
     if not evtx_path or not isinstance(evtx_path, str):
@@ -33,7 +32,7 @@ def build_argv(params: dict[str, Any]) -> list[str]:
 
     single_file = evtx_path.lower().endswith(".evtx")
     source_flag = "-f" if single_file else "-d"
-    return [source_flag, "/in/evtx", "--csv", "/out", "--csvf", "evtx.csv"]
+    return [source_flag, evtx_path, "--csv", output_dir, "--csvf", "evtx.csv"]
 
 
 def parse(stdout: str) -> dict[str, Any]:
@@ -57,10 +56,3 @@ def parse(stdout: str) -> dict[str, Any]:
             if key and value and len(key) <= 64:
                 summary[key] = value
     return {"summary": summary, "summary_count": len(summary)}
-
-
-def host_mounts(params: dict[str, Any]) -> tuple[dict[Path, str], dict[Path, str]]:
-    """ro: evtx path at /in/evtx ; rw: scratch output dir at /out."""
-    evtx = Path(params["evtx_path"]).resolve()
-    out = Path(params["output_dir"]).resolve()
-    return ({evtx: "/in/evtx"}, {out: "/out"})

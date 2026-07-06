@@ -23,6 +23,7 @@ export function MitreAttackPage({ activeCase, activeEvidence, matches }: MitreAt
       />
 
       <ContextBanner activeCase={activeCase} activeEvidence={activeEvidence} />
+      <div className="demo-banner">⚠ Vista demo · las técnicas mostradas son datos de ejemplo hasta que el agente correlacione hallazgos reales con MITRE ATT&CK.</div>
 
       {matches.length === 0 ? (
         <EmptyState

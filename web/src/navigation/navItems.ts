@@ -22,14 +22,14 @@ export interface NavItem {
 }
 
 export const NAV_ITEMS: NavItem[] = [
-  { id: "guide", label: "Guía", section: "primary" },
+  { id: "investigation", label: "Chat Investigación", section: "primary" },
   { id: "repository", label: "Casos y evidencias", section: "primary" },
-  { id: "investigation", label: "Investigación", section: "primary" },
   { id: "timeline", label: "Timeline", section: "primary" },
   { id: "document-viewer", label: "Documentos", section: "primary" },
   { id: "mitre", label: "MITRE ATT&CK", section: "primary" },
   { id: "system", label: "Estado del Sistema", section: "secondary" },
   { id: "settings", label: "Configuración", section: "secondary" },
+  { id: "guide", label: "Guía", section: "secondary" },
 ];
 
-export const DEFAULT_VIEW: ViewId = "guide";
+export const DEFAULT_VIEW: ViewId = "investigation";

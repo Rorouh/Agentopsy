@@ -1,0 +1,21 @@
+# tsk_mactime — resumen timeline Metasploitable raíz (run d7c124aa-b5b6-42d9-9b43-13efbe9202cc)
+# 228.514 eventos | ventanas: 2008 (Hardy) → 2010-04-28 (setup) → 2012-05-20 (build final)
+
+## Primeros/últimos eventos con fecha real
+Date,Size,Type,Mode,UID,GID,Meta,File Name
+1994-08-01T12:22:53Z,86,m...,r/rrwxr-xr-x,0,0,370431,"/usr/lib/python2.5/doc/tools/fix_hack"
+...
+2012-05-20T19:56:57Z,0,mac.,r/rrw-r--r--,0,0,140985,"/etc/apache2/sites-enabled/000-default~ (deleted)"
+2012-05-20T19:56:57Z,4096,m.c.,r/rrw-------,0,0,49214,"/var/lib/urandom/random-seed"
+
+## Actividad del último día (2012-05-20) — muestra
+2012-05-20T17:56:19Z,34,.a..,r/rrw-r--r--,0,0,139272,"/etc/e2fsck.conf"
+2012-05-20T17:56:19Z,332,.a..,r/rrw-r--r--,0,0,139288,"/etc/bindresvport.blacklist"
+2012-05-20T17:56:19Z,3519,.a..,r/rrw-r--r--,0,0,139352,"/etc/localtime"
+2012-05-20T17:56:19Z,2586,.a..,r/rrw-r--r--,0,0,139353,"/etc/locale.alias"
+2012-05-20T17:56:19Z,530,.a..,r/rrw-r--r--,0,0,139375,"/etc/blkid.tab"
+2012-05-20T17:56:19Z,4096,.a..,d/drwxr-xr-x,0,0,139426,"/etc/dhcp3/dhclient-exit-hooks.d"
+2012-05-20T17:56:19Z,802,.a..,r/rrw-r--r--,0,0,139427,"/etc/dhcp3/dhclient-exit-hooks.d/ntpdate"
+2012-05-20T17:56:19Z,1024,.a..,r/rrw-r--r--,0,0,139428,"/etc/dhcp3/dhclient-exit-hooks.d/debug"
+2012-05-20T17:56:19Z,4096,.a..,d/drwxr-xr-x,0,0,139504,"/etc/modprobe.d"
+2012-05-20T17:56:19Z,299,.a..,r/rrw-r--r--,0,0,139505,"/etc/modprobe.d/isapnp"

@@ -1,0 +1,5 @@
+compname v.20090727
+(System) Gets ComputerName and Hostname values from System hive
+
+ComputerName    = HAXOR4
+TCP/IP Hostname = haxor4

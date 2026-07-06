@@ -21,16 +21,27 @@ tracked in `docs/operacion/proximos-pasos.md` §A/§B.
 from __future__ import annotations
 
 from forensia.toolkit.maletin import MALETINES, TOOLKIT_WINDOWS
-from forensia.toolkit.tool import (
-    DELIVERY_ALL_CONTAINER,
-    DELIVERY_WINDOWS_NATIVE,
-    Tool,
-)
+from forensia.toolkit.tool import Tool
 from forensia.toolkit.wrappers import (
     bulk_extractor as _bulk_extractor,
 )
 from forensia.toolkit.wrappers import (
     file_info as _file_info,
+)
+from forensia.toolkit.wrappers import (
+    foremost as _foremost,
+)
+from forensia.toolkit.wrappers import (
+    hashdeep as _hashdeep,
+)
+from forensia.toolkit.wrappers import (
+    plaso_log2timeline as _plaso_log2timeline,
+)
+from forensia.toolkit.wrappers import (
+    plaso_psort as _plaso_psort,
+)
+from forensia.toolkit.wrappers import (
+    qemu_nbd as _qemu_nbd,
 )
 from forensia.toolkit.wrappers import (
     strings_head as _strings_head,
@@ -61,6 +72,9 @@ from forensia.toolkit.wrappers import (
 )
 from forensia.toolkit.wrappers import (
     tsk_fls as _tsk_fls,
+)
+from forensia.toolkit.wrappers import (
+    tsk_icat as _tsk_icat,
 )
 from forensia.toolkit.wrappers import (
     tsk_mactime as _tsk_mactime,
@@ -223,9 +237,9 @@ CATALOG: tuple[Tool, ...] = (
         parse=_chainsaw.parse,
     ),
 
-    # --- Eric Zimmerman .NET tools: viven en el maletín windows (pendiente de
-    #     absorberlos en su Dockerfile — proximos-pasos §A). El legacy `delivery`/
-    #     `container_image` queda hasta realinear la ejecución. ---
+    # --- Eric Zimmerman .NET tools: viven en el maletín windows (EvtxECmd/MFTECmd,
+    #     .dll net9 sobre el runtime .NET absorbido en su Dockerfile), ejecutados por
+    #     el exec-agent como el resto (2026-07-04). ---
     Tool(
         "evtxecmd",
         "EvtxECmd",
@@ -233,12 +247,9 @@ CATALOG: tuple[Tool, ...] = (
         returns="artifact",
         tier="core",
         toolkits=_WINDOWS,
-        delivery=DELIVERY_WINDOWS_NATIVE,
-        container_image="forensia/evtxecmd:latest",
         allowed_flags=_evtxecmd.ALLOWED_FLAGS,
         build_argv=_evtxecmd.build_argv,
         parse=_evtxecmd.parse,
-        host_mounts=_evtxecmd.host_mounts,
     ),
     Tool(
         "mftecmd",
@@ -247,28 +258,22 @@ CATALOG: tuple[Tool, ...] = (
         returns="artifact",
         tier="core",
         toolkits=_WINDOWS,
-        delivery=DELIVERY_WINDOWS_NATIVE,
-        container_image="forensia/mftecmd:latest",
         allowed_flags=_mftecmd.ALLOWED_FLAGS,
         build_argv=_mftecmd.build_argv,
         parse=_mftecmd.parse,
-        host_mounts=_mftecmd.host_mounts,
     ),
 
-    # --- Registry (Perl): vive en el maletín windows ---
+    # --- Registry (Perl): vive en el maletín windows, ejecutado por el exec-agent ---
     Tool(
         "regripper",
-        "rip",
+        "rip.pl",
         ("windows",),
         returns="artifact",
         tier="core",
         toolkits=_WINDOWS,
-        delivery=DELIVERY_ALL_CONTAINER,
-        container_image="forensia/regripper:latest",
         allowed_flags=_regripper.ALLOWED_FLAGS,
         build_argv=_regripper.build_argv,
         parse=_regripper.parse,
-        host_mounts=_regripper.host_mounts,
     ),
 
     # --- Helper de filtrado JSON para el agente (stage base de ambos maletines) ---
@@ -286,18 +291,72 @@ CATALOG: tuple[Tool, ...] = (
     # ====== EXTENDED TIER — se añaden tras estabilizar el core ======
 
     # Extracción puntual de ficheros (TSK, stage base)
-    Tool("tsk_icat", "icat", ("unix", "windows"), returns="artifact", toolkits=_BOTH),
+    Tool(
+        "tsk_icat",
+        "icat",
+        ("unix", "windows"),
+        returns="artifact",
+        toolkits=_BOTH,
+        allowed_flags=_tsk_icat.ALLOWED_FLAGS,
+        build_argv=_tsk_icat.build_argv,
+        parse=_tsk_icat.parse,
+    ),
 
     # Super-timeline (Plaso, stage base) — lento, kit "primera tarde"
-    Tool("plaso_log2timeline", "log2timeline.py", ("unix", "windows"), returns="artifact", toolkits=_BOTH),
-    Tool("plaso_psort", "psort.py", ("unix", "windows"), returns="artifact", toolkits=_BOTH),
+    Tool(
+        "plaso_log2timeline",
+        "log2timeline.py",
+        ("unix", "windows"),
+        returns="artifact",
+        toolkits=_BOTH,
+        allowed_flags=_plaso_log2timeline.ALLOWED_FLAGS,
+        build_argv=_plaso_log2timeline.build_argv,
+        parse=_plaso_log2timeline.parse,
+    ),
+    Tool(
+        "plaso_psort",
+        "psort.py",
+        ("unix", "windows"),
+        returns="artifact",
+        toolkits=_BOTH,
+        allowed_flags=_plaso_psort.ALLOWED_FLAGS,
+        build_argv=_plaso_psort.build_argv,
+        parse=_plaso_psort.parse,
+    ),
 
     # Hashing / carving extra (stage base)
-    Tool("hashdeep", "hashdeep", ("unix", "windows"), returns="artifact", toolkits=_BOTH),
-    Tool("foremost", "foremost", ("unix",), returns="artifact", toolkits=_BOTH),
+    Tool(
+        "hashdeep",
+        "hashdeep",
+        ("unix", "windows"),
+        returns="artifact",
+        toolkits=_BOTH,
+        allowed_flags=_hashdeep.ALLOWED_FLAGS,
+        build_argv=_hashdeep.build_argv,
+        parse=_hashdeep.parse,
+    ),
+    Tool(
+        "foremost",
+        "foremost",
+        ("unix",),
+        returns="artifact",
+        toolkits=_BOTH,
+        allowed_flags=_foremost.ALLOWED_FLAGS,
+        build_argv=_foremost.build_argv,
+        parse=_foremost.parse,
+    ),
 
     # Montaje auxiliar (side-effecting; qemu-utils en el stage base)
-    Tool("qemu_nbd", "qemu-nbd", ("unix",), side_effecting=True, toolkits=_BOTH),
+    Tool(
+        "qemu_nbd",
+        "qemu-nbd",
+        ("unix",),
+        side_effecting=True,
+        toolkits=_BOTH,
+        allowed_flags=_qemu_nbd.ALLOWED_FLAGS,
+        build_argv=_qemu_nbd.build_argv,
+        parse=_qemu_nbd.parse,
+    ),
 )
 
 BY_ID = {tool.id: tool for tool in CATALOG}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
-import type { AgentFinding, Capabilities, Case, EvidenceHandle } from "../api/types";
+import type { AgentFinding, Capabilities, Case, EvidenceHandle, ToolUsage } from "../api/types";
 import type { ViewId } from "../navigation/navItems";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
@@ -34,6 +34,7 @@ export function InvestigationPage({ caps, onNavigate }: InvestigationPageProps) 
   const [activeCase, setActiveCase] = useState<Case | null>(null);
   const [activeEvidence, setActiveEvidence] = useState<EvidenceHandle | null>(null);
   const [findings, setFindings] = useState<AgentFinding[]>([]);
+  const [toolUsage, setToolUsage] = useState<ToolUsage[]>([]);
   const [phase, setPhase] = useState<Phase>("loading");
   const [error, setError] = useState<string | null>(null);
 
@@ -44,6 +45,15 @@ export function InvestigationPage({ caps, onNavigate }: InvestigationPageProps) 
     } catch {
       // 404 = sin findings.jsonl aún. No es error, es estado vacío.
       setFindings([]);
+    }
+  }, []);
+
+  const refreshToolUsage = useCallback(async (caseId: string) => {
+    try {
+      setToolUsage(await api.cases.listToolUsage(caseId));
+    } catch {
+      // Sin audit.jsonl aún → sin herramientas ejecutadas. Estado vacío, no error.
+      setToolUsage([]);
     }
   }, []);
 
@@ -65,6 +75,7 @@ export function InvestigationPage({ caps, onNavigate }: InvestigationPageProps) 
           setActiveEvidence(evidences[0]);
         }
         await refreshFindings(newest.id);
+        await refreshToolUsage(newest.id);
         if (cancelled) return;
         setPhase("ready");
       } catch (err) {
@@ -76,11 +87,14 @@ export function InvestigationPage({ caps, onNavigate }: InvestigationPageProps) 
     return () => {
       cancelled = true;
     };
-  }, [refreshFindings]);
+  }, [refreshFindings, refreshToolUsage]);
 
   const onTurnComplete = useCallback(() => {
-    if (activeCase) refreshFindings(activeCase.id);
-  }, [activeCase, refreshFindings]);
+    if (activeCase) {
+      refreshFindings(activeCase.id);
+      refreshToolUsage(activeCase.id);
+    }
+  }, [activeCase, refreshFindings, refreshToolUsage]);
 
   if (phase === "loading") {
     return (
@@ -225,6 +239,7 @@ export function InvestigationPage({ caps, onNavigate }: InvestigationPageProps) 
           onTurnComplete={onTurnComplete}
         />
 
+        <div className="investigation-sidebar">
         <div className="findings-panel">
           <div className="findings-panel-title">
             Hallazgos del caso ({findings.length})
@@ -260,6 +275,34 @@ export function InvestigationPage({ caps, onNavigate }: InvestigationPageProps) 
               </div>
             ))
           )}
+        </div>
+
+        <div className="findings-panel tools-panel">
+          <div className="findings-panel-title">
+            Tools ({toolUsage.reduce((n, t) => n + t.total, 0)})
+          </div>
+          {toolUsage.length === 0 ? (
+            <div className="empty-state" style={{ padding: "20px 12px" }}>
+              Aún no se ha ejecutado ninguna herramienta. Aparecerán aquí con su número de
+              usos cuando el agente las invoque.
+            </div>
+          ) : (
+            toolUsage.map((t) => (
+              <div className="tool-usage-row" key={t.tool_id}>
+                <span className="tool-usage-name">{t.tool_id}</span>
+                <span className="tool-usage-meta">
+                  {t.ok > 0 && <Badge variant="low">{t.ok} ok</Badge>}
+                  {t.failed > 0 && (
+                    <Badge variant="high">
+                      {t.failed} fallo{t.failed > 1 ? "s" : ""}
+                    </Badge>
+                  )}
+                  <span className="tool-usage-count">×{t.total}</span>
+                </span>
+              </div>
+            ))
+          )}
+        </div>
         </div>
       </div>
     </div>

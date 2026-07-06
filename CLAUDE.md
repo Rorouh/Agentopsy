@@ -269,13 +269,21 @@ security invariants present as enforced stubs. The executor layer is implemented
 adapter into the agent loop; `/api/agent/query` demands the operator-selected executor,
 `capabilities` reports the four with actionable reasons, and no API-key string survives
 in `backend/` — regression-tested). `capabilities` also reports each catalog tool against
-the maletín it lives in (`catalog.py` `toolkits=`; `forensia.toolkit.maletin` probes the
-`toolkit-windows`/`toolkit-unix` containers — running? binary present? — with no
-cross-maletín fallback per RULE 2, degrading with an actionable reason when the api cannot
-reach a maletín); the two toolkit images are pinned to `linux/amd64` (the GIFT PPA has no
-arm64 — emulated on Apple Silicon). Wiring the live api→maletín exec path (docker socket
-vs. an internal-network exec-agent) and absorbing the last Windows tools into the maletín
-Dockerfiles remain (docs/operacion/proximos-pasos.md §A/§B). The SPA talks to the api
+the maletín it lives in (`catalog.py` `toolkits=`; `forensia.toolkit.maletin` probes each
+maletín through its **exec-agent** — reachable? binary present? — with no cross-maletín
+fallback per RULE 2, degrading with an actionable reason when the api cannot reach a
+maletín); the two toolkit images are pinned to `linux/amd64` (the GIFT PPA has no
+arm64 — emulated on Apple Silicon). The api→maletín channel is wired via the **exec-agent**
+(§B): each maletín runs `exec_agent.py` (stdlib HTTP, internal network, no published port,
+no host Docker socket) exposing `/health`, `/which` and `/exec`; the api reaches it at
+`FORENSIA_TOOLKIT_{UNIX,WINDOWS}_URL` (see docs/operacion/exec-agent.md). The **dispatcher**
+now runs tools through that channel: `dispatcher.execute()` resolves a binary on the api
+PATH (dev) or else routes `[binary, *argv]` to the tool's maletín via `POST /exec`
+(`maletin.run_argv_in_maletin`), choosing the maletín by `os_profile` with no cross-maletín
+fallback (RULE 2) — so the agent executes tools end-to-end from the chat (verified: `tsk_fls`
+over a real image → 22 entries + ArtifactRun + hash-chained audit). Remaining: absorb the
+last Windows tools into the maletín Dockerfiles, and drop the now-unused legacy
+`delivery`/`container_image` on `Tool` (docs/operacion/proximos-pasos.md §B.bis / §A). The SPA talks to the api
 through
 `web/src/api/client.ts` (token from `GET /api/session`, memory-only), carries the
 executor selector + audited cloud-consent flow, and registers evidence from the

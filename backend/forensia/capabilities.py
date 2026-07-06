@@ -2,11 +2,12 @@
 
 Reports the maletín truth (CLAUDE.md RULE 1): every forensic tool lives in one or both
 compose maletín images (`toolkit-windows` / `toolkit-unix`), and the api reaches it
-there — it bundles none itself. `forensia.toolkit.maletin` probes each maletín container
-(running? binary present?) and this snapshot surfaces, per tool, `{available, toolkits,
-reason}` plus a per-maletín `toolkits` section, so the UI degrades per capability with an
-actionable reason (RULE 2: never substitute one maletín for another). `container_runtime`
-says whether the api even has an OCI client to consult the maletines with.
+there — it bundles none itself. `forensia.toolkit.maletin` probes each maletín through
+its exec-agent (reachable? binary present?) and this snapshot surfaces, per tool,
+`{available, toolkits, reason}` plus a per-maletín `toolkits` section, so the UI degrades
+per capability with an actionable reason (RULE 2: never substitute one maletín for
+another). `container_runtime` says whether the api has any channel to consult the
+maletines at all (at least one exec-agent URL configured; §B, no host Docker socket).
 """
 
 from __future__ import annotations
@@ -28,8 +29,8 @@ def snapshot() -> dict[str, Any]:
         "os": platform.system().lower(),
         "arch": platform.machine().lower(),
         "python": platform.python_version(),
-        # Whether the api can talk to an OCI client at all (docker/podman on PATH). The
-        # maletín probe needs it; without it every tool reports its actionable reason.
+        # Whether the api has a channel to the maletines at all (at least one exec-agent
+        # URL configured; §B). Without it every tool reports its actionable reason.
         "container_runtime": maletines["client"],
         # Per-maletín service status (running? / why not) — answers "capabilities does
         # not report the maletines".

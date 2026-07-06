@@ -57,6 +57,18 @@ x-toolkit-common: &toolkit-common
     - /dev/fuse
   security_opt:
     - apparmor:unconfined
+  # El maletín está "listo" cuando su exec-agent responde. `api` espera a esto
+  # (depends_on: service_healthy) para no consultar un maletín que aún no escucha.
+  healthcheck:
+    test:
+      - CMD
+      - python3
+      - -c
+      - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8666/health', timeout=3)"
+    interval: 15s
+    timeout: 5s
+    retries: 5
+    start_period: 10s
 
 services:
   # --- Frontend web -----------------------------------------------------------
@@ -103,6 +115,13 @@ services:
       # SECURITY INVARIANT 2 — nunca un regex sobre localhost). El nginx del
       # servicio web reenvía el Host original del navegador.
       FORENSIA_UI_ORIGINS: http://127.0.0.1:5173,http://localhost:5173
+      # Canal api→maletín (§B, docs/operacion/exec-agent.md): el api consulta y
+      # ejecuta herramientas hablando por HTTP con el exec-agent de cada maletín en
+      # la red interna del compose (sin socket de Docker). `forensia.toolkit.maletin`
+      # lee estas URLs. Endurecimiento opcional: define FORENSIA_EXEC_AGENT_TOKEN en
+      # api + ambos maletines para exigir cabecera compartida.
+      FORENSIA_TOOLKIT_UNIX_URL: http://toolkit-unix:8666
+      FORENSIA_TOOLKIT_WINDOWS_URL: http://toolkit-windows:8666
     volumes:
       - ./evidence:/evidence:ro          # evidencias en SOLO LECTURA
       - ./projects:/cases                # casos, artefactos, audit log, informes
@@ -122,9 +141,14 @@ services:
       - ${HOME}/.codex:/host-creds/codex:ro
       - ${HOME}/.gemini:/host-creds/gemini:ro
     depends_on:
-      - toolkit-windows
-      - toolkit-unix
-      - ollama
+      # Espera a que el exec-agent de cada maletín esté sano antes de arrancar el api,
+      # así el primer /api/capabilities ya ve los maletines (no un None transitorio).
+      toolkit-windows:
+        condition: service_healthy
+      toolkit-unix:
+        condition: service_healthy
+      ollama:
+        condition: service_started
     healthcheck:
       test:
         - CMD
@@ -157,7 +181,9 @@ services:
         CHAINSAW_VERSION: "2.16.0"
     image: forensia/toolkit-windows:1.0
     container_name: forensia-toolkit-windows
-    command: ["sleep", "infinity"]
+    # Arranca el exec-agent (canal api→maletín §B) en vez de dormir. Sin puerto
+    # publicado: solo alcanzable en la red interna del compose (como ollama).
+    command: ["python3", "/opt/forensia/exec_agent.py"]
 
   toolkit-unix:
     <<: *toolkit-common
@@ -168,7 +194,9 @@ services:
         VOLATILITY3_VERSION: "2.28.0"
     image: forensia/toolkit-unix:1.0
     container_name: forensia-toolkit-unix
-    command: ["sleep", "infinity"]
+    # Arranca el exec-agent (canal api→maletín §B) en vez de dormir. Sin puerto
+    # publicado: solo alcanzable en la red interna del compose (como ollama).
+    command: ["python3", "/opt/forensia/exec_agent.py"]
 
 volumes:
   ollama:

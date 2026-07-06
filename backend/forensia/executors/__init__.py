@@ -42,6 +42,34 @@ def get_executor(executor_id: str) -> PromptExecutor:
     return factory()
 
 
+def executor_models(executor_id: str) -> dict[str, object]:
+    """Models selectable for ``executor_id``, for the composer's model picker.
+
+    Only ``ollama`` exposes a selectable list (the installed models, which the
+    backend actually honours via ``OLLAMA_MODEL``). The cloud CLIs manage their own
+    model inside their session; FORENSIA does not override it (RULE 2), so they
+    return ``editable=False`` with an actionable note instead of a fake list. If the
+    Ollama host is down, the reason travels in ``note`` (empty list) so the UI
+    degrades explicitly rather than silently.
+    """
+    executor = get_executor(executor_id)  # loud on unknown id
+    if isinstance(executor, OllamaExecutor):
+        try:
+            models = executor.list_models()
+            return {"executor": executor_id, "editable": True, "models": models, "note": None}
+        except ExecutorError as exc:
+            return {"executor": executor_id, "editable": True, "models": [], "note": str(exc)}
+    return {
+        "executor": executor_id,
+        "editable": False,
+        "models": [],
+        "note": (
+            f"El modelo lo gestiona el CLI de {executor.name}; FORENSIA no lo "
+            "sobrescribe (RULE 2). Cámbialo en la sesión del propio CLI."
+        ),
+    }
+
+
 def executors_status() -> dict[str, dict[str, object]]:
     """Availability of the four executors, with the actionable reason when one
     is unavailable. Consumed by ``forensia.capabilities.snapshot``."""
@@ -70,6 +98,7 @@ __all__ = [
     "GeminiExecutor",
     "OllamaExecutor",
     "get_executor",
+    "executor_models",
     "executors_status",
     "resolve_timeout",
 ]

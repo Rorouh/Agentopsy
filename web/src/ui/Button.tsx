@@ -1,10 +1,11 @@
 import type { ButtonHTMLAttributes } from "react";
 
-type Variant = "chip" | "icon";
+type Variant = "chip" | "icon" | "primary";
 
 const VARIANT_CLASS: Record<Variant, string> = {
   chip: "chip",
   icon: "send-btn",
+  primary: "btn-primary",
 };
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {

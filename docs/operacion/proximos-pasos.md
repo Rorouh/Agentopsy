@@ -156,15 +156,18 @@ ninguna tool). RULE 2 intacta: un tool solo se resuelve contra los maletines que
 sin sustituciones. La SPA (`SystemStatusPage`, `SettingsPage`) consume la nueva forma.
 
 **Restante concreto de §A** (el sondeo lo delata ahora con razón accionable):
-- **RegRipper** está en el Dockerfile windows como `rip.pl` + symlink `regripper`, pero el
-  catálogo usa el binario `rip` → reconciliar el nombre (o el símil) para que el sondeo lo
-  vea presente.
-- **EvtxECmd / MFTECmd** (.NET) **aún no están** en el Dockerfile del maletín — el catálogo
-  todavía referencia las imágenes OCI muertas (`forensia/evtxecmd:latest`, `forensia/
-  mftecmd:latest`) por el `delivery`/`container_image` legacy. Absorber .NET Core + esas
-  tools en el stage `windows`.
-- Retirar `scripts/build-images.sh` (ya eliminado en el desmontaje) y el `delivery`/
-  `container_image` legacy del catálogo cuando la ejecución se unifique (ver más abajo).
+- ~~**RegRipper**~~ ✅ **reconciliado (2026-07-04):** el catálogo apunta a `rip.pl` (el binario
+  real del maletín) y se retiró su `delivery`/`container_image`/`host_mounts` legacy; ahora se
+  ejecuta por el exec-agent como el resto (verificado: 7 plugins sobre las 5 hives → findings).
+- ~~**EvtxECmd / MFTECmd**~~ ✅ **absorbidos (2026-07-04):** el stage `windows` instala el
+  runtime **.NET 9** + los builds net9 de ambas tools (SHA pinneado, envueltas en scripts en el
+  PATH) con `DOTNET_EnableWriteXorExecute=0` (segfault del JIT bajo emulación QEMU). Catálogo/
+  wrappers realineados al maletín (sin `delivery`/`container_image`/`host_mounts`). Verificado:
+  EvtxECmd sobre 16 EVTX (279 eventos) y MFTECmd sobre el `$MFT` de la NIST Hacking Case (12.181
+  registros). **Con esto, las 22 tools del catálogo están operativas** — ver `docs/tools/`.
+- Retirar `scripts/build-images.sh` (ya eliminado en el desmontaje). El `delivery`/
+  `container_image` legacy del `Tool` **ya no lo usa ninguna tool del catálogo** (todas migradas
+  al maletín); queda solo el campo en la dataclass, pendiente de retirar formalmente.
 
 ### B. ~~Instalar el maletín bundled en el Mac de dev~~ **[SUPERSEDIDO por el pivote 2026-07-02]**
 
@@ -184,26 +187,42 @@ instalan explícitamente en el stage `base`; puede que falten). Todos estos huec
 delata ahora el sondeo con `reason` = «binario ausente en <maletín>» en vez del antiguo
 `false` silencioso.
 
-### B.bis — Canal api→maletín (ejecución en vivo) **[pendiente — el resto de §A/§B]**
+### B.bis — Canal api→maletín (exec-agent) **[HECHO — canal + sondeo + dispatcher]**
 
-`capabilities` reporta la verdad *que puede obtener*: con override por env / binario en el
-`PATH` del `api`, disponible; en el compose desplegado el `api` **no tiene canal** para
-consultar los maletines (ni socket docker ni exec-agent), así que el sondeo dice «no
-consultable desde el api — ver §A/§B» (razón accionable, no adivina). Para que el sondeo
-—y sobre todo la **ejecución real** de tools— funcione en vivo hay que cablear uno de:
+Se eligió la **opción §B (exec-agent)** frente al socket docker en `api` (§A). Montar
+`/var/run/docker.sock` en el `api` —componente que procesa evidencia hostil— equivale a
+root en el host y `:ro` sobre el socket no es una frontera real; §B evita esa escalada y
+respeta SECURITY INVARIANT 1.
 
-- **Socket docker en `api`** (`docker exec` a los contenedores de maletín). Es lo más
-  directo y lo que sugería la tarea, pero montar `/var/run/docker.sock` en el `api`
-  (componente que procesa evidencia hostil) es una **decisión de seguridad**: equivale a
-  root en el host, y `:ro` sobre el socket no es una frontera real. No se añade en esta
-  tarjeta sin acuerdo explícito del equipo.
-- **Exec-agent en cada maletín** sobre la red interna del compose (el `api` habla HTTP a un
-  servidor mínimo dentro del maletín que ejecuta el argv allowlisted). Sin socket, respeta
-  SECURITY INVARIANT 1 y el contrato «argv, shell-free». **Opción recomendada.**
+**Hecho:**
 
-Además, unificar el **dispatcher** (`toolkit/dispatcher.py` + `toolkit/container.py`, hoy
-con el path muerto `docker run <container_image>` de imágenes por-tool) sobre ese mismo
-canal, y retirar entonces el `delivery`/`container_image` legacy del `Tool`.
+- **Exec-agent en cada maletín** (`docker/docker/forensic-toolkit/exec_agent.py`): HTTP
+  stdlib en la red interna del compose, **sin puerto publicado** (mismo modelo de
+  confianza que `ollama`). Endpoints `GET /health`, `POST /which` (presencia de binarios)
+  y `POST /exec` (argv shell-free, `subprocess.run(..., shell=False)`); token opcional
+  `FORENSIA_EXEC_AGENT_TOKEN`. Los maletines lo arrancan con `command:` en el compose y
+  publican `FORENSIA_TOOLKIT_UNIX_URL` / `FORENSIA_TOOLKIT_WINDOWS_URL` al `api`.
+- **Sondeo migrado** (`forensia.toolkit.maletin`): `probe_service`/`probe_binaries` hablan
+  HTTP con el exec-agent en vez de `docker inspect`/`docker exec`. `capabilities` reporta
+  la disponibilidad real de cada tool con el compose por defecto — **sin socket, sin
+  cliente docker en el `api`**. Tests: `backend/tests/test_maletin.py`. Diseño y modelo de
+  amenazas: [`exec-agent.md`](exec-agent.md).
+
+- **Dispatcher unificado (Parte 2)** — `toolkit/dispatcher.py` ejecuta las tools por el
+  exec-agent: si el binario no está en el PATH del `api` (RULE 1), `execute()` selecciona
+  el maletín por `os_profile` (`_select_maletin`, sin fallback entre maletines — RULE 2) y
+  manda `[binary, *argv]` al `POST /exec` vía `maletin.run_argv_in_maletin`. Rutas sin
+  traducción: `/evidence` (ro) y `/cases` están montados en las MISMAS rutas en api y
+  maletín. Se retiró el path muerto `docker run <container_image>` (el `delivery`/
+  `container_image` legacy del `Tool` queda sin usar). `os_profile` se cablea desde los
+  dos llamadores (`agent.py`, `mcp/toolkit.py`). Verificado end-to-end sobre una imagen
+  real (`tsk_fls` → 22 entradas, ArtifactRun + audit hash-chained). Tests:
+  `backend/tests/test_dispatcher.py`. **Con esto el agente ejecuta herramientas end-to-end
+  desde el chat.**
+
+**Pendiente menor:** retirar formalmente los campos `delivery`/`container_image` del
+`Tool` y `toolkit/container.py` (hoy sin consumidores en el dispatcher; los conserva
+`test_container.py`).
 
 ### B.ter — Maletines fijados a `linux/amd64` **[hecho 2026-07-03]**
 

@@ -34,6 +34,7 @@ export function DocumentViewerPage({ activeCase, activeEvidence, documents, onNa
       />
 
       <ContextBanner activeCase={activeCase} activeEvidence={activeEvidence} />
+      <div className="demo-banner">⚠ Vista demo · los documentos mostrados son datos de ejemplo hasta que el agente genere informes reales.</div>
 
       {documents.length === 0 ? (
         <EmptyState

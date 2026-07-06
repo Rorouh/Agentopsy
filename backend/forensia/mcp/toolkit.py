@@ -300,7 +300,11 @@ async def _dispatch_forensic(
     validated = _inject_evidence_path(name, validated, str(handle.original_path))
 
     try:
-        result = dispatch_tool(name, validated, case_id=case_id)
+        # os_profile of the active package routes the tool to its maletín (§B): the same
+        # profile that gated the allowlist above, so no cross-maletín fallback (RULE 2).
+        result = dispatch_tool(
+            name, validated, case_id=case_id, os_profile=session.agent_package.os_profile
+        )
     except ToolExecutionError as exc:
         return _error(f"tool {name!r} failed to execute: {exc}")
 

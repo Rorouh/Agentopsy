@@ -73,6 +73,39 @@ class OllamaExecutor(PromptExecutor):
             )
         return ExecutorAvailability(available=True)
 
+    def list_models(self) -> list[str]:
+        """Installed model names from ``{host}/api/tags`` (sorted, de-duped).
+
+        Raises ``ExecutorError`` (actionable) when the host is unset or unreachable —
+        RULE 2: no silent empty list masking a misconfiguration.
+        """
+        host = self._host()
+        if host is None:
+            raise ExecutorError(
+                "OLLAMA_HOST no está configurado — no se pueden listar modelos "
+                "(RULE 2: sin defaults silenciosos)."
+            )
+        try:
+            req = urllib.request.Request(f"{host}/api/tags", method="GET")
+            with urllib.request.urlopen(req, timeout=_PROBE_TIMEOUT_S) as resp:
+                body = resp.read().decode("utf-8")
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            raise ExecutorError(
+                f"no se pudo listar modelos de Ollama en {host} ({exc}). "
+                "Comprueba que el servicio está levantado o corrige OLLAMA_HOST."
+            ) from exc
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError as exc:
+            raise ExecutorError("Ollama /api/tags devolvió un cuerpo no-JSON") from exc
+        entries = data.get("models") if isinstance(data, dict) else None
+        names = {
+            m["name"]
+            for m in (entries or [])
+            if isinstance(m, dict) and isinstance(m.get("name"), str) and m["name"].strip()
+        }
+        return sorted(names)
+
     def run(self, prompt: str, context: dict[str, Any] | None = None) -> ExecutorResult:
         ctx = context or {}
         host = self._host()

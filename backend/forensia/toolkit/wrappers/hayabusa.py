@@ -38,6 +38,11 @@ def build_argv(params: dict[str, Any]) -> list[str]:
         "-d", evtx_dir,
         "-o", output_csv,
         "--no-color",
+        # Sin -w/--no-wizard hayabusa lanza un "scan wizard" INTERACTIVO que lee del
+        # terminal; corriendo por el exec-agent (sin TTY) eso panica ("not a terminal",
+        # exit 101). -q silencia el banner. Non-interactive obligatorio en el maletín.
+        "-w",
+        "-q",
     ]
     if (level := params.get("min_level")) is not None:
         if not isinstance(level, str) or level not in _VALID_LEVELS:
