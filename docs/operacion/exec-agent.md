@@ -45,9 +45,11 @@ api  ──HTTP (red interna del compose)──▶  exec-agent  ──subprocess
 | `POST` | `/which`  | `{"binaries": ["fls","vol",…]}` | `{"present": ["fls",…]}` (subconjunto en PATH) |
 | `POST` | `/exec`   | `{"argv": ["fls","-r","/evidence/…"], "timeout": 300}` | `{"exit": int, "stdout": str, "stderr": str, "timed_out": bool}` |
 
-`/exec` está implementado en el agente pero el **dispatcher** (`toolkit/dispatcher.py`) aún
-no lo usa (Parte 2 pendiente): hoy el canal alimenta el sondeo de `capabilities`; que el
-agente ejecute tools end-to-end requiere realinear el dispatcher sobre `POST /exec`.
+El **dispatcher** (`toolkit/dispatcher.py`) ejecuta las tools sobre este canal:
+resuelve el argv desde el allowlist, elige el maletín por el `os_profile` del caso
+(`_select_maletin`, sin fallback entre maletines — RULE 2) y lanza `POST /exec` vía
+`forensia.toolkit.maletin.run_argv_in_maletin`. El mismo canal alimenta el sondeo de
+`capabilities` (`/health` + `/which`).
 
 ## Seguridad
 

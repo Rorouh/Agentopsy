@@ -127,8 +127,9 @@ El maletín queda **habilitado para que el `api` lo consulte** así:
   [`docs/operacion/exec-agent.md`](../docs/operacion/exec-agent.md).
 - El `api` consulta presencia de tools (`GET /health`, `POST /which`) por HTTP a
   `http://toolkit-unix:8666` / `http://toolkit-windows:8666` — es lo que reporta
-  `capabilities`. La ejecución de tools (`POST /exec`) está lista en el agente; el
-  dispatcher del `api` se realineará sobre ella (Parte 2, `proximos-pasos.md` §B.bis).
+  `capabilities` — y ejecuta las tools del agente por el mismo canal (`POST /exec`):
+  el dispatcher resuelve el argv desde el allowlist y lo lanza en el maletín del
+  `os_profile` del caso (`proximos-pasos.md` §B.bis, HECHO).
 - A mano, para depurar, también puedes ejecutar directamente dentro del contenedor:
 
   ```bash
