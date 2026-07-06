@@ -34,6 +34,16 @@
 name: forensia
 
 # Ajustes comunes a los dos maletines
+#
+# La carpeta de evidencias es CONFIGURABLE: el operador define
+# FORENSIA_EVIDENCE_DIR (export o fichero .env junto a este compose) apuntando a
+# la carpeta única del caso — el diseño de la app final es "una carpeta de
+# evidencia elegida por el usuario". Sin variable definida se usa ./evidence
+# (default de diseño, documentado en docker/README.md). Nunca rutas absolutas
+# hardcodeadas de un host concreto en ficheros versionados. Nota: estas
+# variables interpolan RUTAS DEL HOST al parsear el compose; no confundir con
+# la FORENSIA_EVIDENCE_DIR del environment del servicio api, que es la ruta
+# DENTRO del contenedor (/evidence).
 x-toolkit-common: &toolkit-common
   # Los maletines se CONSTRUYEN y EJECUTAN como imágenes linux/amd64. El PPA GIFT
   # (plaso, sleuthkit, libyal, bulk-extractor) no publica paquetes arm64, así que
@@ -46,8 +56,8 @@ x-toolkit-common: &toolkit-common
   restart: unless-stopped
   stop_grace_period: 5s
   volumes:
-    - ./evidence:/evidence:ro      # evidencias en SOLO LECTURA (cadena de custodia)
-    - ./projects:/cases            # proyectos, salidas e informes
+    - ${FORENSIA_EVIDENCE_DIR:-./evidence}:/evidence:ro   # evidencias en SOLO LECTURA (cadena de custodia)
+    - ${FORENSIA_CASES_DIR:-./projects}:/cases            # proyectos, salidas e informes
   # Capacidades necesarias SOLO para montar imágenes (.vmdk/.raw) en read-only
   # con guestmount/qemu-nbd dentro del contenedor. Si no vas a montar dentro del
   # contenedor, puedes comentar cap_add/devices/security_opt.
@@ -123,8 +133,10 @@ services:
       FORENSIA_TOOLKIT_UNIX_URL: http://toolkit-unix:8666
       FORENSIA_TOOLKIT_WINDOWS_URL: http://toolkit-windows:8666
     volumes:
-      - ./evidence:/evidence:ro          # evidencias en SOLO LECTURA
-      - ./projects:/cases                # casos, artefactos, audit log, informes
+      # Mismas carpetas del host que los maletines (interpolación al parsear el
+      # compose): api y toolkits deben ver la MISMA evidencia y los MISMOS casos.
+      - ${FORENSIA_EVIDENCE_DIR:-./evidence}:/evidence:ro  # evidencias en SOLO LECTURA
+      - ${FORENSIA_CASES_DIR:-./projects}:/cases           # casos, artefactos, audit log, informes
       - ./agentes:/opt/forensia/agentes:ro
       # HOME del contenedor en un volumen local del stack: aquí viven las
       # sesiones de los CLIs (suscripción propia, SIN API keys). Los CLIs leen
