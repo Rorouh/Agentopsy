@@ -1,15 +1,18 @@
-"""FastAPI sidecar. Binds 127.0.0.1 on an ephemeral port (never 0.0.0.0).
+"""The FORENSIA api (FastAPI). Standalone mode binds 127.0.0.1 on an ephemeral port
+(never 0.0.0.0).
 
-Once uvicorn has actually bound the socket, the sidecar prints a single machine-readable
-line to stdout that the Electron main process parses to learn the url + session token:
+In the compose, `docker/api/serve.py` builds the app via `create_app()` on port 8000.
+`python -m forensia.server` runs the api standalone for debugging: once uvicorn has
+actually bound the socket, it prints a single machine-readable line to stdout with the
+url + session token (the SPA obtains the token via `GET /api/session`; this line is for
+the human at the terminal or a wrapper script):
 
-    FORENSIA_SIDECAR_READY {"url": "http://127.0.0.1:54321", "token": "..."}
+    FORENSIA_API_READY {"url": "http://127.0.0.1:54321", "token": "..."}
 
-Emitting the line AFTER bind matters: Electron creates the window as soon as it reads
-READY, and the renderer fires its first /api/health on mount. Announcing too early causes
-ECONNREFUSED until uvicorn finishes binding, freezing the UI in an error state.
+Emitting the line AFTER bind matters: announcing too early causes ECONNREFUSED for any
+client that reacts to READY before uvicorn finishes binding.
 
-The token goes over the pipe to the parent process only — never to argv or disk.
+The token goes to stdout only — never to argv or disk.
 """
 
 from __future__ import annotations
@@ -17,6 +20,8 @@ from __future__ import annotations
 import asyncio
 import json
 import socket
+from collections.abc import Sequence
+from urllib.parse import urlsplit
 
 import uvicorn
 from fastapi import FastAPI
@@ -33,24 +38,38 @@ from forensia.routers import (
     evidence,
     findings,
     health,
+    session,
 )
 from forensia.security import HostHeaderMiddleware, allowed_hosts, new_session_token
 
 
-def create_app(port: int) -> FastAPI:
-    app = FastAPI(title="FORENSIA sidecar", version=__version__)
+def create_app(port: int, ui_origins: Sequence[str] = ()) -> FastAPI:
+    """``ui_origins`` — orígenes exactos de la UI web (p. ej.
+    ``http://127.0.0.1:5173``). En el compose los fija el servicio ``api`` vía
+    ``FORENSIA_UI_ORIGINS`` (nginx reenvía el Host original del navegador, así
+    que el Host-check debe reconocerlos). Vacío = solo el propio puerto, el
+    comportamiento standalone de siempre. Allowlist EXACTA en ambos casos —
+    nunca un regex sobre localhost.
+    """
+    app = FastAPI(title="FORENSIA api", version=__version__)
     app.state.token = new_session_token()
     app.state.port = port
 
-    app.add_middleware(HostHeaderMiddleware, hosts=allowed_hosts(port))
+    ui_hosts = {urlsplit(origin).netloc for origin in ui_origins if urlsplit(origin).netloc}
+    app.add_middleware(HostHeaderMiddleware, hosts=allowed_hosts(port) | ui_hosts)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[f"http://127.0.0.1:{port}", f"http://localhost:{port}"],
+        allow_origins=[
+            f"http://127.0.0.1:{port}",
+            f"http://localhost:{port}",
+            *ui_origins,
+        ],
         allow_methods=["GET", "POST"],
         allow_headers=["X-Forensia-Token", "Content-Type"],
         allow_credentials=False,
     )
 
+    app.include_router(session.router)
     app.include_router(health.router)
     app.include_router(capabilities.router)
     app.include_router(config_router.router)
@@ -83,7 +102,7 @@ class _ReadyAnnouncingServer(uvicorn.Server):
     async def _announce_when_ready(self) -> None:
         while not self.started:
             await asyncio.sleep(0.05)
-        print("FORENSIA_SIDECAR_READY " + json.dumps(self._ready_payload), flush=True)
+        print("FORENSIA_API_READY " + json.dumps(self._ready_payload), flush=True)
 
 
 def main() -> None:

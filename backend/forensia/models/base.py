@@ -1,18 +1,27 @@
-"""Common model interface.
+"""Bridge between the agent loop and the execution layer.
 
-The interface declares CAPABILITIES, not just methods — so the abstraction does not hide
-that a cloud model with robust tool-use differs from a weak local one. The local-vs-cloud
-comparison harness (the TFM's scientific contribution) is built on top of this.
+``ForensicAgent.run`` drives a provider-agnostic ReAct loop over ``next_action``
+(``ToolCall`` | ``FinalAnswer``). Since the 2026-07-02 pivot there are no SDK
+backends: ``ExecutorBackend`` adapts the operator-selected ``PromptExecutor``
+(Claude Code, Codex CLI, Gemini CLI or Ollama — ``forensia.executors``) to that
+contract via the *degraded path* (diseño Fase 2 §8): the running conversation +
+the tool schemas are rendered into ONE structured prompt, and the executor's
+text reply is parsed STRICTLY into a tool call or a final answer.
 
-`next_action` returns either a tool call (closed-enum id + typed params) or a final answer.
-The backend NEVER returns a raw command string.
+The model only ever emits a closed-enum ``tool_id`` + typed params — never a
+command string (SECURITY INVARIANT 5); the agent loop validates the id against
+the package allowlist and the dispatcher resolves the real argv.
 """
 
 from __future__ import annotations
 
+import json
+import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any
+
+from forensia.executors.base import PromptExecutor
 
 
 @dataclass(frozen=True)
@@ -27,13 +36,13 @@ class ModelCapabilities:
 class ToolCall:
     tool_id: str
     params: dict[str, Any]
-    # Provider-side identifier (e.g. OpenAI's tool_call_id). The agent loop uses
-    # it to anchor the tool-result message back to the assistant turn that
-    # requested it. Opaque to FORENSIA.
+    # Identifier the agent loop uses to anchor the tool-result message back to
+    # the assistant turn that requested it. Generated locally (uuid) — there is
+    # no provider-side id in the executor world.
     call_id: str = ""
-    # Optional: the assistant message that issued the call (raw provider-shaped
-    # dict). The agent loop appends this to the conversation BEFORE the tool
-    # result so the message sequence stays valid for the provider.
+    # Optional: the assistant message that issued the call. The agent loop
+    # appends this to the conversation BEFORE the tool result so the transcript
+    # stays coherent across iterations.
     assistant_message: dict[str, Any] | None = None
 
 
@@ -55,14 +64,141 @@ class ModelBackend(ABC):
     def next_action(self, state: dict[str, Any], tools: list[dict[str, Any]]) -> Action: ...
 
 
-def get_backend(name: Literal["local", "cloud"]) -> ModelBackend:
-    """No silent default (RULE 2): an unknown name fails loudly."""
-    if name == "local":
-        from forensia.models.local import LocalOllamaBackend
+# Rendered into every next_action prompt. The strictness is deliberate: for
+# executors without native tool-use (Ollama open models) the parser is the only
+# contract, and for the CLI executors it stops them from "helpfully" answering
+# in prose mid-loop.
+_RESPONSE_CONTRACT = (
+    "## FORMATO DE RESPUESTA (OBLIGATORIO)\n"
+    "Responde ÚNICAMENTE con un objeto JSON, sin texto antes ni después y sin "
+    "fences de markdown. Exactamente una de estas dos formas:\n"
+    '1. Invocar una herramienta: {"action": "tool_call", "tool_id": "<id de la '
+    'allowlist>", "params": { ... }}\n'
+    '2. Respuesta final al usuario: {"action": "final", "text": "<respuesta en '
+    'markdown>"}\n'
+    "No inventes tool_ids fuera de la lista de especificaciones. No incluyas "
+    "paths absolutos en params — FORENSIA los inyecta."
+)
 
-        return LocalOllamaBackend()
-    if name == "cloud":
-        from forensia.models.cloud import CloudBackend
 
-        return CloudBackend()
-    raise ValueError(f"unknown model backend '{name}' (expected 'local' or 'cloud')")
+class ExecutorBackend(ModelBackend):
+    """Adapter: ``PromptExecutor`` → ``ModelBackend`` for ``ForensicAgent``.
+
+    ``run_context`` is forwarded to ``executor.run`` on every iteration; the
+    router uses it to thread the case's ``AuditLog`` (literal argv per run,
+    FORENSIC INVARIANT 4) and, for Ollama, the resolved model name.
+    """
+
+    def __init__(
+        self,
+        executor: PromptExecutor,
+        run_context: dict[str, Any] | None = None,
+    ) -> None:
+        self.executor = executor
+        self.name = executor.id
+        self.model_name = executor.name
+        self.run_context = dict(run_context or {})
+
+    def capabilities(self) -> ModelCapabilities:
+        return ModelCapabilities(
+            # The degraded path is used uniformly for the four executors: the
+            # comparison harness keeps a single independent variable (§8).
+            supports_native_tools=False,
+            json_mode=True,
+            max_context=0,  # unknown/executor-managed; not used by the loop
+            is_local=self.executor.is_local,
+        )
+
+    def next_action(self, state: dict[str, Any], tools: list[dict[str, Any]]) -> Action:
+        messages = state.get("messages")
+        if not isinstance(messages, list) or not messages:
+            raise ValueError("state['messages'] must be a non-empty list")
+
+        context = dict(self.run_context)
+        if "temperature" not in context and state.get("temperature") is not None:
+            context["temperature"] = state["temperature"]
+
+        prompt = self._render_prompt(messages, tools)
+        result = self.executor.run(prompt, context)
+        return self._parse_action(result.text)
+
+    # ---- degraded path internals -------------------------------------------
+
+    @staticmethod
+    def _render_prompt(messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> str:
+        blocks: list[str] = []
+        for msg in messages:
+            role = msg.get("role")
+            content = msg.get("content")
+            if role == "system":
+                blocks.append(f"## SISTEMA\n{content}")
+            elif role == "user":
+                blocks.append(f"## USUARIO\n{content}")
+            elif role == "assistant":
+                rendered = content if isinstance(content, str) and content else json.dumps(
+                    {"tool_calls": msg.get("tool_calls")}, ensure_ascii=False
+                )
+                blocks.append(f"## ASISTENTE (tu turno previo)\n{rendered}")
+            elif role == "tool":
+                call_id = msg.get("tool_call_id", "")
+                blocks.append(f"## RESULTADO DE TOOL (call {call_id})\n{content}")
+            else:
+                raise ValueError(f"unsupported message role in state: {role!r}")
+
+        specs = json.dumps(tools, ensure_ascii=False, indent=2)
+        blocks.append(
+            "## HERRAMIENTAS DISPONIBLES (especificación function-calling)\n" + specs
+        )
+        blocks.append(_RESPONSE_CONTRACT)
+        return "\n\n".join(blocks)
+
+    @staticmethod
+    def _parse_action(text: str) -> Action:
+        candidate = text.strip()
+        # Tolerate a fenced block despite the contract — it costs nothing and
+        # the content is still parsed strictly afterwards.
+        if candidate.startswith("```"):
+            candidate = candidate.strip("`").strip()
+            if candidate.startswith("json"):
+                candidate = candidate[4:].strip()
+        start = candidate.find("{")
+        if start == -1:
+            raise ValueError(
+                "el ejecutor no devolvió el objeto JSON del contrato de respuesta. "
+                f"Respuesta (muestra): {text.strip()[:300]!r}"
+            )
+        try:
+            envelope, _ = json.JSONDecoder().raw_decode(candidate[start:])
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                "no se pudo parsear el JSON de la respuesta del ejecutor "
+                f"({exc}). Respuesta (muestra): {text.strip()[:300]!r}"
+            ) from exc
+        if not isinstance(envelope, dict):
+            raise ValueError("la respuesta del ejecutor no es un objeto JSON")
+
+        action = envelope.get("action")
+        if action == "final":
+            answer = envelope.get("text")
+            if not isinstance(answer, str):
+                raise ValueError('la acción "final" no trae el campo "text" de texto')
+            return FinalAnswer(text=answer)
+        if action == "tool_call":
+            tool_id = envelope.get("tool_id")
+            if not isinstance(tool_id, str) or not tool_id:
+                raise ValueError('la acción "tool_call" no trae un "tool_id" válido')
+            params = envelope.get("params")
+            if params is None:
+                params = {}
+            if not isinstance(params, dict):
+                raise ValueError('en "tool_call", "params" debe ser un objeto JSON')
+            return ToolCall(
+                tool_id=tool_id,
+                params=params,
+                call_id=uuid.uuid4().hex,
+                assistant_message={"role": "assistant", "content": text},
+            )
+        raise ValueError(
+            f'acción desconocida {action!r} en la respuesta del ejecutor '
+            '(esperado "tool_call" o "final")'
+        )

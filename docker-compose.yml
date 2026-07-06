@@ -1,0 +1,179 @@
+# =============================================================================
+# FORENSIA — docker compose raíz (la herramienta completa, un solo comando)
+#
+#   Desplegar:                 docker compose up --build
+#   Usar:                      http://127.0.0.1:5173 en el navegador
+#   Ver herramientas:          docker compose exec toolkit-windows forensia-info
+#                              docker compose exec toolkit-unix    forensia-info
+#
+# Cinco servicios, todos contenedores Linux (entorno idéntico en Windows/macOS/
+# Linux): web (frontend), api (FastAPI, backend/forensia), ollama (ejecutor
+# 100 % local) y los dos maletines forenses (toolkit-windows / toolkit-unix).
+#
+# SECURITY INVARIANT 1: todos los puertos publicados se ligan a 127.0.0.1 —
+# nunca 0.0.0.0. Lo que el navegador no necesita (ollama, maletines) se queda
+# en la red interna del compose, sin puerto publicado.
+#
+# Cadena de custodia: las evidencias (./evidence) se montan en SOLO LECTURA
+# en todos los servicios que las ven; los casos/salidas van a ./projects.
+#
+# Sin API keys (SECURITY INVARIANT 7): los CLIs de la capa de ejecución
+# (claude / codex / gemini) viven en la imagen `api` y se autentican con la
+# sesión guardada en el volumen `forensia-cli-auth` (el HOME del contenedor).
+# Las credenciales del host se montan EN SOLO LECTURA como staging bajo
+# /host-creds/ y el entrypoint las SEEDEA una única vez al volumen; el refresh
+# de tokens ocurre en el volumen, nunca en los ficheros del host. Si el host
+# no tiene nada que seedear (p. ej. Claude Code en macOS guarda el OAuth en el
+# Keychain), el camino es iniciar sesión UNA VEZ dentro del contenedor
+# (`docker compose exec -it api claude auth login` / `codex login
+# --device-auth` / `gemini`) — persiste en el volumen. `capabilities` reporta
+# cada CLI sin sesión como ejecutor no disponible con el comando de login
+# concreto; el resto del stack funciona. Revocar/limpiar: `docker compose
+# down -v` elimina el volumen de credenciales.
+# =============================================================================
+name: forensia
+
+# Ajustes comunes a los dos maletines
+x-toolkit-common: &toolkit-common
+  # Los maletines se CONSTRUYEN y EJECUTAN como imágenes linux/amd64. El PPA GIFT
+  # (plaso, sleuthkit, libyal, bulk-extractor) no publica paquetes arm64, así que
+  # en Apple Silicon (arm64) el build/arranque nativos fallan; forzar amd64 los
+  # hace correr bajo emulación (Rosetta / binfmt/QEMU) — más lentos pero idénticos
+  # a x86. En un host x86_64 esto coincide con la plataforma nativa: sin coste.
+  # Ver README.md (§ Apple Silicon) y docker/README.md.
+  platform: linux/amd64
+  working_dir: /cases
+  restart: unless-stopped
+  stop_grace_period: 5s
+  volumes:
+    - ./evidence:/evidence:ro      # evidencias en SOLO LECTURA (cadena de custodia)
+    - ./projects:/cases            # proyectos, salidas e informes
+  # Capacidades necesarias SOLO para montar imágenes (.vmdk/.raw) en read-only
+  # con guestmount/qemu-nbd dentro del contenedor. Si no vas a montar dentro del
+  # contenedor, puedes comentar cap_add/devices/security_opt.
+  cap_add:
+    - SYS_ADMIN
+  devices:
+    - /dev/fuse
+  security_opt:
+    - apparmor:unconfined
+
+services:
+  # --- Frontend web -----------------------------------------------------------
+  web:
+    build:
+      # Contexto = raíz del repo: el Dockerfile compila la SPA de ./web y la
+      # sirve con nginx (proxy /api y /ws hacia el servicio api — la UI es
+      # mismo-origen con su backend).
+      context: .
+      dockerfile: docker/web/Dockerfile
+    image: forensia/web:0.1
+    container_name: forensia-web
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5173:80"
+    depends_on:
+      - api
+
+  # --- Backend FastAPI + CLIs de la capa de ejecución -------------------------
+  api:
+    build:
+      context: .
+      dockerfile: docker/api/Dockerfile
+    image: forensia/api:0.1
+    container_name: forensia-api
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      # Raíz de datos del backend: config.json y cases/ persisten en ./projects
+      # del repo (ver docs/storage.md).
+      FORENSIA_HOME: /cases
+      # Paquetes de agente entrenado (contrato en docs/agentes/contrato-paquetes.md).
+      FORENSIA_AGENTS_DIR: /opt/forensia/agentes
+      # Ejecutor 100 % local: el api llega a Ollama por la red interna del
+      # compose (el servicio no publica puerto al host). Es la clave que lee
+      # forensia.executors.ollama vía forensia.config.
+      OLLAMA_HOST: http://ollama:11434
+      # Bandeja de entrada de evidencias que la UI lista en "Registrar
+      # evidencia" (el operador deja el fichero en ./evidence del host y lo
+      # elige en el navegador — no hay diálogo nativo en una web).
+      FORENSIA_EVIDENCE_DIR: /evidence
+      # Orígenes EXACTOS de la UI web (allowlist de CORS + Host-header check;
+      # SECURITY INVARIANT 2 — nunca un regex sobre localhost). El nginx del
+      # servicio web reenvía el Host original del navegador.
+      FORENSIA_UI_ORIGINS: http://127.0.0.1:5173,http://localhost:5173
+    volumes:
+      - ./evidence:/evidence:ro          # evidencias en SOLO LECTURA
+      - ./projects:/cases                # casos, artefactos, audit log, informes
+      - ./agentes:/opt/forensia/agentes:ro
+      # HOME del contenedor en un volumen local del stack: aquí viven las
+      # sesiones de los CLIs (suscripción propia, SIN API keys). Los CLIs leen
+      # y REFRESCAN sus tokens en el volumen — jamás en los ficheros del host.
+      # Eliminarlo (revocar sesiones): docker compose down -v.
+      - cli-auth:/root
+      # Staging en SOLO LECTURA de las credenciales del host: el entrypoint
+      # las seedea UNA VEZ al volumen en el primer arranque (idempotente,
+      # nunca sobreescribe; ver docker/api/entrypoint.sh). Si una ruta no
+      # existe en el host, Docker monta un directorio vacío y el seeding la
+      # omite sin error — ese CLI se autentica con login en el contenedor.
+      - ${HOME}/.claude:/host-creds/claude:ro
+      - ${HOME}/.claude.json:/host-creds/claude.json:ro
+      - ${HOME}/.codex:/host-creds/codex:ro
+      - ${HOME}/.gemini:/host-creds/gemini:ro
+    depends_on:
+      - toolkit-windows
+      - toolkit-unix
+      - ollama
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # --- Ejecutor local (privacidad: los datos del caso no salen de la máquina) -
+  ollama:
+    image: ollama/ollama:0.31.1
+    container_name: forensia-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama:/root/.ollama             # modelos descargados (volumen con nombre)
+    # SIN puerto publicado: solo red interna del compose (http://ollama:11434).
+
+  # --- Maletines forenses ------------------------------------------------------
+  toolkit-windows:
+    <<: *toolkit-common
+    build:
+      context: ./docker/docker/forensic-toolkit
+      target: windows
+      args:
+        VOLATILITY3_VERSION: "2.28.0"
+        HAYABUSA_VERSION: "3.9.0"
+        CHAINSAW_VERSION: "2.16.0"
+    image: forensia/toolkit-windows:1.0
+    container_name: forensia-toolkit-windows
+    command: ["sleep", "infinity"]
+
+  toolkit-unix:
+    <<: *toolkit-common
+    build:
+      context: ./docker/docker/forensic-toolkit
+      target: unix
+      args:
+        VOLATILITY3_VERSION: "2.28.0"
+    image: forensia/toolkit-unix:1.0
+    container_name: forensia-toolkit-unix
+    command: ["sleep", "infinity"]
+
+volumes:
+  ollama:
+  # Sesiones de los CLIs de la capa de ejecución (HOME del servicio api).
+  # Local al stack: nunca sale del host, nunca se publica por API, y se
+  # elimina con `docker compose down -v`.
+  cli-auth:
+    name: forensia-cli-auth

@@ -9,7 +9,6 @@ authors:
   - "FORENSIA Team"
 
 model:
-  backend: local            # privacidad de evidencia por defecto (THREAT_MODEL §C)
   name: "llama3.1:8b"       # base local de la comparativa; cambiar aquí no toca prompts
   temperature: 0.2          # análisis determinista, poca creatividad
   max_iterations: 18        # tope de seguridad del loop tool-use; subido de

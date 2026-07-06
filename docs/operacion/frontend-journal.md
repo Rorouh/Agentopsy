@@ -6,6 +6,96 @@ No reemplaza ni contradice `arquitectura.md` ni `modelo-amenazas.md`; los comple
 
 ---
 
+## Entrada 2026-07-02 (3) — Desmontaje: `desktop/` eliminado; `web/` es el único frontend
+
+Cierre del pivote: se eliminan `desktop/` (main.cjs, preload.cjs, electron-builder),
+`vendor/` + `scripts/bundle-tool.mjs`, `docker/agent/`, el spec de PyInstaller y el
+workflow `release.yml` de instaladores. En el frontend solo cambian comentarios y
+textos de UI que aún decían "sidecar"/"Electron" (client.ts, RepositoryPage,
+SystemStatusPage, domain.ts) — cero cambios de comportamiento. El job de CI `web`
+(npm ci + typecheck + build) queda como única verificación de frontend.
+
+---
+
+## Entrada 2026-07-02 (2) — Migración ejecutada: la SPA vive en `web/` y la sirve nginx
+
+La migración anunciada en la entrada anterior queda **hecha** en
+`feature/compose-y-cli-executors`:
+
+- **`desktop/renderer/` → `web/`** (raíz del repo), como app Vite + React independiente
+  con `package.json` propio (React 18 + TS + Vite, sin ninguna dependencia de Electron).
+  `desktop/` queda como código muerto hasta su borrado (paso siguiente): sus scripts ya
+  no funcionan porque el renderer se fue.
+- **`window.forensia` + `global.d.ts` → `web/src/api/client.ts` + `web/src/api/types.ts`.**
+  Todo el HTTP pasa por el cliente tipado; `ApiError` expone el `detail` accionable del
+  backend tal cual (RULE 2: no se enmascara con mensajes genéricos).
+- **Token de sesión:** la SPA lo obtiene una vez de `GET /api/session` (nuevo endpoint;
+  legible solo desde el origen exacto de la UI — CORS exacto + Host-check lo convierten
+  en capability anti-CSRF) y lo mantiene solo en memoria de la pestaña (gate 12). Si el
+  api se reinicia (401), el cliente re-bootstrapea una única vez.
+- **Misma-origen por proxy:** en producción el nginx del servicio `web` sirve `dist/` y
+  proxifica `/api` y `/ws` hacia `api:8000` reenviando el Host original del navegador
+  (el Host-check del backend sigue activo de extremo a extremo vía
+  `FORENSIA_UI_ORIGINS`); en dev, el proxy de Vite reproduce la misma topología contra
+  `127.0.0.1:8000`. La SPA nunca pelea con CORS en el camino normal.
+- **Selector de ejecutor en Investigación/Chat:** los 4 ejecutores como chips; los no
+  disponibles se deshabilitan con la razón accionable de `capabilities` como tooltip.
+  Se preselecciona `DEFAULT_EXECUTOR` solo si el usuario lo fijó en Settings. Con un
+  ejecutor cloud, banner de aviso (RGPD) y el envío queda bloqueado hasta confirmar; la
+  confirmación se registra en el audit del caso vía `POST /api/agent/cloud-consent`
+  (una vez por caso + ejecutor; `localStorage` solo como recordatorio UX).
+- **SettingsPage sin API keys:** la sección Modelos/IA pasa a Ejecutores/IA — estado de
+  los 4 con razones, select de `DEFAULT_EXECUTOR` y `OLLAMA_HOST`/`OLLAMA_MODEL`. Fuera
+  campos password, masking y la lista de modelos OpenAI.
+- **Registrar evidencia sin diálogo nativo:** `pickEvidenceFile` (Electron) se sustituye
+  por la bandeja `GET /api/evidence/sources` (`./evidence` del host, montado ro en
+  `/evidence`): el operador copia el fichero a la bandeja y lo ELIGE en la UI (RULE 2).
+- **Las 6 secciones de la propuesta** siguen navegables sin cambios de rutas: Guía,
+  Casos y evidencias, Investigación, Timeline, Documentos y MITRE ATT&CK (+ Estado del
+  sistema y Configuración). Ninguna dependía ya de Electron.
+
+Verificación: `tsc --noEmit` limpio, `vite build` OK, la imagen `forensia/web:0.1`
+compila (multi-stage node → nginx), `docker compose config` válido y la suite backend en
+verde (352 passed) incluyendo los tests nuevos de `/api/session` (Host-check),
+`/api/evidence/sources` y `cloud-consent`.
+
+---
+
+## Entrada 2026-07-02 — Pivote de arquitectura: la UI deja Electron y pasa a web app servida por el compose
+
+**Decisión de proyecto (propuesta v1.2, 2026-07-02).** Hubo un error de comunicación en
+el equipo: el pivote a "instalable nativo / Electron" no era la decisión vigente y queda
+revertido. El modelo definitivo es **autoalojado con Docker Compose**: la UI es una
+**web app React servida por el servicio `web`** del compose, usada desde el navegador en
+`http://127.0.0.1:5173`; el backend corre como servicio `api` (FastAPI); los prompts de
+Investigación se ejecutan por la capa de ejecutores elegida por el operador (Claude Code /
+Codex CLI / Gemini CLI / Ollama), **sin API keys** en el proyecto. Referencia completa:
+`CLAUDE.md`, `docs/arquitectura.md` y `FORENSIA_Alcance_y_Planificacion.md` v1.2.
+
+Qué significa para el frontend:
+
+- La cadena IPC (`window.forensia.*` → `preload.cjs` → `main.cjs` → HTTP al sidecar)
+  desaparece: la SPA hablará HTTP directamente con el servicio `api`, con CORS de origen
+  exacto + Host-header check + token de sesión solo en memoria (gates 1–3 y 12 de
+  `modelo-amenazas.md`).
+- `desktop/main.cjs` y `desktop/preload.cjs` quedan condenados: **no añadir canales IPC
+  nuevos**. El código React (`desktop/renderer/src/`) se conserva y migra al servicio
+  `web`; la migración es trabajo en curso en la rama `feature/compose-y-cli-executors`.
+- El TODO de `electron-store` para persistir el tema queda anulado: `localStorage` en el
+  navegador del analista es el modelo final.
+- Sin `electron-builder`, sin firma de código multi-OS, sin auto-update: la entrega es
+  `git clone` + `docker compose up --build`.
+
+Qué NO cambia: React 18 + TypeScript + Vite, el sistema de tokens CSS con modo
+claro/oscuro, la estructura de páginas/navegación, el patrón "mocks solo en `App.tsx`",
+y el ownership de `ChatPage.tsx`.
+
+Las entradas anteriores de este journal describen el modelo Electron tal como existía en
+su momento; se conservan como histórico y no se reescriben. El contexto operativo vigente
+para sesiones nuevas está en `docs/ai-context/frontend.md`.
+
+---
+
 ## Entrada 2026-06-25 (2) — Quitar `getGreeting()` muerta en ChatPage.tsx
 
 Función definida en `ChatPage.tsx:4-9` que nunca se llamaba desde ningún lado del archivo (confirmado por búsqueda en todo `src/`). Se eliminó. Cero cambio de comportamiento — no es un refactor de la lógica de chat, solo borrar código que no se ejecutaba. `npm run typecheck` sigue limpio.

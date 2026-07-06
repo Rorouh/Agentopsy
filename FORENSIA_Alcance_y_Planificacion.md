@@ -8,72 +8,67 @@ Trabajo Final de Máster · Documento de alcance, diseño y planificación
 | :--- | :--- |
 | Equipo | Enrique · Daniel · Santiago · Luis · Diego · Miguel Ángel |
 | Fecha de entrega | 7 de septiembre de 2026 |
-| Versión | v1.1 · 29 de junio de 2026 |
+| Versión | v1.2 · 2 de julio de 2026 |
 
 ---
 
 ## 1. Resumen ejecutivo
 
-FORENSIA es una herramienta de análisis forense **post-mortem** asistida por IA, distribuida como **aplicación de escritorio universal** (Windows / macOS / Linux) instalable con un único comando. La aplicación empaqueta dentro de sí la interfaz gráfica, un sidecar de backend en Python, un maletín de herramientas forenses CLI y dos sub-agentes de IA especializados por sistema operativo, gobernados por un agente orquestador. Cuando alguna herramienta del maletín no dispone de binario nativo viable en el SO del usuario, la aplicación la ejecuta dentro de un contenedor Docker que despliega de forma transparente; Docker es **capa interna**, no es lo que el usuario instala ni invoca.
+FORENSIA es una herramienta de análisis forense **post-mortem** asistida por IA, **autoalojada y desplegada con Docker Compose**: el usuario clona el repositorio, ejecuta `docker compose up --build` y trabaja desde el navegador (`http://127.0.0.1:5173`), en Windows, macOS o Linux por igual. El compose levanta cinco servicios: la interfaz web (`web`, React), el backend (`api`, FastAPI — con el agente orquestador y los dos sub-agentes de IA especializados por sistema operativo), el modelo local (`ollama`) y los dos maletines forenses contenedorizados (`toolkit-windows`, `toolkit-unix`). Los prompts de la investigación se ejecutan mediante el **ejecutor** que el usuario elija — Claude Code, Codex CLI o Gemini CLI, autenticados con su propia cuenta, u Ollama, 100 % local — **sin API keys de ningún proveedor**.
 
 El usuario carga evidencias ya extraídas (`.E01` / `.raw` / `.vmdk` / volcado), conduce la investigación mediante prompts y obtiene un informe forense estructurado, su línea temporal y la correlación con MITRE ATT&CK.
 
-De hoy (29 de junio) al 7 de septiembre quedan **11 semanas**. La planificación prioriza un MVP estricto en las primeras 6–7 semanas y reserva las últimas para validación, cierre de la memoria académica y preparación de la defensa.
+El plan cubre **11 semanas**, del 29 de junio al 7 de septiembre. La planificación prioriza un MVP estricto en las primeras 6–7 semanas y reserva las últimas para validación, cierre de la memoria académica y preparación de la defensa.
 
 ---
 
 ## 2. Modelo de entrega y arquitectura
 
-### 2.1. Instalación: una sola línea
+### 2.1. Despliegue: `git clone` + `docker compose up --build`
 
-La aplicación se entrega como **instalable nativo por SO**, no como un repositorio que el usuario clona y arranca con Docker Compose. Una sola línea por plataforma:
+La herramienta se entrega como **repositorio autodesplegable con Docker Compose**. Dos comandos:
 
 ```bash
-# Linux / macOS
-curl -fsSL https://forensia.dev/install.sh | bash
-
-# Windows
-# Instalador .exe firmado.
+git clone https://github.com/Rorouh/Forensia-AI.git && cd Forensia-AI
+docker compose up --build
 ```
 
-Esto sustituye al flujo `git clone + cp .env.example .env + docker compose up --build`, más frágil y expuesto a fricciones de entorno. El espíritu de empaquetado *"todo viaja con la app"* se preserva: dentro del instalador van la GUI, el sidecar de Python, los binarios forenses nativos compilados por SO/arch y, cuando aplica, las imágenes OCI pre-construidas que sustituyen a las herramientas que no compilan de forma cross-OS.
+La interfaz se usa desde el navegador en `http://127.0.0.1:5173`. No hay instalador nativo, ni Electron, ni PyInstaller, ni `curl | bash`, ni auto-update. El único prerequisito es Docker con el plugin Compose (más, opcionalmente, el CLI de IA que el usuario quiera usar como ejecutor — véase §5). El espíritu de empaquetado *"todo viaja con la herramienta"* se preserva: las imágenes que construye el compose contienen la interfaz web, el backend, el maletín forense completo y el runtime del modelo local.
 
 ### 2.2. Topología en runtime
 
 ```
-┌─ APLICACIÓN INSTALADA (Electron) ──────────────────────────┐
-│  Renderer (UI única en los 3 SOs)                          │
-│     ↕  IPC seguro (contextIsolation + sandbox)             │
-│  Main process — controla ciclo de vida del sidecar         │
-│     ↕  127.0.0.1:<puerto efímero> + token de sesión         │
-│  Sidecar Python (FastAPI) — orquestador + agentes          │
-│     ↓                            ↓                          │
-│  Binarios nativos vendoreados    Docker / Podman (host)     │
-│  (vendor/<tool>/<os>-<arch>/)    ↓                          │
-│                                  Imágenes OCI pre-cargadas  │
-│                                  para tools no nativas      │
-└─────────────────────────────────────────────────────────────┘
+┌─ docker compose (puertos publicados SOLO en 127.0.0.1) ────────────────────┐
+│                                                                            │
+│  web — frontend React            navegador → http://127.0.0.1:5173         │
+│    ↕  HTTP por la red interna del compose                                  │
+│  api — FastAPI (backend/forensia): orquestador + sub-agentes,              │
+│        EvidenceManager (hash gate, read-only), dispatcher shell=False,     │
+│        AuditLog encadenado por hash                                        │
+│    │                                                                       │
+│    ├─► CAPA DE EJECUCIÓN (a elección del usuario — sin default, RULE 2):   │
+│    │     claude -p · codex exec · gemini -p   (CLIs en la imagen api;      │
+│    │     sesión en el volumen forensia-cli-auth, seeded del host o login   │
+│    │     en el contenedor)                                                 │
+│    │     ollama → HTTP al servicio ollama del compose (100 % local)        │
+│    ▼                                                                       │
+│  toolkit-windows · toolkit-unix — maletines forenses (imágenes construidas │
+│        por el compose; evidencias montadas en solo lectura)                │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- La **GUI** es idéntica en los tres SOs (Chromium dentro de Electron).
-- El **sidecar** habla con la GUI por `127.0.0.1` en puerto efímero, autenticado por token de sesión; nunca expone `0.0.0.0`.
-- Cada herramienta del maletín declara su mecanismo de ejecución: **bundled** (binario nativo dentro del instalador) o **container** (imagen OCI que la app levanta on-demand).
-- Docker o Podman es un **prerequisito documentado del instalador**; el primer arranque lo verifica. Si no está presente, las herramientas en modo *container* se reportan como no disponibles y el resto de la aplicación sigue funcionando.
+- La **UI** es idéntica en los tres SOs: es el navegador del usuario contra `127.0.0.1`. Los cinco servicios son contenedores Linux, de modo que el entorno de ejecución es exactamente el mismo en Windows, macOS y Linux.
+- Ningún servicio expone puertos fuera del host: el compose publica únicamente en `127.0.0.1` y los servicios se comunican por su red interna.
+- Cada herramienta del maletín declara en el catálogo qué maletín la transporta (`toolkit-windows` o `toolkit-unix`); las imágenes se construyen desde el repo con versiones pineadas.
+- Las sesiones de los CLIs viven en un **volumen local del stack** (`forensia-cli-auth`, el HOME del servicio `api`): el entrypoint las *seedea* una única vez desde las credenciales del host (montadas en solo lectura como staging) o el operador inicia sesión directamente en el contenedor. El refresh de tokens ocurre en el volumen — nunca en los ficheros del host —, las sesiones no salen de la máquina, no se loguean ni se exponen por la API, y `docker compose down -v` las revoca. La herramienta no pide claves de ningún proveedor.
 
-### 2.3. Por qué Docker deja de ser la distribución
+### 2.3. Por qué Docker Compose es el modelo de entrega
 
-Docker Compose siempre cumplió la función de empaquetado, pero la cumple **peor** que un instalador nativo desde el punto de vista del investigador:
+- **Reproducibilidad.** Las imágenes se construyen desde el repositorio con versiones pineadas: cada despliegue produce el mismo maletín, idéntico y auditable — exactamente lo que la práctica forense exige del entorno de análisis.
+- **Un solo comando.** `docker compose up --build` levanta interfaz, backend, modelo local y maletines de una vez. No hay instalación por herramienta ni configuración manual de entorno.
+- **Mismo entorno en los tres SOs.** Todo corre en contenedores Linux, así que Windows, macOS y Linux ejecutan exactamente el mismo stack: desaparecen las builds nativas por SO/arch, la firma de instaladores y la matriz de empaquetado.
 
-| Aspecto | `docker compose up --build` | Instalador nativo |
-| :--- | :--- | :--- |
-| Pasos del usuario | `git clone` + `.env` + `compose` | Una línea (curl o doble click) |
-| Conocimiento exigido | Docker, redes, volúmenes | Ninguno |
-| Interfaz | Browser apuntando a `localhost` | Ventana nativa |
-| Cadena de custodia | Idéntica | Idéntica |
-| Actualizaciones | `git pull` + rebuild | Auto-update firmado |
-| Universalidad | Igual | Igual (gracias a fallback container interno) |
-
-Docker se queda **dentro** del modelo, no fuera: lo usa la aplicación para garantizar que el catálogo de tools es el mismo en Windows, macOS y Linux sin pedirle al investigador que entienda contenedores.
+La complejidad de distribución se concentra así en los Dockerfiles del propio repositorio, versionados y revisables como cualquier otro código del proyecto.
 
 ---
 
@@ -94,10 +89,12 @@ La aplicación expone seis secciones, accesibles tras crear o seleccionar un cas
 
 Selección de las herramientas forenses CLI (todas gratuitas) para los sistemas operativos en los que trabaja FORENSIA (Windows y Unix-like). Se priorizan herramientas de línea de comandos por encima de GUIs por su control determinista y su mejor integración con LLMs.
 
-Cada herramienta se cataloga con uno de dos mecanismos de entrega:
+Cada herramienta se cataloga en uno de los dos maletines contenedorizados que construye el compose:
 
-- **Bundled** — binario nativo compilado por SO/arch y embebido directamente en el instalador.
-- **Container** — imagen OCI pre-construida que la aplicación levanta on-demand. Es la vía para herramientas sin build nativa viable cross-OS (RegRipper en Perl, plaso en Windows, etc.).
+- **`toolkit-windows`** — herramientas para artefactos de sistemas Windows (RegRipper, hayabusa, chainsaw, plaso, Volatility3, …).
+- **`toolkit-unix`** — herramientas para sistemas Unix-like.
+
+No hay binarios vendoreados por SO/arch: los maletines son imágenes **Linux**, idénticas en las tres plataformas, con la versión de cada herramienta pineada en el Dockerfile.
 
 Para las herramientas que funcionen mejor con el protocolo MCP, se expone su capacidad como servidor MCP que la aplicación consume internamente.
 
@@ -114,9 +111,9 @@ El esquema es de un **agente orquestador** que media entre el investigador y dos
 
 El orquestador llama al sub-agente correspondiente para cada tarea, recopila y organiza la información que extraigan, redacta el informe, construye la timeline y correlaciona la actividad con MITRE ATT&CK. Los sub-agentes ejecutan herramientas del maletín o las acciones que consideren necesarias y devuelven la información estructurada al orquestador.
 
-Cada agente se entrega como un **paquete declarativo** (`agentes/<id>/`) con su `agent.yaml`, sus prompts (identidad, sistema, playbook), su policy de herramientas y su política de redacción. El sidecar los descubre al arrancar y los indexa por `os_profile`.
+Cada agente se entrega como un **paquete declarativo** (`agentes/<id>/`) con su `agent.yaml`, sus prompts (identidad, sistema, playbook), su policy de herramientas y su política de redacción. El servicio `api` los descubre al arrancar y los indexa por `os_profile`.
 
-**Capa de modelos**: el usuario elige modelo **local** (Ollama, recomendado por defecto por la sensibilidad de la evidencia) o **cloud** (Claude, GPT). La capa abstrae al proveedor tras una interfaz común; al elegir cloud, la aplicación advierte explícitamente de que las evidencias saldrán a una API externa.
+**Capa de ejecución**: los prompts de la sección *Investigación* se ejecutan mediante uno de **cuatro ejecutores**, a elección del usuario: **Claude Code** (`claude -p`), **Codex CLI** (`codex exec`), **Gemini CLI** (`gemini -p`) u **Ollama** (HTTP contra el servicio `ollama` del compose). Los tres CLIs van instalados en la imagen del servicio `api` y se autentican con la sesión del volumen `forensia-cli-auth` (seeded una vez desde las credenciales del host, o creada con un login único dentro del contenedor: `claude auth login`, `codex login --device-auth`, `gemini` con `NO_BROWSER=true`), de modo que cada CLI consume la suscripción/cuenta del propio usuario. **La herramienta no usa API keys de ningún proveedor.** La capa abstrae los cuatro ejecutores tras una interfaz común; si el usuario no ha seleccionado ejecutor, la API devuelve un error accionable — nunca un default silencioso (RULE 2). Ollama es la opción 100 % local; al elegir un ejecutor respaldado por cloud (Claude Code, Codex, Gemini), la aplicación advierte explícitamente de que contenido derivado del caso saldrá al proveedor y registra la elección en el audit log.
 
 Esta fase arranca en cuanto el maletín está listo y es la última en cerrarse: el conocimiento de los agentes se enriquece de forma incremental, lo que se traduce en **análisis más preciso**, **mejor consumo de tokens** y **mejor redacción de informes**.
 
@@ -124,7 +121,7 @@ Esta fase arranca en cuanto el maletín está listo y es la última en cerrarse:
 
 ## 6. Fase 3 — Desarrollo de la aplicación
 
-Implementación de las seis secciones descritas en la sección 3. La superficie es **única**: la aplicación de escritorio. No hay aplicación web pública, ni CLI alternativa para el usuario final; sí utilidades CLI internas para el equipo durante el desarrollo.
+Implementación de las seis secciones descritas en la sección 3. La superficie es **única**: la **interfaz web** que sirve el compose (servicio `web`), usada desde el navegador en `127.0.0.1`. No hay aplicación de escritorio, ni web pública/SaaS, ni CLI alternativa para el usuario final; sí utilidades CLI internas para el equipo durante el desarrollo.
 
 ---
 
@@ -140,8 +137,9 @@ Los tests no esperan a la versión final del proyecto: empiezan antes de que los
 
 ## 8. Modo de empleo
 
-- **Instalación** — una sola línea o un instalador, según SO.
+- **Despliegue** — `git clone` del repositorio y `docker compose up --build`; la herramienta se usa desde el navegador en `http://127.0.0.1:5173`.
 - **Iniciar proyecto** — crear nuevo caso y subir las evidencias (`.E01` / `.raw` / `.vmdk` / volcado). Hash SHA-256 baseline en la ingesta.
+- **Elegir ejecutor** — seleccionar el ejecutor de IA (Claude Code, Codex CLI, Gemini CLI u Ollama). Sin selección explícita no hay análisis (RULE 2); si el ejecutor es cloud, la herramienta lo advierte y lo registra en el audit log.
 - **Investigación** — sesión de prompts contra los sub-agentes en la sección *Investigación*.
 - **Redacción** — `[proceed-to-report]` genera el informe forense y su línea temporal.
 - **Revisión** — previsualización y exportación a PDF del informe y de la timeline desde la sección *Documents / reporte*.
@@ -161,15 +159,15 @@ Los tests no esperan a la versión final del proyecto: empiezan antes de que los
 
 | Sem. | Fechas | Foco principal | Hitos / entregables |
 | :--- | :--- | :--- | :--- |
-| 1 | 29 jun – 5 jul | Fundaciones: esqueleto del instalable; sidecar Python operativo; CI por SO; inventario inicial del maletín; elegir dataset público y arrancar VMs propias. | Esqueleto desplegable; lista de herramientas v0; dataset elegido. |
-| 2 | 6 – 12 jul | Maletín v1: contenedorización / vendoring de las herramientas core; montaje read-only de `.raw`/`.vmdk` + hashing SHA-256; contrato de wrappers CLI→JSON. | Maletín v1; evidencias con cadena de custodia. |
-| 3 | 13 – 19 jul | Capa de modelos local/cloud bajo interfaz común; prompts base y RAG inicial. UI: creación de casos y subida de evidencias. | Capa de modelos operativa; alta de casos en la UI. |
+| 1 | 29 jun – 5 jul | Fundaciones: esqueleto del compose (maletines + backend); api FastAPI operativo; CI; inventario inicial del maletín; elegir dataset público y arrancar VMs propias. | Esqueleto desplegable con `docker compose up --build`; lista de herramientas v0; dataset elegido. |
+| 2 | 6 – 12 jul | Maletín v1: contenedorización de las herramientas core en los dos maletines; montaje read-only de `.raw`/`.vmdk` + hashing SHA-256; contrato de wrappers CLI→JSON. | Maletín v1; evidencias con cadena de custodia. |
+| 3 | 13 – 19 jul | Capa de ejecución bajo interfaz común (Claude Code, Codex CLI, Gemini CLI, Ollama — sin API keys); prompts base y RAG inicial. UI web: creación de casos y subida de evidencias. | Capa de ejecución operativa; alta de casos en la UI. |
 | 4 | 20 – 26 jul | **Vertical slice E2E** sobre una imagen pequeña: prompt → sub-agente → herramienta → hallazgo. Informe básico vía `[proceed-to-report]`. | Demo E2E mínima funcionando. |
-| 5 | 27 jul – 2 ago | Segundo sub-agente operativo (Windows y Unix-like al mismo nivel). Timeline (plaso/psort) integrada en la GUI. Exportación a PDF. | Dos sub-agentes; timeline visible; export PDF. |
+| 5 | 27 jul – 2 ago | Segundo sub-agente operativo (Windows y Unix-like al mismo nivel). Timeline (plaso/psort) integrada en la UI web. Exportación a PDF. | Dos sub-agentes; timeline visible; export PDF. |
 | 6 | 3 – 9 ago | Consolidación: **MVP feature-complete**. Flujo completo Investigación → Documents → `[back-to-analysis]`. Sección MITRE ATT&CK v1. | MVP funcional completo. |
-| 7 | 10 – 16 ago | Hardening: batería de escenarios y casos límite; validación contra ground truth de las VMs propias. Robustez del instalador por SO. | Suite de pruebas; instalador limpio en los 3 SOs. |
+| 7 | 10 – 16 ago | Hardening: batería de escenarios y casos límite; validación contra ground truth de las VMs propias. Robustez del despliegue con compose. | Suite de pruebas; `docker compose up --build` limpio en los 3 SOs. |
 | 8 | 17 – 23 ago | Pulido de UI, guía de usuario y especificaciones técnicas. Extras opcionales (MCPs adicionales, fine-tuning) sólo si MVP es estable. Memoria: redacción de resultados. | Guía de usuario; UI presentable. |
-| 9 | 24 – 30 ago | **Feature freeze**: sólo correcciones. Pruebas de instalación desde cero en máquinas limpias (Windows / macOS / Linux). Memoria: borrador completo. | Feature freeze; borrador de memoria para revisión. |
+| 9 | 24 – 30 ago | **Feature freeze**: sólo correcciones. Pruebas de despliegue desde cero con `docker compose up --build` en máquinas limpias (Windows / macOS / Linux). Memoria: borrador completo. | Feature freeze; borrador de memoria para revisión. |
 | 10 | 31 ago – 6 sep | Validación final E2E con datasets públicos y propios. Cierre de la memoria (revisión cruzada, formato, bibliografía). Preparación de la defensa (guion de demo, slides). | Memoria casi final; materiales de defensa. |
 | 11 | 7 sep | Buffer y cierre. Revisión final del repo (README, licencia, versión etiquetada). Ensayo de defensa y grabación de demo de respaldo. | **Entrega del TFM.** |
 
@@ -183,11 +181,11 @@ Equipo de seis personas, con reparto por módulos y responsabilidades transversa
 
 | Módulo | Responsabilidad |
 | :--- | :--- |
-| DevOps / Integración | Instalador, CI/CD por SO, integración entre módulos, compilación de la memoria. |
+| DevOps / Integración | Docker Compose (imágenes y orquestación de los cinco servicios), CI/CD, integración entre módulos, compilación de la memoria. |
 | Maletín + Sub-agente Windows | Selección y empaquetado de herramientas Windows; prompts y RAG del sub-agente Windows. |
 | Maletín + Sub-agente Unix-like | Selección y empaquetado de herramientas Unix-like; prompts y RAG del sub-agente Unix-like. |
-| Orquestación IA / Capa de modelos | Interfaz común local/cloud, tool-calling, pipeline RAG, optimización de tokens, generación de informes. |
-| Frontend | UI Electron, sección de casos, repositorio de informes, timeline, export PDF, sección Mitre. |
+| Orquestación IA / Capa de ejecución | Interfaz común de los cuatro ejecutores (Claude Code, Codex CLI, Gemini CLI, Ollama), tool-calling, pipeline RAG, optimización de tokens, generación de informes. |
+| Frontend | UI web (React) servida por el compose, sección de casos, repositorio de informes, timeline, export PDF, sección Mitre. |
 | Datos / QA | Datasets, VMs con ground truth, escenarios de prueba, validación contra hallazgos esperados. |
 
 **Metodología**:
@@ -203,7 +201,7 @@ Equipo de seis personas, con reparto por módulos y responsabilidades transversa
 
 Repositorio del proyecto: <https://github.com/Rorouh/Forensia-AI/tree/tools>.
 
-Listado-fuente; las inclusiones definitivas se acuerdan en Fase 1 en función del valor forense y de la viabilidad técnica (build nativa o imagen container).
+Listado-fuente; las inclusiones definitivas se acuerdan en Fase 1 en función del valor forense y de la viabilidad de integración en las imágenes del maletín.
 
 ### 1. Adquisición, procesamiento de imágenes de disco y sistemas de archivos
 

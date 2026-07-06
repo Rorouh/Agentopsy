@@ -150,7 +150,7 @@ def _run_bundled(
     if binary_path is None:
         raise ToolExecutionError(
             f"bundled binary {tool.binary!r} for tool {tool.id!r} is not resolvable "
-            f"(env override / vendor / PATH all empty)"
+            f"(env override / PATH both empty)"
         )
     argv = [str(binary_path), *argv_tail]
     result = run_argv(argv, timeout=timeout)

@@ -1,6 +1,6 @@
 # FORENSIA — Sistema de almacenamiento
 
-Capa de persistencia del lado del sidecar. No hay base de datos pesada: todo en filesystem
+Capa de persistencia del lado del backend (servicio `api`). No hay base de datos pesada: todo en filesystem
 + JSON / JSONL. Es exactamente lo que la práctica forense pide — un caso es una carpeta
 que se puede archivar, hashear, transferir y peritar sin necesidad de levantar servicios
 auxiliares.
@@ -42,6 +42,13 @@ auxiliares.
 
 > **Raíz alternativa**: el entorno `FORENSIA_HOME` sobreescribe `~/.forensia/` para tests
 > e integración (ver `backend/forensia/config.py`).
+
+> **En el despliegue compose**: la raíz de datos del servicio `api` se monta en
+> `./projects/` del repo (vía `FORENSIA_HOME`), de modo que los casos viven en la máquina
+> del usuario como carpetas normales bajo `./projects/` — archivables y peritables sin
+> entrar al contenedor. Las evidencias de origen se dejan en `./evidence/`, que los
+> servicios montan en **solo lectura**; los maletines ven el volumen de trabajo como
+> `/cases`. El layout de arriba es idéntico: solo cambia dónde está anclada la raíz.
 
 ## Módulos que materializan el layout
 
@@ -148,7 +155,7 @@ el filesystem por un perito autorizado, no por la app.
 
 | Cosa | Por qué fuera |
 |---|---|
-| Multi-tenant / multi-operador | Es una app de escritorio single-user. Si la TFM crece, se modela `~/.forensia/<operator>/cases/`. Hoy es ruido. |
+| Multi-tenant / multi-operador | Es una herramienta autoalojada single-user (un despliegue compose por analista). Si la TFM crece, se modela `<raíz>/<operator>/cases/`. Hoy es ruido. |
 | Reportes generados | Reservado en `cases/<id>/reports/` pero el módulo `forensia.reports` aún no existe — slice posterior. |
 | Streaming SSE / WebSocket de chats | El JSONL ya soporta lectura tail-friendly; el endpoint de streaming entra cuando la UI lo necesite. |
 | Compresión de stdout/stderr | Texto plano en v1. Compresión `zstd` cuando empiece a doler. |

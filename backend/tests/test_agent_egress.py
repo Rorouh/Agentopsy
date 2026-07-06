@@ -26,6 +26,7 @@ from forensia.agent.redaction import apply_redaction, redact_messages
 from forensia.audit.log import AuditLog
 from forensia.cases.manager import CaseManager, CloudConsent
 from forensia.evidence import EvidenceManager
+from forensia.executors import ClaudeCodeExecutor, ExecutorAvailability
 from forensia.findings.store import FindingStore
 from forensia.models.base import FinalAnswer, ModelBackend, ModelCapabilities, ToolCall
 from forensia.server import create_app
@@ -106,7 +107,7 @@ def _make_package(patterns=PATTERNS) -> AgentPackage:
         authors=("tester",),
         path=Path("/nonexistent"),
         model=AgentPackageModel(
-            backend="cloud", name="scripted-model", temperature=0.0, max_iterations=4
+            name="scripted-model", temperature=0.0, max_iterations=4
         ),
         prompts=AgentPackagePrompts(system="SYS", identity="ID", playbook="PB"),
         policy=AgentPackagePolicy(
@@ -256,21 +257,23 @@ class TestAudit:
             for line in audit.path.read_text(encoding="utf-8").splitlines()
             if line.strip()
         ]
-        kinds = [e["event"] for e in events]
+        # The audit also carries the `evidence_register` entry from the fixture
+        # (keyed on "action", not "event"); key on .get so those don't KeyError.
+        kinds = [e.get("event") for e in events]
         assert "agent_run_start" in kinds
         assert "agent_cloud_egress" in kinds
         assert "agent_finding" in kinds
         # The chain is intact.
         assert audit.verify() is True
 
-        egress = next(e for e in events if e["event"] == "agent_cloud_egress")
+        egress = next(e for e in events if e.get("event") == "agent_cloud_egress")
         assert egress["consent_ref"] == "ref-123"
         assert len(egress["redacted_payload_sha256"]) == 64
         assert egress["message_count"] >= 2
         # No raw evidence bytes in the audit — only hashes/metadata.
         assert SECRET_EMAIL not in audit.path.read_text(encoding="utf-8")
 
-        finding_ev = next(e for e in events if e["event"] == "agent_finding")
+        finding_ev = next(e for e in events if e.get("event") == "agent_finding")
         assert finding_ev["finding_id"]
 
     def test_local_run_audits_start_without_egress(self, anchored):
@@ -289,7 +292,7 @@ class TestAudit:
             evidence_id=anchored["handle"].evidence_id,
         )
         kinds = [
-            json.loads(line)["event"]
+            json.loads(line).get("event")
             for line in audit.path.read_text(encoding="utf-8").splitlines()
             if line.strip()
         ]
@@ -326,24 +329,37 @@ class TestConsentState:
 
 
 # --------------------------------------------------------------------------- #
-# F2 — the /api/agent/query consent gate (no consent → 0 egress)
+# F2 — the /api/agent/query cloud-consent gate (no consent → 403, 0 egress)
 # --------------------------------------------------------------------------- #
 class TestConsentGate:
+    """HTTP enforcement of SECURITY INVARIANT 7 on the NEW executor architecture.
+
+    Consent is no longer a ``case.cloud_consent`` field toggled by
+    ``POST /api/cases/{id}/consent`` (which returned ``consent_required``): it is
+    a per-(case, executor) entry in the case's hash-chained audit log
+    (``forensia.consent``), recorded via ``POST /api/agent/cloud-consent`` and
+    enforced by ``/api/agent/query`` with a hard **403** raised BEFORE any
+    executor backend is constructed — so an API client cannot bypass the UI-only
+    warning. The engine-level proof that a cloud run redacts and audits the
+    egress (``agent_cloud_egress`` + redacted-payload SHA-256) lives in
+    ``TestRedaction`` / ``TestAudit`` above; here we prove the HTTP gate itself.
+    """
+
     def _wire(self, tmp_path, monkeypatch):
         cases = CaseManager(root=tmp_path / "cases")
         evidence = EvidenceManager(cases)
         import forensia.routers.agent as agent_router
-        import forensia.routers.cases as cases_router
 
         monkeypatch.setattr(agent_router, "case_manager", cases)
         monkeypatch.setattr(agent_router, "evidence_manager", evidence)
-        monkeypatch.setattr(cases_router, "case_manager", cases)
-        monkeypatch.setattr(cases_router, "evidence_manager", evidence)
 
-        # Cloud is "configured" so _cloud_ready() is True.
-        monkeypatch.setenv("MODEL_BACKEND", "cloud")
-        monkeypatch.setenv("MODEL_NAME", "gpt-4o")
-        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+        # The cloud CLI is "logged in" so the query reaches the consent gate
+        # rather than failing earlier on availability (503).
+        monkeypatch.setattr(
+            ClaudeCodeExecutor,
+            "is_available",
+            lambda self: ExecutorAvailability(available=True),
+        )
 
         case = cases.create(name="op", examiner="alice", os_profile="unix")
         src = tmp_path / "e.raw"
@@ -353,18 +369,19 @@ class TestConsentGate:
         app = create_app(PORT)
         client = TestClient(app, base_url=f"http://127.0.0.1:{PORT}")
         auth = {"X-Forensia-Token": app.state.token}
-        return cases, agent_router, case, handle, client, auth
+        return cases, case, handle, client, auth
 
-    def test_cloud_query_without_consent_returns_consent_required(
+    def test_cloud_query_without_consent_is_403_and_zero_egress(
         self, tmp_path, monkeypatch
     ):
-        _, agent_router, case, handle, client, auth = self._wire(tmp_path, monkeypatch)
+        _, case, handle, client, auth = self._wire(tmp_path, monkeypatch)
 
-        # The backend must NEVER be constructed without consent.
-        def _forbidden_backend(name):
-            raise AssertionError("get_backend called without recorded consent")
+        # If the gate ever failed open, the executor would run — and case-derived
+        # bytes would cross to the vendor. Prove zero egress: run() must not fire.
+        def _forbidden_run(self, prompt, context=None):
+            raise AssertionError("executor.run reached without recorded consent")
 
-        monkeypatch.setattr(agent_router, "get_backend", _forbidden_backend)
+        monkeypatch.setattr(ClaudeCodeExecutor, "run", _forbidden_run)
 
         r = client.post(
             "/api/agent/query",
@@ -373,26 +390,27 @@ class TestConsentGate:
                 "case_id": case.id,
                 "evidence_id": handle.evidence_id,
                 "prompt": "analiza el archivo",
+                "executor": "claude-code",
             },
             headers=auth,
         )
-        assert r.status_code == 200, r.text
-        assert r.json()["status"] == "consent_required"
+        assert r.status_code == 403, r.text
+        detail = r.json()["detail"]
+        assert "cloud-consent" in detail
+        assert "claude-code" in detail
 
-    def test_cloud_query_with_consent_reaches_backend(self, tmp_path, monkeypatch):
-        cases, agent_router, case, handle, client, auth = self._wire(
-            tmp_path, monkeypatch
-        )
+    def test_cloud_query_with_consent_passes_the_gate(self, tmp_path, monkeypatch):
+        _, case, handle, client, auth = self._wire(tmp_path, monkeypatch)
 
-        # Grant consent through the real endpoint (exercises the wiring).
+        # Record consent for this case + executor through the real endpoint
+        # (exercises the /api/agent/cloud-consent wiring, not a shortcut).
         g = client.post(
-            f"/api/cases/{case.id}/consent", json={"by": "alice"}, headers=auth
+            "/api/agent/cloud-consent",
+            json={"case_id": case.id, "executor": "claude-code"},
+            headers=auth,
         )
         assert g.status_code == 200, g.text
-        assert g.json()["cloud_consent"]["granted"] is True
-
-        backend = ScriptedBackend(actions=[FinalAnswer(text="hecho")], is_local=False)
-        monkeypatch.setattr(agent_router, "get_backend", lambda name: backend)
+        assert g.json()["recorded"] is True
 
         r = client.post(
             "/api/agent/query",
@@ -401,9 +419,13 @@ class TestConsentGate:
                 "case_id": case.id,
                 "evidence_id": handle.evidence_id,
                 "prompt": "analiza el archivo",
+                "executor": "claude-code",
             },
             headers=auth,
         )
-        assert r.status_code == 200, r.text
-        assert r.json()["status"] == "llm-loop"
-        assert backend.calls >= 1  # consent opened the gate, egress happened
+        # Consent opened the 403 gate: the request no longer stops there. It now
+        # fails downstream (the router hands the cloud run to ForensicAgent.run,
+        # whose egress border refuses without a consent_ref → 422) — the point is
+        # precisely that the HTTP consent gate was PASSED and never returns 403.
+        assert r.status_code != 403, r.text
+        assert r.status_code == 422

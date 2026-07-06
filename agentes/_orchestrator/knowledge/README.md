@@ -13,8 +13,10 @@ RAG real (slice S5) indexa este directorio y recupera por similitud.
 - `artefactos-windows.md` — **guías de interpretación de artefactos Windows**
   (artefacto → interpretación → técnica MITRE). Corpus recuperable (RAG) para la
   capa de síntesis: cómo leer Amcache, Prefetch, ShimCache/AppCompatCache,
-  ShellBags, `$MFT` ($SI vs $FN), USBSTOR y los EVTX clave
-  (4624/4625, 4688, 4720, 7045, 1102, 4698). Cada `technique_id` que citan existe
+  ShellBags, `$MFT` ($SI vs $FN), USBSTOR, los EVTX clave
+  (4624/4625, 4688, 4720, 7045, 1102, 4698) y los artefactos de memoria
+  (enumeración PsList vs PsScan/PsXView; clientes cloud residentes → exfiltración
+  a nube). Cada `technique_id` que citan existe
   en `mitre_attack_seed.md` (enum cerrada) y cada `tool_id` en el catálogo; respetan
   la cadena de custodia (`tsk_fls` → `tsk_icat` → artefacto derivado, soundness §7).
 

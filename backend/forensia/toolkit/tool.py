@@ -6,10 +6,14 @@ Security (THREAT_MODEL gates 5-7):
 - Big outputs are returned as an artifact reference, not as text in the model's context.
 
 Delivery (CLAUDE.md RULE 1):
-- Each tool declares per-host-OS how it reaches the user: `bundled` (vendored binary or
-  inside the PyInstaller sidecar) or `container` (OCI image executed via the host runtime).
-- Tools with no viable native build on a given OS (e.g. EvtxECmd on Linux/Mac) are
-  declared as `container` for that OS only.
+- The physical home of every tool is one or both compose maletines: `toolkits`
+  declares which maletín image(s) — `toolkit-windows` / `toolkit-unix` — carry the
+  binary. Cross tools (in the shared `base` stage) live in BOTH; OS-specific artifacts
+  live in one. `forensia.toolkit.maletin` probes those services and is what
+  `capabilities` reports.
+- The legacy `delivery` (per-host-OS `bundled` | `container`) + `container_image` fields
+  drive the not-yet-realigned dispatcher execution path (per-tool OCI images). Unifying
+  execution onto the maletines is tracked in docs/operacion/proximos-pasos.md §A/§B.
 """
 
 from __future__ import annotations
@@ -58,6 +62,11 @@ class Tool:
     allowed_flags: frozenset[str] = field(default_factory=frozenset)
     delivery: tuple[tuple[HostOs, DeliveryMode], ...] = DELIVERY_ALL_BUNDLED
     container_image: str | None = None
+    # Which compose maletín image(s) physically carry this tool's binary. Values are
+    # maletín ids ("toolkit-windows" / "toolkit-unix"); a Cross tool declares both.
+    # `forensia.toolkit.maletin` probes these; `capabilities` reports them. RULE 2:
+    # a tool is NEVER resolved against a maletín it does not declare here.
+    toolkits: tuple[str, ...] = ()
     tier: Tier = "extended"
     build_argv: Callable[[dict[str, Any]], list[str]] = _not_built
     parse: Callable[[str], Any] = _not_built

@@ -100,7 +100,7 @@ def _validate_case_id(case_id: str) -> str:
 class CaseManager:
     """Owns ``CONFIG_DIR/cases/``. Creates, lists, loads, and closes cases.
 
-    Not thread-safe — the desktop sidecar is single-process and the UI serializes
+    Not thread-safe — the api service is single-process and the UI serializes
     case mutations. If we ever expose a multi-writer surface this needs locking.
     """
 

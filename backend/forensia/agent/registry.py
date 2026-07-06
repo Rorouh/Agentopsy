@@ -2,9 +2,8 @@
 
 Resolución del directorio raíz (en orden, sin fallbacks silenciosos):
 
-1. ``FORENSIA_AGENTS_DIR`` (env). Lo fija el proceso principal de Electron al
-   spawnear el sidecar — apunta a ``resourcesPath/agentes`` en builds packaged
-   y al ``<repo>/agentes`` en dev.
+1. ``FORENSIA_AGENTS_DIR`` (env). En el compose lo fija el servicio ``api``
+   (``/opt/forensia/agentes``, con ``./agentes`` del repo montado read-only).
 2. Si no hay env, se busca un ``agentes/`` como hermano del directorio
    ``backend/`` que contiene este paquete. Funciona automáticamente cuando se
    corre ``python -m forensia.server`` desde el repo.
@@ -101,7 +100,7 @@ class AgentRegistry:
                 pkg = load_package(entry)
             except AgentPackageError as exc:
                 # A bad package never silently disables a good one — but we don't
-                # want a single typo to kill the whole sidecar. Log and skip.
+                # want a single typo to kill the whole api service. Log and skip.
                 logger.error("[agents] skipping %s: %s", entry, exc)
                 continue
 

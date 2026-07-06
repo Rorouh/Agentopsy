@@ -1,26 +1,27 @@
-"""Evidence endpoints are deliberately minimal: sensitive evidence flows move to IPC,
-not an open HTTP surface (THREAT_MODEL section A / gate 4). This skeleton exposes only a
-token-gated registration that returns the baseline hash.
+"""Evidence inbox listing. Registration is per-case (``/api/cases/{case_id}/evidence``
+in ``routers/cases.py``) — an evidence file cannot exist outside a case, so this
+module only exposes the *inbox* the web UI presents instead of a native file
+dialog. The old case-less ``/api/evidence/register`` predated cases: it no longer
+matched ``EvidenceManager.register(case_id, source_path)`` and nothing consumed
+it, so it is gone.
 """
 
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException
 
-from forensia.evidence import evidence_manager
+from forensia.evidence import list_source_files
 from forensia.security import require_token
 
 router = APIRouter()
 
 
-class RegisterRequest(BaseModel):
-    path: str
-
-
-@router.post("/api/evidence/register", dependencies=[Depends(require_token)])
-def register(req: RegisterRequest) -> dict:
-    handle = evidence_manager.register(req.path)
-    return {
-        "evidence_id": handle.evidence_id,
-        "sha256": handle.sha256,
-        "read_only_block_level": handle.read_only_block_level,
-    }
+@router.get("/api/evidence/sources", dependencies=[Depends(require_token)])
+def sources() -> dict:
+    """Bandeja de entrada de evidencias (``FORENSIA_EVIDENCE_DIR`` — en el
+    compose, ``./evidence`` del repo montado read-only en ``/evidence``). La UI
+    web la presenta como selector; el operador elige el fichero explícitamente
+    (RULE 2: nunca se registra "el único" ni "el más reciente"). Sin la
+    variable definida → 503 accionable."""
+    try:
+        return {"sources": list_source_files()}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc

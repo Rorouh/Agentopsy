@@ -1,0 +1,20 @@
+# Contexto de build compartido por los servicios `api` y `web` (sus Dockerfiles
+# viven bajo docker/ pero el contexto es la raíz del repo): solo entran el
+# backend + su entrypoint y la SPA + su nginx.conf. Evidencias, casos, docs y
+# demás quedan FUERA de las imágenes. Los maletines usan contexto propio bajo
+# docker/ y no leen este fichero.
+*
+!backend/
+!docker/api/serve.py
+!docker/api/entrypoint.sh
+!web/
+!docker/web/nginx.conf
+backend/.venv*/
+backend/build/
+backend/forensia.egg-info/
+backend/tests/
+backend/.pytest_cache/
+web/node_modules/
+web/dist/
+**/__pycache__/
+**/*.pyc

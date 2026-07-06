@@ -13,7 +13,12 @@ Hash gate, in strict order (forensic invariant 2):
     4. stream-hash the copy and compare to baseline        (corruption check)
     5. chmod 0o444 the copy                                (read-only at FS level)
     6. write baseline.json
-    7. return the handle
+    7. append ``evidence_register`` to the case audit log  (forensic invariant 4)
+    8. return the handle
+
+Both ``register`` and ``verify`` write to the case's append-only, hash-chained
+``audit.jsonl`` (forensic invariant 4): registration records the baseline hash +
+source, verification records the on-demand result.
 
 v1 read-only is enforced via ``chmod 0o444`` on the copy. This is the minimum and is
 defeatable by root; Phase 2 will add block-level read-only (Linux ``blockdev --setro`` /
@@ -207,6 +212,23 @@ class EvidenceManager:
         }
         self._write_baseline(evidence_dir, baseline)
 
+        # 8. Chain-of-custody event (forensic invariant 4): the baseline hash
+        #    reaches the append-only audit log the moment the evidence exists,
+        #    not only when it is later verified. Records what came in and from
+        #    where — the literal source path, like baseline.json.
+        AuditLog(case_dir / "audit.jsonl").append(
+            {
+                "action": "evidence_register",
+                "case_id": case_dir.name,
+                "evidence_id": evidence_id,
+                "sha256": baseline_sha,
+                "size": baseline_size,
+                "source_path": str(src),
+                "original_basename": dest.name,
+                "registered_at": registered_at,
+            }
+        )
+
         return EvidenceHandle(
             evidence_id=evidence_id,
             case_id=case_dir.name,
@@ -395,6 +417,53 @@ class EvidenceManager:
         if not isinstance(data["size"], int) or data["size"] < 0:
             raise ValueError(f"baseline.json has invalid size: {data['size']!r}")
         return data
+
+
+def list_source_files() -> list[dict]:
+    """Enumera las evidencias disponibles en la bandeja de entrada
+    (``FORENSIA_EVIDENCE_DIR`` — en el compose, ``./evidence`` del repo montado
+    read-only en ``/evidence``).
+
+    La UI web no puede abrir rutas arbitrarias del host (no hay diálogo nativo
+    de archivos), así que el operador deja el fichero
+    en la bandeja y lo ELIGE aquí (agencia del operador — RULE 2: nunca se
+    registra "el único" ni "el más reciente"). Solo se listan ficheros
+    regulares dentro de la raíz; los symlinks se omiten porque ``register()``
+    los rechaza (SECURITY INVARIANT 6).
+
+    Sin ``FORENSIA_EVIDENCE_DIR`` no hay bandeja que listar: error accionable,
+    jamás un directorio adivinado (RULE 2).
+    """
+    root_env = os.environ.get("FORENSIA_EVIDENCE_DIR")
+    if not root_env:
+        raise RuntimeError(
+            "FORENSIA_EVIDENCE_DIR no está definido: no hay bandeja de evidencias "
+            "que listar. En el compose la fija el servicio api (/evidence, montado "
+            "desde ./evidence del repo). En modo standalone, exporta la variable "
+            "apuntando a tu carpeta de evidencias."
+        )
+    root = Path(root_env).resolve()
+    if not root.is_dir():
+        raise RuntimeError(
+            f"FORENSIA_EVIDENCE_DIR apunta a {root}, que no existe o no es un "
+            "directorio. Crea la carpeta (./evidence en el repo, si usas el "
+            "compose) y deja dentro las imágenes a registrar."
+        )
+
+    sources: list[dict] = []
+    for path in sorted(root.rglob("*")):
+        if any(part.startswith(".") for part in path.relative_to(root).parts):
+            continue
+        if path.is_symlink() or not path.is_file():
+            continue
+        sources.append(
+            {
+                "name": str(path.relative_to(root)),
+                "path": str(path),
+                "size": path.stat().st_size,
+            }
+        )
+    return sources
 
 
 evidence_manager = EvidenceManager(case_manager)

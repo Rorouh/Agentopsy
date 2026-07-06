@@ -1,12 +1,11 @@
-# --- Vendored forensic binaries (large; build machine produces them, users get the bundle) ---
-vendor/*/
-!vendor/CATALOG.md
-
 # --- Evidence, cases, reports: NEVER commit (may contain real/personal data) ---
 # Anchored to repo root so we don't accidentally block source modules under
 # backend/forensia/cases/, backend/forensia/reports/, etc.
 /cases/
-/evidence/
+/evidence/*
+!/evidence/.gitkeep
+/projects/*
+!/projects/.gitkeep
 /reports/
 *.raw
 *.vmdk
@@ -43,14 +42,10 @@ __pycache__/
 .ruff_cache/
 dist/
 /build/
-backend/build/*/         # PyInstaller working output; the spec file itself stays tracked
-!backend/build/forensia.spec
 
-# --- Node / Electron ---
+# --- Node (web/) ---
 node_modules/
-desktop/renderer/dist/
-desktop/out/
-desktop/dist/
+web/dist/
 *.log
 
 # --- OS ---

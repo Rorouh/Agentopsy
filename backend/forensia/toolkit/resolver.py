@@ -1,25 +1,23 @@
-"""Resolve a forensic tool's invocation per CLAUDE.md RULE 1:
+"""Low-level resolution helpers per CLAUDE.md RULE 1.
 
-    env override → declared delivery in catalog (bundled | container) → host PATH
+- `resolve(binary)`: env override (`FORENSIA_<BIN>_BIN`) → host PATH, for binaries
+  resolvable where the api itself runs (dev / env-override path).
+- `container_runtime()`: the OCI client (docker/podman/nerdctl) the api would use to
+  reach the maletines.
+- `current_host_os()`: still consumed by the dispatcher's legacy execution path.
 
-The catalog entry for each tool declares its delivery per host OS. Bundled tools live
-under `vendor/<tool>/<os>-<arch>/<binary>` (or inside the PyInstaller sidecar for Python
-tools). Container-delivered tools require docker / podman / nerdctl on the host.
-
-`is_tool_available(tool)` is the per-tool predicate `capabilities` reports — `None`/
-`False` here means the UI degrades, never a crude error.
+Per-tool availability against the compose maletines (`toolkit-windows` / `toolkit-unix`)
+lives in `forensia.toolkit.maletin`, which is what `capabilities` reports. The old
+vendored per-OS/arch binaries are gone (pivote 2026-07-02).
 """
 
 from __future__ import annotations
 
 import os
-import platform
 import shutil
 import sys
 from pathlib import Path
 from typing import Literal
-
-from forensia.toolkit.tool import Tool
 
 HostOs = Literal["linux", "mac", "windows"]
 
@@ -34,33 +32,11 @@ def current_host_os() -> HostOs:
     return _HOST_OS_MAP.get(sys.platform, "linux")
 
 
-def platform_key() -> str:
-    system = {"darwin": "mac", "win32": "win"}.get(sys.platform, sys.platform)
-    arch = {"x86_64": "x64", "amd64": "x64", "arm64": "arm64", "aarch64": "arm64"}.get(
-        platform.machine().lower(), platform.machine().lower()
-    )
-    return f"{system}-{arch}"
-
-
-def bundled_root() -> Path:
-    override = os.environ.get("FORENSIA_RESOURCES")
-    if override:
-        return Path(override)
-    if getattr(sys, "frozen", False):
-        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent)) / "vendor"
-    return Path(__file__).resolve().parents[3] / "vendor"
-
-
 def resolve(binary: str) -> Path | None:
-    """Find a binary via env override → bundled → host PATH. None if absent."""
+    """Find a binary via env override → host PATH. None if absent."""
     env = os.environ.get(f"FORENSIA_{binary.upper().replace('-', '_')}_BIN")
     if env and Path(env).exists():
         return Path(env)
-
-    candidate = bundled_root() / binary / platform_key() / binary
-    for path in (candidate, candidate.with_suffix(".exe")):
-        if path.exists():
-            return path
 
     found = shutil.which(binary)
     return Path(found) if found else None
@@ -78,14 +54,3 @@ def container_runtime() -> Path | None:
         if found:
             return Path(found)
     return None
-
-
-def is_tool_available(tool: Tool) -> bool:
-    """Per-tool availability based on its declared delivery for THIS host OS."""
-    host = current_host_os()
-    mode = tool.delivery_for(host)
-    if mode == "bundled":
-        return resolve(tool.binary) is not None
-    if mode == "container":
-        return container_runtime() is not None
-    return False

@@ -1,34 +1,24 @@
-# Imágenes OCI del maletín forense
+# Imágenes OCI por-herramienta (transitorias)
 
 Dockerfiles para las herramientas declaradas con `delivery="container"` en
 `backend/forensia/toolkit/catalog.py`. Cada subdirectorio produce una imagen cuyo tag
 coincide con el `container_image` del catálogo.
+
+> **Transitorio (pivote 2026-07-02).** En el modelo compose, RULE 1 entrega todas las
+> herramientas dentro de las imágenes de los maletines (`toolkit-windows` /
+> `toolkit-unix`), construidas por `docker compose up --build`. El maletín
+> `toolkit-windows` ya incluye RegRipper; el trabajo de absorber EvtxECmd / MFTECmd y
+> retirar estas imágenes sueltas (y las referencias `container_image` del catálogo)
+> está en `docs/operacion/proximos-pasos.md`. Hasta entonces, el dispatcher sigue
+> resolviendo estos tags.
 
 ## Tabla de imágenes
 
 | Image tag | Tool catalog id | Cuándo se usa |
 |---|---|---|
 | `forensia/regripper:latest` | `regripper` | En todos los hosts (la entrega bundled de Perl portable se descartó) |
-| `forensia/evtxecmd:latest` | `evtxecmd` | En Linux / macOS (Windows usa el `.exe` bundled) |
-| `forensia/mftecmd:latest` | `mftecmd` | En Linux / macOS (Windows usa el `.exe` bundled) |
-
-## Distribución (RULE 1)
-
-Las imágenes **no** se construyen en la máquina del usuario final. El flujo es:
-
-```
-CI release pipeline (per OS/arch del instalador)
-  └─ docker build images/<tool>/        →  <tag>
-  └─ docker save <tag> -o resources/images/<tool>.tar
-  └─ electron-builder (incluye resources/images/ en extraResources)
-
-Instalador → primer arranque en máquina del usuario
-  └─ docker load -i resources/images/<tool>.tar    (una sola vez)
-  └─ subsiguientes runs: docker run --rm <tag> ...
-```
-
-Esto preserva el espíritu de RULE 1: el usuario instala FORENSIA + Docker/Podman; no
-necesita conectividad de red para que el maletín funcione (las imágenes ya viajan dentro).
+| `forensia/evtxecmd:latest` | `evtxecmd` | En Linux / macOS (Windows usa el `.exe` nativo) |
+| `forensia/mftecmd:latest` | `mftecmd` | En Linux / macOS (Windows usa el `.exe` nativo) |
 
 ## Build local (dev)
 

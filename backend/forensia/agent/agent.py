@@ -2,11 +2,12 @@
 
 ONE agent parametrized by an ``AgentPackage`` loaded from ``agentes/<id>/``: the
 reasoning loop is identical; what changes per profile is the package (prompts,
-model backend, allowlist of tools, redaction policy).
+allowlist of tools, redaction policy). The executor that answers each
+``next_action`` is the one the OPERATOR selected for the request (Claude Code,
+Codex CLI, Gemini CLI or Ollama — adapted by ``forensia.models.ExecutorBackend``);
+the loop neither knows nor cares which one it is (diseño Fase 2 §5).
 
-When the loaded package's model backend is wired (``MODEL_BACKEND=cloud`` +
-``OPENAI_API_KEY`` + ``MODEL_NAME``), ``run()`` drives an OpenAI tool-calling
-loop:
+``run()`` drives a bounded provider-agnostic tool-calling loop:
 
 1. Build messages = system (package prompts + case context) + user (prompt).
 2. Loop up to ``max_iterations``:
@@ -48,7 +49,7 @@ from forensia.agent.redaction import redact_messages
 from forensia.agent.tool_schemas import (
     AUTO_INJECTED,
     internal_tool_specs,
-    openai_tool_specs,
+    tool_specs,
 )
 from forensia.audit import AuditLog
 from forensia.evidence import EvidenceManager
@@ -170,7 +171,7 @@ class ForensicAgent:
             "messages": messages,
             "temperature": float(self.package.model.temperature or 0.2),
         }
-        tool_specs = openai_tool_specs(list(allowed)) + internal_tool_specs()
+        specs = tool_specs(list(allowed)) + internal_tool_specs()
 
         max_iter = max(1, int(self.package.model.max_iterations or 8))
         tool_calls_log: list[dict[str, Any]] = []
@@ -210,7 +211,7 @@ class ForensicAgent:
                 )
             egress_state = {**state, "messages": outbound}
             try:
-                action = self.model.next_action(egress_state, tool_specs)
+                action = self.model.next_action(egress_state, specs)
             except Exception as exc:  # noqa: BLE001 — surface as friendly reply
                 logger.warning("model.next_action failed: %s", exc)
                 return AgentLoopResult(
