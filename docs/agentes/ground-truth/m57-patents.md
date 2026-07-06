@@ -106,3 +106,28 @@ de comparación).
 - `T1048` — Exfiltration Over Alternative Protocol (exfil por email).
 - (opcional) `T1560`/`T1027` si el material robado está **archivado/cifrado** ("qué
   se necesita para acceder" sugiere protección) — confirmar en el disco par.
+
+## Corrida post-semilla 11-24 (`…171453`) — auditoría M5-A
+
+Segunda corrida `codex_auto` sobre la misma RAM de Jo (2 929 líneas), tras la 3ª
+tanda de semilla (`T1114/.001`, `T1074/.001`, `T1005`, `T1048`).
+
+- **Recall (estable):** volvió a surfacer el rastro de exfil — 82 `hr_patent*.JPG`,
+  almacenes Outlook Express (`msimn.exe` + DBX), y el ángulo de automatización
+  `Desktop\web\patentauto.py` + `urls.txt`; actividad interactiva de Jo
+  (cmd→firefox→msimn) y la adquisición `mdd_1.3.exe` fechadas.
+- **MITRE de exfil: sigue "sin técnica de la semilla aplicable" — y es correcto.**
+  Los 4 hallazgos de exfil van sin id; el único id emitido es `T1055` como
+  hipótesis no confirmada. No forzó `T1567` nube sobre una exfil por email.
+- **Causa (plumbing, no razonamiento):** `run_investigation.py` (`build_prompt`)
+  inyecta al sub-agente solo `identity.md + system.md + playbook.md`, **no**
+  `knowledge/mitre_attack_seed.md`. Verificado: 0 ocurrencias de los ids M57 en los
+  tres ficheros. Por diseño (`diseno-fase2.md`: `mitre_hints` = pista opcional, el
+  orquestador decide; `_orchestrator/mitre.md`), la correlación autoritativa es del
+  **orquestador** contra la semilla; el sub-agente emite hints desde su vocabulario
+  de playbook. La 3ª tanda es **inerte en este harness por diseño**.
+- **Consecuencia:** M5-A no puede mejorar a este nivel de fidelidad (mide la capa
+  equivocada). La validación semilla→orquestador exige un test de orquestador (aún
+  pendiente). Re-encuadrar M5-C/M5-D: no meter ids de email/staging en el playbook
+  para "aprobar" M5-A; si acaso, decidir por separado el vocabulario de **hints
+  opcionales** del sub-agente, y solo con recurrencia (2º run: disco 12-11).
