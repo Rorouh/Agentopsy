@@ -54,8 +54,11 @@ COPY docker/api/serve.py serve.py
 # Entrypoint: seeding idempotente de credenciales al volumen forensia-cli-auth
 # (ver docker/api/entrypoint.sh). `docker compose exec` NO pasa por aquí — los
 # logins hechos en el contenedor escriben directamente en el volumen.
+# El sed protege el shebang de checkouts con CRLF (git autocrlf en Windows):
+# el build no debe depender de la config del cliente git de la máquina.
 COPY docker/api/entrypoint.sh /usr/local/bin/forensia-entrypoint
-RUN chmod 0755 /usr/local/bin/forensia-entrypoint
+RUN sed -i 's/\r$//' /usr/local/bin/forensia-entrypoint \
+ && chmod 0755 /usr/local/bin/forensia-entrypoint
 
 EXPOSE 8000
 ENTRYPOINT ["/usr/local/bin/forensia-entrypoint"]

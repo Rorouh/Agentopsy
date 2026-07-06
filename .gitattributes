@@ -1,0 +1,6 @@
+# Scripts de shell y Dockerfiles acaban dentro de imágenes Linux (COPY /
+# heredocs): un checkout con CRLF (git autocrlf=true en Windows) rompe el
+# shebang («exec: no such file or directory») o embebe \r en los heredocs.
+# Se fuerzan a LF en todo checkout, en cualquier SO.
+*.sh        text eol=lf
+Dockerfile  text eol=lf
