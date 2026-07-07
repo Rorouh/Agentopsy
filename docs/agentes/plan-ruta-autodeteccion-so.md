@@ -131,7 +131,7 @@ declarativo (orquestador KB / docs, lane del auditor) · **[gov]** decisión equ
 
 | fase | estado | commit | notas |
 |---|---|---|---|
-| 0 Gobernanza | ⬜ | — | pendiente OK equipo+tutor + enmienda RULE 2 |
+| 0 Gobernanza | ✅ aprobada (equipo+tutor) | (este commit) | RULE 2 enmendada |
 | 1 Auditoría | ⬜ | — | inventario de puntos de cambio |
 | 2 Enrutado [be] | ⬜ | — | cambio de invariante; lo valida el dueño del motor |
 | 3 UI [fe] | ⬜ | — | quitar selector SO |

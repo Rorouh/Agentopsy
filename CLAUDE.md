@@ -57,8 +57,14 @@ outside `docker compose up --build`; no API keys anywhere.**
 `forensia-unix`). The sub-agent runs toolkit tools and returns *structured*
 findings; the orchestrator consolidates them and produces the report, the
 timeline and the MITRE ATT&CK correlation. The orchestrator never analyses
-evidence directly and never guesses the profile — the operator anchors it
-(RULE 2); with no evidence selected there is nothing to route.
+evidence directly. The `os_profile` is **determined from the evidence content**
+by the deterministic `forensia.triage` fingerprint (never from the host
+platform), and the orchestrator routes to the matching sub-agent automatically
+**when the determination is confident**. On `unknown`, low confidence, or
+conflicting signals, routing **fails loud and the operator must anchor the
+profile** — never a silent pick (RULE 2); the determination (`family`,
+`confidence`, `signals`) is recorded in the audit log. With no evidence selected
+there is nothing to route.
 
 The sub-agents are **declarative**: each ships as a folder under `agentes/<id>/`
 with `agent.yaml`, `prompts/`, and `policy/`. The training team produces this
@@ -133,8 +139,12 @@ actionable error. Designed parameter defaults (`def f(opts=None)`) are fine.
 - **No "guess from context"**: if a parameter is required, demand it. Inferring
   `os_profile` from the host platform, `evidence_id` from "the one most recently
   registered", or `case_id` from "the only active case" — all forbidden. The
-  triage classifier (`forensia.triage`) is allowed to *suggest* a value to the
-  operator via the UI, never to set it silently.
+  triage classifier (`forensia.triage`) **determines `os_profile` from the
+  evidence content** (a forensic determination, not a host/context guess) and the
+  orchestrator routes on it automatically **when confident**; on `unknown`, low
+  confidence, or conflicting signals it **escalates to the operator, who must
+  anchor** — never a silent pick, and the determination is recorded in the audit
+  log.
 - **No "default executor"**: the Investigación executor (Claude Code, Codex CLI,
   Gemini CLI or Ollama) is selected explicitly by the operator. An absent selection
   is a 503 with "select an executor first" — never a silent run against Ollama

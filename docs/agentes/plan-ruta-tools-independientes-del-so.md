@@ -1,3 +1,10 @@
+> **SUPERSEDED (2026-07) por
+> [`plan-ruta-autodeteccion-so.md`](plan-ruta-autodeteccion-so.md).** El objetivo
+> real no era "todas las tools sin límite" (rompía la tesis) sino quitar la
+> elección manual del SO: auto-detección + enrutado por el orquestador. Se
+> conserva por el racional. Los arreglos de scoping A/B (foremost, huecos de
+> allowlist) quedan como limpieza opcional.
+
 # Plan de ruta — Herramientas disponibles con independencia del SO de la evidencia
 
 **Rama:** `tools` · **Estado:** propuesta / en curso · **Rol coordinador:** sub-agente
