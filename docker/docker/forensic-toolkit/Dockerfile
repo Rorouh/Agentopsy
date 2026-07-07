@@ -113,12 +113,24 @@ echo "  volatility3                       : $(command -v vol || echo 'NO')"
   echo "  rip.pl (RegRipper)              : $(command -v rip.pl || echo 'NO')"
   echo "  hayabusa                        : $(command -v hayabusa || echo 'NO')"
   echo "  chainsaw                        : $(command -v chainsaw || echo 'NO')"
-  echo "  EvtxECmd (EZ, .NET)             : $(command -v EvtxECmd || echo 'NO')"
-  echo "  MFTECmd (EZ, .NET)              : $(command -v MFTECmd || echo 'NO')"
   echo "  evtx_dump (python-evtx)         : $(command -v evtx_dump || echo 'NO')"
   echo "  lnkparse (LnkParse3)            : $(command -v lnkparse || echo 'NO')"
   echo "  regipy                          : $(command -v regipy-dump || echo 'NO')"
   echo "  hindsight (navegadores)         : $(command -v hindsight.py || echo 'NO')"
+  echo "EZ Tools (Modules de KAPE, .NET):"
+  echo "  mftecmd (MFT/UsnJrnl/Boot/SDS)  : $(command -v mftecmd || echo 'NO')"
+  echo "  evtxecmd (EVTX + Maps)          : $(command -v evtxecmd || echo 'NO')"
+  echo "  lecmd (LNK)                     : $(command -v lecmd || echo 'NO')"
+  echo "  jlecmd (Jump Lists)             : $(command -v jlecmd || echo 'NO')"
+  echo "  recmd (hives del registro)      : $(command -v recmd || echo 'NO')"
+  echo "  amcacheparser (Amcache.hve)     : $(command -v amcacheparser || echo 'NO')"
+  echo "  appcompatcacheparser (ShimCache): $(command -v appcompatcacheparser || echo 'NO')"
+  echo "  sbecmd (ShellBags)              : $(command -v sbecmd || echo 'NO')"
+  echo "  wxtcmd (ActivitiesCache.db)     : $(command -v wxtcmd || echo 'NO')"
+  echo "  rbcmd (Recycle Bin)             : $(command -v rbcmd || echo 'NO')"
+  echo "  bstrings (strings avanzado)     : $(command -v bstrings || echo 'NO')"
+  echo "  EvtxECmd/MFTECmd (catalogo api) : $(command -v EvtxECmd || echo 'NO') / $(command -v MFTECmd || echo 'NO')"
+  echo "  (PECmd/SrumECmd excluidas: Windows-only; Prefetch->prefetch.py, SRUM->plaso srum)"
 }
 [ "${FORENSIA_STAGE}" = "unix" ] && {
   echo "Artefactos Unix-like:"
@@ -149,12 +161,32 @@ ARG HAYABUSA_VERSION=3.9.0
 ARG HAYABUSA_SHA256=c2fa65e4f255db17615c7c9d0acc9030c27db73f27b097499718930a48e420a3
 ARG CHAINSAW_VERSION=2.16.0
 ARG CHAINSAW_SHA256=5d46cd140838413aeb5711451a282b3922443d9ec6afaea3e6b6b220454fd807
-# EZ tools (.NET): la URL sirve SIEMPRE el último build net9, así que el SHA hay que
-# re-pinnearlo cuando Eric Zimmerman publique una versión nueva (el build falla en claro
-# si no coincide — igual que hayabusa/chainsaw).
+# EZ Tools (.NET, suite de Eric Zimmerman — los parsers de los Modules de KAPE): la
+# URL sirve SIEMPRE el último build net9, así que cada SHA hay que re-pinnearlo cuando
+# Eric Zimmerman publique una versión nueva (el build falla en claro si no coincide —
+# igual que hayabusa/chainsaw). Un ARG vacío salta la verificación de esa tool en el
+# primer build (rellenar tras el primer build para pinnear); el SHA real y la versión
+# reportada por cada tool quedan registrados en /opt/eztools/VERSIONS.txt.
+# EXCLUIDAS de la suite (verificado 2026-07-07, build 2026.5.0): PECmd y SrumECmd
+# abortan al arrancar en Linux — "Non-Windows platforms not supported due to the need
+# to load decompression|ESI specific Windows libraries!" (descompresión Xpress vía
+# ntdll / motor ESENT, nativos de Windows). No es un tema de flags: el maletín es
+# Linux (RULE 1) y esas dos jamás correrán aquí. Sus artefactos siguen cubiertos por
+# tools del maletín: Prefetch → prefetch.py (windowsprefetch); SRUDB.dat → parser
+# `srum` de plaso (log2timeline). KAPE.exe y los Targets tampoco entran: son
+# adquisición en vivo y FORENSIA es post-mortem.
 ARG DOTNET_CHANNEL=9.0
 ARG EVTXECMD_SHA256=4d740e51c4532c340d080f832c766c2acb0351832dae118d1abe9bb49203faa4
 ARG MFTECMD_SHA256=60ae857a554b830243e38e91fafdfdf6066f31c703282c5c6f40daf3b64d3160
+ARG LECMD_SHA256=f3e9c799ec7d3fa4cd5f553ec3f9d544c80c8e48afd04ef43456da3d48ad0760
+ARG JLECMD_SHA256=155ee54e6ac6b70bce1aa636ec52d0b0165263933764d9a45c85af97df546892
+ARG RECMD_SHA256=4a4e2f4beba54fdb9ba4eeb5e6f9d323e666b309e407ac89e047f82be0c963a2
+ARG AMCACHEPARSER_SHA256=d40d1e7863159dbd9aa3ae826d919edc490ca33df84bde57e86da848a583af03
+ARG APPCOMPATCACHEPARSER_SHA256=67756841dbcd8ca3f47083be2b016a22f61bde0ea3450f0a776cf878bf66d42d
+ARG SBECMD_SHA256=88edb98a32baaf68114aa106f25f999e46d387d9d0003d3222a1168cc1b7eb9b
+ARG WXTCMD_SHA256=aa08a020cc9daa22551edbf07bca336cb8249ce29830d67cf09bc3703dffec6d
+ARG RBCMD_SHA256=e2b5c6ba8929a8731d861577c796763730e303ec2d4dd8d294ee0de8d5ceb541
+ARG BSTRINGS_SHA256=0630d2b3a527f285c8407ece8deddcddfe92531a25e16c2d5ffd2d60fb90d8c6
 
 # --- Perl + módulo de registro para RegRipper --------------------------------
 RUN apt-get update \
@@ -216,29 +248,65 @@ RUN apt-get update \
  && rm -f /tmp/dotnet-install.sh \
  && dotnet --info | head -5
 
-# --- EZ tools: EvtxECmd (EVTX→CSV) + MFTECmd ($MFT→CSV) -----------------------
-# Builds net9 del CDN oficial (download.ericzimmermanstools.com). El zip de EvtxECmd
-# extrae en subcarpeta EvtxeCmd/ (incluye Maps/); MFTECmd.dll queda en la raíz. Se
-# envuelven en scripts en el PATH para que el catálogo los resuelva por nombre.
-RUN cd /tmp \
- && wget -q "https://download.ericzimmermanstools.com/net9/EvtxECmd.zip" -O EvtxECmd.zip \
- && echo "${EVTXECMD_SHA256}  EvtxECmd.zip" | sha256sum -c - \
- && mkdir -p /opt/evtxecmd \
- && unzip -q EvtxECmd.zip -d /opt/evtxecmd \
- && wget -q "https://download.ericzimmermanstools.com/net9/MFTECmd.zip" -O MFTECmd.zip \
- && echo "${MFTECMD_SHA256}  MFTECmd.zip" | sha256sum -c - \
- && mkdir -p /opt/mftecmd \
- && unzip -q MFTECmd.zip -d /opt/mftecmd \
- && rm -f EvtxECmd.zip MFTECmd.zip \
- && EVTX_DLL="$(find /opt/evtxecmd -name 'EvtxECmd.dll' | head -n1)" \
- && MFTE_DLL="$(find /opt/mftecmd  -name 'MFTECmd.dll'  | head -n1)" \
- && printf '#!/bin/sh\nexec dotnet %s "$@"\n' "$EVTX_DLL" > /usr/local/bin/EvtxECmd \
- && printf '#!/bin/sh\nexec dotnet %s "$@"\n' "$MFTE_DLL" > /usr/local/bin/MFTECmd \
- && chmod +x /usr/local/bin/EvtxECmd /usr/local/bin/MFTECmd
 # El JIT de .NET segfaulta bajo emulación QEMU (linux/amd64 en Apple Silicon) por la
 # feature W^X; desactivarla lo estabiliza. En amd64 nativo es inocuo (solo relaja un
 # endurecimiento del JIT en un contenedor forense aislado). Sin esto, EvtxECmd casca.
-ENV DOTNET_EnableWriteXorExecute=0
+# ROLL_FORWARD=Major deja correr ensamblados de un net anterior sobre el runtime 9;
+# sin telemetría ni logo; globalización ICU completa (libicu instalado arriba).
+ENV DOTNET_EnableWriteXorExecute=0 \
+    DOTNET_ROLL_FORWARD=Major \
+    DOTNET_CLI_TELEMETRY_OPTOUT=1 \
+    DOTNET_NOLOGO=1 \
+    DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=0
+
+# --- EZ Tools: suite de Eric Zimmerman (los parsers de los Modules de KAPE) ---
+# Builds net9 framework-dependent del CDN oficial. Cada zip se despliega en
+# /opt/eztools/<Tool>/ conservando su estructura interna (EvtxECmd necesita su
+# Maps/; RECmd trae BatchExamples/) — la ruta real del .dll varía por zip, así
+# que se localiza con find, nunca se asume. Cada tool queda envuelta en un
+# wrapper en minúsculas en /opt/forensia/bin; EvtxECmd y MFTECmd conservan
+# además el nombre capitalizado que el catálogo del backend resuelve.
+# El SHA-256 de cada zip y la versión que reporta la tool quedan registrados en
+# /opt/eztools/VERSIONS.txt (reproducibilidad: el CDN sirve "latest").
+# bstrings en Linux consume el fichero por STDIN (cat f | bstrings …): sus modos
+# -f/-d no procesan en no-Windows en el build 2026.5.0 (verificado 2026-07-07).
+# PECmd y SrumECmd NO se despliegan (Windows-only — ver el bloque de ARGs);
+# KAPE.exe y los Targets (recolección en vivo) quedan FUERA de alcance:
+# FORENSIA es post-mortem — solo los parsers que consumen artefactos ya extraídos.
+RUN set -e; cd /tmp \
+ && mkdir -p /opt/eztools \
+ && printf '# EZ Tools — SHA-256 del zip desplegado + versión reportada por la tool\n' > /opt/eztools/VERSIONS.txt \
+ && for entry in \
+      "EvtxECmd ${EVTXECMD_SHA256}" \
+      "MFTECmd ${MFTECMD_SHA256}" \
+      "LECmd ${LECMD_SHA256}" \
+      "JLECmd ${JLECMD_SHA256}" \
+      "RECmd ${RECMD_SHA256}" \
+      "AmcacheParser ${AMCACHEPARSER_SHA256}" \
+      "AppCompatCacheParser ${APPCOMPATCACHEPARSER_SHA256}" \
+      "SBECmd ${SBECMD_SHA256}" \
+      "WxTCmd ${WXTCMD_SHA256}" \
+      "RBCmd ${RBCMD_SHA256}" \
+      "bstrings ${BSTRINGS_SHA256}" \
+    ; do \
+      tool="${entry%% *}"; sha="${entry#* }"; \
+      wget -q "https://download.ericzimmermanstools.com/net9/${tool}.zip" -O "${tool}.zip"; \
+      if [ -n "$sha" ]; then echo "$sha  ${tool}.zip" | sha256sum -c -; \
+      else echo "AVISO: ${tool}.zip sin SHA pinneado — rellenar ARG con el de VERSIONS.txt"; fi; \
+      mkdir -p "/opt/eztools/${tool}"; \
+      unzip -q "${tool}.zip" -d "/opt/eztools/${tool}"; \
+      dll="$(find "/opt/eztools/${tool}" -iname "${tool}.dll" | head -n1)"; \
+      [ -n "$dll" ] || { echo "ERROR: ${tool}.dll no encontrado en el zip" >&2; exit 1; }; \
+      wrapper="$(echo "$tool" | tr '[:upper:]' '[:lower:]')"; \
+      printf '#!/bin/sh\nexec dotnet %s "$@"\n' "$dll" > "/opt/forensia/bin/${wrapper}"; \
+      chmod +x "/opt/forensia/bin/${wrapper}"; \
+      version="$("/opt/forensia/bin/${wrapper}" 2>&1 | grep -m1 -i 'version' || true)"; \
+      printf '%-22s zip_sha256=%s  %s\n' "$tool" "$(sha256sum "${tool}.zip" | cut -d' ' -f1)" "${version:-version no reportada}" >> /opt/eztools/VERSIONS.txt; \
+      rm -f "${tool}.zip"; \
+    done \
+ && ln -sf /opt/forensia/bin/evtxecmd /usr/local/bin/EvtxECmd \
+ && ln -sf /opt/forensia/bin/mftecmd  /usr/local/bin/MFTECmd \
+ && cat /opt/eztools/VERSIONS.txt
 
 # --- Parsers de artefactos Windows (Python) ----------------------------------
 COPY requirements-windows.txt /tmp/requirements-windows.txt

@@ -144,6 +144,85 @@ docker compose exec toolkit-windows hindsight.py -i "/cases/mnt/Users/jdoe/AppDa
 > anterior a PEP 621, y los paquetes solo-`pyproject.toml` construían como
 > `UNKNOWN`).
 
+## EZ Tools (herramientas de los *Modules* de KAPE) — maletín `toolkit-windows`
+
+Suite de Eric Zimmerman (.NET, builds `net9` del CDN oficial
+`download.ericzimmermanstools.com`): los parsers que los *Modules* de KAPE
+ejecutan sobre artefactos ya extraídos. Cada zip se despliega en
+`/opt/eztools/<Tool>/` conservando su estructura interna (`Maps/` de EvtxECmd,
+`BatchExamples/` de RECmd) y se envuelve en un wrapper en minúsculas en el
+PATH; `EvtxECmd` y `MFTECmd` conservan además el nombre capitalizado que
+resuelve el catálogo del backend. El SHA-256 de cada zip y la versión
+desplegada quedan registrados en la imagen (`/opt/eztools/VERSIONS.txt`) y
+pinneados como `ARG *_SHA256` en el Dockerfile (el build falla en claro si el
+CDN publica una versión nueva — re-pinnear, igual que hayabusa/chainsaw).
+
+> **Fuera de alcance — adquisición:** `KAPE.exe` y los *Targets* (recolección)
+> NO se incluyen: son adquisición en vivo y FORENSIA es post-mortem; solo
+> entran los parsers que consumen artefactos ya extraídos.
+>
+> **Excluidas por plataforma (verificado 2026-07-07, build 2026.5.0):**
+> **PECmd** y **SrumECmd** abortan al arrancar en Linux («Non-Windows platforms
+> not supported due to the need to load decompression|ESI specific Windows
+> libraries!») porque cargan librerías nativas de Windows (descompresión
+> Xpress vía ntdll / motor ESENT). No se despliegan en el maletín; sus
+> artefactos siguen cubiertos: **Prefetch** → `prefetch.py` (windowsprefetch)
+> y **SRUDB.dat** → el parser `srum` de plaso (`log2timeline.py`).
+
+| Herramienta | Comando | Artefacto |
+|---|---|---|
+| MFTECmd | `mftecmd` (alias `MFTECmd`) | `$MFT`, `$J` ($UsnJrnl), `$Boot`, `$SDS` |
+| EvtxECmd | `evtxecmd` (alias `EvtxECmd`) | `winevt/Logs/*.evtx` (con sus `Maps/`) |
+| LECmd | `lecmd` | Accesos directos `*.lnk` |
+| JLECmd | `jlecmd` | Jump Lists (`*Destinations-ms` de `Recent/`) |
+| RECmd | `recmd` | Hives del registro (batch en `BatchExamples/`) |
+| AmcacheParser | `amcacheparser` | `Amcache.hve` |
+| AppCompatCacheParser | `appcompatcacheparser` | ShimCache (hive `SYSTEM`) |
+| SBECmd | `sbecmd` | ShellBags (`UsrClass.dat` / `NTUSER.DAT`) |
+| WxTCmd | `wxtcmd` | `ActivitiesCache.db` (Windows Timeline) |
+| RBCmd | `rbcmd` | `$Recycle.Bin` (ficheros `$I`) |
+| bstrings | `bstrings` (input por **stdin** en Linux) | strings avanzado (regex predefinidas) sobre cualquier fichero |
+
+Ejemplos (uno por herramienta, sobre una colección KAPE montada en
+`/evidence/D`; las salidas CSV van a `/cases`):
+
+```bash
+# mftecmd — parsear la $MFT a CSV (comillas: el $ va escapado dentro del sh -c)
+docker compose exec toolkit-windows sh -c 'mftecmd -f "/evidence/D/\$MFT" --csv /cases --csvf mft.csv'
+
+# evtxecmd — parsear un EVTX a CSV (aplica sus Maps/ automáticamente)
+docker compose exec toolkit-windows sh -c 'evtxecmd -f /evidence/D/Windows/System32/winevt/Logs/Security.evtx --csv /cases --csvf security.csv'
+
+# lecmd — analizar un acceso directo .lnk
+docker compose exec toolkit-windows lecmd -f "/evidence/D/Users/IEUser/AppData/Roaming/Microsoft/Windows/Recent/CLIENTES DEL BANCO.xls.lnk"
+
+# jlecmd — Jump Lists (Automatic/CustomDestinations) de la carpeta Recent del usuario
+docker compose exec toolkit-windows jlecmd -d /evidence/D/Users/IEUser/AppData/Roaming/Microsoft/Windows/Recent --csv /cases
+
+# recmd — hives del registro con un batch de ejemplo (Kroll)
+docker compose exec toolkit-windows recmd --bn /opt/eztools/RECmd/RECmd/BatchExamples/Kroll_Batch.reb -f /evidence/D/Windows/System32/config/SOFTWARE --csv /cases
+
+# amcacheparser — Amcache.hve (con -i incluye entradas de ficheros de programas)
+docker compose exec toolkit-windows amcacheparser -f /evidence/D/Windows/AppCompat/Programs/Amcache.hve --csv /cases -i
+
+# appcompatcacheparser — ShimCache desde el hive SYSTEM
+docker compose exec toolkit-windows appcompatcacheparser -f /evidence/D/Windows/System32/config/SYSTEM --csv /cases
+
+# sbecmd — ShellBags de las UsrClass.dat/NTUSER.DAT que haya bajo el directorio
+docker compose exec toolkit-windows sbecmd -d /evidence/D/Users/IEUser/AppData/Local/Microsoft/Windows --csv /cases
+
+# wxtcmd — Windows Timeline (ActivitiesCache.db; Win10 1803+ — no existe en Win7)
+docker compose exec toolkit-windows wxtcmd -f "/evidence/D/Users/IEUser/AppData/Local/ConnectedDevicesPlatform/L.IEUser/ActivitiesCache.db" --csv /cases
+
+# rbcmd — papelera de reciclaje: ficheros $I del volumen
+docker compose exec toolkit-windows sh -c 'rbcmd -d "/evidence/D/\$Recycle.Bin" --csv /cases'
+
+# bstrings — strings avanzado con regex predefinida (URLs) sobre un artefacto.
+# En Linux el fichero entra por stdin: los modos -f/-d del build 2026.5.0 no
+# procesan en no-Windows (imprimen "input from stdin or file" y salen con 0).
+docker compose exec toolkit-windows sh -c 'cat /evidence/D/Windows/System32/config/SYSTEM | bstrings --lr url3986 -o /cases/system_urls.txt'
+```
+
 ## Artefactos Unix-like — maletín `toolkit-unix`
 
 | Herramienta | Comando | Para qué |
@@ -193,7 +272,9 @@ docker compose exec toolkit-unix vol -f /evidence/memoria_linux.lime linux.pslis
 | chainsaw | 2.16.0 | release GitHub (WithSecureLabs) |
 | pip (dentro de la imagen) | 26.1.2 | PyPI (sustituye al 22.0.2 de Ubuntu) |
 | ccl_chromium_reader | commit `b51a01c` | repo git (cclgroupltd, sin tags) |
+| .NET runtime (stage `windows`) | canal 9.0 (`dotnet-install.sh`) | dot.net (Microsoft) |
+| EZ Tools (suite Eric Zimmerman, 11 tools) | 2026.5.0 (builds net9 «latest» del CDN; SHA-256 pinneado por `ARG` y registrado con la versión en `/opt/eztools/VERSIONS.txt`) | download.ericzimmermanstools.com |
 
 Las versiones de hayabusa, chainsaw y Volatility se pasan como `--build-arg`
-desde `docker-compose.yml`; los binarios descargados se verifican por SHA-256
-en el Dockerfile.
+desde `docker-compose.yml`; los binarios descargados (hayabusa, chainsaw y los
+zips de las EZ Tools) se verifican por SHA-256 en el Dockerfile.
