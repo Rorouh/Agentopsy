@@ -36,6 +36,20 @@ _PER_CASE_SUBDIRS = ("evidence", "artifacts", "chats", "reports")
 
 
 @dataclass(frozen=True)
+class CloudConsent:
+    """Per-case record that the operator opted in to cloud egress.
+
+    Cloud is OFF by default (THREAT_MODEL §C / gate 9): a fresh case has
+    ``cloud_consent=None`` and no evidence-derived byte may leave the host. The
+    ``ref`` is the stable handle the audit log cites on every egress entry."""
+
+    granted: bool
+    granted_at: str
+    by: str
+    ref: str
+
+
+@dataclass(frozen=True)
 class Case:
     id: str
     name: str
@@ -44,6 +58,7 @@ class Case:
     os_profile: str
     status: str
     notes: str = ""
+    cloud_consent: CloudConsent | None = None
 
 
 def _utc_now_iso() -> str:
@@ -85,7 +100,7 @@ def _validate_case_id(case_id: str) -> str:
 class CaseManager:
     """Owns ``CONFIG_DIR/cases/``. Creates, lists, loads, and closes cases.
 
-    Not thread-safe — the desktop sidecar is single-process and the UI serializes
+    Not thread-safe — the api service is single-process and the UI serializes
     case mutations. If we ever expose a multi-writer surface this needs locking.
     """
 
@@ -178,6 +193,27 @@ class CaseManager:
         self._write_case_json(case_dir, updated)
         return updated
 
+    def grant_cloud_consent(self, case_id: str, by: str) -> Case:
+        """Record per-case opt-in to cloud egress (F2 / gate 9).
+
+        Without this, ``/api/agent/query`` refuses the cloud path and zero
+        evidence-derived bytes leave the host. ``by`` identifies who consented
+        (audit/custody). Re-granting refreshes the timestamp and mints a new
+        ``ref`` so the audit chain can tell consent grants apart.
+        """
+        by = _validate_text_field(by, "by")
+        case_dir = self.case_dir(case_id)
+        case = self._read_case_json(case_dir)
+        consent = CloudConsent(
+            granted=True,
+            granted_at=_utc_now_iso(),
+            by=by,
+            ref=str(uuid.uuid4()),
+        )
+        updated = replace(case, cloud_consent=consent)
+        self._write_case_json(case_dir, updated)
+        return updated
+
     # ---- internals ----------------------------------------------------------
 
     @staticmethod
@@ -217,6 +253,26 @@ class CaseManager:
             os_profile=data["os_profile"],
             status=data["status"],
             notes=data.get("notes", ""),
+            cloud_consent=self._parse_cloud_consent(data.get("cloud_consent")),
+        )
+
+    @staticmethod
+    def _parse_cloud_consent(value: object) -> CloudConsent | None:
+        if value is None:
+            return None
+        if not isinstance(value, dict):
+            raise ValueError(
+                f"case.json cloud_consent must be a mapping or null, got {type(value).__name__}"
+            )
+        required = {"granted", "granted_at", "by", "ref"}
+        missing = required - value.keys()
+        if missing:
+            raise ValueError(f"case.json cloud_consent missing fields: {sorted(missing)}")
+        return CloudConsent(
+            granted=bool(value["granted"]),
+            granted_at=value["granted_at"],
+            by=value["by"],
+            ref=value["ref"],
         )
 
 

@@ -190,11 +190,15 @@ class TestOutputDirInjection:
             argv = [f"/fake/{tool.binary}", *argv_tail]
             return argv, 0, "", ""
 
-        # Replace the bundled runner so we never actually call bulk_extractor.
+        # Replace the bundled runner so we never actually call bulk_extractor, and force
+        # the bundled venue by making the binary "resolvable" on the api PATH (otherwise
+        # the dispatcher would route to the maletín exec-agent — a different path).
         import forensia.toolkit.dispatcher as disp
 
         original = disp._run_bundled
+        original_resolve = disp.resolve
         disp._run_bundled = fake_run_bundled
+        disp.resolve = lambda _binary: "/fake/bin"
         try:
             user_out = str(tmp_path / "preferred_out")
             (tmp_path / "image.raw").write_bytes(b"x")
@@ -209,6 +213,7 @@ class TestOutputDirInjection:
             assert user_out in captured["argv_tail"]
         finally:
             disp._run_bundled = original
+            disp.resolve = original_resolve
 
 
 class TestInvalidCaseId:

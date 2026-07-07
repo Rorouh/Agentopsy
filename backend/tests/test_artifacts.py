@@ -6,6 +6,7 @@ import hashlib
 import json
 
 import pytest
+from _symlink_support import requires_symlinks
 
 from forensia.artifacts.store import ArtifactStore, OutputFile
 from forensia.cases.manager import CaseManager
@@ -140,6 +141,7 @@ class TestFinalizeRun:
         of = run.output_files[0]
         assert of.sha256 == hashlib.sha256(b"nested-payload").hexdigest()
 
+    @requires_symlinks
     def test_finalize_run_skips_symlinks_in_out(self, store, case, tmp_path):
         run_id, out_dir = store.start_run(case.id, "tool_x", argv=["x"])
         real = out_dir / "real.csv"

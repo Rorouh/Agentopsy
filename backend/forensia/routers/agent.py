@@ -1,21 +1,31 @@
 """Chat / agent-query HTTP surface.
 
-Thin adapter (CLAUDE.md RULE 3) that picks the right execution path per request:
+Thin adapter (CLAUDE.md RULE 3): validates the operator's selections and hands
+off to ``ForensicAgent.run`` through the executor the operator chose for the
+request. RULE 2 — nothing is inferred:
 
-- If ``MODEL_BACKEND=cloud`` + a valid OpenAI key + ``MODEL_NAME`` are set, drives
-  the real ``ForensicAgent.run`` loop (LLM-driven, with tool-calling over the
-  package allowlist; see ``forensia.agent.agent``).
-- Otherwise falls back to a deterministic keyword-matched demo loop so the
-  dispatcher wiring still proves end-to-end against the registered evidence.
-- If neither path can run (no case anchor, no keyword match, no model), returns
-  the listing skeleton so the UI shows what WOULD be available.
+- no ``case_id`` / ``evidence_id``  → 422 with the missing selection named,
+- no ``executor`` in the request and no ``DEFAULT_EXECUTOR`` explicitly set by
+  the user in Settings → 422 listing the valid executors,
+- executor selected but unusable (binary missing, no session, Ollama
+  unreachable) → 503 with the actionable reason — never a substitute,
+- cloud-backed executor selected without recorded consent for this case →
+  403 (SECURITY INVARIANT 7 / RGPD): the UI warns and records consent, and this
+  gate makes an API client unable to bypass that warning.
+
+The old keyword demo loop and the listing-skeleton fallback are gone: both were
+silent degradations that RULE 2 forbids.
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
+import threading
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from forensia.agent.agent import ForensicAgent
@@ -24,32 +34,15 @@ from forensia.agent.registry import agent_registry
 from forensia.audit.log import AuditLog
 from forensia.cases.manager import case_manager
 from forensia.config import config
+from forensia.consent import get_cloud_consent, record_cloud_consent
 from forensia.evidence import evidence_manager
-from forensia.models.base import get_backend
+from forensia.executors import EXECUTOR_IDS, get_executor
+from forensia.models.base import ExecutorBackend
 from forensia.security import require_token
-from forensia.toolkit.dispatcher import ToolExecutionError, execute as dispatch_tool
 
 router = APIRouter()
 
 _VALID_OS_PROFILES = frozenset({"unix", "windows"})
-
-_TOOLS_WITH_IMAGE_PATH = frozenset(
-    {"tsk_mmls", "tsk_fls", "tsk_mactime", "ewf_info", "bulk_extractor"}
-)
-_TOOLS_WITH_DUMP_PATH = frozenset({"volatility3"})
-
-_DEMO_ROUTES: tuple[tuple[tuple[str, ...], str, dict[str, Any]], ...] = (
-    (("volcado", "memoria", "ram", "memory", "proceso", "pslist"),
-     "volatility3", {"plugin": "linux.pslist.PsList"}),
-    (("particion", "particiones", "tabla de particiones", "partitions", "mmls"),
-     "tsk_mmls", {}),
-    (("ficheros", "archivos", "lista", "fls"),
-     "tsk_fls", {"recursive": False}),
-    (("ewf", "metadatos", "info imagen", "case info"),
-     "ewf_info", {}),
-    (("carving", "bulk", "ioc", "iocs", "emails", "urls"),
-     "bulk_extractor", {}),
-)
 
 
 class QueryRequest(BaseModel):
@@ -57,6 +50,11 @@ class QueryRequest(BaseModel):
     evidence_id: str | None = None
     case_id: str | None = None
     prompt: str
+    # Executor selected by the OPERATOR for this request:
+    # "claude-code" | "codex" | "gemini" | "ollama". When absent, the only
+    # accepted source is DEFAULT_EXECUTOR — set EXPLICITLY by the user in
+    # Settings (that is operator agency, not a code-invented default).
+    executor: str | None = None
     # Chat session within the case. The backend reads ``ChatStore`` (case_dir
     # /chats/<session_id>.jsonl) to splice prior user/assistant turns + a
     # tool-runs ledger + a findings ledger into the agent's messages BEFORE
@@ -66,8 +64,16 @@ class QueryRequest(BaseModel):
     session_id: str = "main"
 
 
-@router.post("/api/agent/query", dependencies=[Depends(require_token)])
-def query(req: QueryRequest) -> dict:
+def _prepare_run(req: QueryRequest) -> tuple[ForensicAgent, str, list, str | None, dict]:
+    """Validate the request and build the agent (shared by /query and /query/stream).
+
+    Returns ``(agent, prompt, prior_messages, consent_ref, meta)``; raises
+    ``HTTPException`` with the actionable reason on any RULE-2 / consent /
+    availability failure — identical checks for both surfaces so the streaming
+    path can't bypass them (SECURITY INVARIANT 7). ``consent_ref`` is the
+    ``entry_hash`` of the recorded consent for a cloud executor (``None`` for a
+    local one): ``ForensicAgent.run`` refuses a cloud run without it, so the
+    ref MUST reach the ``agent.run`` call."""
     prompt = (req.prompt or "").strip()
     if not prompt:
         raise HTTPException(status_code=422, detail="prompt is empty")
@@ -78,76 +84,167 @@ def query(req: QueryRequest) -> dict:
             detail=f"os_profile must be one of {sorted(_VALID_OS_PROFILES)}, "
                    f"got {req.os_profile!r}",
         )
+    if not req.case_id:
+        raise HTTPException(
+            status_code=422,
+            detail="case_id is required: selecciona un caso antes de consultar al "
+                   "agente (FORENSIA no asume 'el único caso' — RULE 2).",
+        )
+    if not req.evidence_id:
+        raise HTTPException(
+            status_code=422,
+            detail="evidence_id is required: selecciona una evidencia registrada en "
+                   "el caso (FORENSIA no asume 'la última registrada' — RULE 2).",
+        )
+
+    executor_id = req.executor or config.get("DEFAULT_EXECUTOR")
+    if not executor_id:
+        raise HTTPException(
+            status_code=422,
+            detail="executor is required: selecciona un ejecutor "
+                   f"({' | '.join(EXECUTOR_IDS)}) en la petición, o fija "
+                   "DEFAULT_EXECUTOR explícitamente en Settings. FORENSIA no "
+                   "elige uno por ti (RULE 2).",
+        )
+    try:
+        executor = get_executor(str(executor_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    availability = executor.is_available()
+    if not availability.available:
+        raise HTTPException(status_code=503, detail=availability.reason)
 
     try:
         pkg = agent_registry.get_for_profile(req.os_profile)
     except KeyError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-    # Cloud LLM path — only when fully anchored (case + evidence) AND configured.
-    if req.case_id and req.evidence_id and _cloud_ready():
-        try:
-            audit = AuditLog(case_manager.case_dir(req.case_id) / "audit.jsonl")
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
+    try:
+        audit = AuditLog(case_manager.case_dir(req.case_id) / "audit.jsonl")
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-        try:
-            model = get_backend("cloud")
-        except Exception as exc:  # noqa: BLE001 — surface config errors as 503
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
+    consent_ref: str | None = None
+    if not executor.is_local:
+        consent = get_cloud_consent(audit, req.case_id, executor.id)
+        if consent is None:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"El ejecutor '{executor.id}' está respaldado por cloud: enviará "
+                    "contenido derivado del caso (posibles datos personales) a su "
+                    "proveedor bajo tu cuenta. Falta el consentimiento registrado para "
+                    "este caso. Regístralo con POST /api/agent/cloud-consent "
+                    f'{{"case_id": "{req.case_id}", "executor": "{executor.id}"}} '
+                    "(la UI lo hace al confirmar el aviso de privacidad) antes de "
+                    "consultar — SECURITY INVARIANT 7."
+                ),
+            )
+        # The entry_hash anchors the run to the exact audit line that recorded
+        # the consent; ForensicAgent.run refuses a cloud run without it.
+        consent_ref = consent.get("entry_hash")
 
-        agent = ForensicAgent(package=pkg, model=model, evidence=evidence_manager, audit=audit)
-        # Replay prior chat history (tool ledger + findings + user/assistant
-        # text) so the agent doesn't restart from scratch every turn.
-        prior_messages = build_replay_messages(req.case_id, req.session_id)
+    run_context: dict = {
+        "audit": audit,
+        "case_id": req.case_id,
+        "temperature": float(pkg.model.temperature),
+    }
+    if executor.id == "ollama":
+        run_context["model"] = config.get("OLLAMA_MODEL") or pkg.model.name
+
+    model = ExecutorBackend(executor, run_context=run_context)
+    agent = ForensicAgent(package=pkg, model=model, evidence=evidence_manager, audit=audit)
+    prior_messages = build_replay_messages(req.case_id, req.session_id)
+    meta = {
+        "evidence_id": req.evidence_id,
+        "case_id": req.case_id,
+        "os_profile": req.os_profile,
+        "executor": {"id": executor.id, "name": executor.name, "local": executor.is_local},
+        "agent": pkg.summary(),
+    }
+    return agent, prompt, prior_messages, consent_ref, meta
+
+
+@router.post("/api/agent/query", dependencies=[Depends(require_token)])
+def query(req: QueryRequest) -> dict:
+    agent, prompt, prior_messages, consent_ref, meta = _prepare_run(req)
+    try:
+        result = agent.run(
+            prompt=prompt,
+            case_id=req.case_id,
+            evidence_id=req.evidence_id,
+            consent_ref=consent_ref,
+            prior_messages=prior_messages,
+        )
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return {
+        "status": "llm-loop",
+        "reply": result.get("reply", ""),
+        "iterations": result.get("iterations"),
+        "tool_calls": result.get("tool_calls", []),
+        **meta,
+    }
+
+
+@router.post("/api/agent/query/stream", dependencies=[Depends(require_token)])
+async def query_stream(req: QueryRequest) -> StreamingResponse:
+    """Same as /api/agent/query but streams the agent's progress as NDJSON: one JSON
+    object per line for each reasoning step / tool_call / tool_result / finding, then a
+    terminal ``{"type":"done", ...}`` carrying the final reply + metadata (so the UI can
+    persist the turn exactly like the blocking endpoint). The agent runs in a worker
+    thread; events cross to the event loop through a thread-safe queue."""
+    agent, prompt, prior_messages, consent_ref, meta = _prepare_run(req)
+
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+    _DONE = object()
+
+    def push(event: dict[str, Any]) -> None:
+        loop.call_soon_threadsafe(queue.put_nowait, event)
+
+    def worker() -> None:
         try:
             result = agent.run(
                 prompt=prompt,
                 case_id=req.case_id,
                 evidence_id=req.evidence_id,
+                consent_ref=consent_ref,
                 prior_messages=prior_messages,
+                on_event=push,
             )
+            push({
+                "type": "done",
+                "reply": result.get("reply", ""),
+                "iterations": result.get("iterations"),
+                "tool_calls": result.get("tool_calls", []),
+                **meta,
+            })
         except (KeyError, ValueError) as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
+            push({"type": "error", "detail": str(exc)})
+        except Exception as exc:  # noqa: BLE001 — surface, never hang the stream
+            push({"type": "error", "detail": f"{type(exc).__name__}: {exc}"})
+        finally:
+            loop.call_soon_threadsafe(queue.put_nowait, _DONE)
 
-        return {
-            "status": "llm-loop",
-            "reply": result.get("reply", ""),
-            "iterations": result.get("iterations"),
-            "tool_calls": result.get("tool_calls", []),
-            "evidence_id": req.evidence_id,
-            "case_id": req.case_id,
-            "os_profile": req.os_profile,
-            "agent": pkg.summary(),
-        }
+    async def ndjson():
+        threading.Thread(target=worker, name="agent-stream", daemon=True).start()
+        while True:
+            item = await queue.get()
+            if item is _DONE:
+                break
+            yield json.dumps(item, ensure_ascii=False) + "\n"
 
-    # Demo loop path — no cloud or no anchor.
-    if req.case_id and req.evidence_id:
-        choice = _choose_tool(prompt, req.os_profile)
-        if choice is not None:
-            tool_id, params = choice
-            reply, status = _run_demo_tool(
-                tool_id, params, req.case_id, req.evidence_id, pkg.name
-            )
-            return {
-                "status": status,
-                "reply": reply,
-                "evidence_id": req.evidence_id,
-                "case_id": req.case_id,
-                "os_profile": req.os_profile,
-                "agent": pkg.summary(),
-            }
-
-    # Last resort: listing skeleton.
-    reply = _skeleton_reply(pkg.name, prompt, pkg.policy.allowed_tools)
-    return {
-        "status": "skeleton",
-        "reply": reply,
-        "evidence_id": req.evidence_id,
-        "case_id": req.case_id,
-        "os_profile": req.os_profile,
-        "agent": pkg.summary(),
-    }
+    return StreamingResponse(
+        ndjson(),
+        media_type="application/x-ndjson",
+        # Defeat proxy/response buffering so events reach the browser as they happen.
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
 
 
 @router.get("/api/agents", dependencies=[Depends(require_token)])
@@ -158,124 +255,41 @@ def list_agents() -> dict:
     }
 
 
-# ---- helpers ---------------------------------------------------------
+class CloudConsentRequest(BaseModel):
+    case_id: str
+    executor: str
 
 
-def _cloud_ready() -> bool:
-    return (
-        config.get("MODEL_BACKEND") == "cloud"
-        and bool(config.get("OPENAI_API_KEY"))
-        and bool(config.get("MODEL_NAME"))
-    )
-
-
-def _choose_tool(prompt: str, os_profile: str) -> tuple[str, dict[str, Any]] | None:
-    p = prompt.lower()
-    for keywords, tool_id, base_params in _DEMO_ROUTES:
-        if any(k in p for k in keywords):
-            params = dict(base_params)
-            if tool_id == "volatility3" and os_profile == "windows":
-                params["plugin"] = "windows.pslist.PsList"
-            return tool_id, params
-    return None
-
-
-def _run_demo_tool(
-    tool_id: str,
-    params: dict[str, Any],
-    case_id: str,
-    evidence_id: str,
-    agent_name: str,
-) -> tuple[str, str]:
+@router.post("/api/agent/cloud-consent", dependencies=[Depends(require_token)])
+def cloud_consent(req: CloudConsentRequest) -> dict:
+    """Registra en el audit del caso que el operador aceptó que contenido
+    derivado del caso salga al proveedor del ejecutor cloud elegido (SECURITY
+    INVARIANT 7: la UI avisa, el audit lo registra — la evidencia puede
+    contener datos personales reales → RGPD). La UI llama aquí cuando el
+    operador confirma el aviso, ANTES del primer query con ese ejecutor."""
+    if not req.case_id:
+        raise HTTPException(status_code=422, detail="case_id is required")
     try:
-        handle = evidence_manager.get(case_id, evidence_id)
+        executor = get_executor(req.executor)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if executor.is_local:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{executor.id} es 100 % local: el contenido del caso no sale "
+                   "de la máquina y no hay consentimiento que registrar.",
+        )
+    try:
+        audit = AuditLog(case_manager.case_dir(req.case_id) / "audit.jsonl")
     except KeyError as exc:
-        return (
-            f"**No encontré la evidencia** `{evidence_id}` en el caso `{case_id}`: {exc}",
-            "demo-error",
-        )
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    evidence_path = str(handle.original_path)
-    if tool_id in _TOOLS_WITH_IMAGE_PATH:
-        params["image_path"] = evidence_path
-    elif tool_id in _TOOLS_WITH_DUMP_PATH:
-        params["dump_path"] = evidence_path
-
-    try:
-        result = dispatch_tool(tool_id, params, case_id=case_id)
-    except ToolExecutionError as exc:
-        return (
-            f"**No se pudo invocar `{tool_id}`**: {exc}\n\n"
-            "Probablemente el binario no está bundleado / en PATH todavía.",
-            "demo-error",
-        )
-    except Exception as exc:  # noqa: BLE001
-        return (
-            f"**`{tool_id}` falló durante la ejecución**: "
-            f"`{type(exc).__name__}: {exc}`",
-            "demo-error",
-        )
-
-    return _format_demo_result(agent_name, tool_id, result), "demo-dispatch"
-
-
-def _format_demo_result(agent_name: str, tool_id: str, result: dict[str, Any]) -> str:
-    parsed = result.get("parsed") or {}
-    exit_code = result.get("exit_code")
-    run_id = result.get("run_id")
-    argv = result.get("argv") or []
-
-    lines: list[str] = [
-        f"**{agent_name}** (demo loop, sin LLM — configura MODEL_BACKEND=cloud + "
-        f"OPENAI_API_KEY + MODEL_NAME para activar el agente real) invocó "
-        f"`{tool_id}` sobre la evidencia y persistió el resultado.\n",
-        f"- **Exit code**: `{exit_code}`",
-        f"- **Run ID**: `{run_id}`",
-        f"- **Argv literal**:\n  ```\n  {' '.join(argv)}\n  ```",
-    ]
-
-    if isinstance(parsed, dict):
-        if "partitions" in parsed:
-            count = parsed.get("count", 0)
-            lines.append(f"- **Particiones detectadas**: {count}")
-            for p in parsed.get("partitions", [])[:5]:
-                lines.append(
-                    f"  - slot `{p.get('slot')}`: {p.get('description')} "
-                    f"(start={p.get('start_sector')}, len={p.get('length_sectors')})"
-                )
-        elif "entries" in parsed:
-            count = parsed.get("entries_count", 0)
-            lines.append(f"- **Entradas listadas**: {count}")
-        elif "fields" in parsed:
-            lines.append(f"- **Campos extraídos**: {parsed.get('count', 0)}")
-        elif "feature_counts" in parsed:
-            total = parsed.get("total_features", 0)
-            lines.append(f"- **Features encontrados**: {total}")
-        elif "row_count" in parsed:
-            lines.append(f"- **Filas (Volatility)**: {parsed.get('row_count', 0)}")
-
-    stderr_sample = (result.get("stderr_sample") or "").strip()
-    if exit_code != 0 and stderr_sample:
-        lines.append(f"\n```\n{stderr_sample[:600]}\n```")
-
-    artifact = result.get("artifact_run") or {}
-    output_files = artifact.get("output_files") or []
-    if output_files:
-        lines.append(f"\n- **Artefactos generados**: {len(output_files)}")
-        for f in output_files[:5]:
-            lines.append(f"  - `{f.get('relpath')}` ({f.get('size')} bytes)")
-
-    return "\n".join(lines)
-
-
-def _skeleton_reply(agent_name: str, prompt: str, allowed_tools: tuple[str, ...]) -> str:
-    tools_md = "\n".join(f"- `{t}`" for t in allowed_tools)
-    return (
-        f"**{agent_name}** está cargado y conectado. No detecté ningún caso/evidencia "
-        "anclado a esta consulta o el prompt no matchea ninguna ruta del demo loop.\n\n"
-        f"He recibido tu mensaje:\n\n> {prompt}\n\n"
-        "Cuando configures cloud + API key + modelo en Settings, este agente podrá "
-        "razonar y elegir herramientas por sí mismo. Mientras tanto, allowlist "
-        "declarada en `policy/tools.yaml`:\n\n"
-        f"{tools_md}"
-    )
+    entry = record_cloud_consent(audit, req.case_id, executor.id, executor.name)
+    return {
+        "recorded": True,
+        "case_id": req.case_id,
+        "executor": executor.id,
+        "ts_utc": entry["ts_utc"],
+    }

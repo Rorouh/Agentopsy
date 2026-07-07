@@ -1,7 +1,8 @@
 # Desarrollo local
 
-Dos runtimes: backend Python (sidecar) y Electron. En dev, Electron lanza el sidecar desde
-el venv del backend (`backend/.venv`), así que solo necesitas prepararlo una vez.
+La vía del usuario final es una sola: `docker compose up --build` y trabajar en
+`http://127.0.0.1:5173`. Para desarrollar sin reconstruir imágenes, cada pieza
+también corre suelta:
 
 ## 1. Backend (una vez)
 
@@ -13,23 +14,34 @@ uv pip install -e ".[dev]"         # o: pip install -e ".[dev]"
 pytest                             # smoke + security gates
 ```
 
-El sidecar también corre suelto: `python -m forensia.server` (imprime url + token en stdout).
+El api también corre suelto: `python -m forensia.server` (imprime url + token en
+stdout; puerto efímero en 127.0.0.1).
 
-## 2. Desktop
+## 2. SPA web (contra un api local)
 
 ```bash
-cd desktop
+cd web
 npm install
-npm run dev                        # arranca Vite (5173) + Electron; Electron lanza el sidecar
+npm run dev                        # Vite en http://127.0.0.1:5173
 ```
 
-La ventana debe mostrar la plataforma, los modelos disponibles y el maletín (todo en gris/⚪
-hasta que se vendoricen las herramientas — eso es lo esperado en el esqueleto).
-
-## 3. Empaquetar (por OS/arch, en la máquina de ese OS)
+El proxy de dev de Vite (`web/vite.config.ts`) reenvía `/api` y `/ws` hacia
+`http://127.0.0.1:8000`, reproduciendo la topología del nginx del compose
+(la SPA siempre es mismo-origen con su backend). Levanta el api en ese puerto:
 
 ```bash
-cd backend && pyinstaller build/forensia.spec --noconfirm
-cp -r dist/forensia-sidecar ../desktop/resources/forensia-sidecar
-cd ../desktop && npm run dist
+cd backend && . .venv/bin/activate
+python -c "import uvicorn; from forensia.server import create_app; \
+uvicorn.run(create_app(8000), host='127.0.0.1', port=8000)"
+```
+
+La SPA obtiene el token de sesión con `GET /api/session` — no hay que copiarlo
+a mano.
+
+## 3. El stack completo (lo que ve el usuario)
+
+```bash
+docker compose up --build          # web + api + ollama + toolkit-windows + toolkit-unix
+docker compose ps                  # estado de los servicios
+docker compose logs -f api         # seguir el backend
 ```

@@ -11,10 +11,16 @@
 > con `fcntl.flock`. Tras pasar la propuesta a *app universal Windows / macOS / Linux con
 > instalable one-liner*, `fcntl` (POSIX-only) dejó de servir y el lock se migró a la lib
 > `filelock` (POSIX `fcntl` / Windows `msvcrt`) sobre un sidecar `audit.jsonl.lock`. El
-> contrato (cadena hash coherente bajo concurrencia sidecar↔MCP) y el test
+> contrato (cadena hash coherente bajo concurrencia api↔MCP) y el test
 > `test_audit_lock.py` siguen igual; lo único que cambia es el mecanismo de adquisición
 > del lock. Las menciones de `fcntl.flock` en el cuerpo histórico de este documento
 > reflejan el cierre original de S1.
+>
+> **Post-S1 update (2026-07-02, propuesta v1.2).** El despliegue pasa a **Docker Compose**
+> (el backend corre como servicio `api` en contenedor Linux; sin instalador ni PyInstaller).
+> El lock cross-platform sigue siendo necesario: la suite de tests y el servidor MCP
+> standalone corren en venv sobre los tres SOs. Las menciones a "sidecar"/"instalable" en
+> el cuerpo histórico reflejan el estado de la propuesta v1.1 en el cierre de S1.
 
 Plan operativo para construir el primer servidor MCP de FORENSIA y dejarlo demoable a los
 compañeros y al PI. Es el desglose accionable del MCP número 1 declarado en
@@ -61,7 +67,7 @@ versión del plan el 2026-06-29. Sus desacuerdos están resueltos en §2 y §8.
 | **D4** | **Pydantic `params_schema` por tool**: cada `Tool` del catálogo declara un `BaseModel` con validators tipados. El servidor MCP serializa con `model_json_schema(mode="serialization")` y aplana `$ref` antes de publicar (algunos clientes MCP no resuelven `$ref` internos). El `params_schema` es la **frontera tipada** — rechaza paths crudos a evidencia, solo acepta `evidence_id` UUID4. | **Cerrada** |
 | **D5'** | **Outputs como `resource_link` MCP**: `output_files` se devuelven como bloques `resource_link` con URI `artifact://<case_id>/<run_id>/<relpath>`. El servidor registra un handler `resources/read` que sirve los artefactos con límite de tamaño (~1 MB por read, recortado y marcado `truncated: true` si es más). Sin esto, Claude Desktop recibe strings opacos y la demo es fake. | **Cerrada** |
 | **D6** | **Transporte stdio puro**. El servidor NO abre sockets de red, verificable por test (`lsof` post-arranque). Streamable HTTP / SSE solo entran tras revisión explícita de threat model — no es decisión de implementación. | **Cerrada** |
-| **D7** | **Standalone para la demo, in-process para la integración**: la demo arranca `python -m forensia.mcp` como subproceso de Claude Desktop. En paralelo, el `ForensicAgent` propio se conectará como cliente MCP **in-process** dentro del sidecar (modificación al loop del agente). Ambos comparten el mismo `dispatcher`, `EvidenceManager`, `AuditLog` (con flock — ver L5). El standalone es modo dev/demo; no se distribuye al usuario final como binario PyInstaller separado. | **Cerrada** |
+| **D7** | **Standalone para la demo, in-process para la integración**: la demo arranca `python -m forensia.mcp` como subproceso de Claude Desktop. En paralelo, el `ForensicAgent` propio se conectará como cliente MCP **in-process** dentro del backend (`api`) (modificación al loop del agente). Ambos comparten el mismo `dispatcher`, `EvidenceManager`, `AuditLog` (con flock — ver L5). El standalone es modo dev/demo; no forma parte de los servicios del compose que usa el usuario final. | **Cerrada** |
 
 ---
 
@@ -154,9 +160,9 @@ docs/
 
 ## 6. Fuera de alcance de este sprint (S1)
 
-- ❌ Distribuir `python -m forensia.mcp` standalone como binario PyInstaller separado. Sigue siendo modo dev/demo.
+- ❌ Integrar `python -m forensia.mcp` como servicio del compose. Sigue siendo modo
+  dev/demo, arrancado desde el venv del backend por el cliente MCP externo.
 - ❌ Los demás MCPs del inventario (`mcp-mitre-attack`, `mcp-cases`, `mcp-audit`, `mcp-yara-rules`, etc.) — sprints posteriores.
-- ❌ Docker-compose como envoltorio de arranque — el servidor corre en el venv del backend.
 - ❌ Reanudar sesión MCP tras reinicio del servidor — el estado mutable es in-memory por proceso.
 - ❌ Múltiples clientes concurrentes — un servidor por cliente (Claude Desktop spawnea uno, el `ForensicAgent` in-process consume otro).
 

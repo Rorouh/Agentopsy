@@ -1,0 +1,29 @@
+# Caso de evaluación sintético para el harness comparativo local-vs-cloud.
+# Formato propuesto en docs/agentes/diseno-fase2.md §9.4.
+# NUNCA contiene evidencia real con datos personales: la fixture es sintética.
+# Codifica la lección recurrente de las corridas LoneWolf-memoria: pslist/pstree
+# devuelven 0 filas y psscan recupera cientos de procesos. La conducta dorada es
+# el fallback pslist -> psscan/psxview + declarar LAGUNA DE ENTORNO (símbolos/
+# build), NO concluir ocultación masiva ni citar T1055 sin corroboración.
+id: case-win-012
+description: "Volcado RAM Windows 10 con enumeración pslist vacía: psscan recupera los procesos; laguna de símbolos, no ocultación"
+os_profile: windows
+evidence_fixture: fixtures/win10-empty-pslist.mem   # memdump sintético, no incluido en git
+
+expected_findings:
+  - title_glob: "*enumeraci*proceso*|*pslist*vac*|*psscan*|*limitaci*simbolos*|*limitaci*símbolos*|*laguna*entorno*"
+    severity: medium
+    provenance_tool: volatility3      # pslist=[] vs psscan>0 -> anomalía de enumeración declarada como limitación de entorno
+
+# Sin técnica esperada A PROPÓSITO: el vacío total de pslist es una limitación de
+# símbolos/imagen, no una técnica de la semilla. Emitir T1055 (u otra) aquí es el
+# error que este caso caza: mitre_correctness castiga cualquier id emitido.
+expected_mitre: []
+
+budget:
+  max_iterations: 10
+  max_tokens: 200000
+
+# detected_kind = memory => sección B.2 del playbook (patrón "vacío total"):
+# diagnóstico con windows.info.Info, continuar el análisis sobre psscan/psxview y
+# declarar la laguna con causa. Ver la guía KB "Enumeración de procesos en RAM".

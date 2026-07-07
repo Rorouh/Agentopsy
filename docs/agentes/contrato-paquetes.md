@@ -1,13 +1,13 @@
 # FORENSIA — Paquetes de agente entrenado
 
 Este documento describe el **contrato** que FORENSIA exige al equipo que entrena
-el agente forense, cómo el sidecar descubre los paquetes y cómo el desktop los
-conecta. El catálogo de herramientas y los invariantes forenses están en otros
-documentos; aquí sólo se trata el **agente**.
+el agente forense, cómo el backend (servicio `api`) descubre los paquetes y cómo
+la UI web los conecta. El catálogo de herramientas y los invariantes forenses
+están en otros documentos; aquí sólo se trata el **agente**.
 
 > Carpeta de entrega en repo: [`agentes/`](../agentes/README.md). Los paquetes
 > `forensia-unix/` y `forensia-windows/` ahí dentro son la referencia ejecutable
-> del contrato (se cargan tal cual al arrancar el sidecar en dev). Junto a ellos
+> del contrato (se cargan tal cual al arrancar el `api` en dev). Junto a ellos
 > convive el pack de síntesis `_orchestrator/`, que NO es un agente: la registry
 > lo ignora por su prefijo `_` (ver §5).
 
@@ -18,9 +18,14 @@ Mantenemos **UN ForensicAgent** parametrizado por `os_profile`
 perfil es el **paquete** cargado:
 
 - los prompts (system / identity / playbook),
-- el `model.backend` (local Ollama por defecto, cloud opt-in),
+- los parámetros de generación (temperatura, tope de iteraciones del loop),
 - la allowlist de herramientas (subset del catálogo),
-- las políticas de redacción aplicadas antes de cloud.
+- las políticas de redacción aplicadas antes de que una salida cruce a un
+  ejecutor respaldado por cloud o al wire MCP.
+
+El **ejecutor** (Claude Code / Codex CLI / Gemini CLI / Ollama) NO lo declara el
+paquete: lo elige el operador en runtime, explícitamente y por caso (RULE 2 —
+sin selección, error accionable; ver `arquitectura.md` §5).
 
 Por eso la carpeta es declarativa: el entrenador no escribe Python. Sólo deja
 ficheros legibles que el loader valida.
@@ -60,8 +65,8 @@ es estricto:
 | `version` | string | semver |
 | `os_profile` | enum | `unix` \| `windows` |
 | `authors` | list[string] | opcional; el equipo humano, NO atribución a IA (CLAUDE.md RULE 0) |
-| `model.backend` | enum | `local` \| `cloud` |
-| `model.name` | string | id de Ollama (`llama3.1:8b`) o id cloud (`claude-opus-4-7`) |
+| `model.backend` | — | **eliminado en v1.2**: el ejecutor lo selecciona el operador en runtime (RULE 2); el paquete no puede fijarlo |
+| `model.name` | string | modelo recomendado para el ejecutor `ollama` (`llama3.1:8b`); los ejecutores CLI usan el modelo de la suscripción del usuario |
 | `model.temperature` | number | `[0.0, 2.0]` |
 | `model.max_iterations` | int | `[1, 100]`. Tope del loop tool-use |
 | `prompts.{system,identity,playbook}` | string | path RELATIVO al directorio del agente; no se permite `..` ni absolutos |
@@ -73,9 +78,9 @@ campo concretos (CLAUDE.md RULE 2 — sin fallbacks).
 
 ## 4. Cómo lo descubre FORENSIA
 
-1. El proceso principal de Electron lanza el sidecar con
-   `FORENSIA_AGENTS_DIR=<resourcesPath>/agentes` (packaged) o `<repo>/agentes`
-   (dev).
+1. El compose monta `agentes/` del repo en el servicio `api`
+   (`FORENSIA_AGENTS_DIR` permite sobreescribir la ruta; en dev con venv,
+   `python -m forensia.server` lee `<repo>/agentes`).
 2. Al importar `forensia.agent.registry`, `AgentRegistry` escanea ese directorio:
    - cada subdirectorio que NO empiece con `.` o `_` pasa por
      `forensia.agent.loader.load_package`,
@@ -84,8 +89,8 @@ campo concretos (CLAUDE.md RULE 2 — sin fallbacks).
      del catálogo) se loguean como error y se IGNORAN — un paquete malo no debe
      impedir cargar los buenos —,
    - **dos paquetes válidos con el mismo `os_profile`** → `AgentRegistryError`
-     fatal: el sidecar no arranca hasta que la operadora resuelva la ambigüedad.
-3. `/api/capabilities` y `/api/agents` exponen el resultado al desktop. La UI
+     fatal: el `api` no arranca hasta que la operadora resuelva la ambigüedad.
+3. `/api/capabilities` y `/api/agents` exponen el resultado a la UI web. La UI
    muestra el agente activo en el header del chat y degrada explícitamente si
    no hay paquete para el perfil del caso.
 
@@ -113,15 +118,17 @@ custodia), no sobre la imagen cruda; por eso no encaja en el enum
 
 ## 6. Selección del agente en la UI
 
-El chat usa el agente del `os_profile` activo. Por ahora:
+El chat usa el agente del `os_profile` activo:
 
-- Sin caso seleccionado: usa el perfil que coincide con el host (mac/linux →
-  `unix`; win32 → `windows`).
-- Con caso seleccionado (cuando la UI lo conecte): usa el `os_profile` del caso.
+- El perfil lo fija el **caso seleccionado** (`os_profile` de `case.json`). Sin
+  caso seleccionado no hay perfil activo: la UI exige crear o seleccionar un
+  caso antes de consultar al agente. El perfil **nunca se infiere** — ni del
+  host ni de la evidencia (RULE 2; el triage solo *sugiere*, ver §6.1).
 
 Si no hay agente cargado para ese perfil, `/api/agent/query` responde 503 y el
 chat muestra: *"No hay agente cargado para el perfil `unix`. Suelta su carpeta
-dentro de `agentes/` y reinicia FORENSIA"*. **Nunca** se inventa un fallback.
+dentro de `agentes/` y reinicia el servicio `api`"*. **Nunca** se inventa un
+fallback.
 
 ### 6.1 Guard rail de perfil + triage de evidencia
 
@@ -187,8 +194,8 @@ no confíes en input no verificado. El frontend solo envía `session_id`.
 
 Desde la rama `mcp`, el `dispatcher` tiene **dos clientes posibles**:
 
-1. **El `ForensicAgent` propio** (vía `/api/agent/query` del sidecar HTTP) —
-   llamado por la UI Electron. Camino que esta sección describe.
+1. **El `ForensicAgent` propio** (vía `/api/agent/query` del servicio `api`) —
+   llamado por la UI web. Camino que esta sección describe.
 2. **Cualquier cliente MCP externo** (Claude Desktop, Continue, Cline,
    agente custom) vía el servidor `mcp-toolkit` (`python -m forensia.mcp`).
 
@@ -209,10 +216,10 @@ servidor, unificando ambos caminos.
 ## 7. Cómo lo entrega el equipo de entrenamiento
 
 1. Empaqueta su carpeta `<id>/` con el layout de arriba.
-2. La sube al repo bajo `agentes/<id>/`, o se entrega out-of-band y se copia
-   antes del `electron-builder` (que ya bundlea `agentes/` vía
-   `extraResources`).
-3. Reinicia el desktop. El badge "Agente activo" en el chat lo confirma.
+2. La sube al repo bajo `agentes/<id>/`, o se entrega out-of-band y se copia en
+   `agentes/` — el compose la monta tal cual en el servicio `api`.
+3. Reinicia el backend (`docker compose restart api`). El badge "Agente activo"
+   en el chat lo confirma.
 
 ## 8. Estado actual del esqueleto
 
@@ -220,11 +227,12 @@ servidor, unificando ambos caminos.
   `backend/tests/test_agent_registry.py`.
 - **`ForensicAgent`**: acepta `AgentPackage` y expone su allowlist; el loop de
   razonamiento sigue siendo `NotImplementedError` (ver CLAUDE.md "Status").
-- **`/api/agent/query`**: devuelve un envelope estructurado *skeleton* que
-  prueba la carga del paquete y lista las tools permitidas. El contrato
-  (request/response) ya es el definitivo; cuando aterrice el loop real sólo
-  cambia el cuerpo de la respuesta.
+- **`/api/agent/query`**: ejecuta el loop real con el ejecutor que el operador
+  seleccionó en la petición (`executor: claude-code | codex | gemini | ollama`,
+  o `DEFAULT_EXECUTOR` fijado explícitamente en Settings). Sin caso, evidencia
+  o ejecutor seleccionados → 4xx accionable; ejecutor inutilizable → 503 con la
+  dependencia que falta (RULE 2).
 - **`/api/agents`**: lista paquetes cargados + raíz de `agentes/`.
-- **Desktop**: ChatPage muestra el agente activo o el aviso de "sin agente".
-- **`electron-builder`**: incluye `../agentes` en `extraResources` y
-  `asarUnpack`.
+- **UI**: ChatPage muestra el agente activo o el aviso de "sin agente".
+- **Compose**: el compose raíz monta `./agentes` read-only en el servicio `api`
+  (`/opt/forensia/agentes`, vía `FORENSIA_AGENTS_DIR`) — hecho el 2026-07-02.

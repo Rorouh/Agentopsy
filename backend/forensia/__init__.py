@@ -1,4 +1,4 @@
-"""FORENSIA — AI-assisted post-mortem digital forensics (desktop sidecar)."""
+"""FORENSIA — AI-assisted post-mortem digital forensics (self-hosted, Docker Compose)."""
 
 from forensia._version import __version__
 

@@ -1,0 +1,7 @@
+{
+  "sha256": "d9d08eabe8008bccc1c6252364fff6c5f2685257f727d12e2dfa2bdda609f8f9",
+  "size": 1189085184,
+  "detected_os": "unix",
+  "detected_kind": "disk",
+  "triage_signals": ["ext_magic"]
+}

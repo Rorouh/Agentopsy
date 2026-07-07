@@ -110,7 +110,7 @@ Ejemplos (uno por herramienta):
 docker compose exec toolkit-windows sh -c "rip.pl -r /evidence/Windows/System32/config/SOFTWARE -f software > /cases/software.txt"
 
 # hayabusa — timeline de eventos con reglas Sigma a CSV
-docker compose exec toolkit-windows hayabusa csv-timeline -d /evidence/Logs -r "$HAYABUSA_RULES" -o /cases/hayabusa.csv
+docker compose exec toolkit-windows hayabusa csv-timeline -d /evidence/Windows/System32/winevt/Logs -o /cases/hayabusa.csv -w
 
 # chainsaw — hunt sobre EVTX con reglas + mapping Sigma
 docker compose exec toolkit-windows chainsaw hunt /evidence/Logs -s "$CHAINSAW_RULES" --mapping "$CHAINSAW_MAPPING"
@@ -130,6 +130,19 @@ docker compose exec toolkit-windows prefetch.py -c -f /evidence/Windows/Prefetch
 # hindsight.py — forense del navegador (perfil de Chrome montado)
 docker compose exec toolkit-windows hindsight.py -i "/cases/mnt/Users/jdoe/AppData/Local/Google/Chrome/User Data/Default" -o /cases/hindsight
 ```
+
+> **Defectos del self-test 2026-07-01 — CORREGIDOS y revalidados en Linux el
+> 2026-07-04 (retest 0 FAIL con evidencia Win7):** `evtx_dump` (el wheel de PyPI
+> `python-evtx==0.8.1` referencia un módulo `scripts` que no empaqueta) se
+> sustituyó por un wrapper vendorizado en el Dockerfile sobre la librería
+> `Evtx`; `hayabusa` (el binario gnu `v3.9.0` requiere GLIBC ≥ 2.38 y
+> `ubuntu:22.04` trae 2.35) se cambió al build **musl** estático de la misma
+> versión; y `hindsight.py` (`pyhindsight` importa `ccl_chromium_reader`, no
+> publicado en PyPI) se resolvió instalando esa dependencia desde su repo git
+> fijada por commit, lo que a su vez exigió actualizar pip en la imagen (el
+> pip 22.0.2 de Ubuntu siembra el build-isolation con setuptools 59.6,
+> anterior a PEP 621, y los paquetes solo-`pyproject.toml` construían como
+> `UNKNOWN`).
 
 ## Artefactos Unix-like — maletín `toolkit-unix`
 
@@ -176,8 +189,10 @@ docker compose exec toolkit-unix vol -f /evidence/memoria_linux.lime linux.pslis
 | Ubuntu (base) | 22.04 | imagen oficial |
 | plaso / TSK / bulk_extractor / libewf | PPA `gift/stable` | repositorio GIFT |
 | Volatility 3 | 2.28.0 | PyPI |
-| hayabusa | 3.9.0 | release GitHub (Yamato-Security) |
+| hayabusa | 3.9.0 (build musl) | release GitHub (Yamato-Security) |
 | chainsaw | 2.16.0 | release GitHub (WithSecureLabs) |
+| pip (dentro de la imagen) | 26.1.2 | PyPI (sustituye al 22.0.2 de Ubuntu) |
+| ccl_chromium_reader | commit `b51a01c` | repo git (cclgroupltd, sin tags) |
 
 Las versiones de hayabusa, chainsaw y Volatility se pasan como `--build-arg`
 desde `docker-compose.yml`; los binarios descargados se verifican por SHA-256

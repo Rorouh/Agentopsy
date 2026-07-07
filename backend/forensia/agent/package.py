@@ -17,8 +17,10 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class AgentPackageModel:
-    backend: str          # "local" | "cloud"
-    name: str             # ej. "llama3.1:8b" (Ollama) o "claude-opus-4-7" (cloud)
+    # El EJECUTOR no se declara aquí: lo selecciona el operador en runtime
+    # (contrato v1.2, RULE 2). `name` es el modelo recomendado para el ejecutor
+    # `ollama`; los ejecutores CLI usan el modelo de la suscripción del usuario.
+    name: str             # ej. "llama3.1:8b"
     temperature: float
     max_iterations: int   # tope del loop tool-use (safety)
 
@@ -73,7 +75,6 @@ class AgentPackage:
             "os_profile": self.os_profile,
             "authors": list(self.authors),
             "model": {
-                "backend": self.model.backend,
                 "name": self.model.name,
                 "temperature": self.model.temperature,
                 "max_iterations": self.model.max_iterations,

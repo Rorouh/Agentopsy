@@ -17,7 +17,8 @@
    declarativo (`agentes/<id>/`), `loader` + `registry` validados con tests,
    `ForensicAgent` (con el loop en `NotImplementedError`), el contrato
    `/api/agent/query`, el catálogo de herramientas con `dispatcher` *shell-free*
-   anclado a caso (audit + artifacts), y la capa de modelos `local|cloud`.
+   anclado a caso (audit + artifacts), y la interfaz de la capa de ejecución
+   (los cuatro ejecutores: Claude Code / Codex CLI / Gemini CLI / Ollama).
 2. El repo **colapsó deliberadamente** "orquestador + 2 sub-agentes" en **UN
    `ForensicAgent` parametrizado por `os_profile`**. No hay dos agentes paralelos
    en código; lo que cambia por perfil es una **carpeta declarativa**.
@@ -45,21 +46,21 @@
 | Paquete declarativo de agente | **Hecho** (schema + validación + tests) | `agentes/README.md`, `backend/forensia/agent/{package,loader,registry}.py` |
 | Paquetes de agente reales (investigación) | **Hechos** (`forensia-unix`, `forensia-windows`) | `agentes/forensia-unix/`, `agentes/forensia-windows/` |
 | `ForensicAgent` (constructor + `available_tools`) | **Hecho**; `run()` → `NotImplementedError` | `backend/forensia/agent/agent.py` |
-| Contrato HTTP del chat | **Hecho** (envelope *skeleton*; request/response definitivos) | `backend/forensia/routers/agent.py` |
+| Contrato HTTP del chat | **Hecho** (exige caso + evidencia + ejecutor — RULE 2) | `backend/forensia/routers/agent.py` |
 | Catálogo + dispatcher de herramientas | **Hecho** (13 wrappers, *shell-free*, anclado a caso) | `backend/forensia/toolkit/*` |
-| Capa de modelos `local|cloud` | **Interfaz hecha**; backends reales pendientes | `backend/forensia/models/*` |
+| Capa de ejecución (antes "capa de modelos") | **Hecha** (2026-07-02) | `backend/forensia/executors/` + adapter `models/base.py` (`ExecutorBackend`) |
 | Almacenamiento caso-como-carpeta (evidence/artifacts/chats/audit) | **Hecho** | `docs/storage.md`, `backend/forensia/{cases,artifacts,chats,audit,evidence}` |
 | **Loop de razonamiento** | **Pendiente** | `ForensicAgent.run()` |
 | **Orquestador / síntesis** (informe, timeline, MITRE) | **Pendiente** (layout reservado) | `forensia.reports` (no existe aún) |
 | **RAG** | **Stub de interfaz**; catálogo en el system prompt | — |
-| **Backends de modelo reales** (Ollama / cloud) | **Pendiente** | `models/local.py`, `models/cloud.py` |
+| **Ejecutores reales** (Claude Code / Codex CLI / Gemini CLI / Ollama) | **Hechos** (2026-07-02) | `backend/forensia/executors/{claude_code,codex,gemini,ollama}.py` |
 | **Pack de síntesis `_orchestrator/`** (prompts) | **Hecho** (v1) ← *mi entregable* | `agentes/_orchestrator/` |
-| **Harness de evals cloud-vs-local** | **Pendiente** (formato sin cerrar) | `agentes/*/evals/` |
+| **Harness de evals entre ejecutores** | **Pendiente** (formato sin cerrar) | `agentes/*/evals/` |
 
 **Conclusión:** no construyo desde cero. Relleno tres huecos coordinados: los
 **paquetes reales** (entrenamiento), la **especificación del loop y del
 orquestador** (para el motor), y el **plan de evaluación** (la contribución
-científica del TFM: comparativa local vs cloud).
+científica del TFM: comparativa entre los cuatro ejecutores).
 
 ---
 
@@ -133,7 +134,7 @@ redactar.
 
 Un **único** `ForensicAgent` (clase Python, ya existe) parametrizado por un
 `AgentPackage` (carpeta declarativa). Hay **un paquete por `os_profile`**; dos
-paquetes con el mismo perfil hacen fallar el arranque del sidecar (RULE 2). Los
+paquetes con el mismo perfil hacen fallar el arranque del servicio `api` (RULE 2). Los
 dos sub-agentes de la propuesta son, por tanto:
 
 ```
@@ -153,7 +154,7 @@ agentes/<id>/
 │   └── playbook.md       # heurística forense por tipo de evidencia
 ├── policy/
 │   ├── tools.yaml        # allowlist = subset del catálogo para ese os_profile
-│   └── redaction.yaml    # patrones a redactar antes de cloud
+│   └── redaction.yaml    # patrones a redactar antes de un ejecutor cloud / wire MCP
 └── evals/                # casos de prueba para el harness comparativo
 ```
 
@@ -175,7 +176,8 @@ Reparto propuesto (sobre las 13 herramientas *core* ya implementadas, ampliable)
 
 > Unix-like incluye Linux y macOS; en una fase posterior se añaden parsers
 > nativos Unix del inventario largo (`ausearch`, `journalctl`, `utmpdump`, `uac`,
-> `lynis`, `chkrootkit`) conforme se vendoricen — ver `docs/maletin/inventario-tools.md`.
+> `lynis`, `chkrootkit`) conforme se añadan a la imagen `toolkit-unix` — ver
+> `docs/maletin/inventario-tools.md`.
 
 ### 3.3 Contrato de SALIDA del sub-agente (lo que la propuesta llama "estructurar la información para que el orquestador tenga visibilidad")
 
@@ -281,7 +283,8 @@ El riesgo de que un LLM "invente" técnicas MITRE es alto. Defensa:
 
 Aunque el loop lo implementa el equipo de motor, su contrato condiciona los
 prompts, así que se fija aquí. Es un **ReAct acotado**, *provider-agnostic* vía
-`ModelBackend.next_action`:
+`PromptExecutor.next_action` (el ejecutor concreto — Claude Code, Codex CLI,
+Gemini CLI u Ollama — lo eligió el operador; el loop no lo sabe ni le importa):
 
 ```
 run(prompt, evidence_id) ->
@@ -318,7 +321,8 @@ que cumple lo que de verdad importa (seguridad forense). La postura recomendada
 es **no sustituir** uno por otro sino **estratificar**:
 
 ```
-   LLM (local Ollama | cloud)                       agnóstico de proveedor
+   LLM (vía el ejecutor elegido: Claude Code |     agnóstico de proveedor
+        Codex CLI | Gemini CLI | Ollama)
         │  next_action → ToolCall{tool_id, params}
         ▼
    ┌─────────────────────────────────────────────┐
@@ -330,7 +334,7 @@ es **no sustituir** uno por otro sino **estratificar**:
                    ▼  (in-process call, sin red)
    ┌─────────────────────────────────────────────┐
    │  dispatcher.execute(tool_id, params, case)   │  ← YA EXISTE (núcleo de seguridad)
-   │  resolver → bundled|container → shell-free   │
+   │  resolver → maletín declarado → shell-free   │
    │  → ArtifactStore + AuditLog encadenado       │
    └─────────────────────────────────────────────┘
 ```
@@ -338,8 +342,8 @@ es **no sustituir** uno por otro sino **estratificar**:
 Por qué así:
 
 - **Agnosticismo real:** MCP es el lenguaje común de tool-calling; el mismo
-  servidor sirve a un modelo cloud con tool-use nativo y a un local vía el camino
-  degradado (prompt estructurado + parser) de `models/base.py`.
+  servidor sirve a un ejecutor CLI con tool-use robusto (Claude Code, Codex,
+  Gemini) y a Ollama vía el camino degradado (prompt estructurado + parser).
 - **Cero pérdida de garantías:** el MCP server **no** ejecuta nada; delega en el
   `dispatcher`, que mantiene enum cerrada, params tipados, allowlist, `shell=False`
   y la cadena de custodia. Si el modelo (o una inyección) pide un `tool_id` fuera
@@ -362,9 +366,10 @@ Por qué así:
 
 ## 7. Contratos de datos (alineados con la UI y el almacenamiento)
 
-La UI ya define los tipos que debe rendir (`desktop/renderer/src/types/domain.ts`).
-La capa de agentes **produce** estos contratos; no se inventan formatos nuevos
-de cara al front. Mapeo:
+La UI web ya define los tipos que debe rendir (`domain.ts` del frontend React —
+`web/src/types/domain.ts`, servido por el contenedor `web` desde el 2026-07-02).
+La capa de agentes **produce** estos contratos; no se inventan formatos
+nuevos de cara al front. Mapeo:
 
 | Salida de la capa de agentes | Tipo UI (`domain.ts`) | Sección de la app |
 |---|---|---|
@@ -390,23 +395,29 @@ Notas de proyección (sub-agente/orquestador → UI):
 
 ---
 
-## 8. Modelos y agnosticismo de proveedor
+## 8. Ejecutores y agnosticismo de proveedor
 
-La capa `ModelBackend` (`backend/forensia/models/base.py`) ya declara
-**capacidades** (`supports_native_tools`, `json_mode`, `max_context`, `is_local`)
-además de `next_action`. El paquete de cada agente fija su `model.backend`
-(`local|cloud`) y `model.name`. Implicaciones para el entrenamiento:
+La interfaz de la capa de ejecución (`PromptExecutor`, heredera de
+`backend/forensia/models/base.py`) declara **capacidades**
+(`supports_native_tools`, `json_mode`, `max_context`, `is_local`) además de
+`next_action`. El **ejecutor lo elige el operador en runtime** — Claude Code
+(`claude -p`), Codex CLI (`codex exec`), Gemini CLI (`gemini -p`) u Ollama —
+nunca el paquete ni un default (RULE 2); **sin API keys**: los CLIs consumen la
+suscripción del usuario con la sesión del volumen `forensia-cli-auth` (seeded una
+vez del host o login en el contenedor).
+Implicaciones para el entrenamiento:
 
-- **Local (Ollama) por defecto** (privacidad de evidencia, RULE/GDPR). El prompt
+- **Ollama es la vía 100 % local** (privacidad de evidencia, RGPD). El prompt
   debe ser robusto en el *camino degradado*: para modelos sin tool-use nativo, el
   loop usa prompt estructurado + parser + allowlist + reintentos. Los prompts
   incluyen un formato de salida `{tool_id, params}` parseable de forma estricta.
-- **Cloud opt-in por caso**, con consentimiento registrado y **redacción previa**
-  (`policy/redaction.yaml`). Durante el desarrollo se mide con cloud (fiable) y se
-  valida local como objetivo del producto — exactamente el experimento del TFM.
-- Un mismo paquete puede evaluarse en varios modelos cambiando solo `agent.yaml`
-  + el harness; los prompts son los mismos. Eso hace la comparativa **limpia**
-  (misma variable independiente: el modelo).
+- **Ejecutor cloud = advertencia + consentimiento registrado** en el audit log y
+  **redacción previa** (`policy/redaction.yaml`). Los CLIs con tool-use robusto
+  sirven de referencia durante el desarrollo; validar Ollama como camino local es
+  parte del experimento del TFM.
+- Un mismo paquete puede evaluarse con los cuatro ejecutores cambiando solo la
+  selección en runtime + el harness; los prompts son los mismos. Eso hace la
+  comparativa **limpia** (misma variable independiente: el ejecutor).
 
 ---
 
@@ -440,7 +451,7 @@ arrancar. El `ModelBackend` ya tiene el *hook* de RAG como stub.
 
 ### 9.4 Evals — la contribución científica (cerrar el formato "pendiente")
 El harness ejecuta casos sintéticos (**nunca datos reales**, `evals/README.md`) y
-mide, **local vs cloud**, las métricas que la propuesta promete:
+mide, **entre los cuatro ejecutores**, las métricas que la propuesta promete:
 
 | Métrica | Qué mide | Cómo |
 |---|---|---|
@@ -475,7 +486,7 @@ budget:
   max_tokens: 200000
 ```
 
-La tabla comparativa resultante (local vs cloud por métrica) es el resultado
+La tabla comparativa resultante (por ejecutor y métrica) es el resultado
 publicable del TFM.
 
 ---
@@ -491,14 +502,18 @@ entrenamiento o del loop:
   dispatcher.
 - **Gate 7 (evidencia = datos):** regla explícita en `system.md` + caso de eval
   dedicado a prompt-injection desde un artefacto.
-- **Gate 9 (cloud opt-in + redacción):** `redaction.yaml` por agente; sin
-  consentimiento, 0 bytes salen.
+- **Gate 9 (ejecutor explícito; cloud → consentimiento + redacción):**
+  `redaction.yaml` por agente; sin ejecutor seleccionado no hay análisis, y sin
+  consentimiento 0 bytes salen hacia un ejecutor cloud — `/api/agent/query`
+  devuelve 403 si no hay `cloud_executor_consent` para el caso + ejecutor
+  (`forensia.consent`), no es solo un aviso de la UI.
 - **Custodia (audit encadenado):** cada finding cita `audit_seq`; el loop registra
   el `argv` literal, no la intención del modelo.
 - **Contenedores:** un sub-agente Windows que necesite `regripper`/`evtxecmd`
-  (entrega *container*) trabaja sobre **artefactos pre-extraídos** con TSK a través
-  del handle read-only — nunca monta la imagen cruda (`soundness-forense.md` §7).
-  El playbook lo refleja paso a paso.
+  (corren en el maletín `toolkit-windows`) trabaja sobre **artefactos
+  pre-extraídos** con TSK a través del handle read-only — nunca se
+  filesystem-monta la imagen cruda (`soundness-forense.md` §7). El playbook lo
+  refleja paso a paso.
 
 ---
 
@@ -515,12 +530,12 @@ antes de la versión final).
 | S3 | **Maletín MCP** | JSON Schemas de tools para los agentes | MCP server sobre dispatcher |
 | S4 | **Orquestador v1** | `_orchestrator/{reporter,timeline,mitre}.md` | `forensia.reports.{report,timeline}` |
 | S5 | **MITRE + KB/RAG** | corpus MITRE + reglas anti-alucinación | `forensia.reports.mitre` + hook RAG |
-| S6 | **Harness de evals** | casos `evals/*.yaml` + rúbricas | runner local-vs-cloud |
-| S7 | **Comparativa local vs cloud** | tabla de métricas (resultado TFM) | backends `local`/`cloud` reales |
+| S6 | **Harness de evals** | casos `evals/*.yaml` + rúbricas | runner multi-ejecutor |
+| S7 | **Comparativa entre ejecutores** | tabla de métricas (resultado TFM) | los cuatro ejecutores reales (`PromptExecutor`) |
 
 Mi siguiente paso natural tras este doc es **S1**: escribir los dos paquetes
 reales (sustituyendo los sample) y un primer `_orchestrator/`. Son ficheros
-declarativos que el sidecar carga sin más, así que dan demo inmediata aunque el
+declarativos que el `api` carga sin más, así que dan demo inmediata aunque el
 loop siga en esqueleto (el envelope ya lista la allowlist).
 
 ---
@@ -534,11 +549,12 @@ loop siga en esqueleto (el envelope ya lista la allowlist).
   (cero cambios de motor). Alternativa: extender el schema con `role:`.
 - **D-3 — MCP ahora o como capa 2.** Recomendado: diseñar schemas ya, implementar
   tras el loop nativo. El contrato `{tool_id, params}` no cambia.
-- **D-4 — Modelo local por defecto.** ¿Qué modelo Ollama fijamos como base de la
-  comparativa (p. ej. `llama3.1:8b` vs `qwen2.5:14b`)? Afecta al *camino degradado*
-  de los prompts.
+- **D-4 — Modelo Ollama de referencia.** ¿Qué modelo fijamos para el ejecutor
+  `ollama` en la comparativa (p. ej. `llama3.1:8b` vs `qwen2.5:14b`)? Afecta al
+  *camino degradado* de los prompts.
 - **D-5 — Alcance Unix-like.** ¿`unix` = solo Linux en v1, o Linux+macOS desde el
-  principio? Afecta al playbook y a qué parsers vendorizamos primero.
+  principio? Afecta al playbook y a qué parsers entran primero en la imagen del
+  maletín `toolkit-unix`.
 
 ---
 
@@ -548,13 +564,13 @@ loop siga en esqueleto (el envelope ya lista la allowlist).
 |---|---|
 | Agente orquestador | `forensia.reports` + paquete `_orchestrator/` (nivel 2) |
 | Sub-agente Windows / Unix | `agentes/forensia-windows` / `forensia-unix` (nivel 1) |
-| Maletín | `backend/forensia/toolkit/catalog.py` + `vendor/` + imágenes OCI |
+| Maletín | `backend/forensia/toolkit/catalog.py` + imágenes `toolkit-windows`/`toolkit-unix` del compose |
 | "Información estructurada" | `Finding[]` con `provenance` + `ArtifactStore` |
 | Informe / Timeline / MITRE | `ReportDocument` / `TimelineEvent[]` / `MitreTechniqueMatch[]` |
 | `[proceed-to-report]` / `[back-to-analysis]` | disparadores del nivel 2 / retorno al nivel 1 |
 
 ---
 
-*Fin del diseño de Fase 2. Los invariantes de `CLAUDE.md` (RULES 0–4),
-`modelo-amenazas.md` (gates 1–12) y `soundness-forense.md` (cadena de custodia) son
+*Fin del diseño de Fase 2. Los invariantes de `CLAUDE.md` (RULES 0–5),
+`modelo-amenazas.md` (gates 1–19) y `soundness-forense.md` (cadena de custodia) son
 condiciones de aceptación de cualquier slice descrito arriba.*

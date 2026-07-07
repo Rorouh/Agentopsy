@@ -1,0 +1,2 @@
+### dmsetup table metasploitable-root:
+0 14680064 linear 253:2 384

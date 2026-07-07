@@ -9,6 +9,7 @@ import stat
 import sys
 
 import pytest
+from _symlink_support import requires_symlinks
 
 from forensia.cases.manager import CaseManager
 from forensia.evidence import EvidenceManager
@@ -86,6 +87,7 @@ class TestRegister:
         assert src.read_bytes() == before_content == payload
         assert src.stat().st_mtime == before_mtime
 
+    @requires_symlinks
     def test_register_rejects_symlink(self, manager, case, known_file, tmp_path):
         src, _, _ = known_file
         link = tmp_path / "link_to_evidence.raw"

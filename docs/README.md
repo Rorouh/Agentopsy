@@ -4,10 +4,10 @@
 
 ## Diseño general
 
-- [`arquitectura.md`](arquitectura.md) — decisiones de arquitectura bloqueadas, capas, transporte, paquetes de agente, MCP.
-- [`modelo-amenazas.md`](modelo-amenazas.md) — superficies de ataque (sidecar HTTP, tool-calling, cloud) y gates de seguridad.
+- [`arquitectura.md`](arquitectura.md) — decisiones de arquitectura bloqueadas, servicios del compose, capas, capa de ejecución (los cuatro ejecutores), paquetes de agente, MCP.
+- [`modelo-amenazas.md`](modelo-amenazas.md) — superficies de ataque (API HTTP, tool-calling, ejecutores respaldados por cloud, sesiones CLI en el volumen `forensia-cli-auth`) y gates de seguridad 1-19.
 - [`soundness-forense.md`](soundness-forense.md) — cadena de custodia, read-only a nivel de bloque, audit log encadenado.
-- [`storage.md`](storage.md) — layout en disco (`~/.forensia/cases/<id>/`), invariantes y contratos por manager.
+- [`storage.md`](storage.md) — layout en disco caso-como-carpeta (en el compose, anclado a `./projects/`), invariantes y contratos por manager.
 
 ## Agentes
 
@@ -22,9 +22,9 @@
 
 ## Operación y estado
 
-- [`operacion/proximos-pasos.md`](operacion/proximos-pasos.md) — inventario único de deuda técnica y trabajo pendiente.
-- [`operacion/frontend-journal.md`](operacion/frontend-journal.md) — bitácora histórica de decisiones del renderer.
+- [`operacion/proximos-pasos.md`](operacion/proximos-pasos.md) — inventario único de deuda técnica y trabajo pendiente (incluye el estado del pivote 2026-07-02 a compose + ejecutores).
+- [`operacion/frontend-journal.md`](operacion/frontend-journal.md) — bitácora histórica de decisiones de la capa de presentación.
 
 ## Contexto para asistentes IA
 
-- [`ai-context/frontend.md`](ai-context/frontend.md) — contexto operativo persistente para sesiones de IA tocando el renderer.
+- [`ai-context/frontend.md`](ai-context/frontend.md) — contexto operativo persistente para sesiones de IA tocando el frontend web.

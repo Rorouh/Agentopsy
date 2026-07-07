@@ -8,7 +8,11 @@ before the agent tries to dispatch it.
 from __future__ import annotations
 
 from forensia.toolkit.catalog import BY_ID, CATALOG, by_tier, for_profile
+from forensia.toolkit.maletin import MALETINES, TOOLKIT_UNIX, TOOLKIT_WINDOWS
 from forensia.toolkit.tool import _not_built
+
+# os_profile → the maletín that must carry a tool applicable to that profile.
+_PROFILE_MALETIN = {"unix": TOOLKIT_UNIX, "windows": TOOLKIT_WINDOWS}
 
 
 # --------------------------------------------------------------------------- #
@@ -50,13 +54,23 @@ def test_core_tools_have_real_build_argv_and_parse() -> None:
         assert tool.allowed_flags, f"{tool.id} ALLOWED_FLAGS is empty"
 
 
-def test_extended_tier_tools_use_stub_for_now() -> None:
-    """Extended-tier tools are skeleton entries: they MUST keep _not_built
-    so the dispatcher fails loudly (RULE 2) if the agent picks one before it
-    is wired."""
+# Extended-tier tools not yet wired: they MUST keep _not_built so the dispatcher
+# fails loudly (RULE 2) if the agent picks one before it is implemented. As each is
+# wired (build_argv + parse + wrapper + test), remove it from this set.
+# Todas las tools extended están ya integradas (campaña de pruebas 2026-07-04).
+_EXTENDED_STILL_STUB: frozenset[str] = frozenset()
+
+
+def test_extended_tier_stubs_and_wired_are_consistent() -> None:
+    """Extended tools still in `_EXTENDED_STILL_STUB` keep the `_not_built` stub;
+    any extended tool wired since (e.g. `hashdeep`) must have a real build_argv+parse."""
     for tool in by_tier("extended"):
-        assert tool.build_argv is _not_built, f"{tool.id} should still be stub"
-        assert tool.parse is _not_built, f"{tool.id} should still be stub"
+        if tool.id in _EXTENDED_STILL_STUB:
+            assert tool.build_argv is _not_built, f"{tool.id} should still be stub"
+            assert tool.parse is _not_built, f"{tool.id} should still be stub"
+        else:
+            assert tool.build_argv is not _not_built, f"{tool.id} wired: needs real build_argv"
+            assert tool.parse is not _not_built, f"{tool.id} wired: needs real parse"
 
 
 # --------------------------------------------------------------------------- #
@@ -83,6 +97,29 @@ def test_bundled_only_tools_have_no_container_image() -> None:
         assert tool.container_image is None, (
             f"{tool.id} is bundled-only but declares a container_image"
         )
+
+
+# --------------------------------------------------------------------------- #
+# Maletín declaration (CLAUDE.md RULE 1): every tool declares where it lives
+# --------------------------------------------------------------------------- #
+def test_every_tool_declares_a_known_maletin() -> None:
+    for tool in CATALOG:
+        assert tool.toolkits, f"{tool.id} declares no maletín (toolkits empty)"
+        for tk in tool.toolkits:
+            assert tk in MALETINES, f"{tool.id} declares unknown maletín {tk!r}"
+
+
+def test_toolkits_cover_every_os_profile_the_tool_serves() -> None:
+    """A tool applicable to an OS profile must live in that profile's maletín — so a
+    windows tool ships in toolkit-windows, a unix tool in toolkit-unix, a cross tool in
+    both. (RULE 2 is enforced at resolution: a tool is never probed against a maletín it
+    does not declare here.)"""
+    for tool in CATALOG:
+        for profile in tool.os_profiles:
+            expected = _PROFILE_MALETIN[profile]
+            assert expected in tool.toolkits, (
+                f"{tool.id} serves {profile!r} but does not declare {expected!r}"
+            )
 
 
 # --------------------------------------------------------------------------- #

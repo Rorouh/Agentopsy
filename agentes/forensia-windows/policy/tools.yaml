@@ -5,6 +5,9 @@
 #   (2) declaran el os_profile "windows".
 # Si alguno no cumple, la carga del paquete falla en seco (CLAUDE.md RULE 2).
 allowed:
+  # --- Primer vistazo / probe diagnóstico (regla 9 / playbook §0) para kind unknown ---
+  - file_info           # tipo de fichero real antes de invocar tools forenses
+  - strings_head        # banners/marcadores (kernel Linux, EVTX, EnCase...) en unknown
   # --- Particiones / imagen ---
   - tsk_mmls            # tabla de particiones (no monta FS)
   - ewf_info            # metadatos del contenedor .E01

@@ -1,0 +1,32 @@
+# Caso de evaluación sintético para el harness comparativo local-vs-cloud.
+# Formato propuesto en docs/agentes/diseno-fase2.md §9.4.
+# NUNCA contiene evidencia real con datos personales: la fixture es sintética.
+# Codifica la lección recurrente de las corridas LoneWolf-memoria: el vector de
+# exfiltración a nube (cliente cloud + conexión al proveedor + documento) se veía
+# y se dejaba en severity low sin correlacionar, y el documento jamás se
+# intentaba recuperar (filescan/dumpfiles ausentes del plan).
+id: case-win-011
+description: "Volcado RAM Windows 10 con exfiltración a nube: cliente S3 activo + documento abierto + conexión establecida al proveedor"
+os_profile: windows
+evidence_fixture: fixtures/win10-cloud-exfil.mem   # memdump sintético, no incluido en git
+
+expected_findings:
+  - title_glob: "*exfiltra*nube*|*exfiltra*cloud*|*cloud*storage*|*cliente*s3*|*s3*browser*|*sincronizaci*"
+    severity: high
+    provenance_tool: volatility3      # pslist/psscan (cliente cloud) + netscan (ESTABLISHED :443 al proveedor) en la misma ventana
+  - title_glob: "*documento*memoria*|*documento*abierto*|*fichero*recuperado*|*filescan*|*dumpfiles*"
+    severity: medium
+    provenance_tool: volatility3      # windows.filescan.FileScan -> FILE_OBJECT del documento; windows.dumpfiles.DumpFiles acotado lo recupera
+
+expected_mitre:
+  - technique_id: T1567              # Exfiltration Over Web Service
+  - technique_id: T1567.002          # Exfiltration to Cloud Storage (cliente + fichero identificados)
+
+budget:
+  max_iterations: 10
+  max_tokens: 200000
+
+# detected_kind = memory => sección B del playbook. Cadena de correlación 5
+# ("Exfiltración a nube (memoria)"): proceso cloud + netscan + documento. Los
+# plugins filescan/dumpfiles son params del tool_id volatility3, no tool_ids.
+# Con un solo eslabón la severidad se queda en low (cautela de la guía KB).

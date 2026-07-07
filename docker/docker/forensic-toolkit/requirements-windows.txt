@@ -4,5 +4,12 @@
 LnkParse3            # Parser de accesos directos .lnk
 python-evtx          # Lectura/volcado de registros de eventos .evtx (evtx_dump)
 regipy               # Análisis del registro de Windows (CLI regipy-*)
+tabulate             # dependencia de regipy-dump (no declarada por el paquete regipy)
+# pyhindsight declara ccl_chromium_reader como dependencia git directa en su
+# requirements.txt; esa forma no es publicable en la metadata del wheel de PyPI,
+# así que pip no la instala y hindsight.py muere con ModuleNotFoundError
+# (FAIL 3 del self-test 2026-07-01). Se instala desde el repo oficial fijada
+# por commit (el proyecto no publica tags); arrastra ccl_simplesnappy (también git).
+ccl_chromium_reader @ git+https://github.com/cclgroupltd/ccl_chromium_reader@b51a01c913799f5af2735f964d4627275369e90e
 pyhindsight          # Forense de navegadores Chromium/Chrome (hindsight)
 windowsprefetch      # Parser de archivos Prefetch (.pf)

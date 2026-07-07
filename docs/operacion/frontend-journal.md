@@ -6,6 +6,184 @@ No reemplaza ni contradice `arquitectura.md` ni `modelo-amenazas.md`; los comple
 
 ---
 
+## Entrada 2026-07-04 — Migración visual selectiva desde `dev/local-changes`
+
+Se traslada a la SPA de `web/` la organización, jerarquía y acabado visual más reciente
+de la rama `dev/local-changes` (`desktop/renderer/src/`), usada **solo como referencia
+visual**: su lógica (Electron/IPC, `window.forensia`, `ActiveCaseContext`, diálogos
+nativos, proveedores con API keys, `caps.models`) es anterior al pivote y NO se copia.
+Backend, Docker, nginx, contratos REST, seguridad y la capa de ejecutores CLI quedan
+intactos — cero cambios fuera de `web/src/` y esta documentación.
+
+### Navegación y primera pantalla
+
+- `DEFAULT_VIEW` pasa de `guide` a `investigation`. Orden primario: Chat
+  Investigación, Casos y evidencias, Timeline, Documentos, MITRE ATT&CK; secundario:
+  Estado del Sistema, Configuración, Guía (`navigation/navItems.ts`).
+- `Sidebar.tsx`: `aria-current="page"` en el ítem activo. El footer (conexión +
+  versión) se retira; ambos datos siguen accesibles en **Estado del Sistema**, que
+  ahora recibe `isConnected`/`version` como props opcionales y los pinta en la tarjeta
+  Plataforma. `AppShell` deja de recibir `isConnected`/`version`.
+- `ChatPage.tsx` (solo copy, ownership respetado): encabezado inicial
+  "¿Qué analizamos hoy?" (fuera el nombre personal) y placeholder genérico
+  "Escribe una consulta sobre el caso". Selector de ejecutores, razones de
+  indisponibilidad, aviso cloud, consentimiento RGPD y bloqueo del envío: sin cambios.
+
+### SettingsPage: rediseño completo con pestañas
+
+`SettingsPage.tsx` se reorganiza en 4 pestañas accesibles (`tablist`/`tab`/`tabpanel`
+con `aria-selected` + `aria-controls`):
+
+1. **Ejecutores / IA** — bloque de estado de los 4 ejecutores desde `caps.executors`
+   (indicador local/cloud, disponibilidad, razón accionable), botón explícito de
+   refresh de capabilities, select de `DEFAULT_EXECUTOR`, campos `OLLAMA_HOST` /
+   `OLLAMA_MODEL` / `FORENSIA_EXECUTOR_TIMEOUT` y explicación de la sesión CLI en el
+   volumen `forensia-cli-auth` (privacidad + revocación). La lógica de guardado es la
+   misma (`api.config.get`/`set`, allowlist cerrada, `onCapsRefresh`, errores tal
+   cual); solo se añade el flash UI "✓ Guardado" por clave.
+2. **Operador y reportes** — los campos y toggles existentes, marcados con
+   `demo-banner` como vista previa sin persistencia (siguen `disabled`; no se inventa
+   persistencia). Placeholders genéricos: "Nombre completo", "Organización o
+   institución (opcional)", "Rol profesional (opcional)".
+3. **Apariencia** — ThemeToggle + tema actual + nota de persistencia `localStorage`.
+4. **Sistema** — seguridad/privacidad, diagnóstico (versión incluida), alcance
+   académico y CTA a Estado del Sistema.
+
+La prop `activeCase` de SettingsPage desaparece (solo alimentaba un `defaultValue`
+con nombre personal).
+
+### Otras pantallas
+
+- `RepositoryPage`: misma lógica y handlers (bandeja `/api/evidence/sources`,
+  `registerSelectedSource`, verify, close); visualmente el dropzone pasa a tarjeta
+  `fullWidth` arriba, labels con `htmlFor`/`id`, CTAs principales con la nueva
+  variante `primary`, placeholders genéricos ("Nombre o referencia del caso",
+  "Nombre completo", "Descripción breve del caso (opcional)", "Selecciona una fuente
+  de evidencia").
+- `Timeline`/`Documentos`/`MITRE`: banner `demo-banner` "Vista demo" porque consumen
+  mocks.
+- `GuidePage`: se conserva íntegra (comandos Docker, login CLI, revocación, avisos);
+  solo se ajusta la referencia a la pestaña "Ejecutores / IA". (La referencia visual
+  había borrado esa tarjeta; aquí se mantiene deliberadamente.)
+- Mocks: fuera "S. Bravo" y el caso aparentemente real → "Caso de demostración ·
+  Equipo comprometido" / "Analista forense".
+
+### Sistema visual
+
+Portado selectivo del CSS de referencia (no `index.css` completo): token
+`--focus-ring` (light+dark), `.btn-primary` (+ variante `primary` en `ui/Button.tsx`),
+`.demo-banner`, reglas `:focus-visible` (inputs, nav, chips, tabs), `.chip:disabled`,
+pestañas y formularios `.settings-tabs`/`.settings-tab`/`.settings-panel`/
+`.settings-form`/`.field-hint`/`.field-error`/`.settings-save-row`/`.settings-saved`/
+`.settings-form-error`, y el bloque de disponibilidad adaptado a ejecutores
+(`.settings-exec-*`, renombrado desde `.settings-model-*` porque aquí no hay
+"modelos/proveedores"). Se elimina `outline: none` de textarea/inputs (lo sustituye el
+foco visible). NO se porta `.input-with-toggle` (era para API keys — aquí no existen).
+CSS muerto eliminado: `.sidebar-footer`, `.system-status-indicator`,
+`.status-label-group`, `.app-version`, `.settings-grid`, `.settings-current-theme`.
+Cero hex nuevos: todo consume tokens existentes.
+
+### Verificación
+
+`npm run typecheck` limpio, `npm run build` OK (vite, 59 módulos), `git diff --check`
+sin problemas. Backend sin tocar (nada fuera de `web/` y docs). Revisión visual real a
+1440×900 en claro y oscuro (api standalone en 127.0.0.1:8000 + vite dev + Chrome
+headless): Investigación, Settings (las 4 pestañas), Casos y evidencias, Timeline,
+MITRE y Estado del Sistema — sin overflow ni textos cortados; los banners demo, el
+foco visible y la variante `primary` renderizan correctamente en ambos temas.
+
+---
+
+## Entrada 2026-07-02 (3) — Desmontaje: `desktop/` eliminado; `web/` es el único frontend
+
+Cierre del pivote: se eliminan `desktop/` (main.cjs, preload.cjs, electron-builder),
+`vendor/` + `scripts/bundle-tool.mjs`, `docker/agent/`, el spec de PyInstaller y el
+workflow `release.yml` de instaladores. En el frontend solo cambian comentarios y
+textos de UI que aún decían "sidecar"/"Electron" (client.ts, RepositoryPage,
+SystemStatusPage, domain.ts) — cero cambios de comportamiento. El job de CI `web`
+(npm ci + typecheck + build) queda como única verificación de frontend.
+
+---
+
+## Entrada 2026-07-02 (2) — Migración ejecutada: la SPA vive en `web/` y la sirve nginx
+
+La migración anunciada en la entrada anterior queda **hecha** en
+`feature/compose-y-cli-executors`:
+
+- **`desktop/renderer/` → `web/`** (raíz del repo), como app Vite + React independiente
+  con `package.json` propio (React 18 + TS + Vite, sin ninguna dependencia de Electron).
+  `desktop/` queda como código muerto hasta su borrado (paso siguiente): sus scripts ya
+  no funcionan porque el renderer se fue.
+- **`window.forensia` + `global.d.ts` → `web/src/api/client.ts` + `web/src/api/types.ts`.**
+  Todo el HTTP pasa por el cliente tipado; `ApiError` expone el `detail` accionable del
+  backend tal cual (RULE 2: no se enmascara con mensajes genéricos).
+- **Token de sesión:** la SPA lo obtiene una vez de `GET /api/session` (nuevo endpoint;
+  legible solo desde el origen exacto de la UI — CORS exacto + Host-check lo convierten
+  en capability anti-CSRF) y lo mantiene solo en memoria de la pestaña (gate 12). Si el
+  api se reinicia (401), el cliente re-bootstrapea una única vez.
+- **Misma-origen por proxy:** en producción el nginx del servicio `web` sirve `dist/` y
+  proxifica `/api` y `/ws` hacia `api:8000` reenviando el Host original del navegador
+  (el Host-check del backend sigue activo de extremo a extremo vía
+  `FORENSIA_UI_ORIGINS`); en dev, el proxy de Vite reproduce la misma topología contra
+  `127.0.0.1:8000`. La SPA nunca pelea con CORS en el camino normal.
+- **Selector de ejecutor en Investigación/Chat:** los 4 ejecutores como chips; los no
+  disponibles se deshabilitan con la razón accionable de `capabilities` como tooltip.
+  Se preselecciona `DEFAULT_EXECUTOR` solo si el usuario lo fijó en Settings. Con un
+  ejecutor cloud, banner de aviso (RGPD) y el envío queda bloqueado hasta confirmar; la
+  confirmación se registra en el audit del caso vía `POST /api/agent/cloud-consent`
+  (una vez por caso + ejecutor; `localStorage` solo como recordatorio UX).
+- **SettingsPage sin API keys:** la sección Modelos/IA pasa a Ejecutores/IA — estado de
+  los 4 con razones, select de `DEFAULT_EXECUTOR` y `OLLAMA_HOST`/`OLLAMA_MODEL`. Fuera
+  campos password, masking y la lista de modelos OpenAI.
+- **Registrar evidencia sin diálogo nativo:** `pickEvidenceFile` (Electron) se sustituye
+  por la bandeja `GET /api/evidence/sources` (`./evidence` del host, montado ro en
+  `/evidence`): el operador copia el fichero a la bandeja y lo ELIGE en la UI (RULE 2).
+- **Las 6 secciones de la propuesta** siguen navegables sin cambios de rutas: Guía,
+  Casos y evidencias, Investigación, Timeline, Documentos y MITRE ATT&CK (+ Estado del
+  sistema y Configuración). Ninguna dependía ya de Electron.
+
+Verificación: `tsc --noEmit` limpio, `vite build` OK, la imagen `forensia/web:0.1`
+compila (multi-stage node → nginx), `docker compose config` válido y la suite backend en
+verde (352 passed) incluyendo los tests nuevos de `/api/session` (Host-check),
+`/api/evidence/sources` y `cloud-consent`.
+
+---
+
+## Entrada 2026-07-02 — Pivote de arquitectura: la UI deja Electron y pasa a web app servida por el compose
+
+**Decisión de proyecto (propuesta v1.2, 2026-07-02).** Hubo un error de comunicación en
+el equipo: el pivote a "instalable nativo / Electron" no era la decisión vigente y queda
+revertido. El modelo definitivo es **autoalojado con Docker Compose**: la UI es una
+**web app React servida por el servicio `web`** del compose, usada desde el navegador en
+`http://127.0.0.1:5173`; el backend corre como servicio `api` (FastAPI); los prompts de
+Investigación se ejecutan por la capa de ejecutores elegida por el operador (Claude Code /
+Codex CLI / Gemini CLI / Ollama), **sin API keys** en el proyecto. Referencia completa:
+`CLAUDE.md`, `docs/arquitectura.md` y `FORENSIA_Alcance_y_Planificacion.md` v1.2.
+
+Qué significa para el frontend:
+
+- La cadena IPC (`window.forensia.*` → `preload.cjs` → `main.cjs` → HTTP al sidecar)
+  desaparece: la SPA hablará HTTP directamente con el servicio `api`, con CORS de origen
+  exacto + Host-header check + token de sesión solo en memoria (gates 1–3 y 12 de
+  `modelo-amenazas.md`).
+- `desktop/main.cjs` y `desktop/preload.cjs` quedan condenados: **no añadir canales IPC
+  nuevos**. El código React (`desktop/renderer/src/`) se conserva y migra al servicio
+  `web`; la migración es trabajo en curso en la rama `feature/compose-y-cli-executors`.
+- El TODO de `electron-store` para persistir el tema queda anulado: `localStorage` en el
+  navegador del analista es el modelo final.
+- Sin `electron-builder`, sin firma de código multi-OS, sin auto-update: la entrega es
+  `git clone` + `docker compose up --build`.
+
+Qué NO cambia: React 18 + TypeScript + Vite, el sistema de tokens CSS con modo
+claro/oscuro, la estructura de páginas/navegación, el patrón "mocks solo en `App.tsx`",
+y el ownership de `ChatPage.tsx`.
+
+Las entradas anteriores de este journal describen el modelo Electron tal como existía en
+su momento; se conservan como histórico y no se reescriben. El contexto operativo vigente
+para sesiones nuevas está en `docs/ai-context/frontend.md`.
+
+---
+
 ## Entrada 2026-06-25 (2) — Quitar `getGreeting()` muerta en ChatPage.tsx
 
 Función definida en `ChatPage.tsx:4-9` que nunca se llamaba desde ningún lado del archivo (confirmado por búsqueda en todo `src/`). Se eliminó. Cero cambio de comportamiento — no es un refactor de la lógica de chat, solo borrar código que no se ejecutaba. `npm run typecheck` sigue limpio.

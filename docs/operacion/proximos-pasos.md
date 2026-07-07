@@ -12,10 +12,98 @@ en vez de inventar otra lista paralela.
 
 ---
 
+## Pivote 2026-07-02 — Docker Compose total + ejecutores CLI sin API keys (propuesta v1.2)
+
+Decisión definitiva del equipo (revierte el desvío a "instalable nativo / Electron",
+que fue un error de comunicación):
+
+- **Entrega**: todo el proyecto se despliega con `git clone` + `docker compose up
+  --build` y se usa desde el navegador en `http://127.0.0.1:5173`. Cinco servicios:
+  `web` (React), `api` (FastAPI), `ollama`, `toolkit-windows`, `toolkit-unix`. Sin
+  instalador nativo, sin Electron, sin PyInstaller, sin firma de código, sin
+  auto-update. Puertos publicados solo en `127.0.0.1`.
+- **Sin API keys**: los prompts de Investigación corren por el ejecutor que elige el
+  operador — Claude Code (`claude -p`), Codex CLI (`codex exec`), Gemini CLI
+  (`gemini -p`) u Ollama (HTTP al servicio del compose). Los CLIs van instalados en la
+  imagen del servicio `api` y se autentican con la sesión del volumen `forensia-cli-auth`
+  (el entrypoint la *seedea* una vez desde las credenciales del host montadas read-only
+  como staging, o el operador inicia sesión dentro del contenedor). `ANTHROPIC_API_KEY` /
+  `OPENAI_API_KEY` desaparecen del proyecto. RULE 2: sin ejecutor seleccionado → error
+  accionable, jamás un default silencioso.
+
+**Estado**: documentación realineada (raíz + `docs/`) el 2026-07-02. Trabajo de código
+pendiente, en la rama `feature/compose-y-cli-executors`:
+
+- [x] Servicios `web` / `api` / `ollama` en el compose raíz — hecho el 2026-07-02:
+      `docker-compose.yml` vive ahora en la raíz del repo y levanta los cinco
+      servicios. La imagen `api` (`docker/api/Dockerfile`) instala el backend y
+      los tres CLIs con versiones fijadas; su entrypoint seedea al volumen
+      `forensia-cli-auth` las credenciales del host montadas read-only como staging
+      (o el operador inicia sesión en el contenedor); `web` (`docker/web/`) compila la SPA de `web/` y la sirve con
+      nginx (proxy `/api`+`/ws` hacia el api) desde el 2026-07-02.
+- [x] Capa de ejecución `PromptExecutor` con los cuatro ejecutores — hecho el
+      2026-07-02: `backend/forensia/executors/` (Claude Code / Codex CLI / Gemini
+      CLI como subprocesos `shell=False` con flags verificados en la doc oficial
+      de cada CLI; Ollama por HTTP stdlib a `OLLAMA_HOST`). `models/cloud.py` y
+      `models/local.py` eliminados; `models/base.py` queda como adapter
+      (`ExecutorBackend`, camino degradado prompt estructurado + parser estricto)
+      hacia `ForensicAgent`. Cada ejecución se registra en el audit log con el
+      argv literal. `/api/agent/query` exige `executor` en la petición (o
+      `DEFAULT_EXECUTOR` fijado explícitamente por el usuario) — sin selección →
+      422 accionable; seleccionado pero inutilizable → 503 con la razón;
+      ejecutor cloud sin consentimiento registrado para el caso → **403**
+      (`forensia.consent`, gate no solo-UI; ollama nunca lo requiere). El demo
+      loop por keywords y la respuesta skeleton se eliminaron (eran degradaciones
+      silenciosas contrarias a RULE 2).
+- [ ] Volumen `forensia-cli-auth` + staging ro de credenciales CLI + exclusión del
+      volumen y del staging de `evidenceRoot` + gate 19 del modelo de amenazas (con
+      test). Seeding idempotente y `is_available()` real por CLI ya implementados y
+      testeados (2026-07-03: `test_cli_auth_seeding.py`, `test_executors.py`); pendiente
+      el test del confinamiento de paths (gate 19).
+- [x] Retirar `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` del allowlist de
+      `routers/config.py`, del código y de los tests — hecho el 2026-07-02
+      (resuelve D-3 de §7). Claves editables ahora: `DEFAULT_EXECUTOR` (opcional,
+      lo fija el usuario en Settings), `OLLAMA_HOST` y `OLLAMA_MODEL`; dependencia
+      `openai` y extra `[models]` fuera de `pyproject.toml`; test de regresión
+      (`tests/test_executors.py`) que barre `backend/` y falla si las cadenas
+      reaparecen. `capabilities` reporta los cuatro ejecutores con su razón
+      accionable cuando no están disponibles.
+- [x] Migrar la SPA React al servicio `web` — hecho el 2026-07-02:
+      `desktop/renderer/` se movió a `web/` (raíz) como app Vite independiente sin
+      Electron; la cadena `window.forensia`/IPC se sustituyó por el cliente HTTP
+      tipado (`web/src/api/client.ts`) con token de sesión obtenido de
+      `GET /api/session` (solo memoria, mismo-origen; nuevo
+      `forensia/routers/session.py` + `FORENSIA_UI_ORIGINS` en el Host-check).
+      La UI añade el selector de ejecutor con razones accionables, el aviso +
+      consentimiento cloud auditado (`POST /api/agent/cloud-consent`) y la bandeja
+      de evidencias (`GET /api/evidence/sources`, `./evidence` del host) en lugar
+      del diálogo nativo. `docker/web/` pasa de placeholder a build real
+      (node → nginx con proxy). Tests en `backend/tests/test_web_surface.py`.
+- [x] Desmontar el modelo antiguo — hecho el 2026-07-02: eliminados `desktop/`
+      (Electron main/preload, electron-builder), `docker/agent/` (`forensia_agent`
+      con providers de API keys; su orquestador/prompts/informe estaban superados
+      por `backend/forensia/agent/` + `agentes/`), `vendor/` +
+      `scripts/bundle-tool.mjs`, `backend/build/forensia.spec` (PyInstaller),
+      `scripts/build-images.sh` y `.github/workflows/release.yml` (pipeline de
+      instaladores). El resolver del toolkit ya no busca en `vendor/` ni dentro
+      del bundle PyInstaller (`bundled` = env override → PATH del host). Queda
+      `images/` (imágenes por-herramienta que el catálogo aún referencia) hasta
+      absorberlas en los maletines — ver sección A.
+
+Los ítems de las secciones siguientes que asumían el modelo anterior quedan marcados
+como **[SUPERSEDIDO]** con puntero aquí, en vez de borrarse en silencio.
+
+---
+
 ## 0. Lo que YA está hecho (estado a 2026-06-28)
 
 Resumen para que un nuevo contribuidor no repita trabajo. Detalle por slice
 en los cuerpos de commit (`git log --oneline main`).
+
+> **Nota**: snapshot previo al pivote del 2026-07-02. Las filas que citan Electron /
+> sidecar / `electron-builder` / `main.cjs` describen el modelo de entrega anterior:
+> el trabajo hecho sigue siendo real, pero esas piezas de entrega se desmontan (ver la
+> sección del pivote, arriba).
 
 | Capa | Estado |
 |---|---|
@@ -23,7 +111,7 @@ en los cuerpos de commit (`git log --oneline main`).
 | Seguridad de transporte (gates 1-3, 5) | ✅ Token + Host-header + CORS exacto + tests `test_security_gates.py`. |
 | RULE 1 (delivery: bundled \| container) | ✅ Política aceptada en `CLAUDE.md`, reflejada en catálogo, executor y resolver. |
 | Storage caso-como-carpeta | ✅ Cases / Evidence / Artifacts / Chats / Audit (hash-chained) / Findings. storage.md documentado. |
-| EvidenceManager real | ✅ Hash gate completo (stream SHA-256 → copy → re-hash → chmod 0o444 → baseline.json). `verify()` persiste a `verification.json` + apenda a `audit.jsonl`. |
+| EvidenceManager real | ✅ Hash gate completo (stream SHA-256 → copy → re-hash → chmod 0o444 → baseline.json → apend `evidence_register` al audit). `verify()` persiste a `verification.json` + apenda `evidence_verify` (expuesto en `POST /api/cases/{id}/evidence/{eid}/verify`). Ambos eventos en la cadena hash-chained (forensic invariant 4). |
 | Catálogo de tools | ✅ 16 core (incl. `file_info`, `xxd_head`, `strings_head`) + 6 extended (stubs). Wrappers reales para los 16 core. |
 | Dispatcher | ✅ Bundled + container path, con `case_id` opcional para anclar ArtifactRun + audit. |
 | Pipeline OCI | ✅ Dockerfiles `regripper`, `evtxecmd`, `mftecmd` + `scripts/build-images.sh` + bundling en `electron-builder` + loader en `main.cjs`. **Falta correr el script** (ver §1.A). |
@@ -47,25 +135,101 @@ en los cuerpos de commit (`git log --oneline main`).
 
 Ratio impacto / esfuerzo más alto. Si solo se atacan estos 4, hay demo:
 
-### A. Construir las 3 imágenes OCI
+### A. ~~Construir las 3 imágenes OCI~~ **[SUPERSEDIDO por el pivote 2026-07-02]**
 
-| | |
-|---|---|
-| **Qué** | Correr `bash scripts/build-images.sh` contra el daemon Docker / Podman del Mac de build. Produce `desktop/resources/images/{regripper,evtxecmd,mftecmd}.tar`. |
-| **Por qué** | Desbloquea `EvtxECmd` / `MFTECmd` / `RegRipper` sobre evidencia Windows real. Sin esto el agente intentará invocarlos y el wrapper container fallará con "image not found". |
-| **Dónde toca** | Solo ejecución; el código ya está. |
-| **Estimación** | 10-20 min de ejecución + ~600 MB de bandwidth (bases `mcr.microsoft.com/dotnet/runtime:8.0-alpine` + `perl:5.38-slim` + zips de EZ tools + clone de RegRipper3.0). |
-| **Dependencias** | Docker / Podman / nerdctl en PATH del build host. Conectividad a Docker Hub + GitHub + descargas de Eric Zimmerman. |
+El mecanismo de imágenes OCI sueltas (`scripts/build-images.sh` →
+`desktop/resources/images/{regripper,evtxecmd,mftecmd}.tar` cargadas por `main.cjs`)
+era parte del modelo instalable. En el modelo compose, RegRipper / EvtxECmd / MFTECmd
+viven en la imagen del maletín `toolkit-windows`, que se construye con el resto del
+stack en `docker compose up --build` (RULE 1). Trabajo restante: absorber esos
+Dockerfiles en la imagen del maletín y retirar `scripts/build-images.sh` cuando la rama
+del pivote aterrice.
 
-### B. Instalar el maletín bundled en el Mac de dev
+**Realineación del modelo + reporte — hecho el 2026-07-03** (rama
+`feature/compose-y-cli-executors`): cada entrada de `catalog.py` declara ahora en qué
+maletín vive (`toolkits=`: `toolkit-unix` / `toolkit-windows`; los tools del stage `base`
+en ambos). El nuevo `forensia.toolkit.maletin` sondea cada maletín (¿contenedor en
+ejecución? ¿binario presente?) y `capabilities` reporta por tool `{available, toolkits,
+reason}` + una sección `toolkits` con el estado de cada maletín — antes el mapa salía
+todo `false` porque el resolver miraba el `PATH` del contenedor `api` (que no lleva
+ninguna tool). RULE 2 intacta: un tool solo se resuelve contra los maletines que declara;
+sin sustituciones. La SPA (`SystemStatusPage`, `SettingsPage`) consume la nueva forma.
 
-| | |
-|---|---|
-| **Qué** | `brew install bulk_extractor yara chainsaw` + descargar hayabusa del release de GitHub a `~/bin/` (no está en homebrew). |
-| **Por qué** | Sin ellos `/api/capabilities` reporta `bulk_extractor: false`, `yara: false`, `hayabusa: false`, `chainsaw: false`. El agente los pide en su playbook y el dispatcher lanza `ToolExecutionError` por binario no resoluble. |
-| **Dónde toca** | Solo el Mac de dev. NO entra al repo. |
-| **Estimación** | 5 min. |
-| **Documentación** | Falta una sección "Setup dev local" en `scripts/dev.md` con estos comandos. Crear (estimación 5 min). |
+**Restante concreto de §A** (el sondeo lo delata ahora con razón accionable):
+- ~~**RegRipper**~~ ✅ **reconciliado (2026-07-04):** el catálogo apunta a `rip.pl` (el binario
+  real del maletín) y se retiró su `delivery`/`container_image`/`host_mounts` legacy; ahora se
+  ejecuta por el exec-agent como el resto (verificado: 7 plugins sobre las 5 hives → findings).
+- ~~**EvtxECmd / MFTECmd**~~ ✅ **absorbidos (2026-07-04):** el stage `windows` instala el
+  runtime **.NET 9** + los builds net9 de ambas tools (SHA pinneado, envueltas en scripts en el
+  PATH) con `DOTNET_EnableWriteXorExecute=0` (segfault del JIT bajo emulación QEMU). Catálogo/
+  wrappers realineados al maletín (sin `delivery`/`container_image`/`host_mounts`). Verificado:
+  EvtxECmd sobre 16 EVTX (279 eventos) y MFTECmd sobre el `$MFT` de la NIST Hacking Case (12.181
+  registros). **Con esto, las 22 tools del catálogo están operativas** — ver `docs/tools/`.
+- Retirar `scripts/build-images.sh` (ya eliminado en el desmontaje). El `delivery`/
+  `container_image` legacy del `Tool` **ya no lo usa ninguna tool del catálogo** (todas migradas
+  al maletín); queda solo el campo en la dataclass, pendiente de retirar formalmente.
+
+### B. ~~Instalar el maletín bundled en el Mac de dev~~ **[SUPERSEDIDO por el pivote 2026-07-02]**
+
+El mecanismo "bundled" (binarios en el host del desarrollador / `vendor/`) desaparece:
+la única vía de entrega de tools son las imágenes de los maletines (`toolkit-windows` /
+`toolkit-unix`) construidas por el compose, idénticas en los tres SOs del host. Trabajo
+restante: asegurar que `bulk_extractor`, `yara`, `hayabusa` y `chainsaw` están en los
+Dockerfiles de `docker/` con versión pineada, y que `capabilities` los reporta desde
+los contenedores.
+
+**Estado tras la realineación (2026-07-03):** `capabilities` ya los reporta desde los
+maletines (ver §A). El sondeo confirma `bulk_extractor` en el stage `base` y `hayabusa` /
+`chainsaw` en el stage `windows` con versión pineada. **Gap pendiente:** `yara` **no
+está** en ningún Dockerfile (ni en `base` ni en `windows`) — el catálogo lo declara core
+`("unix","windows")` pero falta instalarlo. Verificar también `xxd`/`strings` (no se
+instalan explícitamente en el stage `base`; puede que falten). Todos estos huecos los
+delata ahora el sondeo con `reason` = «binario ausente en <maletín>» en vez del antiguo
+`false` silencioso.
+
+### B.bis — Canal api→maletín (exec-agent) **[HECHO — canal + sondeo + dispatcher]**
+
+Se eligió la **opción §B (exec-agent)** frente al socket docker en `api` (§A). Montar
+`/var/run/docker.sock` en el `api` —componente que procesa evidencia hostil— equivale a
+root en el host y `:ro` sobre el socket no es una frontera real; §B evita esa escalada y
+respeta SECURITY INVARIANT 1.
+
+**Hecho:**
+
+- **Exec-agent en cada maletín** (`docker/docker/forensic-toolkit/exec_agent.py`): HTTP
+  stdlib en la red interna del compose, **sin puerto publicado** (mismo modelo de
+  confianza que `ollama`). Endpoints `GET /health`, `POST /which` (presencia de binarios)
+  y `POST /exec` (argv shell-free, `subprocess.run(..., shell=False)`); token opcional
+  `FORENSIA_EXEC_AGENT_TOKEN`. Los maletines lo arrancan con `command:` en el compose y
+  publican `FORENSIA_TOOLKIT_UNIX_URL` / `FORENSIA_TOOLKIT_WINDOWS_URL` al `api`.
+- **Sondeo migrado** (`forensia.toolkit.maletin`): `probe_service`/`probe_binaries` hablan
+  HTTP con el exec-agent en vez de `docker inspect`/`docker exec`. `capabilities` reporta
+  la disponibilidad real de cada tool con el compose por defecto — **sin socket, sin
+  cliente docker en el `api`**. Tests: `backend/tests/test_maletin.py`. Diseño y modelo de
+  amenazas: [`exec-agent.md`](exec-agent.md).
+
+- **Dispatcher unificado (Parte 2)** — `toolkit/dispatcher.py` ejecuta las tools por el
+  exec-agent: si el binario no está en el PATH del `api` (RULE 1), `execute()` selecciona
+  el maletín por `os_profile` (`_select_maletin`, sin fallback entre maletines — RULE 2) y
+  manda `[binary, *argv]` al `POST /exec` vía `maletin.run_argv_in_maletin`. Rutas sin
+  traducción: `/evidence` (ro) y `/cases` están montados en las MISMAS rutas en api y
+  maletín. Se retiró el path muerto `docker run <container_image>` (el `delivery`/
+  `container_image` legacy del `Tool` queda sin usar). `os_profile` se cablea desde los
+  dos llamadores (`agent.py`, `mcp/toolkit.py`). Verificado end-to-end sobre una imagen
+  real (`tsk_fls` → 22 entradas, ArtifactRun + audit hash-chained). Tests:
+  `backend/tests/test_dispatcher.py`. **Con esto el agente ejecuta herramientas end-to-end
+  desde el chat.**
+
+**Pendiente menor:** retirar formalmente los campos `delivery`/`container_image` del
+`Tool` y `toolkit/container.py` (hoy sin consumidores en el dispatcher; los conserva
+`test_container.py`).
+
+### B.ter — Maletines fijados a `linux/amd64` **[hecho 2026-07-03]**
+
+El PPA GIFT no publica paquetes arm64, así que `toolkit-windows` / `toolkit-unix` llevan
+`platform: linux/amd64` en el compose: en Apple Silicon corren bajo emulación
+(Rosetta/QEMU) — funcionales pero más lentos en build/análisis; en x86_64, plataforma
+nativa, sin coste. Documentado en `README.md` y `docker/README.md`.
 
 ### C. Reemplazar TSK por `dissect.target` para mounting
 
@@ -142,26 +306,25 @@ playbook**. Todos viven en `agentes/forensia-windows/prompts/playbook.md` y
 |---|---|
 | **Qué** | Botón en el banner amarillo de `InvestigationPage` que cierre el caso actual y lance el formulario de creación con `os_profile` pre-rellenado al `detected_os`. Hoy el banner es solo texto: la operadora tiene que ir a "Casos y evidencias" a mano. |
 | **Por qué** | El backend ya conoce el desajuste (`forensia.triage`) y el agente ya rechaza ejecutar tools (guard rail). Lo único que falta es bajar la fricción del flujo correcto. **RULE 2 sigue intacta**: el botón abre el formulario, no crea el caso automáticamente. |
-| **Dónde toca** | `desktop/renderer/src/pages/InvestigationPage.tsx` (botón) + `RepositoryPage.tsx` (aceptar `?prefilledProfile=…` o equivalente) + posible nuevo endpoint para "re-registrar evidencia a otro caso" si no se quiere obligar a re-hashing. |
+| **Dónde toca** | `web/src/pages/InvestigationPage.tsx` (botón) + `RepositoryPage.tsx` (aceptar `?prefilledProfile=…` o equivalente) + posible nuevo endpoint para "re-registrar evidencia a otro caso" si no se quiere obligar a re-hashing. |
 | **Estimación** | 2-3 h. |
 
-### `models.local` — Ollama (NotImplementedError hoy)
+### [HECHO 2026-07-02] Capa de ejecución (`PromptExecutor`) — sustituye a `models.local` / `models.anthropic`
+
+> **Hecho el 2026-07-02** — ver los dos ítems marcados `[x]` en el checklist del
+> pivote (arriba). Implementación en `backend/forensia/executors/`; queda como
+> registro del diseño original.
 
 | | |
 |---|---|
-| **Qué** | Implementar `LocalOllamaBackend.next_action(state, tools)` usando el camino degradado: prompt estructurado + parser + allowlist + reintentos (porque tool-calling nativo en modelos open suele ser frágil). |
-| **Por qué** | RULE de privacidad: local-first por defecto, cloud opt-in. Sin Ollama wired, "local" es ilusión. La tabla comparativa local-vs-cloud es la contribución científica del TFM. |
-| **Dónde toca** | `backend/forensia/models/local.py`. |
-| **Estimación** | 1-2 días + tests. |
+| **Qué** | Implementar la capa de ejecución del pivote 2026-07-02: interfaz `PromptExecutor` + cuatro ejecutores — Claude Code (`claude -p`), Codex CLI (`codex exec`) y Gemini CLI (`gemini -p`) como subprocesos `shell=False` dentro del servicio `api`, y Ollama por HTTP al servicio del compose con el camino degradado (prompt estructurado + parser + allowlist + reintentos, porque el tool-calling nativo en modelos open es frágil). |
+| **Por qué** | Sin API keys en el proyecto: el operador usa su propia suscripción (CLIs con la sesión del volumen `forensia-cli-auth`, seeded del host o login en el contenedor) u Ollama como vía 100 % local. La comparativa entre los cuatro ejecutores es la contribución experimental del TFM. RULE 2: sin ejecutor seleccionado → 503 accionable, jamás un default. |
+| **Dónde toca** | `backend/forensia/` (nueva capa que reemplaza `models/local.py` y `models/cloud.py`), routers, capabilities, y limpieza de `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` en `routers/config.py` + tests. Diseño en `arquitectura.md` §5 y `diseno-fase2.md` §8. |
+| **Estimación** | 2-4 días + tests (incluye la advertencia + consentimiento auditado para ejecutores respaldados por cloud — gate 9). |
 
-### `models.anthropic` (clave aceptada pero sin uso)
-
-| | |
-|---|---|
-| **Qué** | Subclase `AnthropicBackend(ModelBackend)` análoga a `CloudBackend` pero usando el SDK `anthropic`. |
-| **Por qué** | El formulario de Settings acepta `ANTHROPIC_API_KEY` (allowlist en `routers/config.py`) pero nada la consume. RULE 2 ("no fallbacks silentes") obliga: o se implementa o se quita del allowlist. |
-| **Dónde toca** | `backend/forensia/models/anthropic.py` (nuevo) + `models/base.py:get_backend()` (extender) + dependencia en `pyproject` `[models]`. |
-| **Estimación** | 3-5 h. |
+Los antiguos ítems `models.local` (Ollama `NotImplementedError`) y `models.anthropic`
+(clave aceptada sin uso) quedan absorbidos aquí: el primero se convierte en el ejecutor
+Ollama; el segundo desaparece — no habrá backend por SDK con API key (resuelve D-3 de §7).
 
 ### Páginas frontend aún mock
 
@@ -212,23 +375,27 @@ Gaps todavía abiertos:
 | Falta | Prioridad | Notas |
 |---|---|---|
 | `test_findings.py` (store + router) | Alta | Se introdujo en `b6ea63c` sin tests dedicados. Mismo patrón que `test_chats.py`. |
-| `test_cloud_backend.py` con mock OpenAI | Alta | El loop nunca se ha verificado con la API stubbed. Usar `unittest.mock` sobre `OpenAI`. |
-| `test_agent_loop.py` end-to-end con `ModelBackend` falso | Alta | Cubrir: allowlist refusal, `record_finding` intercept, evidence path injection, max_iterations cap, tool error handling. |
+| Tests de la capa de ejecución (`PromptExecutor` con los cuatro ejecutores stubbed) | Alta | Sustituye al antiguo `test_cloud_backend.py` con mock OpenAI. Cubre además RULE 2: sin ejecutor → 503; CLI sin credenciales / `ollama` caído → capability no disponible con error accionable. |
+| `test_agent_loop.py` end-to-end con `PromptExecutor` falso | Alta | Cubrir: allowlist refusal, `record_finding` intercept, evidence path injection, max_iterations cap, tool error handling. |
 | `test_config_router.py` | Media | Validación de claves no editables, valores inválidos, masking de secrets. |
 | Frontend tests (Vitest + RTL) | Media | Cero hoy. Prioritizar `RepositoryPage` y `InvestigationPage` por ser las más interactivas. |
-| Integration test E2E (sidecar real + curl) | Baja | Útil para CI pre-release; no bloquea desarrollo. |
+| Integration test E2E (servicio `api` real + curl) | Baja | Útil para CI pre-release; no bloquea desarrollo. |
 
 ---
 
-## 5. Empaquetado y distribución
+## 5. Entrega (compose)
+
+El pivote 2026-07-02 elimina esta categoría tal como estaba: **ya no hay** bundle
+PyInstaller, vendoring de binarios por OS/arch (`scripts/bundle-tool.mjs` + `vendor/`),
+pipeline de release de instaladores ni firma de código macOS/Windows. La entrega es el
+repo mismo: `git clone` + `docker compose up --build`.
 
 | | |
 |---|---|
-| **PyInstaller bundle real** | El `forensia.spec` existe pero nunca se ha construido con los `[forensics]` (volatility3, plaso) pinned. Pendiente: pin de versiones en `pyproject.toml` + `pyinstaller build/forensia.spec --noconfirm` por OS/arch. Estimación: medio día. |
-| **Vendoring real de binarios** | `scripts/bundle-tool.mjs` está cableado pero `vendor/` está vacío. Pendiente: correr el script por cada tool bundled (TSK family, libewf, libvmdk, bulk_extractor, yara, hayabusa, chainsaw, jq, file, xxd, strings, …) en cada OS/arch (mac-arm64, mac-x64, win-x64, linux-x64). Estimación: 1 día por OS/arch. |
-| **CI workflow** | `.github/workflows/ci.yml` corre ruff + pytest en matriz de OS. Pendiente: añadir `openai` a `pip install`, exigir `npm run typecheck` en el job `renderer`, opcionalmente `npm run build`. Estimación: 30 min. |
-| **Release pipeline** | `.github/workflows/release.yml` es `workflow_dispatch` manual. Funciona pero nadie lo ha ejecutado todavía. Estimación: 0 — solo correrlo y validar artefactos. |
-| **Code signing macOS / Windows** | Diferido en `arquitectura.md` §6. Solo bloqueador si hay distribución externa. |
+| **Compose raíz completo** | Servicios `web` / `api` / `ollama` junto a los dos maletines (`platform: linux/amd64` — ver §1.B.ter), con puertos publicados en `127.0.0.1`, evidencia montada `:ro`, `./projects/` como raíz de casos y credenciales CLI montadas ro. En curso en `feature/compose-y-cli-executors`. |
+| **CI workflow** | Adaptado al modelo compose el 2026-07-03: `backend` corre ruff + pytest solo en `ubuntu-latest` (el runtime son contenedores Linux — la matriz de 3 SOs pertenecía al instalable por plataforma), `web` hace `npm ci` + `npm run typecheck` + `npm run build` sobre `web/`, y el job `compose` valida `docker compose config -q` y construye las imágenes `api` + `web`. Pendiente: un job aparte (programado, no por push) que construya los maletines — su build (PPA GIFT + plaso/sleuthkit/bulk-extractor/libguestfs) es demasiado lento y frágil para cada push. |
+| **Prueba de despliegue desde cero** | En una máquina limpia por cada SO del host: `git clone` + `docker compose up --build` + flujo evidencia → informe desde el navegador. Es la prueba de release del modelo compose (sustituye a "correr `release.yml` y validar artefactos"). |
+| **Desmontaje del modelo anterior** | **Hecho el 2026-07-02**: `desktop/` (Electron), `vendor/`, `scripts/bundle-tool.mjs`, `build/forensia.spec`, `release.yml` y `docker/agent/` eliminados (detalle en la sección de desmontaje más arriba). |
 
 ---
 
@@ -236,12 +403,11 @@ Gaps todavía abiertos:
 
 | Doc | Qué actualizar |
 |---|---|
-| `CLAUDE.md` § Status | Dice "esqueleto" y "agente, RAG, model backends, real tool wrappers ... intentionally not implemented yet". Falso ahora: el agente cloud está real, los 16 wrappers están reales, el dispatcher anclado a caso está real, los findings están persistidos. Reescribir a estado actual. |
-| `docs/arquitectura.md` § 7 ("Lo que el esqueleto NO implementa todavía") | Misma desactualización. Mover ítems hechos a una sección "Lo que SÍ está implementado al 2026-06-28" y dejar solo los reales pendientes. |
-| `docs/operacion/frontend-journal.md` | Añadir entradas para el desmoqueo de Casos y evidencias, Investigación + findings panel, Settings con LLM config form. |
-| `docs/ai-context/frontend.md` | Refrescar el árbol de `src/pages/` (las pages que antes eran "mock-only" ya no lo son) y la sección "Current Technical Debt". |
-| `vendor/CATALOG.md` | Añadir `file`, `xxd`, `strings` como tools del kit core. |
-| `scripts/dev.md` | Añadir sección "Setup del maletín en dev" con los `brew install` listados en §1.B. |
+| `CLAUDE.md` § Status | Sigue diciendo "esqueleto" / "stubs" pese a que el agente, los 16 wrappers, el dispatcher anclado a caso y los findings persistidos son reales. La realineación v1.2 (2026-07-02) actualizó entrega y ejecutores pero mantuvo ese framing: reescribir a estado de implementación real. |
+| `docs/arquitectura.md` § 8 ("Lo que el esqueleto NO implementa todavía") | Misma desactualización. Mover ítems hechos a una sección "Lo que SÍ está implementado" y dejar solo los reales pendientes. |
+| `docs/operacion/frontend-journal.md` | Añadir entradas para el desmoqueo de Casos y evidencias, Investigación + findings panel, Settings con LLM config form. (La entrada del pivote 2026-07-02 ya está.) |
+| `docs/ai-context/frontend.md` | Refrescar el árbol de `src/pages/` (las pages que antes eran "mock-only" ya no lo son) y la sección "Current Technical Debt". (Realineado al modelo compose el 2026-07-02; este refresco sigue pendiente.) |
+| `scripts/dev.md` | Sección "Setup dev" apuntando al compose: los maletines se levantan con `docker compose up --build`; sin `brew install` de tools forenses en el host. |
 
 ---
 
@@ -253,7 +419,7 @@ Cosas que **no son TODO sino preguntas pendientes** para el equipo:
 |---|---|---|
 | **D-1** | ¿Conservar TSK como fallback explícito cuando se cablee `dissect.target`, o deprecar? | Abierta. |
 | **D-2** | Si el orquestador necesita `role: investigation \| synthesis` en `agent.yaml`, o seguir con el truco de prefijo `_` para que la registry lo ignore. | Cubierta en `diseno-fase2.md`. |
-| **D-3** | Anthropic backend: ¿se implementa pre-defensa o se quita del allowlist de config para que RULE 2 sea estricta? | Abierta. |
+| **D-3** | Anthropic backend: ¿se implementa pre-defensa o se quita del allowlist de config para que RULE 2 sea estricta? | **Resuelta por el pivote 2026-07-02**: sin API keys en el proyecto — se retira del allowlist. El acceso a modelos Anthropic es vía el ejecutor Claude Code con la suscripción del operador. |
 | **D-4** | El campo `os_profile` del `Case` es **frozen** hoy. ¿Permitir cambio post-creación con entrada en audit log? Caso de uso: el examinador eligió mal al crear el caso. | Abierta. |
 | **D-5** | ¿Auto-detección del `os_profile` al registrar la primera evidencia (warning, no override)? | Abierta. |
 
@@ -263,15 +429,19 @@ Cosas que **no son TODO sino preguntas pendientes** para el equipo:
 
 Orden ejecutable para llegar a una **demo end-to-end real** sobre Caso CFReDS:
 
-1. §1.B — `brew install bulk_extractor yara chainsaw` + hayabusa (5 min).
+1. Pivote — servicios `web`/`api`/`ollama` del compose raíz + capa de ejecución
+   `PromptExecutor` (ver la sección del pivote y §2). Es el bloqueador de todo lo demás.
 2. §1.D — descargar NIST Hacking Case (5-30 min).
-3. §1.A — `bash scripts/build-images.sh` (10-20 min).
-4. §6 — refrescar `CLAUDE.md § Status` y `arquitectura.md § 7` (30 min).
+3. §1.A/§1.B — completar los maletines: RegRipper / EvtxECmd / MFTECmd + bulk_extractor,
+   yara, hayabusa y chainsaw en los Dockerfiles de `docker/`, y verificar que
+   `capabilities` los reporta desde los contenedores.
+4. §6 — refrescar `CLAUDE.md § Status` y `arquitectura.md § 8` (30 min).
 5. §1.C — `dissect.target` wrapper (medio día).
 6. §2 — `forensia.reports` para cerrar el flujo análisis → informe (1-2 días).
 7. §2 — `forensia.timeline` para desmoquear TimelinePage (medio día).
-8. §3 — empezar MCP wrapper si queda tiempo (1-2 días).
+8. §3 — MCP S2 (`mcp-evidence` + agente como cliente MCP) si queda tiempo (1-2 días).
 
-Si solo hay tiempo para los puntos 1-3 + 4, hay demo de "agente investiga un
-caso real, ejecuta tools de verdad, persiste findings, todo trazable" — que es
-el corazón de la propuesta TFM.
+Si solo hay tiempo para los puntos 1-3, hay demo de "el analista despliega con un
+comando, el agente investiga un caso real por el ejecutor elegido, ejecuta tools de
+verdad en los maletines, persiste findings, todo trazable" — que es el corazón de la
+propuesta TFM.

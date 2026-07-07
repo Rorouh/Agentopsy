@@ -11,14 +11,12 @@ For each of the 13 core-tier wrappers we exercise:
       wrapper documents.
     - parse with empty stdout returns a dict (no exceptions).
 
-Container-delivered wrappers (regripper / evtxecmd / mftecmd) also have their
-host_mounts contract verified: the host key is a resolved pathlib.Path and the
-read-only mount is exposed at the documented target.
+The formerly container-delivered wrappers (regripper / evtxecmd / mftecmd) were
+realigned to the maletín exec-agent model: they no longer expose `host_mounts`, and
+`build_argv` references the real evidence/output paths instead of `/in/*` mounts.
 """
 
 from __future__ import annotations
-
-from pathlib import Path
 
 import pytest
 
@@ -27,11 +25,17 @@ from forensia.toolkit.wrappers import (
     chainsaw,
     evtxecmd,
     ewf_info,
+    foremost,
+    hashdeep,
     hayabusa,
     jq,
     mftecmd,
+    plaso_log2timeline,
+    plaso_psort,
+    qemu_nbd,
     regripper,
     tsk_fls,
+    tsk_icat,
     tsk_mactime,
     tsk_mmls,
     volatility3,
@@ -646,14 +650,30 @@ class TestChainsaw:
                 {"target_dir": "/in", "sigma_dir": "/s", "output_format": "csv"}
             )
 
-    def test_parse_detection_lines(self):
+    def test_parse_summary_from_stderr(self):
+        # Bug 007: chainsaw emite el resumen y las líneas `Created X.csv` por STDERR.
+        stderr = (
+            "[+] Loading detection rules\n"
+            "[+] Created credential_access.csv\n"
+            "[+] Created lateral_movement.csv\n"
+            "[+] 56 Detections found on 56 documents\n"
+        )
+        result = chainsaw.parse("", stderr)
+        assert result["detections"] == 56
+        assert result["categories"] == [
+            "credential_access.csv",
+            "lateral_movement.csv",
+        ]
+
+    def test_parse_detection_lines_fallback(self):
+        # Sin la línea de resumen, cae al conteo legacy de líneas `[+]`.
         sample = "[*] Loading rules\n[+] Hit one\n[+] Hit two\nrandom\n"
         result = chainsaw.parse(sample)
         assert result["detections"] == 2
 
     def test_parse_empty(self):
         result = chainsaw.parse("")
-        assert result == {"detections": 0, "lines": 0}
+        assert result == {"detections": 0, "categories": []}
 
 
 # --------------------------------------------------------------------------- #
@@ -661,8 +681,10 @@ class TestChainsaw:
 # --------------------------------------------------------------------------- #
 class TestRegripper:
     def test_build_argv_minimum_valid(self):
-        argv = regripper.build_argv({"hive_path": "/tmp/SYSTEM"})
-        assert argv == ["-r", "/in/hive"]
+        # Realineado al maletín: -r referencia la ruta real de la hive (bajo /evidence),
+        # no el mount /in/hive del difunto modelo container-por-tool.
+        argv = regripper.build_argv({"hive_path": "/evidence/hives/SYSTEM"})
+        assert argv == ["-r", "/evidence/hives/SYSTEM"]
 
     def test_build_argv_with_plugin(self):
         argv = regripper.build_argv(
@@ -710,21 +732,9 @@ class TestRegripper:
         assert result["lines"] == 0
         assert result["looks_empty"] is True
 
-    def test_host_mounts_returns_resolved_path(self, tmp_path):
-        hive = tmp_path / "SYSTEM"
-        hive.write_bytes(b"hive-data")
-        ro, rw = regripper.host_mounts({"hive_path": str(hive)})
-        assert rw == {}
-        assert len(ro) == 1
-        host_key = next(iter(ro))
-        assert isinstance(host_key, Path)
-        # resolve() returns an absolute path
-        assert host_key.is_absolute()
-        assert ro[host_key] == "/in/hive"
-
-    def test_host_mounts_list_mode_empty(self):
-        ro, rw = regripper.host_mounts({"list": True})
-        assert ro == {} and rw == {}
+    def test_no_legacy_host_mounts(self):
+        # Realineado al maletín: ya no hay host_mounts (modelo container-por-tool muerto).
+        assert not hasattr(regripper, "host_mounts")
 
 
 # --------------------------------------------------------------------------- #
@@ -733,20 +743,20 @@ class TestRegripper:
 class TestEvtxECmd:
     def test_build_argv_single_file(self):
         argv = evtxecmd.build_argv(
-            {"evtx_path": "/tmp/Security.evtx", "output_dir": "/tmp/out"}
+            {"evtx_path": "/evidence/Security.evtx", "output_dir": "/tmp/out"}
         )
-        # single .evtx selects -f
+        # single .evtx selects -f; realineado al maletín: rutas reales, no /in/evtx·/out
         assert "-f" in argv
-        assert "/in/evtx" in argv
-        assert "--csv" in argv and "/out" in argv
+        assert "/evidence/Security.evtx" in argv
+        assert "--csv" in argv and "/tmp/out" in argv
         assert "--csvf" in argv and "evtx.csv" in argv
 
     def test_build_argv_directory(self):
         argv = evtxecmd.build_argv(
-            {"evtx_path": "/tmp/logs", "output_dir": "/tmp/out"}
+            {"evtx_path": "/evidence/logs", "output_dir": "/tmp/out"}
         )
         # no .evtx suffix → -d
-        assert "-d" in argv
+        assert "-d" in argv and "/evidence/logs" in argv
 
     def test_build_argv_missing_evtx_path_raises(self):
         with pytest.raises(ValueError, match="evtx_path"):
@@ -776,23 +786,9 @@ class TestEvtxECmd:
         result = evtxecmd.parse("")
         assert result == {"summary": {}, "summary_count": 0}
 
-    def test_host_mounts(self, tmp_path):
-        evtx = tmp_path / "Security.evtx"
-        evtx.write_bytes(b"x")
-        out = tmp_path / "out"
-        out.mkdir()
-        ro, rw = evtxecmd.host_mounts(
-            {"evtx_path": str(evtx), "output_dir": str(out)}
-        )
-        assert len(ro) == 1 and len(rw) == 1
-        ro_key = next(iter(ro))
-        rw_key = next(iter(rw))
-        assert isinstance(ro_key, Path)
-        assert isinstance(rw_key, Path)
-        assert ro_key.is_absolute()
-        assert rw_key.is_absolute()
-        assert ro[ro_key] == "/in/evtx"
-        assert rw[rw_key] == "/out"
+    def test_no_legacy_host_mounts(self):
+        # Realineado al maletín: ya no hay host_mounts (modelo container-por-tool muerto).
+        assert not hasattr(evtxecmd, "host_mounts")
 
 
 # --------------------------------------------------------------------------- #
@@ -800,9 +796,10 @@ class TestEvtxECmd:
 # --------------------------------------------------------------------------- #
 class TestMftECmd:
     def test_build_argv_minimum_valid(self):
-        argv = mftecmd.build_argv({"mft_path": "/tmp/$MFT", "output_dir": "/tmp/o"})
-        assert "-f" in argv and "/in/mft" in argv
-        assert "--csv" in argv and "/out" in argv
+        argv = mftecmd.build_argv({"mft_path": "/evidence/mft/$MFT", "output_dir": "/tmp/o"})
+        # realineado al maletín: rutas reales, no /in/mft·/out
+        assert "-f" in argv and "/evidence/mft/$MFT" in argv
+        assert "--csv" in argv and "/tmp/o" in argv
         assert "--csvf" in argv and "mft.csv" in argv
 
     def test_build_argv_missing_mft_path_raises(self):
@@ -831,20 +828,257 @@ class TestMftECmd:
         result = mftecmd.parse("")
         assert result == {"summary": {}, "summary_count": 0}
 
-    def test_host_mounts(self, tmp_path):
-        mft = tmp_path / "MFT"
-        mft.write_bytes(b"x")
-        out = tmp_path / "out"
-        out.mkdir()
-        ro, rw = mftecmd.host_mounts(
-            {"mft_path": str(mft), "output_dir": str(out)}
+    def test_no_legacy_host_mounts(self):
+        # Realineado al maletín: ya no hay host_mounts (modelo container-por-tool muerto).
+        assert not hasattr(mftecmd, "host_mounts")
+
+
+# --------------------------------------------------------------------------- #
+# hashdeep
+# --------------------------------------------------------------------------- #
+class TestHashdeep:
+    def test_build_argv_minimum_valid(self):
+        argv = hashdeep.build_argv({"image_path": "/ev/img.raw"})
+        assert isinstance(argv, list) and all(isinstance(a, str) for a in argv)
+        # default algorithms md5,sha256
+        assert argv[:2] == ["-c", "md5,sha256"]
+        assert argv[-1] == "/ev/img.raw"
+
+    def test_build_argv_custom_algorithms_and_recursive(self):
+        argv = hashdeep.build_argv(
+            {"image_path": "/d", "algorithms": ["sha1", "sha256"], "recursive": True}
         )
-        assert len(ro) == 1 and len(rw) == 1
-        ro_key = next(iter(ro))
-        rw_key = next(iter(rw))
-        assert isinstance(ro_key, Path)
-        assert isinstance(rw_key, Path)
-        assert ro_key.is_absolute()
-        assert rw_key.is_absolute()
-        assert ro[ro_key] == "/in/mft"
-        assert rw[rw_key] == "/out"
+        assert "-c" in argv and "sha1,sha256" in argv
+        assert "-r" in argv
+        assert argv[-1] == "/d"
+
+    def test_build_argv_missing_image_path_raises(self):
+        with pytest.raises(ValueError, match="image_path"):
+            hashdeep.build_argv({})
+
+    def test_build_argv_invalid_algorithm_raises(self):
+        with pytest.raises(ValueError, match="algorithm"):
+            hashdeep.build_argv({"image_path": "/x", "algorithms": ["crc32"]})
+
+    def test_build_argv_non_list_algorithms_raises(self):
+        with pytest.raises(ValueError, match="list"):
+            hashdeep.build_argv({"image_path": "/x", "algorithms": "md5"})
+
+    def test_parse_csv_with_header(self):
+        sample = (
+            "%%%% HASHDEEP-1.0\n"
+            "%%%% size,md5,sha256,filename\n"
+            "## Invoked from: /cases\n"
+            "231,e54785ec,f276816f,/cases/main.sh\n"
+            "1859,04f2e2ae,b36cf9f4,/cases/config.inc.php\n"
+        )
+        out = hashdeep.parse(sample)
+        assert out["files_count"] == 2
+        assert out["algorithms"] == ["md5", "sha256"]
+        first = out["files"][0]
+        assert first["path"] == "/cases/main.sh"
+        assert first["size"] == "231"
+        assert first["hashes"] == {"md5": "e54785ec", "sha256": "f276816f"}
+
+    def test_parse_empty_returns_dict(self):
+        out = hashdeep.parse("")
+        assert out["files_count"] == 0
+        assert out["files"] == []
+
+
+# --------------------------------------------------------------------------- #
+# foremost
+# --------------------------------------------------------------------------- #
+class TestForemost:
+    def test_build_argv_minimum_valid(self):
+        argv = foremost.build_argv({"image_path": "/ev/img.raw", "output_dir": "/run/out"})
+        assert isinstance(argv, list) and all(isinstance(a, str) for a in argv)
+        # carves into a FRESH subdir (foremost refuses an existing dir)
+        assert "-o" in argv and "/run/out/foremost" in argv
+        assert "-i" in argv and "/ev/img.raw" in argv
+
+    def test_build_argv_types_and_quick(self):
+        argv = foremost.build_argv(
+            {"image_path": "/x", "output_dir": "/o", "types": ["jpg", "pdf"], "quick": True}
+        )
+        assert "-t" in argv and "jpg,pdf" in argv
+        assert "-q" in argv
+
+    def test_build_argv_missing_image_path_raises(self):
+        with pytest.raises(ValueError, match="image_path"):
+            foremost.build_argv({"output_dir": "/o"})
+
+    def test_build_argv_missing_output_dir_raises(self):
+        with pytest.raises(ValueError, match="output_dir"):
+            foremost.build_argv({"image_path": "/x"})
+
+    def test_build_argv_invalid_type_raises(self):
+        with pytest.raises(ValueError, match="type"):
+            foremost.build_argv({"image_path": "/x", "output_dir": "/o", "types": ["iso"]})
+
+    def test_parse_finished_and_markers(self):
+        sample = "Processing: /ev/img.raw\nfoundat=abc\nfoundat=def\nForemost finished at 2026\n"
+        out = foremost.parse(sample)
+        assert out["finished"] is True
+        assert out["foundat_markers"] == 2
+
+    def test_parse_empty_returns_dict(self):
+        out = foremost.parse("")
+        assert out["finished"] is False
+        assert out["foundat_markers"] == 0
+
+
+# --------------------------------------------------------------------------- #
+# tsk_icat
+# --------------------------------------------------------------------------- #
+class TestTskIcat:
+    def test_build_argv_minimum_valid(self):
+        argv = tsk_icat.build_argv({"image_path": "/ev/img.raw", "inode": 13552})
+        assert argv == ["/ev/img.raw", "13552"]
+
+    def test_build_argv_inode_as_tsk_address(self):
+        argv = tsk_icat.build_argv({"image_path": "/x", "inode": "12-128-4"})
+        assert argv[-1] == "12-128-4"
+
+    def test_build_argv_full_flags(self):
+        argv = tsk_icat.build_argv(
+            {
+                "image_path": "/x",
+                "inode": 5,
+                "partition_offset": 2048,
+                "filesystem": "ext4",
+                "image_format": "raw",
+                "recover": True,
+                "slack": True,
+            }
+        )
+        for flag in ("-o", "-f", "-i", "-r", "-s"):
+            assert flag in argv
+        assert argv[-2:] == ["/x", "5"]
+
+    def test_build_argv_missing_image_path_raises(self):
+        with pytest.raises(ValueError, match="image_path"):
+            tsk_icat.build_argv({"inode": 1})
+
+    def test_build_argv_missing_inode_raises(self):
+        with pytest.raises(ValueError, match="inode"):
+            tsk_icat.build_argv({"image_path": "/x"})
+
+    def test_build_argv_bad_inode_raises(self):
+        with pytest.raises(ValueError, match="inode"):
+            tsk_icat.build_argv({"image_path": "/x", "inode": "1; rm -rf"})
+
+    def test_build_argv_invalid_filesystem_raises(self):
+        with pytest.raises(ValueError, match="filesystem"):
+            tsk_icat.build_argv({"image_path": "/x", "inode": 1, "filesystem": "btrfs"})
+
+    def test_parse_text_file(self):
+        out = tsk_icat.parse("root:x:0:0:root:/root:/bin/bash\n")
+        assert out["is_text"] is True
+        assert out["content_length"] > 0
+        assert "root" in out["preview"]
+
+    def test_parse_empty(self):
+        out = tsk_icat.parse("")
+        assert out["content_length"] == 0
+
+
+# --------------------------------------------------------------------------- #
+# plaso_log2timeline
+# --------------------------------------------------------------------------- #
+class TestPlasoLog2timeline:
+    def test_build_argv_minimum_valid(self):
+        argv = plaso_log2timeline.build_argv({"image_path": "/ev/img.raw", "output_dir": "/run/out"})
+        assert "--storage_file" in argv and "/run/out/timeline.plaso" in argv
+        assert "--partitions" in argv and "all" in argv
+        assert argv[-1] == "/ev/img.raw"  # SOURCE positional last
+
+    def test_build_argv_partitions_and_parsers(self):
+        argv = plaso_log2timeline.build_argv(
+            {"image_path": "/x", "output_dir": "/o", "partitions": "1", "parsers": "filestat"}
+        )
+        assert "--partitions" in argv and "1" in argv
+        assert "--parsers" in argv and "filestat" in argv
+
+    def test_build_argv_missing_image_path_raises(self):
+        with pytest.raises(ValueError, match="image_path"):
+            plaso_log2timeline.build_argv({"output_dir": "/o"})
+
+    def test_build_argv_missing_output_dir_raises(self):
+        with pytest.raises(ValueError, match="output_dir"):
+            plaso_log2timeline.build_argv({"image_path": "/x"})
+
+    def test_build_argv_bad_partitions_raises(self):
+        with pytest.raises(ValueError, match="partitions"):
+            plaso_log2timeline.build_argv({"image_path": "/x", "output_dir": "/o", "partitions": "; rm"})
+
+    def test_build_argv_bad_parsers_raises(self):
+        with pytest.raises(ValueError, match="parsers"):
+            plaso_log2timeline.build_argv({"image_path": "/x", "output_dir": "/o", "parsers": "a b;c"})
+
+    def test_parse_empty(self):
+        out = plaso_log2timeline.parse("")
+        assert "note" in out and out["completed"] is False
+
+
+# --------------------------------------------------------------------------- #
+# plaso_psort
+# --------------------------------------------------------------------------- #
+class TestPlasoPsort:
+    def test_build_argv_minimum_valid(self):
+        argv = plaso_psort.build_argv({"plaso_path": "/run/out/timeline.plaso", "output_dir": "/run/out"})
+        assert argv[:2] == ["-o", "l2tcsv"]
+        assert "-w" in argv and "/run/out/timeline.csv" in argv
+        assert argv[-1] == "/run/out/timeline.plaso"
+
+    def test_build_argv_json_format(self):
+        argv = plaso_psort.build_argv(
+            {"plaso_path": "/p.plaso", "output_dir": "/o", "output_format": "json_line"}
+        )
+        assert "json_line" in argv
+        assert "/o/timeline.json_line" in argv
+
+    def test_build_argv_missing_plaso_path_raises(self):
+        with pytest.raises(ValueError, match="plaso_path"):
+            plaso_psort.build_argv({"output_dir": "/o"})
+
+    def test_build_argv_bad_format_raises(self):
+        with pytest.raises(ValueError, match="output_format"):
+            plaso_psort.build_argv({"plaso_path": "/p", "output_dir": "/o", "output_format": "pdf"})
+
+    def test_parse_empty(self):
+        out = plaso_psort.parse("")
+        assert "note" in out
+
+
+# --------------------------------------------------------------------------- #
+# qemu_nbd (mount helper, side-effecting — no ejecutable en el maletín del compose)
+# --------------------------------------------------------------------------- #
+class TestQemuNbd:
+    def test_build_argv_minimum_valid(self):
+        argv = qemu_nbd.build_argv({"image_path": "/ev/img.raw"})
+        # read-only por defecto (soundness), formato raw, device /dev/nbd0
+        assert argv == ["-r", "-f", "raw", "-c", "/dev/nbd0", "/ev/img.raw"]
+
+    def test_build_argv_qcow2_writable_custom_device(self):
+        argv = qemu_nbd.build_argv(
+            {"image_path": "/x.qcow2", "image_format": "qcow2", "nbd_device": "/dev/nbd3", "read_only": False}
+        )
+        assert "-r" not in argv
+        assert "qcow2" in argv and "/dev/nbd3" in argv
+
+    def test_build_argv_missing_image_path_raises(self):
+        with pytest.raises(ValueError, match="image_path"):
+            qemu_nbd.build_argv({})
+
+    def test_build_argv_bad_device_raises(self):
+        with pytest.raises(ValueError, match="nbd_device"):
+            qemu_nbd.build_argv({"image_path": "/x", "nbd_device": "/dev/sda"})
+
+    def test_build_argv_bad_format_raises(self):
+        with pytest.raises(ValueError, match="image_format"):
+            qemu_nbd.build_argv({"image_path": "/x", "image_format": "iso"})
+
+    def test_parse_returns_note(self):
+        out = qemu_nbd.parse("")
+        assert "note" in out

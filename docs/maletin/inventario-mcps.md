@@ -4,7 +4,8 @@ Catálogo de **servidores MCP** que FORENSIA expone para que el agente — y, op
 cliente externo — opere el maletín forense, consulte conocimiento y emita el informe a través
 de un protocolo único. Mirroreado en estructura con
 [`docs/maletin/inventario-tools.md`](inventario-tools.md): este documento es la lista larga; la
-selección final que se empaqueta vive en `backend/forensia/mcp/` (no existe aún) y `vendor/`.
+selección final implementada vive en `backend/forensia/mcp/` (el `mcp-toolkit` de S1 ya
+está ahí — ver [`mcp-toolkit-s1.md`](mcp-toolkit-s1.md)).
 
 > **Por qué este documento existe ahora**: en el email del 2026-06-24, el PI movió MCP de
 > "Fase 2 opcional si sobra tiempo" a **núcleo del TFM** ("la integración avanzada de los
@@ -21,9 +22,9 @@ selección final que se empaqueta vive en `backend/forensia/mcp/` (no existe aú
 ## 1. Arquitectura de despliegue (cómo viven los MCPs en FORENSIA)
 
 ```
-        ┌──── Electron renderer ─── HTTP+token ────► sidecar FastAPI ──────────┐
+        ┌──── UI web (React) ──── HTTP + token de sesión ────► api (FastAPI) ───┐
         │                                                                       │
-        │                                       (loopback, ephemeral port)      │
+        │                          (puerto publicado solo en 127.0.0.1)         │
         │                                                                       ▼
         │                                            ┌────────────────────────────────┐
         │                                            │ ForensicAgent loop             │
@@ -49,9 +50,9 @@ selección final que se empaqueta vive en `backend/forensia/mcp/` (no existe aú
 
 **Decisiones cerradas** (detalle en §8):
 
-- Todos los servidores MCP **viven dentro del proceso del sidecar Python**, no como
-  binarios separados — un solo build PyInstaller, una sola firma, una sola cadena de
-  audit. RULE 1 intacta.
+- Todos los servidores MCP **viven dentro del proceso Python del backend (servicio
+  `api`)**, no como procesos separados — un solo proceso, una sola cadena de audit,
+  nada que instalar fuera de `docker compose up --build`. RULE 1 intacta.
 - Transporte por defecto: stdio in-process. Transporte externo opcional (también stdio,
   para máxima portabilidad spec-compliant) — deshabilitado por defecto (RULE 2).
 - El servidor MCP **nunca ejecuta argv directamente**. Delega siempre en
@@ -72,9 +73,9 @@ selección final que se empaqueta vive en `backend/forensia/mcp/` (no existe aú
 
 **Por qué un solo servidor (y no `mcp-tsk` + `mcp-volatility` + `mcp-zimmerman` + …)**:
 
-- Multiplicar servidores multiplica procesos en el installer (~30 MB extra por binario
-  PyInstaller × N familias) y rompe la continuidad del `AuditLog` (hash-chained por caso —
-  con N procesos pasaría a N cadenas inconexas).
+- Multiplicar servidores multiplica procesos que arrancar, supervisar y auditar, y rompe
+  la continuidad del `AuditLog` (hash-chained por caso — con N procesos pasaría a N
+  cadenas inconexas).
 - El `dispatcher` ya es el punto único de seguridad (shell-free, allowlist, audit, hash
   baseline). Replicarlo en N servidores duplica la superficie de drift.
 - El agente se beneficia de **un solo `tools/list`** filtrado por su allowlist — no de
@@ -126,8 +127,8 @@ en consulta dirigida a tiempo de razonamiento.
 | `mcp-yara-rules` | knowledge | Subset curado de `signature-base` (Florian Roth): webshells, ransomware notes, persistencia común | **Sí (obligatorio)** | **P1** | El playbook Windows pide `yara` para T1505.003 y T1486. Sin catálogo legible no sabe qué buscar. ~50 MB. |
 | `mcp-sigma-rules` | knowledge | SigmaHQ subset Win/Linux | **Sí** | **P1** | Hayabusa/Chainsaw consumen Sigma; el agente debe poder razonar sobre qué regla disparó y mapearla a MITRE. ~40 MB. |
 
-Presupuesto total de knowledge bundle P0+P1 ≈ **~125 MB comprimidos**. Aceptable contra los
-binarios forenses ya vendoreados. `agentes/_orchestrator/knowledge/MANIFEST.json` con
+Presupuesto total de knowledge bundle P0+P1 ≈ **~125 MB comprimidos**. Aceptable contra el
+tamaño de las imágenes de los maletines. `agentes/_orchestrator/knowledge/MANIFEST.json` con
 sha256 + fecha por dataset para reproducibilidad.
 
 ---
@@ -164,7 +165,7 @@ memoria.
 | Conocimiento público estático (MITRE, YARA, Sigma, playbooks) | Bundled obligatorio. Sin versión online aunque exista. |
 | Lookups sensibles a la evidencia (CVE-CPE, hash, IOC) | Bundled snapshot versionado. Sin online aunque exista API. |
 | Inteligencia online (VT, OTX) | Opt-in por caso, consentimiento firmado, redaction activa, registro en `audit.jsonl` de cada query saliente. Never-upload-samples. |
-| Resources de evidencia (`mcp-evidence`, `mcp-cases`, `mcp-audit`) | Loopback puro. Token de sesión del sidecar. |
+| Resources de evidencia (`mcp-evidence`, `mcp-cases`, `mcp-audit`) | Local puro. Token de sesión del backend `api`. |
 
 ---
 
@@ -210,10 +211,10 @@ primero "el agente opera por protocolo", luego "el agente razona con KB por prot
 
 ## 9. Líneas rojas innegociables (consolidadas)
 
-- **RULE 1 — bundling**: cero servidores MCP externos al installer. Todos viven dentro
-  del proceso PyInstaller del sidecar. Si un MCP necesita dataset externo (knowledge
-  bundles), va en `agentes/_orchestrator/knowledge/` con `MANIFEST.json` (sha256 + fecha)
-  y se incluye en `electron-builder extraResources`.
+- **RULE 1 — entrega única**: cero servidores MCP que se instalen aparte. Todos viven
+  dentro del proceso Python del backend (servicio `api`). Si un MCP necesita dataset
+  externo (knowledge bundles), va en `agentes/_orchestrator/knowledge/` con
+  `MANIFEST.json` (sha256 + fecha) y llega montado por el compose junto con `agentes/`.
 
 - **RULE 2 — sin defaults silenciosos**: `tools/call` sin `case_id` o sin paquete cargado
   para el `os_profile` devuelve `INVALID_PARAMS` MCP estándar con mensaje accionable.
@@ -247,7 +248,7 @@ primero "el agente opera por protocolo", luego "el agente razona con KB por prot
 | Sprint | MCPs cerrados | Personas (de 6) | Estado / Resultado defendible |
 |---|---|---|---|
 | S1 | **`mcp-toolkit` (P0)** standalone stdio con patrón Jira + 16 tools + ResourceLinks + redaction modes | 2 | ✅ **CERRADO 2026-06-29**. Verificado E2E con Claude Desktop sobre memdump real 5 GiB Windows 7 SP1. 2 rounds de panel; líneas rojas L1–L6 verificadas. 335 tests passing. Detalle: [`mcp-toolkit-s1.md`](mcp-toolkit-s1.md). |
-| S2 | `mcp-evidence` (P0) + integración `ForensicAgent` propio como cliente MCP in-process del `mcp-toolkit` | 2 | Pendiente. Unifica los dos caminos al dispatcher (sidecar HTTP + servidor MCP) bajo el mismo protocolo. Demo: el agente nativo ejecuta su cadena vía cliente MCP, output idéntico al dispatcher directo (test diferencial — ya escrito). |
+| S2 | `mcp-evidence` (P0) + integración `ForensicAgent` propio como cliente MCP in-process del `mcp-toolkit` | 2 | Pendiente. Unifica los dos caminos al dispatcher (API HTTP del backend + servidor MCP) bajo el mismo protocolo. Demo: el agente nativo ejecuta su cadena vía cliente MCP, output idéntico al dispatcher directo (test diferencial — ya escrito). |
 | S3 | `mcp-mitre-attack` (P0) — bundle ATT&CK Enterprise + cliente MCP en el orquestador | 1 | Pendiente. El informe cita técnicas + sub-técnicas + data sources del bundle, no del prompt. ~30 MB bundleados. |
 | S4 | `mcp-cases` (P1) + `mcp-audit` (P1) + `mcp-artifact-playbooks` (P1) + `mcp-yara-rules` (P1) + `mcp-sigma-rules` (P1) | 3 (paralelo) | Pendiente. Conocimiento + custodia accesibles vía protocolo en toda la app. |
 | S5 | `mcp-timeline` (P0 conceptual / P1 real — después de `forensia.timeline` nativo) | 2 | Pendiente. Timeline correlacionada por protocolo; consultable por ventana ± delta. |
@@ -263,9 +264,9 @@ Reparto entre 6 personas (alineado con el email del 2026-06-24):
   conocimiento.
 - **1 persona: reportes + timeline** — `forensia.reports` + `forensia.timeline` + sus
   superficies MCP.
-- **1 persona: UI + empaquetado + docker-compose** — páginas mock pendientes,
-  `docker-compose.yml` para modo desarrollo (sidecar + Ollama + OCI runtime), pipeline
-  de release con firma multi-OS.
+- **1 persona: UI + compose** — páginas mock pendientes (la SPA ya migró al servicio
+  `web` el 2026-07-02: `web/` compilada y servida por nginx con proxy al api) y CI que
+  verifique el build de las imágenes del compose.
 
 ---
 
@@ -276,7 +277,7 @@ Reparto entre 6 personas (alineado con el email del 2026-06-24):
 | Toolkit + custodia (P0) | 2 | `mcp-toolkit` **✅ cerrado en S1** (rama `mcp`). `mcp-evidence` pendiente para S2. |
 | Conocimiento bundleado (P0+P1) | 4 | Diseñados; bundles a curar. ATT&CK Enterprise es P0 obligatorio (S3). |
 | Síntesis (P0/P1/P2) | 2 | Dependen de módulos backend (`forensia.timeline`, `forensia.reports`) que no existen aún. |
-| Lookup local snapshot (P2) | 3 | Datasets a vendorear; post-MVP del TFM. |
+| Lookup local snapshot (P2) | 3 | Datasets offline a empaquetar en `knowledge/`; post-MVP del TFM. |
 | Lookup online opt-in (P3) | 2 | Solo con consent firmado. Bandera explícita por caso. |
 | **Total inventariado** | **13** | — |
 

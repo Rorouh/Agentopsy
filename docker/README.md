@@ -5,6 +5,11 @@ Maletín de herramientas forenses CLI empaquetado en Docker, en dos imágenes:
 Unix-like). Es la base sobre la que los agentes de IA harán *tool-calling*
 (sección «Cómo lo consulta la IA»).
 
+Los dos maletines son parte del compose raíz del repo (`docker-compose.yml`,
+cinco servicios: `web`, `api`, `ollama` y los dos maletines). Este directorio
+contiene los Dockerfiles de los servicios (`api/`, `web/`,
+`docker/forensic-toolkit/`) y este README documenta los maletines en concreto.
+
 > **Aclaración importante.** Son contenedores **Linux** que contienen las
 > herramientas para analizar evidencias de Windows y de Unix. No es un contenedor
 > con sistema operativo Windows: RegRipper, hayabusa, chainsaw, TSK, Volatility y
@@ -20,25 +25,48 @@ Unix-like). Es la base sobre la que los agentes de IA harán *tool-calling*
 - Conexión a Internet en el primer build (descarga paquetes, hayabusa y chainsaw).
 - Linux o Windows/macOS con Docker Desktop. En Windows usa WSL2 como backend.
 
+> **Arquitectura: los maletines son `linux/amd64`.** El compose fija
+> `platform: linux/amd64` en `toolkit-windows` y `toolkit-unix` porque el PPA GIFT
+> (plaso, sleuthkit, libyal, bulk-extractor) **no publica paquetes arm64**: sin ese
+> pin, el build falla en Apple Silicon. Con el pin, en un host arm64 (Mac M-series)
+> los maletines corren **bajo emulación** (Rosetta/QEMU vía binfmt) — idénticos a x86
+> pero con build y análisis pesados más lentos. En un host x86_64 el pin coincide con
+> la plataforma nativa, sin coste. Docker Desktop trae la emulación activada por
+> defecto; en Linux arm64 puro instala `qemu-user-static` + `binfmt` si no la tienes.
+
+> **En Linux usa el Docker Engine nativo** (contexto `default`), no Docker
+> Desktop. Docker Desktop —también en Linux— ejecuta los contenedores dentro de
+> una VM y los bind-mounts pasan por su capa de compartición de ficheros: eso
+> rompe el invariante de soundness para montar evidencia (ver
+> `docs/soundness-forense.md` del repo raíz) y además su file-sharing no cubre
+> rutas fuera de `$HOME` (p. ej. `/mnt`). Si tienes ambos instalados:
+> `docker context use default` o prefija los comandos con
+> `docker --context default …`.
+
 ## Estructura
 
 ```
-forensia/
-├── docker-compose.yml              # define los dos maletines
-├── docker/forensic-toolkit/
-│   ├── Dockerfile                  # multi-stage: base + windows + unix
-│   ├── requirements-windows.txt    # parsers Python de artefactos Windows
-│   └── .dockerignore
-├── docs/CATALOGO_MALETIN.md        # catálogo de herramientas y comandos
+Forensia-AI/                        # raíz del repo
+├── docker-compose.yml              # el compose raíz: los CINCO servicios
 ├── evidence/                       # <- coloca aquí las evidencias (.raw/.vmdk/.E01)
-└── projects/                       # <- salidas, casos e informes
+├── projects/                       # <- salidas, casos e informes
+└── docker/
+    ├── api/                        # imagen del backend + CLIs de ejecución
+    ├── web/                        # imagen del frontend: build de web/ + nginx (proxy /api)
+    ├── docker/forensic-toolkit/
+    │   ├── Dockerfile              # multi-stage: base + windows + unix
+    │   ├── requirements-windows.txt# parsers Python de artefactos Windows
+    │   └── .dockerignore
+    └── docs/CATALOGO_MALETIN.md    # catálogo de herramientas y comandos
 ```
 
 ## Construir y levantar (un solo comando)
 
+Desde la **raíz del repo**:
+
 ```bash
-cd forensia
-docker compose up --build -d
+cd Forensia-AI
+docker compose up --build
 ```
 
 Comprobar que el maletín está listo:
@@ -51,10 +79,29 @@ docker compose exec toolkit-unix    forensia-info
 Debería listar cada herramienta con su ruta. El primer build tarda (compila e
 instala plaso y descarga ~50 MB de binarios); los siguientes usan caché.
 
+## Carpeta de evidencia configurable
+
+La aplicación final centraliza todas las evidencias del caso en **una única
+carpeta que elige el usuario**. El compose refleja ese diseño: la carpeta que
+se monta en `/evidence` (solo lectura) se configura con la variable
+`FORENSIA_EVIDENCE_DIR`, y la de salidas (`/cases`) con `FORENSIA_CASES_DIR`.
+Sin variables definidas se usan `./evidence` y `./projects` (defaults de
+diseño, relativos a la raíz del repo, donde vive `docker-compose.yml`). Nunca
+escribas rutas absolutas de tu host en los ficheros versionados.
+
+```bash
+# Opción A: variable de entorno puntual
+FORENSIA_EVIDENCE_DIR=/ruta/al/caso/evidencia docker compose up -d
+
+# Opción B: fichero .env junto al docker-compose.yml de la raíz (ignorado por git)
+echo 'FORENSIA_EVIDENCE_DIR=/ruta/al/caso/evidencia' > .env
+docker compose up -d
+```
+
 ## Uso básico
 
-1. Copia la evidencia a `./evidence/` (se monta en `/evidence` en **solo
-   lectura**).
+1. Apunta `FORENSIA_EVIDENCE_DIR` a la carpeta de evidencia del caso (o copia
+   la evidencia a `./evidence/`). Se monta en `/evidence` en **solo lectura**.
 2. Verifica integridad (cadena de custodia):
 
    ```bash
@@ -71,20 +118,25 @@ Catálogo completo de herramientas y ejemplos: [`docs/CATALOGO_MALETIN.md`](docs
 
 ## Cómo lo consulta la IA (tool-calling)
 
-El maletín queda **habilitado para que el agente lo consulte** así:
+El maletín queda **habilitado para que el `api` lo consulte** así:
 
-- Cada contenedor se mantiene vivo (`sleep infinity`) con todas las herramientas
-  en el `PATH`, las evidencias en `/evidence:ro` y las salidas en `/cases`.
-- El orquestador de IA expone cada herramienta CLI como una función invocable y,
-  cuando el modelo decide usarla, ejecuta el comando dentro del contenedor:
+- Cada contenedor corre el **exec-agent** (`python3 /opt/forensia/exec_agent.py`) con
+  todas las herramientas en el `PATH`, las evidencias en `/evidence:ro` y las salidas en
+  `/cases`. El exec-agent es un HTTP mínimo en la red interna del compose (`:8666`, **sin
+  puerto publicado**) — es el canal api→maletín §B, sin socket de Docker. Ver
+  [`docs/operacion/exec-agent.md`](../docs/operacion/exec-agent.md).
+- El `api` consulta presencia de tools (`GET /health`, `POST /which`) por HTTP a
+  `http://toolkit-unix:8666` / `http://toolkit-windows:8666` — es lo que reporta
+  `capabilities` — y ejecuta las tools del agente por el mismo canal (`POST /exec`):
+  el dispatcher resuelve el argv desde el allowlist y lo lanza en el maletín del
+  `os_profile` del caso (`proximos-pasos.md` §B.bis, HECHO).
+- A mano, para depurar, también puedes ejecutar directamente dentro del contenedor:
 
   ```bash
-  docker exec forensia-toolkit-windows <herramienta> <args...>
+  docker compose exec toolkit-windows <herramienta> <args...>
   ```
 
-  La salida (stdout/stderr/JSON) se devuelve al modelo como resultado de la
-  llamada. El agente Windows apunta a `toolkit-windows` y el Unix-like a
-  `toolkit-unix`.
+  El agente Windows apunta a `toolkit-windows` y el Unix-like a `toolkit-unix`.
 - Este es el «contrato CLI→JSON» del documento. La capa de *wrappers* que
   formaliza ese contrato y los *system prompts* de cada agente se implementan en
   la siguiente fase (no incluidos en esta entrega, que cubre Dockerfile + compose).
@@ -93,9 +145,11 @@ El maletín queda **habilitado para que el agente lo consulte** así:
 
 - Evidencias montadas en **solo lectura**; se trabaja sobre copias y se verifica
   hash SHA-256 antes y después.
-- Modelo de IA **local por defecto** (Ollama) por la sensibilidad de las
-  evidencias; al usar un modelo cloud, la herramienta debe advertir de que los
-  datos salen a una API externa.
+- El ejecutor de IA lo **elige explícitamente el operador** (RULE 2: sin
+  selección no hay análisis, nunca un default silencioso). **Ollama** es la
+  opción 100 % local; si se elige un ejecutor respaldado por cloud (Claude
+  Code, Codex CLI, Gemini CLI), la herramienta advierte de que contenido
+  derivado del caso sale a ese proveedor y lo registra en el audit log.
 
 ## Notas de seguridad del contenedor
 

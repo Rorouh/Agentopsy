@@ -2,11 +2,12 @@
 
 ONE agent parametrized by an ``AgentPackage`` loaded from ``agentes/<id>/``: the
 reasoning loop is identical; what changes per profile is the package (prompts,
-model backend, allowlist of tools, redaction policy).
+allowlist of tools, redaction policy). The executor that answers each
+``next_action`` is the one the OPERATOR selected for the request (Claude Code,
+Codex CLI, Gemini CLI or Ollama — adapted by ``forensia.models.ExecutorBackend``);
+the loop neither knows nor cares which one it is (diseño Fase 2 §5).
 
-When the loaded package's model backend is wired (``MODEL_BACKEND=cloud`` +
-``OPENAI_API_KEY`` + ``MODEL_NAME``), ``run()`` drives an OpenAI tool-calling
-loop:
+``run()`` drives a bounded provider-agnostic tool-calling loop:
 
 1. Build messages = system (package prompts + case context) + user (prompt).
 2. Loop up to ``max_iterations``:
@@ -25,19 +26,32 @@ Safety (THREAT_MODEL gates 5-7):
 - Evidence paths and output directories are injected by FORENSIA, not by the
   model.
 - Every tool run goes through the dispatcher → ``ArtifactRun`` + ``audit.jsonl``.
+
+Egress border (THREAT_MODEL gate 9 / FORENSIC_SOUNDNESS §5):
+- When the backend is NOT local, the conversation handed to ``next_action`` is
+  redacted with the package's ``redaction_patterns`` at a single point — the raw
+  conversation is kept internally for replay, only the wire payload is minimized.
+- A cloud run REFUSES to start without a ``consent_ref`` (recorded per-case
+  consent); local runs never leave the host and need none.
+- The agent chains run-start, each cloud egress (hash of the redacted payload),
+  and each finding into the case ``audit.jsonl`` — metadata/hashes only.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import os
+from collections.abc import Callable
 from typing import Any
 
 from forensia.agent.package import AgentPackage
+from forensia.agent.redaction import redact_messages
 from forensia.agent.tool_schemas import (
     AUTO_INJECTED,
     internal_tool_specs,
-    openai_tool_specs,
+    tool_specs,
 )
 from forensia.audit import AuditLog
 from forensia.evidence import EvidenceManager
@@ -49,6 +63,59 @@ from forensia.toolkit.tool import Tool
 logger = logging.getLogger(__name__)
 
 
+def _max_tool_attempts() -> int:
+    """Anti-loop guardrail (Bug 001): how many times a tool may FAIL (exit≠0 or an
+    execution error) in one session before the loop refuses to run it again. Keeps the
+    model from fixating on a tool that keeps failing instead of changing approach.
+    Default 3; per-deployment override via ``FORENSIA_MAX_TOOL_ATTEMPTS``."""
+    try:
+        return max(1, int(os.environ.get("FORENSIA_MAX_TOOL_ATTEMPTS", "3")))
+    except ValueError:
+        return 3
+
+
+def _reasoning_from(raw: object) -> str:
+    """The prose the model emitted BEFORE its JSON action — i.e. its reasoning for
+    this step. Everything up to the first ``{`` (the action envelope), fence-tolerant."""
+    if not isinstance(raw, str):
+        return ""
+    text = raw.strip()
+    if text.startswith("```"):
+        text = text.lstrip("`")
+        if text[:4].lower() == "json":
+            text = text[4:]
+    idx = text.find("{")
+    prose = (text[:idx] if idx != -1 else text).strip()
+    return prose[:600]
+
+
+def _preview_params(params: dict[str, Any]) -> dict[str, Any]:
+    """Display-safe subset of tool params for a progress event (strings truncated)."""
+    out: dict[str, Any] = {}
+    for key, value in params.items():
+        if isinstance(value, str):
+            out[key] = value if len(value) <= 120 else value[:117] + "…"
+        elif isinstance(value, (int, float, bool)) or value is None:
+            out[key] = value
+        else:
+            out[key] = type(value).__name__
+    return out
+
+
+def _result_summary(result: dict[str, Any]) -> str:
+    """One-line human summary of a tool result for the live activity log."""
+    parsed = result.get("parsed")
+    if isinstance(parsed, dict):
+        for key in ("detections", "summary_count", "entries", "count", "lines", "records"):
+            value = parsed.get(key)
+            if isinstance(value, int):
+                return f"{value} {key}"
+        for key, value in parsed.items():
+            if key != "raw" and isinstance(value, (int, str)):
+                return f"{key}={str(value)[:60]}"
+    return f"exit {result.get('exit_code')}"
+
+
 # Map tool_id → which auto-injected key receives the resolved evidence path.
 # Tools not in this map don't take the evidence directly (e.g. jq accepts an
 # operator-supplied input_path that points to another artifact).
@@ -58,9 +125,15 @@ _EVIDENCE_INJECTION: dict[str, str] = {
     "strings_head": "image_path",
     "tsk_mmls": "image_path",
     "tsk_fls": "image_path",
+    "tsk_icat": "image_path",
     "tsk_mactime": "bodyfile_path",
     "ewf_info": "image_path",
     "bulk_extractor": "image_path",
+    "hashdeep": "image_path",
+    "foremost": "image_path",
+    "plaso_log2timeline": "image_path",
+    "plaso_psort": "plaso_path",
+    "qemu_nbd": "image_path",
     "yara": "target_path",
     "volatility3": "dump_path",
     "hayabusa": "evtx_dir",
@@ -101,10 +174,22 @@ class ForensicAgent:
         prompt: str,
         case_id: str,
         evidence_id: str,
+        consent_ref: str | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
+        on_event: Callable[[dict[str, Any]], None] | None = None,
     ) -> AgentLoopResult:
         # Local import to avoid a circular dep that only matters at call time.
         from forensia.toolkit.dispatcher import ToolExecutionError, execute as dispatch_tool
+
+        def emit(event: dict[str, Any]) -> None:
+            """Best-effort progress event for the streaming surface; a broken
+            consumer must never crash the forensic loop."""
+            if on_event is None:
+                return
+            try:
+                on_event(event)
+            except Exception:  # noqa: BLE001 — progress is non-critical
+                logger.debug("on_event consumer raised; ignoring", exc_info=True)
 
         if not prompt:
             raise ValueError("prompt is required")
@@ -112,6 +197,20 @@ class ForensicAgent:
             raise ValueError("case_id is required for an LLM-driven run")
         if not evidence_id:
             raise ValueError("evidence_id is required for an LLM-driven run")
+
+        # Egress posture (THREAT_MODEL gate 9 / FORENSIC_SOUNDNESS §5): a non-local
+        # backend means evidence-derived content crosses to a third party. Redact
+        # at the single egress point and REFUSE without a recorded per-case
+        # consent_ref (RULE 2 — no silent egress). Local backends never leave the
+        # host, so there is nothing to redact or consent to.
+        is_cloud = not self.model.capabilities().is_local
+        if is_cloud and not consent_ref:
+            raise ValueError(
+                "cloud egress requires a recorded consent_ref for this case "
+                "(THREAT_MODEL gate 9): refusing to send evidence-derived content "
+                "to a third party without registered consent."
+            )
+        model_name = getattr(self.model, "model_name", self.model.name)
 
         handle = self.evidence.get(case_id, evidence_id)
         evidence_path = str(handle.original_path)
@@ -144,14 +243,50 @@ class ForensicAgent:
             "messages": messages,
             "temperature": float(self.package.model.temperature or 0.2),
         }
-        tool_specs = openai_tool_specs(list(allowed)) + internal_tool_specs()
+        specs = tool_specs(list(allowed)) + internal_tool_specs()
 
         max_iter = max(1, int(self.package.model.max_iterations or 8))
         tool_calls_log: list[dict[str, Any]] = []
+        # Anti-loop guardrail (Bug 001): failures per tool_id in this session.
+        max_attempts = _max_tool_attempts()
+        tool_failures: dict[str, int] = {}
+
+        # F3 — anchor the run in the case's hash-chained audit log: which model,
+        # which backend, over which evidence. Only metadata/hashes ever land here.
+        self._audit_event(
+            "agent_run_start",
+            case_id=case_id,
+            evidence_id=evidence_id,
+            evidence_sha256=handle.sha256,
+            backend=self.model.name,
+            model_name=model_name,
+            consent_ref=consent_ref,
+        )
 
         for iteration in range(max_iter):
+            # F1 — SINGLE egress point. For a cloud backend, redact a copy of the
+            # whole conversation (system + user + tool results) with the package's
+            # patterns; the canonical `messages` stays raw. F3 — audit each egress
+            # with the SHA-256 of the exact redacted payload (never the bytes).
+            outbound = redact_messages(messages, self.package.policy.redaction_patterns) if is_cloud else messages
+            if is_cloud:
+                payload = json.dumps(
+                    outbound, sort_keys=True, separators=(",", ":"), default=str
+                ).encode("utf-8")
+                self._audit_event(
+                    "agent_cloud_egress",
+                    case_id=case_id,
+                    evidence_id=evidence_id,
+                    backend=self.model.name,
+                    model_name=model_name,
+                    consent_ref=consent_ref,
+                    redacted_payload_sha256=hashlib.sha256(payload).hexdigest(),
+                    message_count=len(outbound),
+                    iteration=iteration,
+                )
+            egress_state = {**state, "messages": outbound}
             try:
-                action = self.model.next_action(state, tool_specs)
+                action = self.model.next_action(egress_state, specs)
             except Exception as exc:  # noqa: BLE001 — surface as friendly reply
                 logger.warning("model.next_action failed: %s", exc)
                 return AgentLoopResult(
@@ -165,6 +300,7 @@ class ForensicAgent:
                 )
 
             if isinstance(action, FinalAnswer):
+                emit({"type": "final", "iteration": iteration + 1, "text": action.text})
                 return AgentLoopResult(
                     reply=action.text,
                     iterations=iteration + 1,
@@ -174,6 +310,9 @@ class ForensicAgent:
             if isinstance(action, ToolCall):
                 if action.assistant_message is not None:
                     messages.append(action.assistant_message)
+                    reasoning = _reasoning_from(action.assistant_message.get("content"))
+                    if reasoning:
+                        emit({"type": "reasoning", "iteration": iteration + 1, "text": reasoning})
 
                 # Internal side-channel tools — NOT in the catalog and NOT
                 # subject to the package allowlist. Handled in-process.
@@ -185,6 +324,20 @@ class ForensicAgent:
                             params["evidence_id"] = evidence_id
                         finding = finding_store.append(case_id, params)
                         body = {"finding_id": finding.id, "stored": True}
+                        # F3 — record the finding's provenance in the audit chain
+                        # (only the id; the finding body lives in findings.jsonl).
+                        self._audit_event(
+                            "agent_finding",
+                            case_id=case_id,
+                            evidence_id=evidence_id,
+                            finding_id=finding.id,
+                        )
+                        emit({
+                            "type": "finding",
+                            "iteration": iteration + 1,
+                            "title": finding.title,
+                            "severity": finding.severity,
+                        })
                     except (KeyError, ValueError) as exc:
                         body = {"error": f"record_finding rejected: {exc}"}
                     messages.append(self._tool_result_msg(action, body))
@@ -205,37 +358,108 @@ class ForensicAgent:
                     tool_calls_log.append(
                         {"tool_id": action.tool_id, "refused": True, "reason": "not_in_allowlist"}
                     )
+                    emit({
+                        "type": "tool_result",
+                        "iteration": iteration + 1,
+                        "tool_id": action.tool_id,
+                        "status": "refused",
+                        "summary": "no está en la allowlist del agente",
+                    })
+                    continue
+
+                # Guardrail anti-bucle (Bug 001): no reintentes una tool que ya falló
+                # `max_attempts` veces en esta sesión — fuerza al modelo a cambiar de
+                # herramienta o a cerrar, en vez de repetir un exit≠0 hasta agotar
+                # iteraciones. Solo cuentan los FALLOS: una tool que va bien puede
+                # llamarse cuantas veces haga falta (p. ej. tsk_icat por inodo).
+                if tool_failures.get(action.tool_id, 0) >= max_attempts:
+                    blocked = (
+                        f"El tool `{action.tool_id}` ya se intentó {max_attempts} veces en "
+                        f"esta sesión y todas fallaron (exit≠0). NO lo reintentes: elige OTRA "
+                        f"herramienta del allowlist o, si ya tienes suficiente, responde con tu "
+                        f"análisis final."
+                    )
+                    messages.append(
+                        self._tool_result_msg(action, {"error": blocked, "blocked": True})
+                    )
+                    tool_calls_log.append(
+                        {"tool_id": action.tool_id, "blocked": True, "reason": "max_failed_attempts"}
+                    )
+                    emit({
+                        "type": "tool_result",
+                        "iteration": iteration + 1,
+                        "tool_id": action.tool_id,
+                        "status": "blocked",
+                        "summary": f"bloqueado tras {max_attempts} fallos",
+                    })
                     continue
 
                 params = self._inject_runtime_paths(
                     action.tool_id, dict(action.params), evidence_path
                 )
+                emit({
+                    "type": "tool_call",
+                    "iteration": iteration + 1,
+                    "tool_id": action.tool_id,
+                    "params": _preview_params(params),
+                })
 
                 try:
-                    result = dispatch_tool(action.tool_id, params, case_id=case_id)
+                    result = dispatch_tool(
+                        action.tool_id, params, case_id=case_id, os_profile=self.os_profile
+                    )
                 except ToolExecutionError as exc:
+                    tool_failures[action.tool_id] = tool_failures.get(action.tool_id, 0) + 1
                     messages.append(
                         self._tool_result_msg(action, {"error": f"ToolExecutionError: {exc}"})
                     )
                     tool_calls_log.append(
                         {"tool_id": action.tool_id, "error": str(exc)}
                     )
+                    emit({
+                        "type": "tool_result",
+                        "iteration": iteration + 1,
+                        "tool_id": action.tool_id,
+                        "status": "error",
+                        "summary": str(exc)[:200],
+                    })
                     continue
                 except Exception as exc:  # noqa: BLE001 — never crash the loop
+                    tool_failures[action.tool_id] = tool_failures.get(action.tool_id, 0) + 1
                     messages.append(
                         self._tool_result_msg(action, {"error": f"{type(exc).__name__}: {exc}"})
                     )
                     tool_calls_log.append(
                         {"tool_id": action.tool_id, "error": str(exc)}
                     )
+                    emit({
+                        "type": "tool_result",
+                        "iteration": iteration + 1,
+                        "tool_id": action.tool_id,
+                        "status": "error",
+                        "summary": f"{type(exc).__name__}: {exc}"[:200],
+                    })
                     continue
 
+                exit_code = result.get("exit_code")
+                if isinstance(exit_code, int) and exit_code != 0:
+                    tool_failures[action.tool_id] = tool_failures.get(action.tool_id, 0) + 1
+
+                emit({
+                    "type": "tool_result",
+                    "iteration": iteration + 1,
+                    "tool_id": action.tool_id,
+                    "status": "ok" if exit_code == 0 else "nonzero",
+                    "exit_code": exit_code,
+                    "run_id": result.get("run_id"),
+                    "summary": _result_summary(result),
+                })
                 messages.append(self._tool_result_msg(action, self._tool_result_payload(result)))
                 tool_calls_log.append(
                     {
                         "tool_id": action.tool_id,
                         "run_id": result.get("run_id"),
-                        "exit_code": result.get("exit_code"),
+                        "exit_code": exit_code,
                     }
                 )
                 continue
@@ -244,17 +468,34 @@ class ForensicAgent:
                 f"Model returned an unexpected action type: {type(action).__name__}"
             )
 
+        exhausted = (
+            f"Se alcanzó el máximo de iteraciones ({max_iter}) sin respuesta "
+            "final. Revisa los runs en "
+            f"`~/.forensia/cases/{case_id}/artifacts/` para ver lo ejecutado."
+        )
+        emit({"type": "final", "iteration": max_iter, "text": exhausted, "exhausted": True})
         return AgentLoopResult(
-            reply=(
-                f"Se alcanzó el máximo de iteraciones ({max_iter}) sin respuesta "
-                "final. Revisa los runs en "
-                f"`~/.forensia/cases/{case_id}/artifacts/` para ver lo ejecutado."
-            ),
+            reply=exhausted,
             iterations=max_iter,
             tool_calls=tool_calls_log,
         )
 
     # ---- internals ---------------------------------------------------------
+
+    def _audit_event(self, event: str, **fields: Any) -> None:
+        """Append one event to the case audit chain, if an AuditLog was wired.
+
+        The dispatcher already audits each tool run (the literal argv); this adds
+        the agent-level events the dispatcher cannot see — run start, cloud
+        egress, and findings (F3). Never records raw evidence bytes, only
+        metadata and hashes. Best-effort: an audit failure must not crash a run.
+        """
+        if self.audit is None:
+            return
+        try:
+            self.audit.append({"event": event, **fields})
+        except Exception as exc:  # noqa: BLE001 — audit must never break the loop
+            logger.warning("audit append failed for event %s: %s", event, exc)
 
     def _system_prompt(
         self,

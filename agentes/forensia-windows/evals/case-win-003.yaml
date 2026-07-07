@@ -1,0 +1,25 @@
+# Caso de evaluación sintético para el harness comparativo local-vs-cloud.
+# Formato propuesto en docs/agentes/diseno-fase2.md §9.4.
+# NUNCA contiene evidencia real con datos personales: la fixture es sintética.
+id: case-win-003
+description: "Imagen Windows 10 con Tarea programada maliciosa: TaskCache en registro + evento 4698"
+os_profile: windows
+evidence_fixture: fixtures/win10-schtask.raw   # generada por el equipo, no incluida en git
+
+expected_findings:
+  - title_glob: "*tarea programada*|*scheduled task*|*TaskCache*"
+    severity: high
+    provenance_tool: regripper        # SOFTWARE\...\Schedule\TaskCache\Tasks -> tarea no legítima (árbol Schedule)
+  - title_glob: "*4698*|*creación de tarea*|*task registered*"
+    severity: medium
+    provenance_tool: evtxecmd         # TaskScheduler/Security event id 4698 (a scheduled task was created)
+
+expected_mitre:
+  - technique_id: T1053.005          # Scheduled Task/Job: Scheduled Task
+
+budget:
+  max_iterations: 12
+  max_tokens: 200000
+
+# Correlación: TaskCache (regripper) + 4698 (evtxecmd). El binario/acción de la
+# tarea debe ubicarse en el $MFT (mftecmd) para cerrar la hora de creación.

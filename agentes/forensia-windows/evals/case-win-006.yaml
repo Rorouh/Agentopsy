@@ -1,0 +1,22 @@
+# Caso de evaluación sintético para el harness comparativo local-vs-cloud.
+# Formato propuesto en docs/agentes/diseno-fase2.md §9.4.
+# NUNCA contiene evidencia real con datos personales: la fixture es sintética.
+id: case-win-006
+description: "Volcado RAM Windows 10 con conexión C2 anómala: puerto no estándar desde proceso sospechoso"
+os_profile: windows
+evidence_fixture: fixtures/win10-c2-netscan.mem   # memdump sintético, no incluido en git
+
+expected_findings:
+  - title_glob: "*conexión*anómala*|*C2*|*netscan*|*puerto*no estándar*"
+    severity: high
+    provenance_tool: volatility3      # windows.netscan.NetScan -> ESTABLISHED a IP externa desde un PID sin binario firmado en disco
+
+expected_mitre:
+  - technique_id: T1071              # Application Layer Protocol
+
+budget:
+  max_iterations: 10
+  max_tokens: 200000
+
+# detected_kind = memory => sección B. Cruza netscan con pslist/cmdline para atar la
+# conexión a un proceso; la IP/beacon corrobora con IOCs (bulk_extractor) en el disco par.

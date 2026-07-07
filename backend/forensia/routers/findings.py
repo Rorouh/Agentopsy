@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from forensia.findings.store import finding_store
 from forensia.security import require_token
+from forensia.toolkit.usage import tool_usage
 
 router = APIRouter()
 
@@ -30,6 +31,20 @@ class AppendFindingRequest(BaseModel):
 def list_findings(case_id: str) -> list[dict[str, Any]]:
     try:
         return [asdict(f) for f in finding_store.list(case_id)]
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get(
+    "/api/cases/{case_id}/tool-usage",
+    dependencies=[Depends(require_token)],
+)
+def list_tool_usage(case_id: str) -> list[dict[str, Any]]:
+    """Per-tool run counts for the case (Tools panel). Aggregated from audit.jsonl."""
+    try:
+        return tool_usage(case_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:

@@ -1,0 +1,53 @@
+timestamp,detections,path,Event ID,Channel,Computer,Information
+2024-11-22T22:36:23.634766+00:00,RDS - Session logon succeeded,/evidence/windows-evtx-hayabusa-samples/IntialAccess/ValidAccounts/ID21-25 RDP Logon Logoff Reconnect.evtx,21,Microsoft-Windows-TerminalServices-LocalSessionManager/Operational,EC2AMAZ-3NFFVNI,"User: EC2AMAZ-3NFFVNI\Administrator
+Address: 219.100.37.234
+SessionID: 2
+"
+2024-11-22T22:36:24.385571+00:00,RDS - File Explorer shell start notification received,/evidence/windows-evtx-hayabusa-samples/IntialAccess/ValidAccounts/ID21-25 RDP Logon Logoff Reconnect.evtx,22,Microsoft-Windows-TerminalServices-LocalSessionManager/Operational,EC2AMAZ-3NFFVNI,"User: EC2AMAZ-3NFFVNI\Administrator
+Address: 219.100.37.234
+SessionID: 2
+"
+2024-11-22T22:38:40.369107+00:00,RDS - Session logoff succeeded,/evidence/windows-evtx-hayabusa-samples/IntialAccess/ValidAccounts/ID21-25 RDP Logon Logoff Reconnect.evtx,23,Microsoft-Windows-TerminalServices-LocalSessionManager/Operational,EC2AMAZ-3NFFVNI,"SessionID: 2
+User: EC2AMAZ-3NFFVNI\Administrator
+"
+2024-11-22T22:39:20.505265+00:00,RDS - Session logon succeeded,/evidence/windows-evtx-hayabusa-samples/IntialAccess/ValidAccounts/ID21-25 RDP Logon Logoff Reconnect.evtx,21,Microsoft-Windows-TerminalServices-LocalSessionManager/Operational,EC2AMAZ-3NFFVNI,"User: EC2AMAZ-3NFFVNI\Administrator
+Address: 219.100.37.234
+SessionID: 3
+"
+2024-11-22T22:39:20.919913+00:00,RDS - File Explorer shell start notification received,/evidence/windows-evtx-hayabusa-samples/IntialAccess/ValidAccounts/ID21-25 RDP Logon Logoff Reconnect.evtx,22,Microsoft-Windows-TerminalServices-LocalSessionManager/Operational,EC2AMAZ-3NFFVNI,"User: EC2AMAZ-3NFFVNI\Administrator
+Address: 219.100.37.234
+SessionID: 3
+"
+2024-11-22T22:45:55.461878+00:00,RDS - Session logoff succeeded,/evidence/windows-evtx-hayabusa-samples/IntialAccess/ValidAccounts/ID21-25 RDP Logon Logoff Reconnect.evtx,23,Microsoft-Windows-TerminalServices-LocalSessionManager/Operational,EC2AMAZ-3NFFVNI,"SessionID: 3
+User: EC2AMAZ-3NFFVNI\Administrator
+"
+2024-11-22T22:47:31.548757+00:00,RDS - Session logon succeeded,/evidence/windows-evtx-hayabusa-samples/IntialAccess/ValidAccounts/ID21-25 RDP Logon Logoff Reconnect.evtx,21,Microsoft-Windows-TerminalServices-LocalSessionManager/Operational,EC2AMAZ-3NFFVNI,"User: EC2AMAZ-3NFFVNI\samurai
+Address: 219.100.37.234
+SessionID: 4
+"
+2024-11-22T22:47:31.964228+00:00,RDS - File Explorer shell start notification received,/evidence/windows-evtx-hayabusa-samples/IntialAccess/ValidAccounts/ID21-25 RDP Logon Logoff Reconnect.evtx,22,Microsoft-Windows-TerminalServices-LocalSessionManager/Operational,EC2AMAZ-3NFFVNI,"User: EC2AMAZ-3NFFVNI\samurai
+Address: 219.100.37.234
+SessionID: 4
+"
+2024-11-22T22:48:45.955479+00:00,RDS - Session logoff succeeded,/evidence/windows-evtx-hayabusa-samples/IntialAccess/ValidAccounts/ID21-25 RDP Logon Logoff Reconnect.evtx,23,Microsoft-Windows-TerminalServices-LocalSessionManager/Operational,EC2AMAZ-3NFFVNI,"SessionID: 4
+User: EC2AMAZ-3NFFVNI\samurai
+"
+2024-11-22T22:49:00.168895+00:00,RDS - Session logon succeeded,/evidence/windows-evtx-hayabusa-samples/IntialAccess/ValidAccounts/ID21-25 RDP Logon Logoff Reconnect.evtx,21,Microsoft-Windows-TerminalServices-LocalSessionManager/Operational,EC2AMAZ-3NFFVNI,"User: EC2AMAZ-3NFFVNI\samurai
+Address: 219.100.37.234
+SessionID: 5
+"
+2024-11-22T22:49:00.440260+00:00,RDS - File Explorer shell start notification received,/evidence/windows-evtx-hayabusa-samples/IntialAccess/ValidAccounts/ID21-25 RDP Logon Logoff Reconnect.evtx,22,Microsoft-Windows-TerminalServices-LocalSessionManager/Operational,EC2AMAZ-3NFFVNI,"User: EC2AMAZ-3NFFVNI\samurai
+Address: 219.100.37.234
+SessionID: 5
+"
+2024-11-22T22:49:16.732030+00:00,RDS - Session logoff succeeded,/evidence/windows-evtx-hayabusa-samples/IntialAccess/ValidAccounts/ID21-25 RDP Logon Logoff Reconnect.evtx,23,Microsoft-Windows-TerminalServices-LocalSessionManager/Operational,EC2AMAZ-3NFFVNI,"SessionID: 5
+User: EC2AMAZ-3NFFVNI\samurai
+"
+2024-11-22T22:50:25.445075+00:00,RDS - Session logon succeeded,/evidence/windows-evtx-hayabusa-samples/IntialAccess/ValidAccounts/ID21-25 RDP Logon Logoff Reconnect.evtx,21,Microsoft-Windows-TerminalServices-LocalSessionManager/Operational,EC2AMAZ-3NFFVNI,"User: EC2AMAZ-3NFFVNI\Administrator
+Address: 219.100.37.234
+SessionID: 6
+"
+2024-11-22T22:50:25.865584+00:00,RDS - File Explorer shell start notification received,/evidence/windows-evtx-hayabusa-samples/IntialAccess/ValidAccounts/ID21-25 RDP Logon Logoff Reconnect.evtx,22,Microsoft-Windows-TerminalServices-LocalSessionManager/Operational,EC2AMAZ-3NFFVNI,"User: EC2AMAZ-3NFFVNI\Administrator
+Address: 219.100.37.234
+SessionID: 6
+"

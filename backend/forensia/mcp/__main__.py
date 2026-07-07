@@ -57,7 +57,7 @@ async def _serve(consent_ref: str, shutdown_event: asyncio.Event) -> None:
 
     Round-1 panel (F2): without an explicit shutdown path, ``stdio_server``
     blocks on stdin reads forever — Claude Desktop's SIGTERM on exit left
-    zombie sidecars. Closing ``read_stream`` from the signal handler
+    zombie server processes. Closing ``read_stream`` from the signal handler
     unblocks the inner read and lets ``server.run`` unwind cleanly, which
     triggers the audit ``mcp_session_close`` entry through the ``finally``.
     """
@@ -158,7 +158,7 @@ def main() -> None:
 def _force_exit() -> None:
     """Last-resort exit when the cooperative shutdown can't unwind within
     ``_FORCE_EXIT_DEADLINE_S``. Used by the signal handler in ``main`` so a
-    Claude Desktop quit cannot leave the sidecar process running. We log to
+    Claude Desktop quit cannot leave the MCP server process running. We log to
     stderr (no audit — that audit slot is the lifecycle's on_session_end's
     job, and it ran before we get here unless the loop itself is stuck).
     """
