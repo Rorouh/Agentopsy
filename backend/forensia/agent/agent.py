@@ -46,6 +46,7 @@ import os
 from collections.abc import Callable
 from typing import Any
 
+from forensia.agent.context import select_playbook_section, window_messages
 from forensia.agent.package import AgentPackage
 from forensia.agent.redaction import redact_messages
 from forensia.agent.tool_schemas import (
@@ -142,6 +143,52 @@ _EVIDENCE_INJECTION: dict[str, str] = {
     "evtxecmd": "evtx_path",
     "mftecmd": "mft_path",
 }
+
+
+# Hard cap on the chars of ONE tool-result message that reach the executor's
+# context (Bug 008). The executor is stateless, so every tool result stays in the
+# transcript and is re-sent each iteration — an uncapped result inflates every
+# subsequent turn. The full output always lives in the run artifact on disk.
+_MAX_TOOL_RESULT_CHARS = 8000
+
+
+def _bounded_json(body: dict[str, Any], limit: int) -> str:
+    """Serialize ``body`` to JSON, kept under ``limit`` chars WITHOUT ever emitting
+    invalid JSON. The old code did ``json.dumps(body)[:limit]``, which cut mid
+    structure (the model then received unparseable JSON) and, by key order, could
+    drop the ``artifact_run`` pointer entirely (Bug 008). Here we shed the heavy
+    fields progressively — sample rows, then stdout/stderr previews — and, as a
+    last resort, keep only the identifying skeleton. Every return value parses.
+    """
+    text = json.dumps(body, ensure_ascii=False, default=str)
+    if len(text) <= limit:
+        return text
+
+    trimmed = dict(body)
+    parsed = trimmed.get("parsed")
+    if isinstance(parsed, dict) and isinstance(parsed.get("sample"), list):
+        parsed = dict(parsed)
+        parsed["sample"] = []
+        parsed["sample_truncated"] = True
+        parsed["omitted"] = "sample elided for context cap — query the run artifact with jq"
+        trimmed["parsed"] = parsed
+    for key in ("stdout_sample", "stderr_sample"):
+        value = trimmed.get(key)
+        if isinstance(value, str) and len(value) > 500:
+            trimmed[key] = value[:500] + "…"
+    text = json.dumps(trimmed, ensure_ascii=False, default=str)
+    if len(text) <= limit:
+        return text
+
+    skeleton = {
+        "tool_id": body.get("tool_id"),
+        "exit_code": body.get("exit_code"),
+        "run_id": body.get("run_id"),
+        "artifact_run": body.get("artifact_run"),
+        "truncated": True,
+        "note": "tool result too large for context — inspect the run artifact",
+    }
+    return json.dumps(skeleton, ensure_ascii=False, default=str)
 
 
 class AgentLoopResult(dict):
@@ -264,11 +311,21 @@ class ForensicAgent:
         )
 
         for iteration in range(max_iter):
-            # F1 — SINGLE egress point. For a cloud backend, redact a copy of the
-            # whole conversation (system + user + tool results) with the package's
-            # patterns; the canonical `messages` stays raw. F3 — audit each egress
-            # with the SHA-256 of the exact redacted payload (never the bytes).
-            outbound = redact_messages(messages, self.package.policy.redaction_patterns) if is_cloud else messages
+            # Bug 008 — provider-agnostic context management. FORENSIA owns the
+            # conversation; the executor is stateless and re-charges the whole
+            # transcript each iteration. Project the canonical `messages` to a
+            # windowed OUTBOUND copy (older tool results collapsed to stubs) so a
+            # single run doesn't grow O(N^2). The canonical list stays raw.
+            windowed = window_messages(messages)
+            # F1 — SINGLE egress point. For a cloud backend, redact the windowed
+            # copy with the package's patterns; the canonical `messages` stays
+            # raw. F3 — audit each egress with the SHA-256 of the exact payload
+            # sent (windowed + redacted), never the bytes.
+            outbound = (
+                redact_messages(windowed, self.package.policy.redaction_patterns)
+                if is_cloud
+                else windowed
+            )
             if is_cloud:
                 payload = json.dumps(
                     outbound, sort_keys=True, separators=(",", ":"), default=str
@@ -505,10 +562,13 @@ class ForensicAgent:
         detected_os: str,
         detected_kind: str,
     ) -> str:
+        # Bug 008 — only the playbook branch that matches the evidence kind travels
+        # in the system prompt (re-sent every stateless iteration). RULE 2: for an
+        # `unknown` kind both branches stay; nothing is hidden silently.
         pkg_parts = [
             self.package.prompts.system,
             self.package.prompts.identity,
-            self.package.prompts.playbook,
+            select_playbook_section(self.package.prompts.playbook, detected_kind),
         ]
         identity_block = "\n\n".join(p.strip() for p in pkg_parts if p and p.strip())
 
@@ -643,19 +703,23 @@ class ForensicAgent:
         return {
             "role": "tool",
             "tool_call_id": call.call_id,
-            "content": json.dumps(body)[:8000],
+            "content": _bounded_json(body, _MAX_TOOL_RESULT_CHARS),
         }
 
     @staticmethod
     def _tool_result_payload(result: dict[str, Any]) -> dict[str, Any]:
+        # Order matters: `artifact_run` (the hashed pointer to the full output on
+        # disk) comes BEFORE `parsed` so that if the payload is ever shed under the
+        # context cap, the pointer to custody survives (Bug 008 — the old blind
+        # `[:8000]` slice could drop it and also corrupt the JSON mid-structure).
         return {
             "tool_id": result.get("tool_id"),
             "exit_code": result.get("exit_code"),
             "run_id": result.get("run_id"),
+            "artifact_run": _trim_artifact(result.get("artifact_run")),
             "parsed": result.get("parsed"),
             "stdout_sample": (result.get("stdout_sample") or "")[:2000],
             "stderr_sample": (result.get("stderr_sample") or "")[:2000],
-            "artifact_run": _trim_artifact(result.get("artifact_run")),
         }
 
 

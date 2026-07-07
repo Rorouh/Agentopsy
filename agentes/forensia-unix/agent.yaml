@@ -11,9 +11,11 @@ authors:
 model:
   name: "llama3.1:8b"       # base local de la comparativa; cambiar aquí no toca prompts
   temperature: 0.2          # análisis determinista, poca creatividad
-  max_iterations: 18        # tope de seguridad del loop tool-use; subido de
-                            # 12 cuando la memoria conversacional habilitó
-                            # cadenas tipo "hazlo" con 4-6 tools en un turno.
+  max_iterations: 12        # tope de seguridad del loop tool-use. Bug 008: bajado
+                            # de 18 → 12 (valor previo) — acota el peor caso de
+                            # runaway; con la gestión de contexto nativa el coste
+                            # por iteración ya cayó, así que 12 conserva cadenas de
+                            # 4-6 tools por turno sin re-facturar 18 prefijos.
 
 prompts:
   system: prompts/system.md

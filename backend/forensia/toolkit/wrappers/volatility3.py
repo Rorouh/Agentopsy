@@ -58,11 +58,37 @@ def build_argv(params: dict[str, Any]) -> list[str]:
     return argv
 
 
+# How many rows of the parsed array reach the LLM context (Bug 008). The FULL
+# array (pslist/netscan/filescan can be hundreds→tens of thousands of rows) is
+# always preserved on disk as the run's hash-chained stdout.txt (custody); this
+# cap only bounds what gets re-sent to the model every iteration. Filter the
+# full array with `jq` against the artifact, never by pulling `rows` inline.
+_MAX_SAMPLE_ROWS = 20
+
+
 def parse(stdout: str) -> dict[str, Any]:
-    """Volatility 3 with `-r json` emits a JSON array of row dicts."""
+    """Volatility 3 with `-r json` emits a JSON array of row dicts.
+
+    Returns a BOUNDED summary — ``row_count``, the column names, and a capped
+    ``sample`` — not the whole array. The uncapped array was the token inflator
+    behind Bug 008: it went straight to the executor's context (re-sent on every
+    stateless iteration). The complete rows live in the run's ``stdout.txt``
+    artifact (SHA-256 in the audit chain), so nothing is lost for custody.
+    """
     try:
         rows = json.loads(stdout)
     except (ValueError, json.JSONDecodeError):
         return {"raw": stdout, "lines": stdout.count("\n")}
-    row_count = len(rows) if isinstance(rows, list) else 0
-    return {"rows": rows, "row_count": row_count}
+    if not isinstance(rows, list):
+        # Volatility -r json normally emits an array; anything else is unexpected
+        # and stays on disk. Keep the context payload tiny.
+        return {"row_count": 0, "columns": [], "sample": [], "note": "non-array JSON"}
+    row_count = len(rows)
+    columns = sorted(rows[0].keys()) if rows and isinstance(rows[0], dict) else []
+    sample = rows[:_MAX_SAMPLE_ROWS]
+    return {
+        "row_count": row_count,
+        "columns": columns,
+        "sample": sample,
+        "sample_truncated": row_count > len(sample),
+    }
