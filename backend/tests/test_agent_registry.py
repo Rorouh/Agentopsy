@@ -36,7 +36,7 @@ def test_forensia_unix_package_loads() -> None:
     assert pkg.id == "forensia-unix"
     assert pkg.os_profile == "unix"
     assert pkg.model.name == "llama3.1:8b"
-    assert pkg.model.max_iterations == 18
+    assert pkg.model.max_iterations == 12  # Bug 008: lowered 18 → 12 (runaway cap)
     assert "tsk_mmls" in pkg.policy.allowed_tools
     assert "volatility3" in pkg.policy.allowed_tools
     # Prompts loaded as text from disk.

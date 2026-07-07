@@ -145,7 +145,12 @@ class ExecutorBackend(ModelBackend):
             else:
                 raise ValueError(f"unsupported message role in state: {role!r}")
 
-        specs = json.dumps(tools, ensure_ascii=False, indent=2)
+        # Compact separators, not indent=2: the tool specs are re-serialized and
+        # re-sent on EVERY iteration (the executor is stateless — Bug 008). The
+        # pretty-print whitespace is ~4.7 KB (~1.2 K tokens) of pure indentation
+        # the model does not need. Lossless: identical JSON, fewer bytes on the
+        # wire, provider-agnostic.
+        specs = json.dumps(tools, ensure_ascii=False, separators=(",", ":"))
         blocks.append(
             "## HERRAMIENTAS DISPONIBLES (especificación function-calling)\n" + specs
         )

@@ -515,10 +515,26 @@ class TestVolatility3:
             )
 
     def test_parse_json_rows(self):
+        # Bug 008: parse returns a BOUNDED summary (row_count + columns + capped
+        # sample), never the whole array — the full rows live in the run artifact.
         sample = '[{"PID": 4, "Name": "System"}, {"PID": 100, "Name": "explorer.exe"}]'
         result = volatility3.parse(sample)
         assert result["row_count"] == 2
-        assert result["rows"][0]["PID"] == 4
+        assert result["sample"][0]["PID"] == 4
+        assert result["columns"] == ["Name", "PID"]
+        assert result["sample_truncated"] is False
+        assert "rows" not in result  # the uncapped array never reaches context
+
+    def test_parse_caps_large_array(self):
+        # A big plugin output (e.g. filescan) is capped to _MAX_SAMPLE_ROWS in the
+        # context payload; row_count still reflects the true total.
+        import json as _json
+
+        big = _json.dumps([{"PID": i, "Name": f"p{i}"} for i in range(500)])
+        result = volatility3.parse(big)
+        assert result["row_count"] == 500
+        assert len(result["sample"]) == volatility3._MAX_SAMPLE_ROWS
+        assert result["sample_truncated"] is True
 
     def test_parse_not_json(self):
         result = volatility3.parse("not json output\nsecond line\n")

@@ -18,3 +18,4 @@ con su reproducción y causa raíz.
 | [005](005-hayabusa-glibc-gnu-build.md) | hayabusa (build gnu) no arranca en Ubuntu 22.04 (`GLIBC_2.38`) — usar build musl | alta | resuelto |
 | [006](006-hayabusa-wizard-no-tty.md) | hayabusa panica sin TTY (`not a terminal`, exit 101) — falta `--no-wizard` en el wrapper | alta | resuelto |
 | [007](007-chainsaw-parser-lee-stdout-no-stderr.md) | El parser de `chainsaw` leía stdout, pero chainsaw resume por stderr (parsed=0 con artefacto correcto) — dispatcher pasa stderr por aridad | media | resuelto |
+| [008](008-consumo-tokens-executor-stateless-volatility.md) | Un volcado de Volatility funde ~50 % del presupuesto de tokens en una pasada — executores stateless re-facturan el prefijo fijo (playbook 21.9 KB + specs) × `max_iterations` sin caché | alta | mitigado |
