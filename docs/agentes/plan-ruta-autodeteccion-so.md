@@ -91,13 +91,32 @@ declarativo (orquestador KB / docs, lane del auditor) · **[gov]** decisión equ
   anclaje del operador**". Registrar el racional (§2). **Criterio:** OK explícito + enmienda
   redactada. Sin esto no se implementa.
 
-### Fase 1 — Auditoría técnica (read-only) — **[decl] + [be]**  ⬜
-- Confirmar el contrato de `triage` (umbrales de `confidence`, campo `signals`, casos
-  `unknown`/conflicto) y dónde exactamente el caso fija `os_profile`
-  (`cases/manager.py:117-143`, `routers/cases.py`).
-- Localizar todo lo que asume `os_profile` de caso: `registry.get_for_profile`, el loop del
-  agente, la UI (selector de SO), y los tests (`test_cases.py`, `test_agent_registry.py`,
-  `test_smoke.py`). Inventario de puntos de cambio.
+### Fase 1 — Auditoría técnica (read-only) — **[decl]**  ✅ (hecha)
+
+**Inventario de puntos de cambio** (rastreo read-only):
+
+- **La huella ya se persiste por evidencia:** `evidence.py` guarda `detected_os` /
+  `detected_kind` (de `triage`) por evidencia. El enrutado puede leer
+  `evidence.detected_os` — el dato ya existe.
+- **3 callers de enrutado** (hoy por `case.os_profile` / `req.os_profile`; pasarlos a la
+  `family` de la evidencia): `routers/agent.py:119` `get_for_profile(req.os_profile)` —
+  con un **default silencioso `= "unix"`** (línea 49) que ya contradice RULE 2 —,
+  `mcp/session.py:52` y `mcp/jira_tools.py:140` `get_for_profile(case.os_profile)`.
+- **Anclaje del operador (a quitar):** `routers/cases.py:27,60` + `cases/manager.py:117`
+  exigen `os_profile` al crear el caso; `case.json` lo valida obligatorio
+  (`manager.py:235-240`). Nuevo modelo: `case.os_profile` opcional/derivado.
+- **Triage / conflicto:** `DetectedEvidence(family, kind, confidence, signals)`,
+  `confidence ∈ {header, markers, extension, none}`. **No hay campo de "conflicto"**:
+  `_decide_family` elige por conteo de marcadores. Predicado *enrutable* =
+  `family ∈ {unix, windows}` **y** `confidence ∈ {header, markers}`; el empate (dual-boot,
+  win y unix altos) exige que `_decide_family` devuelva `unknown` en empate cercano →
+  pequeña mejora [be] en triage.
+- **Frontend:** `ChatPage.tsx:318-329,450` elige el agente por `activeCase.os_profile` y lo
+  envía; banner de mismatch `ChatPage.tsx:525-530`; tipos en `api/types.ts`; el selector de
+  SO vive en el formulario de creación de caso.
+- **Tests afectados:** `test_cases.py`, `test_agent_registry.py`, `test_web_surface.py`,
+  `test_dispatcher_case_anchored.py`, `test_smoke.py` (14 ficheros referencian `os_profile`;
+  estos codifican el anclaje/enrutado).
 
 ### Fase 2 — Enrutado por evidencia — **[be]**  ⬜
 - `os_profile` pasa a derivarse de `triage.family` por evidencia; `case.os_profile` se hace
@@ -132,7 +151,7 @@ declarativo (orquestador KB / docs, lane del auditor) · **[gov]** decisión equ
 | fase | estado | commit | notas |
 |---|---|---|---|
 | 0 Gobernanza | ✅ aprobada (equipo+tutor) | (este commit) | RULE 2 enmendada |
-| 1 Auditoría | ⬜ | — | inventario de puntos de cambio |
+| 1 Auditoría | ✅ hecha | (este commit) | inventario en §Fase 1 |
 | 2 Enrutado [be] | ⬜ | — | cambio de invariante; lo valida el dueño del motor |
 | 3 UI [fe] | ⬜ | — | quitar selector SO |
 | 4 Orquestador/docs [decl] | ⬜ | — | mi lane |
