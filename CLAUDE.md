@@ -174,6 +174,26 @@ is immediately followed by `git pull` for that branch.
 If the pull surfaces conflicts, resolve them before doing any other work — never pile
 new commits on top of a divergent local state.
 
+## RULE 6 — GitHub Actions must pass before every push
+
+**Never `git push` code that would red the CI.** Before any push, reproduce every gate
+in `.github/workflows/ci.yml` locally and confirm they all pass — pushing is not a way
+to "find out" if CI is green. The three jobs and their exact gates:
+
+- **backend** — from `backend/`, install the SAME extras CI uses (`pip install -e ".[dev,mcp]"` —
+  the `mcp` extra is **not** optional here: `tests/test_mcp_toolkit.py` imports `mcp` at module
+  level, so without it `pytest` fails at collection, exactly as the CI would), then run
+  `ruff check .` and `pytest -q`. Both must be clean.
+- **web** — from `web/`, `npm ci` → `npm run typecheck` → `npm run build`. All three must pass.
+- **compose** — `docker compose config --quiet` and `docker compose build api web` must succeed.
+
+Run the gates for whatever you actually changed (a docs-only change still must not break a
+gate, but you needn't rebuild images for a Python-only change if the compose gate is unaffected —
+use judgment, but when in doubt run them all). If a gate cannot be run locally (e.g. no Docker),
+say so explicitly and do not claim the push is CI-safe. After pushing, still verify the run went
+green on GitHub (`gh run watch` / the Actions tab); a push is not "done" until CI is green on the
+remote. This rule composes with RULE 4 (docs in sync) — both are preconditions of a push.
+
 ## FORENSIC INVARIANTS (chain of custody — do not erode these)
 
 1. **`EvidenceManager` is the single owner of evidence.** No tool and no agent ever
