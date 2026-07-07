@@ -152,9 +152,11 @@ Tamaño total verificado: 13545502470 bytes (~12.62 GiB).
   - Herramienta de adquisición: `mdd` (ManTech Memory DD) → `*.mddramimage`; en
     diciembre hay además copias `*.winddramimage` (win32dd) de la misma RAM.
 - **Fichero analizado (M2)**: `jo-2009-11-24.mddramimage` (extraído del ZIP homónimo).
-  El **2009-11-24** es el día candidato del incidente de exfiltración de `m57biz.xls`
+  El **2009-11-24** es el día candidato del incidente de exfiltración de la
+  **investigación de patentes** (los `hr_patent*.JPG` observados en RAM)
   (**confirmar contra los detective reports / instructor packet** — no se fija por
-  memoria; principio metodológico del plan de ruta).
+  memoria; principio metodológico del plan de ruta). Nota: `m57biz.xls` es de
+  **M57-Jean (2008)**, escenario distinto — no de este.
 - **Formato**: raw físico, analizable con `volatility3` (plugins `windows.*`, XP x86).
 - **Baselines SHA-256** (computados sobre los ficheros descargados/extraídos):
 

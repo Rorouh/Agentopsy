@@ -32,7 +32,7 @@ de finding del diseño (§3.3: *ningún finding sin `provenance` resoluble*):
 - Lo que aún no se ha confirmado analizando la imagen se marca con `<verificar>`
   — **no** se rellena con una suposición.
 - El `technique_id` de MITRE sale de la **enum cerrada** de la semilla
-  ([`mitre_attack_seed.md`](../../agentes/_orchestrator/knowledge/mitre_attack_seed.md)):
+  ([`mitre_attack_seed.md`](../../../agentes/_orchestrator/knowledge/mitre_attack_seed.md)):
   si una técnica no está en la semilla, no se cita aquí.
 
 ## Relación corpus ↔ ground-truth ↔ evals
@@ -61,3 +61,4 @@ usan fixtures sintéticas** — la traza dorada dice *qué buscar*, no aporta lo
 
 - [`_plantilla.md`](_plantilla.md) — plantilla base (no es un caso; es el molde).
 - [`lonewolf-2018.md`](lonewolf-2018.md) — escenario 2018 Lone Wolf (disco + RAM).
+- [`m57-patents.md`](m57-patents.md) — escenario 2009 M57-Patents (memoria XP + disco; hilo Jo / exfiltración), derivado de fuentes públicas.
