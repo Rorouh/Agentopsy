@@ -1,7 +1,8 @@
 # Plan de ruta — Auto-detección de SO y enrutado por el orquestador
 
-**Rama:** `tools` · **Estado:** propuesta / Fase 0 (decisión) · **Toca varias lanes**
-(backend/triage/registry, frontend, orquestador KB, docs, gobernanza).
+**Rama:** `tools` · **Estado:** Fases 0–2 y 4 ✅ · pendientes 2b (multi-SO), 3 (UI) y 5
+(validación) · **Toca varias lanes** (backend/triage/registry, frontend, orquestador KB,
+docs, gobernanza).
 
 > **Petición del equipo (constancia):** eliminar por completo que el usuario elija el SO
 > de la evidencia. El **orquestador** debe ser lo bastante inteligente en su capa para
@@ -31,23 +32,29 @@ intacta). Devuelve `DetectedEvidence(family, kind, confidence, signals)`:
   recurso).
 - Se persiste en `baseline.json` por evidencia.
 
-**Consumidores hoy:** (1) la UI muestra un banner si `case.os_profile != evidence.family`
-— *el operador decide, nunca auto-switch* (RULE 2); (2) el system prompt del agente recibe
-`family`+`kind` para ir a la sección correcta del playbook.
+**Consumidores (baseline pre-cambio, tal como los halló esta auditoría):** (1) la UI
+mostraba un banner si `case.os_profile != evidence.family` — el operador decidía, sin
+auto-switch; (2) el system prompt del agente recibe `family`+`kind` para ir a la sección
+correcta del playbook (esto sigue igual).
 
-**Enrutado hoy:** `agent/registry.py` → `get_for_profile(os_profile)` con el `os_profile`
-que **el operador ancla** al crear el caso (`cases/manager.py`, `routers/cases.py` lo exigen).
+**Enrutado en el baseline:** `agent/registry.py` → `get_for_profile(os_profile)` con el
+`os_profile` que el operador anclaba al crear el caso. → **Sustituido por la Fase 2**
+(ya hecha): el `os_profile` se **deriva del contenido** por triage, `case.os_profile` es
+nullable/derivado, `routers/cases.py` **ya no lo exige**, y la ambigüedad **escala** al
+operador (`POST /api/cases/{id}/os-profile`). Ver §Fase 2.
 
-**Conclusión:** la detección ya está resuelta y es robusta. El cambio es de **wiring +
+**Conclusión:** la detección ya estaba resuelta y es robusta. El cambio fue de **wiring +
 salvaguardas**, no una rearquitectura.
 
 ---
 
 ## 2. Tensión con los invariantes (leer antes de tocar nada)
 
-- **RULE 2** (`CLAUDE.md`, líneas ~60 y ~133): "el operador ancla; el orquestador nunca
-  adivina el perfil; `triage` solo *sugiere*". La petición lo cambia → **hay que enmendar
-  RULE 2**, no violarla en silencio.
+- **RULE 2** (`CLAUDE.md`) — **ya enmendada**: antes decía "el operador ancla; el
+  orquestador nunca adivina el perfil; `triage` solo *sugiere*"; ahora "el triage
+  **determina** el `os_profile` del contenido y el orquestador enruta cuando hay confianza;
+  en ambigüedad **escala** y el operador ancla". El cambio se hizo enmendando RULE 2, no
+  violándola en silencio.
 - **Reconciliación (argumento para el tutor):** lo que RULE 2 prohíbe es *"guess from
   context / host platform"* — defaults silenciosos que ocultan bugs de configuración. La
   detección de `triage` es **por el contenido de la evidencia**, determinista y auditable:
@@ -84,12 +91,11 @@ Lane: **[be]** backend/toolkit (dueño del motor) · **[fe]** frontend · **[dec
 declarativo (orquestador KB / docs, lane del auditor) · **[gov]** decisión equipo + tutor +
 `CLAUDE.md`.
 
-### Fase 0 — Decisión y gobernanza — **[gov]**  ⬜
-- Confirmar el cambio con equipo **y tutor** (enmienda una invariante y toca soundness).
-- Redactar la **enmienda de RULE 2** en `CLAUDE.md`: de "operador ancla, triage sugiere" a
-  "triage determina desde el contenido; enruta cuando hay confianza; **en ambigüedad exige
-  anclaje del operador**". Registrar el racional (§2). **Criterio:** OK explícito + enmienda
-  redactada. Sin esto no se implementa.
+### Fase 0 — Decisión y gobernanza — **[gov]**  ✅ (hecha)
+- Confirmado el cambio con equipo **y tutor** (enmienda una invariante y toca soundness).
+- **Enmienda de RULE 2** en `CLAUDE.md` **ya redactada**: de "operador ancla, triage
+  sugiere" a "triage determina desde el contenido; enruta cuando hay confianza; **en
+  ambigüedad exige anclaje del operador**". Racional registrado (§2).
 
 ### Fase 1 — Auditoría técnica (read-only) — **[decl]**  ✅ (hecha)
 
@@ -151,12 +157,15 @@ declarativo (orquestador KB / docs, lane del auditor) · **[gov]** decisión equ
   detectados. Cuando hay ambigüedad, pedir el anclaje manual (único caso que lo requiere).
 - **Criterio:** `npm run typecheck && build` verdes; el flujo degrada explícito en ambigüedad.
 
-### Fase 4 — Orquestador (KB/prompts) + docs — **[decl]**  ⬜
-- Ajustar `agentes/_orchestrator/` (README/reporter/mitre/timeline) para reflejar el
-  enrutado automático por evidencia y el caso multi-SO.
-- Sincronizar (RULE 4): `docs/agentes/contrato-paquetes.md`, `docs/agentes/diseno-fase2.md`,
-  `agentes/README.md`, `docs/arquitectura.md`, y `CLAUDE.md` (§ Trained-agent packages +
-  RULE 2 enmendada).
+### Fase 4 — Orquestador (KB/prompts) + docs — **[decl]**  ✅ (hecha, este commit)
+- `agentes/_orchestrator/` (README/reporter/mitre/timeline) revisado: el orquestador es
+  agnóstico del SO (trabaja sobre `Finding[]`), así que su KB no fija el enrutado — no
+  requiere cambios por este invariante.
+- Sincronizado (RULE 4): `docs/agentes/contrato-paquetes.md` (§6/§6.1 reescritas:
+  determinación por contenido + escalada), `docs/agentes/diseno-fase2.md` (routing
+  determinista por triage; multi-SO simultáneo → Fase 2b), `agentes/README.md`,
+  `docs/arquitectura.md`, y `CLAUDE.md` (§ Trained-agent packages + RULE 2 enmendada, ya
+  hecho en su commit).
 
 ### Fase 5 — Validación + doc-sync — **[be] + [decl]**  ⬜
 - Corridas de prueba: disco Windows, disco Linux, memoria de cada uno, un caso **multi-SO**,
@@ -174,7 +183,8 @@ declarativo (orquestador KB / docs, lane del auditor) · **[gov]** decisión equ
 | 2 Enrutado [be] | ✅ hecha (pend. validación motor) | (este commit) | triage.routable_profile + case.os_profile derivado + audit; sin default silencioso |
 | 2b Multi-SO [be] | ⬜ | — | perfil por-evidencia; hoy mezcla = conflicto/escala |
 | 3 UI [fe] | ⬜ | — | quitar selector SO |
-| 4 Orquestador/docs [decl] | ⬜ | — | mi lane |
+| 4 Orquestador/docs [decl] | ✅ hecha | (este commit) | docs sincronizadas; _orchestrator agnóstico del SO (sin cambios) |
+| 4b Prompts sub-agente [decl] | ⬜ | — | quitar la instrucción de "reabrir el caso" de `system.md`/`playbook.md` (unix+windows), migrar al flujo de anclaje; pase metodológico |
 | 5 Validación | ⬜ | — | incluye caso multi-SO y caso ambiguo |
 
 ---

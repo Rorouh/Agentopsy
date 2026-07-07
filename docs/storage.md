@@ -54,7 +54,7 @@ auxiliares.
 
 | Path | Módulo | Responsabilidad |
 |---|---|---|
-| `cases/<case-id>/case.json` | `forensia.cases.manager` (`CaseManager`) | Crear / listar / cargar / cerrar casos. UUID4 obligatorio; valida `os_profile in {unix, windows}`; subdirectorios (`evidence/`, `artifacts/`, `chats/`, `reports/`) materializados al crear. |
+| `cases/<case-id>/case.json` | `forensia.cases.manager` (`CaseManager`) | Crear / listar / cargar / cerrar casos. UUID4 obligatorio; `os_profile` opcional/nullable — derivado del contenido de la evidencia (triage) o anclado por el operador; validado `in {unix, windows}` solo cuando está presente (+ `os_profile_source ∈ {derived, operator, conflict}`); subdirectorios (`evidence/`, `artifacts/`, `chats/`, `reports/`) materializados al crear. |
 | `cases/<case-id>/evidence/<id>/` | `forensia.evidence` (`EvidenceManager`) | Hash gate estricto: stream SHA-256 de la fuente → `shutil.copy2` → re-hash de la copia (abort + cleanup si mismatch) → `chmod 0o444` → `baseline.json`. La fuente nunca se modifica; el handle devuelto apunta SIEMPRE a la copia inmutable. |
 | `cases/<case-id>/artifacts/<run>/` | `forensia.artifacts.store` (`ArtifactStore`) | `start_run` reserva `run_id` (UUID4) y abre `manifest.json` en estado `running`. `finalize_run` escribe `stdout.txt`/`stderr.txt`, hashea recursivamente cada fichero en `out/` con chunks de 1 MiB, y cierra el manifest atómicamente (`os.replace`). |
 | `cases/<case-id>/chats/<session>.jsonl` | `forensia.chats.store` (`ChatStore`) | Append-only line-buffered JSONL. `session_id` UUID4 o slug `^[a-zA-Z0-9_-]{1,64}$`. Roles validados contra `{user, assistant, system, tool}`. Lectura tolera última línea truncada (warning). |

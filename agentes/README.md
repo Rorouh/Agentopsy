@@ -134,9 +134,15 @@ patterns:
 3. Los paquetes válidos se indexan por `os_profile`. Dos paquetes con el mismo
    `os_profile` → error fatal (RULE 2).
 4. `/api/capabilities` expone la lista cargada; `/api/agents` permite consultarla.
-5. Al crear un caso con `os_profile=unix`, el chat usa el agente unix cargado.
-   Si no hay agente para ese perfil, el endpoint `/api/agent/query` responde 503
-   y la UI lo refleja explícitamente — sin "agente fallback".
+5. El `os_profile` del caso **se determina del contenido de la evidencia** por
+   `forensia.triage` al registrarla (nunca desde el host); cuando la
+   determinación es confiable (`family ∈ {unix,windows}` y
+   `confidence ∈ {header,markers}`) el orquestador enruta al sub-agente de ese
+   perfil automáticamente. En `unknown` / baja confianza / conflicto de SOs,
+   `/api/agent/query` responde 409 y el operador **ancla** el perfil vía
+   `POST /api/cases/{id}/os-profile` — nunca se enruta a ciegas. Si no hay
+   agente cargado para el perfil resuelto, el endpoint responde 503 y la UI lo
+   refleja explícitamente — sin "agente fallback".
 
 ## Cómo entrega el resultado el entrenador
 

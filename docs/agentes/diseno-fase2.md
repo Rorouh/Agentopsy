@@ -115,11 +115,13 @@ responsabilidades que la propuesta mete en el mismo saco:
 
 **Por qué esta forma y no un orquestador-LLM que enruta en caliente:** un agente
 LLM extra que "decide a qué sub-agente llamar" reintroduciría no-determinismo y
-coste de tokens en una decisión que es **determinista** (la evidencia ya declara
-su `os_profile`, ver `EvidenceFile.osProfile` en `domain.ts`). El routing debe
-ser código, no inferencia (coherente con `CLAUDE.md` RULE 2: sin defaults
-silenciosos). El LLM se reserva para lo que sí requiere juicio: investigar y
-redactar.
+coste de tokens en una decisión que es **determinista**: el `os_profile` lo
+**determina `forensia.triage` del contenido de la evidencia** (fingerprint sobre
+bytes, nunca desde el host) y el orquestador enruta automáticamente cuando la
+determinación es confiable; en `unknown` / baja confianza / conflicto **escala**
+y el operador ancla (RULE 2: sin defaults silenciosos, sin enrutado a ciegas).
+El routing es código, no inferencia LLM. El LLM se reserva para lo que sí
+requiere juicio: investigar y redactar.
 
 > **Decisión abierta para Enrique (D-1):** si prefieres conservar literalmente un
 > *orquestador conversacional* (el investigador habla con el orquestador y este
@@ -224,10 +226,14 @@ El orquestador **no ejecuta herramientas forenses sobre la imagen**: trabaja
 sobre los `Finding[]` y los `artifacts` ya producidos. Sus cuatro funciones
 (las de la propuesta) son:
 
-1. **Routing y recopilación.** Por cada evidencia del caso, despacha la
-   investigación al sub-agente de su `os_profile` y recoge sus findings. Un caso
-   con un disco Windows **y** un volcado Linux usa **ambos** sub-agentes — algo
-   que el modelo "un agente por caso" no cubría y este sí.
+1. **Routing y recopilación.** El `os_profile` del caso lo determina el triage
+   del contenido de la evidencia; el orquestador despacha la investigación al
+   sub-agente de ese perfil y recoge sus findings. **En el MVP** un caso resuelve
+   a **un** perfil: si el triage ve SOs distintos en varias evidencias es un
+   **conflicto** que **escala** al operador (que ancla el perfil), no un
+   despacho simultáneo. Usar **ambos** sub-agentes en un mismo caso (disco
+   Windows **y** volcado Linux, resolviendo el perfil por-evidencia en el punto
+   de análisis) es **Fase 2b** — fuera de alcance del MVP.
 2. **Informe (`[proceed-to-report]`).** Redacta la narrativa pericial a partir de
    los findings, citando procedencia. Produce un `ReportDocument` (draft→final).
 3. **Timeline.** Normaliza `observed_at` + fuente + severidad de todos los

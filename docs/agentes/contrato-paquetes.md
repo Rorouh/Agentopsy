@@ -118,54 +118,81 @@ custodia), no sobre la imagen cruda; por eso no encaja en el enum
 
 ## 6. Selección del agente en la UI
 
-El chat usa el agente del `os_profile` activo:
+El chat usa el agente del `os_profile` **del caso**, y ese perfil **se
+determina del contenido de la evidencia**, no lo elige el operador al crear el
+caso:
 
-- El perfil lo fija el **caso seleccionado** (`os_profile` de `case.json`). Sin
-  caso seleccionado no hay perfil activo: la UI exige crear o seleccionar un
-  caso antes de consultar al agente. El perfil **nunca se infiere** — ni del
-  host ni de la evidencia (RULE 2; el triage solo *sugiere*, ver §6.1).
+- El `os_profile` del caso es **nullable** y arranca `None`. Al registrar una
+  evidencia, `forensia.triage` la fingerprint sobre la copia read-only ya
+  hash-verificada y, **cuando la determinación es confiable**
+  (`family ∈ {unix, windows}` **y** `confidence ∈ {header, markers}`), el
+  backend fija el perfil derivado (`os_profile_source = "derived"`) y el
+  orquestador enruta al sub-agente que coincide, automáticamente. El perfil
+  **nunca se infiere del host** — sólo del contenido de la evidencia (RULE 2).
+- El caso registra además `os_profile_source ∈ {derived, operator, conflict}`,
+  y la decisión de enrutado (`family`, `confidence`, `signals`) queda en el
+  audit log append-only (FORENSIC INVARIANT 4).
+- Sin caso seleccionado no hay perfil activo: la UI exige crear o seleccionar
+  un caso antes de consultar al agente.
 
 Si no hay agente cargado para ese perfil, `/api/agent/query` responde 503 y el
 chat muestra: *"No hay agente cargado para el perfil `unix`. Suelta su carpeta
 dentro de `agentes/` y reinicia el servicio `api`"*. **Nunca** se inventa un
 fallback.
 
-### 6.1 Guard rail de perfil + triage de evidencia
+### 6.1 Determinación del perfil + escalada al operador
 
-Cuando el caso lleva un perfil pero la evidencia es de otro SO o de un tipo
-que no encaja con el playbook elegido, FORENSIA tiene tres defensas
-independientes que se refuerzan entre sí:
+El `os_profile` no se adivina: se **determina** por triage o, en su defecto,
+lo **ancla el operador**. Las defensas que lo materializan:
 
-1. **Triage backend (`forensia.triage.fingerprint_evidence`).** En
-   `EvidenceManager.register()` se computa un par `(family, kind)` por escaneo
-   determinista sobre la copia read-only ya hash-verificada:
+1. **Triage backend (`forensia.triage`).** En `EvidenceManager.register()` se
+   computa un `DetectedEvidence(family, kind, confidence, signals)` por escaneo
+   determinista (Python puro sobre bytes, nunca ejecuta el contenido) sobre la
+   copia read-only ya hash-verificada:
    - **family** ∈ {`unix`, `windows`, `unknown`} por marcadores byte-string
      (`Microsoft Windows`, `Linux version`, `/etc/passwd`, `Mach-O`…).
    - **kind** ∈ {`disk`, `memory`, `container_disk`, `unknown`} por cabeceras
      de fixed-offset (LiME, Windows crash dump, EWF, AFF, VMDK, VDI, QCOW,
      VHD/VHDX), MBR/GPT/NTFS/ext, y scoring PE-scatter + RSDS + page-0-zero
      para detectar volcados RAM Volatility-style sin cabecera.
-   Ambos campos se persisten en `baseline.json` (con `triage_signals` audit-
-   trail). Lazy backfill en `get()` para evidencia anterior al módulo.
+   - **confidence** ∈ {`header`, `markers`, `extension`, `none`} según la
+     fuerza de la señal. `triage.routable_profile()` es la única fuente de
+     verdad de «¿se puede enrutar solo?»: sólo `family` confiada
+     (`header`/`markers`) enruta.
+   Los campos se persisten (con `triage_signals` audit-trail). Lazy backfill
+   en `get()` para evidencia anterior al módulo.
 
-2. **Guard rail en los prompts** (`agentes/forensia-*/prompts/system.md`,
-   regla 8 unix / regla 9 windows). Ante mismatch de `family`, el agente está
-   obligado a negarse a invocar tools y a pedir reabrir el caso con el perfil
-   correcto. **No cambia de agente por sí mismo** — RULE 2.
+2. **Auto-set del caso o escalada** (`CaseManager.apply_detected_evidence`,
+   llamada tras el triage al registrar). Transiciones monótonas:
+   - Caso sin perfil + 1ª evidencia enrutable → **auto-set** derivado
+     (`os_profile_source = "derived"`) + audit `os_profile_routed`
+     (`decision = auto_set`).
+   - 2ª evidencia con `family` confiada **distinta** → **conflicto**: el perfil
+     derivado se **limpia** a `None` (`os_profile_source = "conflict"`), audit
+     `decision = conflict`. Ya en conflicto, más evidencia **no** re-resuelve
+     en silencio.
+   - Evidencia **no** enrutable (`unknown` / baja confianza) → **no-op**: el
+     perfil queda sin determinar.
 
-3. **Routing por `kind` en el system prompt.** El `_system_prompt` del
+3. **Escalada: el operador ancla** (`POST /api/cases/{id}/os-profile` →
+   `CaseManager.anchor_os_profile`). En `unknown` / baja confianza / conflicto
+   / sin evidencia enrutable, `resolve_os_profile(case)` **falla en seco**
+   (`OsProfileUnresolved` → HTTP 409) con mensaje accionable; el chat no
+   enruta. El anclaje del operador (`os_profile_source = "operator"`, audit
+   `os_profile_anchored`) es **la única** salida del estado ambiguo/conflicto
+   y es **final**: evidencia posterior nunca lo tumba. Anclar en la creación
+   del caso (`os_profile` explícito) cuenta también como anclaje del operador.
+
+4. **Routing por `kind` en el system prompt.** El `_system_prompt` del
    `ForensicAgent` añade un bloque «Ruta del playbook» según `detected_kind`:
    `memory` → salta a la sección B (Volatility); `disk`/`container_disk` →
    sección A (TSK). Sin esto, el agente arranca siempre por la sección A del
    playbook y desperdicia iteraciones en `tsk_mmls`/`tsk_fls` cuando la
    evidencia es un memdump.
 
-4. **Banner en la UI** (`InvestigationPage.tsx`). Cuando hay mismatch de
-   `family`, aparece un banner amarillo arriba del chat. El cambio de caso lo
-   hace la operadora; la UI no lo hace por ella.
-
-`unknown` no es un mismatch — significa que el triage no tuvo señal clara y
-se permite un único probe diagnóstico antes de seguir.
+Multi-SO simultáneo (lanzar ambos sub-agentes en un mismo caso, resolviendo el
+perfil por-evidencia en el punto de análisis) queda **fuera de alcance del
+MVP** — Fase 2b. Hoy, mezcla de SOs = conflicto = escala.
 
 ### 6.2 Memoria conversacional del agente
 

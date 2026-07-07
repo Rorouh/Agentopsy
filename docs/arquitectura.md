@@ -52,7 +52,7 @@ de ejecución por CLIs/Ollama sin API keys** — ver
 │   config.py        ~/.forensia/config.json + env override         │
 │   routers/         adaptadores FINOS (health, capabilities, …)    │
 │   evidence.py      EvidenceManager — copia inmutable + hash gate  │
-│   triage.py        fingerprint_evidence(handle) → (family, kind)  │
+│   triage.py        fingerprint → DetectedEvidence, determina SO   │
 │   cases/           CaseManager (caso-como-carpeta, ver STORAGE)   │
 │   artifacts/       ArtifactStore (manifest + hashes por run)      │
 │   chats/           ChatStore (JSONL append-only por sesión)       │
