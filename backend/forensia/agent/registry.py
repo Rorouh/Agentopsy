@@ -13,9 +13,10 @@ Si NINGUNA de las dos opciones existe, la registry se inicia vacía y cualquier
 agente fallback — CLAUDE.md RULE 2).
 
 Invariante adicional (también RULE 2): **dos paquetes válidos no pueden declarar
-el mismo ``os_profile``**. La operadora elige un agente al crear el caso por
-``os_profile``; permitir dos cargas para el mismo perfil reintroduce un default
-silencioso. Si esto ocurre, la registry falla en seco al arranque.
+el mismo ``os_profile``**. El ``os_profile`` se determina por contenido de la
+evidencia (triage) y el orquestador enruta al paquete de ese perfil; permitir
+dos cargas para el mismo perfil reintroduce un default silencioso. Si esto
+ocurre, la registry falla en seco al arranque.
 """
 
 from __future__ import annotations

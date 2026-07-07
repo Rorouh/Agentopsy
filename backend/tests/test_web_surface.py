@@ -227,6 +227,56 @@ def _query(client: TestClient, auth: dict, case_id: str, executor: str) -> objec
     )
 
 
+def test_query_unresolved_os_profile_is_409(
+    client: TestClient, auth: dict, isolated_cases: CaseManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A case whose os_profile triage could not determine (here: no evidence yet)
+    # must NOT route silently — /api/agent/query answers 409 with an actionable
+    # "anchor the profile" message (RULE 2 enmendada). A local executor is used
+    # so the consent gate is not what stops the request.
+    monkeypatch.setattr(
+        OllamaExecutor, "is_available", lambda self: ExecutorAvailability(available=True)
+    )
+    case = isolated_cases.create(name="Ambiguo", examiner="alice")  # no anchor, no evidence
+    r = client.post(
+        "/api/agent/query",
+        headers=auth,
+        json={"prompt": "analiza", "case_id": case.id, "evidence_id": "e1", "executor": "ollama"},
+    )
+    assert r.status_code == 409
+    assert "os-profile" in r.json()["detail"]
+
+
+def test_anchor_os_profile_endpoint_sets_and_persists(
+    client: TestClient, auth: dict, isolated_cases: CaseManager
+) -> None:
+    # The operator's manual anchor (the ambiguous case) round-trips through the
+    # HTTP surface and persists as an operator-sourced profile.
+    case = isolated_cases.create(name="Ambiguo", examiner="alice")
+    r = client.post(
+        f"/api/cases/{case.id}/os-profile",
+        headers=auth,
+        json={"os_profile": "windows"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["os_profile"] == "windows"
+    assert body["os_profile_source"] == "operator"
+    assert isolated_cases.load(case.id).os_profile == "windows"
+
+
+def test_anchor_os_profile_rejects_invalid(
+    client: TestClient, auth: dict, isolated_cases: CaseManager
+) -> None:
+    case = isolated_cases.create(name="Ambiguo", examiner="alice")
+    r = client.post(
+        f"/api/cases/{case.id}/os-profile",
+        headers=auth,
+        json={"os_profile": "macos"},
+    )
+    assert r.status_code == 422
+
+
 def test_cloud_query_without_consent_is_403(
     client: TestClient, auth: dict, monkeypatch: pytest.MonkeyPatch
 ) -> None:

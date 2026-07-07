@@ -18,7 +18,9 @@ from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
+from forensia.audit.log import AuditLog
 from forensia.config import CONFIG_DIR
+from forensia.triage import DetectedEvidence, routable_profile
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +32,46 @@ _UUID4_RE = re.compile(
 
 _VALID_OS_PROFILES = frozenset({"unix", "windows"})
 _VALID_STATUSES = frozenset({"active", "closed"})
+
+# How a case got its ``os_profile`` — this is what keeps auto-routing honest:
+#   - ``derived``  : auto-set from a single evidence whose CONTENT triage
+#                    classified confidently (``routable_profile``).
+#   - ``operator`` : the operator anchored it manually (the ambiguous case, and
+#                    the only time the operator touches the profile). An anchor
+#                    is final — later evidence never flips it, never conflicts.
+#   - ``conflict`` : evidence of two different OSs landed in the same case. The
+#                    profile is cleared to ``None`` and routing escalates until
+#                    the operator anchors. (Multi-OS auto-routing is Fase 2b.)
+_OS_SOURCE_DERIVED = "derived"
+_OS_SOURCE_OPERATOR = "operator"
+_OS_SOURCE_CONFLICT = "conflict"
+_VALID_OS_SOURCES = frozenset(
+    {_OS_SOURCE_DERIVED, _OS_SOURCE_OPERATOR, _OS_SOURCE_CONFLICT}
+)
+
+
+class OsProfileUnresolved(RuntimeError):
+    """The case has no ``os_profile`` that can be routed on.
+
+    Raised by ``resolve_os_profile`` when triage could not determine the OS
+    confidently from the evidence content (unknown / low confidence), when the
+    case holds conflicting evidence (two OSs), or when no routable evidence is
+    registered yet. RULE 2 enmendada: in ambiguity we NEVER route silently —
+    the operator MUST anchor the profile manually. The message is always
+    actionable so the surface can tell the operator exactly what to do.
+    """
+
+
+def _validate_os_profile(os_profile: object) -> str:
+    if not isinstance(os_profile, str):
+        raise ValueError(
+            f"os_profile must be a string, got {type(os_profile).__name__}"
+        )
+    if os_profile not in _VALID_OS_PROFILES:
+        raise ValueError(
+            f"os_profile must be one of {sorted(_VALID_OS_PROFILES)}, got {os_profile!r}"
+        )
+    return os_profile
 
 _MAX_FIELD_LEN = 200
 _PER_CASE_SUBDIRS = ("evidence", "artifacts", "chats", "reports")
@@ -55,8 +97,13 @@ class Case:
     name: str
     examiner: str
     created_at: str
-    os_profile: str
     status: str
+    # DERIVED, not operator-chosen at creation (auto-detección de SO). ``None``
+    # until triage classifies a routable evidence (``os_profile_source`` records
+    # HOW it got set). It is intentionally the SINGLE knob routing reads, via
+    # ``resolve_os_profile`` — never inferred from the host platform (RULE 2).
+    os_profile: str | None = None
+    os_profile_source: str | None = None
     notes: str = ""
     cloud_consent: CloudConsent | None = None
 
@@ -114,19 +161,20 @@ class CaseManager:
         self,
         name: str,
         examiner: str,
-        os_profile: str,
+        os_profile: str | None = None,
         notes: str = "",
     ) -> Case:
         name = _validate_text_field(name, "name")
         examiner = _validate_text_field(examiner, "examiner")
-        if not isinstance(os_profile, str):
-            raise ValueError(
-                f"os_profile must be a string, got {type(os_profile).__name__}"
-            )
-        if os_profile not in _VALID_OS_PROFILES:
-            raise ValueError(
-                f"os_profile must be one of {sorted(_VALID_OS_PROFILES)}, got {os_profile!r}"
-            )
+        # The operator no longer PICKS the OS at creation — it is derived from
+        # the evidence content by triage (auto-detección de SO). ``os_profile``
+        # here is an OPTIONAL manual anchor (operator override for the ambiguous
+        # case); ``None`` is the normal path. When given it is validated and
+        # recorded as an operator anchor (final — later evidence won't flip it).
+        os_source: str | None = None
+        if os_profile is not None:
+            os_profile = _validate_os_profile(os_profile)
+            os_source = _OS_SOURCE_OPERATOR
         notes = _validate_notes(notes)
 
         case_id = str(uuid.uuid4())
@@ -140,8 +188,9 @@ class CaseManager:
             name=name,
             examiner=examiner,
             created_at=_utc_now_iso(),
-            os_profile=os_profile,
             status="active",
+            os_profile=os_profile,
+            os_profile_source=os_source,
             notes=notes,
         )
 
@@ -193,6 +242,87 @@ class CaseManager:
         self._write_case_json(case_dir, updated)
         return updated
 
+    def apply_detected_evidence(
+        self, case_id: str, detected: DetectedEvidence, evidence_id: str
+    ) -> Case:
+        """Derive/adjust the case ``os_profile`` from a newly registered
+        evidence's triage record. Called by ``EvidenceManager.register`` right
+        after the fingerprint runs. The determination is from the evidence
+        CONTENT (``routable_profile``), never from the host platform (RULE 2).
+
+        Transitions (source in parentheses):
+          - not routable (unknown family / low confidence)  → no-op.
+          - operator already anchored                       → no-op (final).
+          - already in conflict                             → no-op (only an
+            operator anchor resolves it).
+          - not yet routed (source None)                    → auto-set to the
+            evidence family (source ``derived``) + audit ``auto_set``.
+          - same family already derived                     → no-op.
+          - a DIFFERENT confident family than the derived one → CONFLICT: clear
+            the profile, mark ``conflict`` + audit ``conflict``. Multi-OS
+            auto-routing (both sub-agents at once) is out of scope here — see
+            the Fase 2b TODO in ``resolve_os_profile``.
+
+        Every state-changing branch records the routing decision (family,
+        confidence, signals) in the case's append-only, hash-chained audit log
+        (FORENSIC INVARIANT 4). Returns the (possibly updated) case.
+        """
+        profile = routable_profile(detected)
+        case = self.load(case_id)
+        if profile is None:
+            # Not enough signal to route on — nothing to derive. The evidence is
+            # still fully registered; routing simply stays unresolved until a
+            # routable evidence arrives or the operator anchors.
+            return case
+        if case.os_profile_source in (_OS_SOURCE_OPERATOR, _OS_SOURCE_CONFLICT):
+            # Operator's word is final; a conflict only the operator resolves.
+            return case
+        if case.os_profile is None:
+            updated = replace(
+                case, os_profile=profile, os_profile_source=_OS_SOURCE_DERIVED
+            )
+            self._write_case_json(self.case_dir(case_id), updated)
+            self._audit_routing(
+                case_id, evidence_id, detected, decision="auto_set", os_profile=profile
+            )
+            return updated
+        if case.os_profile == profile:
+            return case
+        # Two evidences, two confident OSs → conflict. Do NOT silently keep the
+        # first: clear it and escalate (RULE 2). TODO(Fase 2b): route each
+        # evidence to its own sub-agent instead of forcing a single profile.
+        updated = replace(case, os_profile=None, os_profile_source=_OS_SOURCE_CONFLICT)
+        self._write_case_json(self.case_dir(case_id), updated)
+        self._audit_routing(
+            case_id, evidence_id, detected, decision="conflict", os_profile=None
+        )
+        return updated
+
+    def anchor_os_profile(self, case_id: str, os_profile: str) -> Case:
+        """Operator's explicit manual anchor of the case ``os_profile``.
+
+        This is the ONLY time the operator sets the profile, and the only exit
+        from the ambiguous/conflict state (RULE 2 enmendada: on ambiguity the
+        operator anchors — never a silent pick). The anchor is final: later
+        evidence never flips it and never re-raises a conflict. Recorded in the
+        audit log as an operator routing decision (FORENSIC INVARIANT 4).
+        """
+        os_profile = _validate_os_profile(os_profile)
+        case = self.load(case_id)
+        updated = replace(
+            case, os_profile=os_profile, os_profile_source=_OS_SOURCE_OPERATOR
+        )
+        self._write_case_json(self.case_dir(case_id), updated)
+        AuditLog(self.case_dir(case_id) / "audit.jsonl").append(
+            {
+                "action": "os_profile_anchored",
+                "case_id": case_id,
+                "os_profile": os_profile,
+                "by": "operator",
+            }
+        )
+        return updated
+
     def grant_cloud_consent(self, case_id: str, by: str) -> Case:
         """Record per-case opt-in to cloud egress (F2 / gate 9).
 
@@ -216,6 +346,32 @@ class CaseManager:
 
     # ---- internals ----------------------------------------------------------
 
+    def _audit_routing(
+        self,
+        case_id: str,
+        evidence_id: str,
+        detected: DetectedEvidence,
+        *,
+        decision: str,
+        os_profile: str | None,
+    ) -> None:
+        """Append the OS-routing decision to the case audit log with the exact
+        triage basis (family, confidence, signals) that justified it — so the
+        case file can always answer "which bytes routed this evidence, and to
+        what" (FORENSIC INVARIANT 4)."""
+        AuditLog(self.case_dir(case_id) / "audit.jsonl").append(
+            {
+                "action": "os_profile_routed",
+                "case_id": case_id,
+                "evidence_id": evidence_id,
+                "decision": decision,        # "auto_set" | "conflict"
+                "os_profile": os_profile,    # routed profile, or null on conflict
+                "family": detected.family,
+                "confidence": detected.confidence,
+                "signals": list(detected.signals),
+            }
+        )
+
     @staticmethod
     def _case_json_path(case_dir: Path) -> Path:
         return case_dir / "case.json"
@@ -231,13 +387,24 @@ class CaseManager:
         path = self._case_json_path(case_dir)
         data = json.loads(path.read_text(encoding="utf-8"))
         # Validate the shape — refuse to load a case.json that has been tampered with
-        # into a state the rest of the code doesn't expect.
-        required = {"id", "name", "examiner", "created_at", "os_profile", "status"}
+        # into a state the rest of the code doesn't expect. ``os_profile`` is now
+        # OPTIONAL (derived, may be null); it is only validated when present.
+        required = {"id", "name", "examiner", "created_at", "status"}
         missing = required - data.keys()
         if missing:
             raise ValueError(f"case.json missing fields: {sorted(missing)}")
-        if data["os_profile"] not in _VALID_OS_PROFILES:
-            raise ValueError(f"case.json has invalid os_profile: {data['os_profile']!r}")
+        os_profile = data.get("os_profile")
+        if os_profile is not None and os_profile not in _VALID_OS_PROFILES:
+            raise ValueError(f"case.json has invalid os_profile: {os_profile!r}")
+        os_profile_source = data.get("os_profile_source")
+        if os_profile_source is not None and os_profile_source not in _VALID_OS_SOURCES:
+            raise ValueError(
+                f"case.json has invalid os_profile_source: {os_profile_source!r}"
+            )
+        if os_profile_source is None and os_profile is not None:
+            # Legacy case.json (pre auto-routing): the profile was operator-chosen
+            # at creation, so treat it as an operator anchor — never flip it.
+            os_profile_source = _OS_SOURCE_OPERATOR
         if data["status"] not in _VALID_STATUSES:
             raise ValueError(f"case.json has invalid status: {data['status']!r}")
         _validate_case_id(data["id"])
@@ -250,8 +417,9 @@ class CaseManager:
             name=data["name"],
             examiner=data["examiner"],
             created_at=data["created_at"],
-            os_profile=data["os_profile"],
             status=data["status"],
+            os_profile=os_profile,
+            os_profile_source=os_profile_source,
             notes=data.get("notes", ""),
             cloud_consent=self._parse_cloud_consent(data.get("cloud_consent")),
         )
@@ -274,6 +442,35 @@ class CaseManager:
             by=value["by"],
             ref=value["ref"],
         )
+
+
+def resolve_os_profile(case: Case) -> str:
+    """Resolve the ``os_profile`` a case routes on, or fail loud.
+
+    The SINGLE resolution point every routing caller uses (HTTP ``/agent/query``,
+    the MCP ``select_case``). Returns the concrete profile when the case has one
+    (auto-derived from evidence content or operator-anchored); raises
+    ``OsProfileUnresolved`` with an actionable message otherwise — RULE 2
+    enmendada: on ``unknown`` / low confidence / conflict / no evidence we NEVER
+    route silently, the operator must anchor. Never inferred from the host.
+    """
+    if case.os_profile in _VALID_OS_PROFILES:
+        return case.os_profile  # type: ignore[return-value]
+    anchor_hint = (
+        f"Ancla el perfil manualmente (POST /api/cases/{case.id}/os-profile "
+        '{"os_profile": "unix"|"windows"}) — RULE 2: en ambigüedad el operador '
+        "ancla, nunca se enruta en silencio ni se adivina desde el host."
+    )
+    if case.os_profile_source == _OS_SOURCE_CONFLICT:
+        raise OsProfileUnresolved(
+            "os_profile en conflicto: el caso tiene evidencias de más de un SO "
+            "(el enrutado multi-SO simultáneo es Fase 2b). " + anchor_hint
+        )
+    raise OsProfileUnresolved(
+        "os_profile sin determinar: el triage no clasificó el SO de la evidencia "
+        "con confianza suficiente, o aún no hay evidencia enrutable registrada. "
+        + anchor_hint
+    )
 
 
 # Module-level singleton. Surfaces (routers, IPC) should import this rather than

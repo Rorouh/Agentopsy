@@ -32,7 +32,11 @@ from forensia.agent.agent import ForensicAgent
 from forensia.agent.history import build_replay_messages
 from forensia.agent.registry import agent_registry
 from forensia.audit.log import AuditLog
-from forensia.cases.manager import case_manager
+from forensia.cases.manager import (
+    OsProfileUnresolved,
+    case_manager,
+    resolve_os_profile,
+)
 from forensia.config import config
 from forensia.consent import get_cloud_consent, record_cloud_consent
 from forensia.evidence import evidence_manager
@@ -42,11 +46,13 @@ from forensia.security import require_token
 
 router = APIRouter()
 
-_VALID_OS_PROFILES = frozenset({"unix", "windows"})
-
 
 class QueryRequest(BaseModel):
-    os_profile: str = "unix"
+    # NOTE: there is NO ``os_profile`` here on purpose. The OS is DERIVED from
+    # the evidence content by triage and resolved from the case in the backend
+    # (``resolve_os_profile``) — the client never chooses or sends it (RULE 2:
+    # no silent default, no host/context guess). A client that still sends the
+    # key is simply ignored (Pydantic drops unknown fields).
     evidence_id: str | None = None
     case_id: str | None = None
     prompt: str
@@ -78,12 +84,6 @@ def _prepare_run(req: QueryRequest) -> tuple[ForensicAgent, str, list, str | Non
     if not prompt:
         raise HTTPException(status_code=422, detail="prompt is empty")
 
-    if req.os_profile not in _VALID_OS_PROFILES:
-        raise HTTPException(
-            status_code=422,
-            detail=f"os_profile must be one of {sorted(_VALID_OS_PROFILES)}, "
-                   f"got {req.os_profile!r}",
-        )
     if not req.case_id:
         raise HTTPException(
             status_code=422,
@@ -115,8 +115,23 @@ def _prepare_run(req: QueryRequest) -> tuple[ForensicAgent, str, list, str | Non
     if not availability.available:
         raise HTTPException(status_code=503, detail=availability.reason)
 
+    # Resolve the os_profile from the CASE (derived from evidence content by
+    # triage, or operator-anchored) — never from the request, never a default
+    # (RULE 2 enmendada). Ambiguity (unknown / low confidence / conflict / no
+    # routable evidence) is a 409 the operator must resolve by anchoring.
     try:
-        pkg = agent_registry.get_for_profile(req.os_profile)
+        case = case_manager.load(req.case_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
+        os_profile = resolve_os_profile(case)
+    except OsProfileUnresolved as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    try:
+        pkg = agent_registry.get_for_profile(os_profile)
     except KeyError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
@@ -161,7 +176,7 @@ def _prepare_run(req: QueryRequest) -> tuple[ForensicAgent, str, list, str | Non
     meta = {
         "evidence_id": req.evidence_id,
         "case_id": req.case_id,
-        "os_profile": req.os_profile,
+        "os_profile": os_profile,
         "executor": {"id": executor.id, "name": executor.name, "local": executor.is_local},
         "agent": pkg.summary(),
     }

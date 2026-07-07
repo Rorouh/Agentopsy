@@ -78,13 +78,25 @@ class TestCasesRoutes:
         assert r.status_code == 422
 
     def test_create_missing_required_field_returns_422(self, client, auth):
-        # Pydantic itself returns 422 on schema mismatch.
+        # Pydantic itself returns 422 on schema mismatch. ``os_profile`` is now
+        # optional (derived), so we omit a still-required field (``examiner``).
+        r = client.post(
+            "/api/cases",
+            json={"name": "op"},
+            headers=auth,
+        )
+        assert r.status_code == 422
+
+    def test_create_without_os_profile_succeeds(self, client, auth):
+        # Auto-detección de SO: omitting os_profile is the normal path — it is
+        # derived from the evidence content later, not chosen at creation.
         r = client.post(
             "/api/cases",
             json={"name": "op", "examiner": "alice"},
             headers=auth,
         )
-        assert r.status_code == 422
+        assert r.status_code == 200, r.text
+        assert r.json()["os_profile"] is None
 
     def test_full_roundtrip_create_get_list_close(self, client, auth):
         r = client.post(

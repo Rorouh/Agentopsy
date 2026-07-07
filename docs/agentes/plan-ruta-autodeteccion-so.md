@@ -118,14 +118,33 @@ declarativo (orquestador KB / docs, lane del auditor) · **[gov]** decisión equ
   `test_dispatcher_case_anchored.py`, `test_smoke.py` (14 ficheros referencian `os_profile`;
   estos codifican el anclaje/enrutado).
 
-### Fase 2 — Enrutado por evidencia — **[be]**  ⬜
+### Fase 2 — Enrutado por evidencia — **[be]**  ✅ (hecha, pendiente validación del dueño del motor)
 - `os_profile` pasa a derivarse de `triage.family` por evidencia; `case.os_profile` se hace
-  opcional/derivado (no lo elige el operador).
-- `registry.get_for_profile(triage.family)`; si `family` no es enrutable (unknown/baja
-  confianza/conflicto) → error accionable que la UI convierte en "el operador debe anclar".
-- Registrar la decisión de enrutado en el audit log.
-- **Criterio:** tests verdes; nunca enruta en silencio ante ambigüedad; el dueño del motor
-  valida (es cambio de invariante).
+  opcional/derivado (no lo elige el operador). **Hecho:** `Case.os_profile: str | None`
+  (+ `os_profile_source ∈ {derived, operator, conflict}`), `create()` ya no lo exige.
+- Predicado único `triage.routable_profile(DetectedEvidence)` (family∈{unix,windows} **y**
+  confidence∈{header,markers}); empate/near-tie ⇒ `_decide_family` devuelve `unknown` (sin
+  umbral mágico nuevo, es la propia regla de dominancia). La lógica auto-set/conflicto vive
+  en `CaseManager.apply_detected_evidence` (llamada desde `EvidenceManager.register`); la
+  resolución en `resolve_os_profile(case)` → `OsProfileUnresolved` accionable.
+- Los 3 callers leen el perfil **resuelto** (no `req.os_profile`): `routers/agent.py`
+  (409 en ambigüedad; **quitado** el default silencioso `os_profile="unix"`),
+  `mcp/session.py`, `mcp/jira_tools.py` (error accionable). Anclaje manual del operador:
+  `POST /api/cases/{id}/os-profile` → `anchor_os_profile` (override final).
+- Decisión de enrutado en el audit log: `os_profile_routed` (`decision=auto_set|conflict`,
+  `family/confidence/signals`) y `os_profile_anchored` (FORENSIC INVARIANT 4).
+- **Criterio:** tests verdes (nueva cobertura en `tests/test_os_profile_routing.py` +
+  ajustes en `test_cases.py`, `test_agent_registry.py`, `test_web_surface.py`,
+  `test_routers_storage.py`); nunca enruta en silencio ante ambigüedad.
+- **Límite (MVP):** caso **multi-SO** (mezcla de evidencias) = **conflicto = escala**, no se
+  lanzan ambos sub-agentes a la vez. Eso es **Fase 2b** (abajo); hay un `TODO(Fase 2b)` en
+  `apply_detected_evidence`.
+
+### Fase 2b — Enrutado multi-SO (ambos sub-agentes) — **[be]**  ⬜
+- Hoy un caso con evidencias de distinto SO entra en `conflict` y exige anclaje. El objetivo
+  final (§3) es enrutar **cada evidencia** a su sub-agente y que el orquestador consolide un
+  caso multi-SO. Requiere que el perfil deje de ser propiedad del **caso** y pase a resolverse
+  **por evidencia** en el punto de análisis. Fuera del blast-radius de la Fase 2.
 
 ### Fase 3 — UI sin selector de SO — **[fe]**  ⬜
 - Quitar el picker de SO al crear el caso. Mostrar `family/kind/confidence/signals`
@@ -152,7 +171,8 @@ declarativo (orquestador KB / docs, lane del auditor) · **[gov]** decisión equ
 |---|---|---|---|
 | 0 Gobernanza | ✅ aprobada (equipo+tutor) | (este commit) | RULE 2 enmendada |
 | 1 Auditoría | ✅ hecha | (este commit) | inventario en §Fase 1 |
-| 2 Enrutado [be] | ⬜ | — | cambio de invariante; lo valida el dueño del motor |
+| 2 Enrutado [be] | ✅ hecha (pend. validación motor) | (este commit) | triage.routable_profile + case.os_profile derivado + audit; sin default silencioso |
+| 2b Multi-SO [be] | ⬜ | — | perfil por-evidencia; hoy mezcla = conflicto/escala |
 | 3 UI [fe] | ⬜ | — | quitar selector SO |
 | 4 Orquestador/docs [decl] | ⬜ | — | mi lane |
 | 5 Validación | ⬜ | — | incluye caso multi-SO y caso ambiguo |

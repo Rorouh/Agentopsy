@@ -24,7 +24,7 @@ from typing import Optional
 
 from forensia.agent.package import AgentPackage
 from forensia.agent.registry import agent_registry
-from forensia.cases.manager import case_manager
+from forensia.cases.manager import OsProfileUnresolved, case_manager, resolve_os_profile
 
 
 @dataclass
@@ -49,11 +49,12 @@ class McpSession:
         case = case_manager.load(preset)  # raises KeyError if missing — that's fine
         self.case_id = case.id
         try:
-            self.agent_package = agent_registry.get_for_profile(case.os_profile)
-        except KeyError:
+            profile = resolve_os_profile(case)
+            self.agent_package = agent_registry.get_for_profile(profile)
+        except (OsProfileUnresolved, KeyError):
             # The session is constructible — but tools/list will be empty until
-            # the operator drops the missing package and restarts. We don't
-            # paper over it (RULE 2).
+            # the os_profile resolves (routable evidence or an operator anchor)
+            # and its package is present. We don't paper over it (RULE 2).
             self.agent_package = None
 
     def set_case(self, case_id: str, agent_package: AgentPackage) -> None:

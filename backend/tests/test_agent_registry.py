@@ -234,21 +234,13 @@ def test_query_without_case_is_actionable_422(client: TestClient) -> None:
     assert "case_id" in r.json()["detail"]
 
 
-def test_query_invalid_os_profile(client: TestClient) -> None:
-    token = client.app.state.token
-    r = client.post(
-        "/api/agent/query",
-        headers={"X-Forensia-Token": token},
-        json={"prompt": "hola", "os_profile": "macos"},
-    )
-    assert r.status_code == 422
-
-
 def test_query_empty_prompt(client: TestClient) -> None:
+    # ``os_profile`` is no longer a request field — it is derived from the case
+    # in the backend. An empty prompt still fails fast (422) before any routing.
     token = client.app.state.token
     r = client.post(
         "/api/agent/query",
         headers={"X-Forensia-Token": token},
-        json={"prompt": "   ", "os_profile": "unix"},
+        json={"prompt": "   "},
     )
     assert r.status_code == 422

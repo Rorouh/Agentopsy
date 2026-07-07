@@ -65,10 +65,27 @@ class TestCreate:
         with pytest.raises(ValueError, match="examiner"):
             manager.create(name="op", examiner="", os_profile="unix")
 
-    @pytest.mark.parametrize("bad_profile", ["linux", "mac", "", "UNIX", "win", None, 5])
+    # ``None`` is intentionally NOT here: os_profile is now DERIVED from the
+    # evidence content, so omitting it at creation is the normal path (see
+    # ``test_create_without_os_profile_is_unresolved``). A *provided* value must
+    # still be a valid profile (operator anchor).
+    @pytest.mark.parametrize("bad_profile", ["linux", "mac", "", "UNIX", "win", 5])
     def test_create_rejects_invalid_os_profile(self, manager, bad_profile):
         with pytest.raises(ValueError, match="os_profile"):
             manager.create(name="op", examiner="alice", os_profile=bad_profile)
+
+    def test_create_without_os_profile_is_unresolved(self, manager):
+        # Auto-detección de SO: the operator no longer picks the OS at creation.
+        # A fresh case has no profile and no source until triage derives one.
+        case = manager.create(name="op", examiner="alice")
+        assert case.os_profile is None
+        assert case.os_profile_source is None
+
+    def test_create_with_os_profile_records_operator_anchor(self, manager):
+        # A provided os_profile is an OPTIONAL manual anchor (operator override).
+        case = manager.create(name="op", examiner="alice", os_profile="windows")
+        assert case.os_profile == "windows"
+        assert case.os_profile_source == "operator"
 
 
 class TestLoad:

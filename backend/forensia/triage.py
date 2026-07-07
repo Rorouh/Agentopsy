@@ -6,11 +6,14 @@ pure Python over the read-only copy already inside the case dir — chain of
 custody intact.
 
 The output is a ``DetectedEvidence(family, kind, confidence, signals)`` record
-persisted into ``baseline.json``. Two consumers care:
+persisted into ``baseline.json``. Consumers:
 
-1. The UI: when ``case.os_profile != evidence.family``, a yellow banner asks
-   the operator to reopen the case with the right profile. The kind is shown
-   in the header too. RULE 2: never auto-switch — the operator decides.
+1. Routing (auto-detección de SO): ``routable_profile`` turns the record into
+   the ``os_profile`` a case is DERIVED to route on
+   (``CaseManager.apply_detected_evidence`` at registration). Determination is
+   from the evidence CONTENT, never the host platform. On ``unknown`` / low
+   confidence / conflict it returns ``None`` → the operator must anchor the
+   profile — never a silent pick (RULE 2 enmendada).
 2. The ``ForensicAgent`` system prompt: receives both family AND kind and
    routes the model to the right section of the playbook ("disk image" vs
    "memory dump") without it having to fail-and-pivot.
@@ -364,11 +367,48 @@ def _count_markers(buf: bytes, markers: tuple[bytes, ...]) -> int:
 
 
 def _decide_family(win_hits: int, unix_hits: int) -> DetectedOS:
+    # A family is only called when its markers both clear ``_MIN_HITS`` AND
+    # dominate the other side by ``_DOMINANCE``×. That dominance requirement is
+    # deliberately also the CONFLICT guard: when both sides score high (a
+    # dual-boot image, or evidence seeded with foreign OS strings — SECURITY
+    # INVARIANTS: a suspect can plant NTFS + ext markers to induce a wrong
+    # route) neither dominates, so we fall through to ``unknown``. ``unknown``
+    # is what ``routable_profile`` treats as "not auto-routable → escalate to
+    # the operator" (RULE 2 enmendada: never a silent pick on a near-tie). No
+    # extra magic threshold is introduced — the existing dominance ratio already
+    # encodes "close call ⇒ unknown".
     if win_hits >= _MIN_HITS and win_hits >= _DOMINANCE * max(unix_hits, 1):
         return "windows"
     if unix_hits >= _MIN_HITS and unix_hits >= _DOMINANCE * max(win_hits, 1):
         return "unix"
     return "unknown"
+
+
+# Confidence levels strong enough to auto-route on: a fixed-offset format/FS
+# HEADER, or in-image MARKER counts. A bare extension hint ("extension") or no
+# signal at all ("none") is NOT enough — those escalate to the operator.
+_ROUTABLE_CONFIDENCE: frozenset[DetectedConfidence] = frozenset({"header", "markers"})
+
+
+def routable_profile(detected: DetectedEvidence) -> DetectedOS | None:
+    """Return the ``os_profile`` this evidence can be auto-routed to, or ``None``
+    when the determination is not trustworthy enough to route on its own.
+
+    Routable ⇔ a concrete family (``unix``/``windows``) determined from strong
+    CONTENT signals (a filesystem/container HEADER or in-image MARKER counts) —
+    never from the host platform, never from a bare extension. ``unknown``
+    (which also subsumes the conflict / near-tie case, see ``_decide_family``)
+    and low-confidence families return ``None`` → the orchestrator must escalate
+    to the operator, who anchors the profile manually (RULE 2 enmendada: fail
+    loud in ambiguity, never a silent pick).
+
+    This is the SINGLE source of truth for "can we auto-route this evidence?".
+    The auto-set / conflict bookkeeping (``CaseManager.apply_detected_evidence``)
+    and every routing caller build on it — none re-derive the predicate.
+    """
+    if detected.family in ("unix", "windows") and detected.confidence in _ROUTABLE_CONFIDENCE:
+        return detected.family
+    return None
 
 
 def _accumulate_family(*_args, **_kwargs) -> None:
@@ -421,4 +461,5 @@ __all__ = [
     "DetectedConfidence",
     "fingerprint_evidence",
     "fingerprint_os",
+    "routable_profile",
 ]

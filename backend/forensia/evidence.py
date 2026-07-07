@@ -79,10 +79,12 @@ class EvidenceHandle:
     registered_at: str
     last_verification: VerificationRecord | None = None
     # Triage fingerprint computed at registration (or backfilled lazily on the
-    # first ``get()`` for evidence registered before this field existed). Used
-    # by the UI to warn on profile mismatch and by the agent's system prompt
-    # to refuse running OS-mismatched plugins. Never used to auto-switch the
-    # case's ``os_profile`` — that decision belongs to the operator (RULE 2).
+    # first ``get()`` for evidence registered before this field existed). It is
+    # the CONTENT-based signal the case os_profile is DERIVED from at
+    # registration (``CaseManager.apply_detected_evidence`` — auto-detección de
+    # SO, never the host platform). When the classification is not confident, or
+    # a second evidence conflicts, routing escalates to the operator, who
+    # anchors — never a silent pick (RULE 2 enmendada).
     detected_os: DetectedOS = "unknown"
     # Evidence shape — disk image, memory dump, container disk, or unknown.
     # The agent system prompt uses this to route to the right playbook section
@@ -228,6 +230,15 @@ class EvidenceManager:
                 "registered_at": registered_at,
             }
         )
+
+        # 9. Auto-detección de SO: derive the case's os_profile from THIS
+        #    evidence's content-based triage (never the host platform). The
+        #    CaseManager owns case.json and the transition rules (auto-set /
+        #    conflict / no-op) and records the routing decision in the same
+        #    append-only audit log. A non-routable evidence (unknown / low
+        #    confidence) is a no-op here — routing stays unresolved until a
+        #    routable evidence arrives or the operator anchors (RULE 2).
+        self._cases.apply_detected_evidence(case_dir.name, triage, evidence_id)
 
         return EvidenceHandle(
             evidence_id=evidence_id,

@@ -20,7 +20,7 @@ from typing import Any
 from mcp import types
 
 from forensia.agent.registry import agent_registry
-from forensia.cases.manager import case_manager
+from forensia.cases.manager import OsProfileUnresolved, case_manager, resolve_os_profile
 from forensia.evidence import evidence_manager
 from forensia.mcp.session import McpSession
 
@@ -36,8 +36,9 @@ JIRA_TOOL_DEFINITIONS: list[types.Tool] = [
         description=(
             "List forensic cases registered in FORENSIA. Each case has an id "
             "(UUID), a human name (e.g. 'Windows IR 2026-001'), the examiner, "
-            "an os_profile ('unix' or 'windows'), and counts. Call this first "
-            "when starting a session; pick one with `select_case`."
+            "and an os_profile that is DERIVED from the evidence content by "
+            "triage ('unix' | 'windows' | null when undetermined/ambiguous). "
+            "Call this first when starting a session; pick one with `select_case`."
         ),
         inputSchema={
             "type": "object",
@@ -136,11 +137,17 @@ def select_case(session: McpSession, arguments: dict[str, Any]) -> dict[str, Any
         case = case_manager.load(case_id)
     except KeyError:
         return _err(f"unknown case_id {case_id!r} — call `list_cases` to see valid ids.")
+    # Resolve the os_profile from the case (derived from evidence content by
+    # triage, or operator-anchored) — never guessed. Ambiguity escalates.
     try:
-        pkg = agent_registry.get_for_profile(case.os_profile)
+        os_profile = resolve_os_profile(case)
+    except OsProfileUnresolved as exc:
+        return _err(str(exc))
+    try:
+        pkg = agent_registry.get_for_profile(os_profile)
     except KeyError:
         return _err(
-            f"no agent package loaded for os_profile {case.os_profile!r}. "
+            f"no agent package loaded for os_profile {os_profile!r}. "
             f"Drop one under agentes/ and restart the MCP server. RULE 2 — "
             f"the server will not fall back to a different package."
         )
@@ -149,7 +156,7 @@ def select_case(session: McpSession, arguments: dict[str, Any]) -> dict[str, Any
         "selected_case": {
             "id": case.id,
             "name": case.name,
-            "os_profile": case.os_profile,
+            "os_profile": os_profile,
             "agent_package": {
                 "id": pkg.id,
                 "name": pkg.name,
