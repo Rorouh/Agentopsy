@@ -9,7 +9,11 @@ probada**, agrupada por fase forense. La columna **Ficha** enlaza al documento d
 > hay que **actualizar esta tabla**: alta/baja de fila, cambio de descripción y enlace a su ficha.
 > No listar aquí una tool que no arranque todavía.
 
-Estado: **22/22** tools del catálogo instaladas y probadas. 🎯
+Estado: **30/30** tools del catálogo instaladas y operativas — 22 con ficha de prueba
+individual; las **8 EZ Tools** añadidas el 2026-07-07 están validadas con el smoke test
+del maletín sobre evidencia KAPE real (ver
+[CATALOGO_MALETIN.md § EZ Tools](../../docker/docs/CATALOGO_MALETIN.md)), ficha
+individual pendiente. 🎯
 
 ---
 
@@ -64,8 +68,20 @@ Estado: **22/22** tools del catálogo instaladas y probadas. 🎯
 | `plaso_psort` | Post-procesa el `.plaso` → CSV filtrable por rango de fechas | ✅ | [ver](../pruebas/grupo-b/metasploitable2-linux/plaso.md) |
 | `evtxecmd` | EVTX → **CSV/JSON normalizado** (todos los eventos crudos, no alertas) — Eric Zimmerman | ✅ | [ver](../pruebas/grupo-c/windows-evtx-hayabusa-samples/evtxecmd.md) |
 | `mftecmd` | Parsea el **`$MFT`** de NTFS → árbol, timeline, timestomping (`$SI`/`$FN`), ADS, borrados — Eric Zimmerman | ✅ | [ver](../pruebas/grupo-c/windows-ntfs-mft-nist/mftecmd.md) |
+| `lecmd` | Accesos directos **`.lnk`** → CSV (ruta objetivo, timestamps, volumen) — Eric Zimmerman | ✅ | [smoke](../../docker/docs/CATALOGO_MALETIN.md) |
+| `jlecmd` | **Jump Lists** (`*Destinations-ms`) → CSV: historial de documentos por aplicación — Eric Zimmerman | ✅ | [smoke](../../docker/docs/CATALOGO_MALETIN.md) |
+| `recmd` | **Batch RECmd** (p. ej. `Kroll_Batch.reb`) sobre hives → CSV — Eric Zimmerman | ✅ | [smoke](../../docker/docs/CATALOGO_MALETIN.md) |
+| `amcacheparser` | **`Amcache.hve`** → CSVs: inventario de programas/ficheros, evidencia de ejecución — Eric Zimmerman | ✅ | [smoke](../../docker/docs/CATALOGO_MALETIN.md) |
+| `appcompatcacheparser` | **ShimCache** (hive `SYSTEM`) → CSV: ejecutables presentes/ejecutados — Eric Zimmerman | ✅ | [smoke](../../docker/docs/CATALOGO_MALETIN.md) |
+| `sbecmd` | **ShellBags** (`UsrClass.dat`/`NTUSER.DAT`) → CSV: carpetas visitadas, incluso borradas — Eric Zimmerman | ✅ | [smoke](../../docker/docs/CATALOGO_MALETIN.md) |
+| `wxtcmd` | **Windows Timeline** (`ActivitiesCache.db`, Win10 1803+) → CSV — Eric Zimmerman | ✅ | [smoke](../../docker/docs/CATALOGO_MALETIN.md) |
+| `rbcmd` | **Papelera** (`$Recycle.Bin`, ficheros `$I`) → CSV: ruta original y momento del borrado — Eric Zimmerman | ✅ | [smoke](../../docker/docs/CATALOGO_MALETIN.md) |
 
 ---
 
-**Catálogo completo:** las 22 tools del maletín están instaladas, probadas y con ficha. No
-quedan pendientes de instalar.
+**Catálogo completo:** las 30 tools del catálogo están instaladas y operativas (22 con
+ficha individual; las 8 EZ Tools de 2026-07-07 validadas en el smoke test del maletín,
+ficha pendiente). `bstrings` viaja en el maletín pero queda **fuera del catálogo** (en
+Linux solo procesa por stdin y el exec-agent ejecuta argv sin shell — uso manual);
+PECmd/SrumECmd no existen en el maletín (Windows-only). No quedan tools pendientes de
+instalar.

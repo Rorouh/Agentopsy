@@ -168,6 +168,14 @@ CDN publica una versión nueva — re-pinnear, igual que hayabusa/chainsaw).
 > Xpress vía ntdll / motor ESENT). No se despliegan en el maletín; sus
 > artefactos siguen cubiertos: **Prefetch** → `prefetch.py` (windowsprefetch)
 > y **SRUDB.dat** → el parser `srum` de plaso (`log2timeline.py`).
+>
+> **Catálogo del backend:** las once están en el maletín para uso manual; ocho
+> (`lecmd`, `jlecmd`, `recmd`, `amcacheparser`, `appcompatcacheparser`,
+> `sbecmd`, `wxtcmd`, `rbcmd`) están además en el catálogo del backend
+> (`backend/forensia/toolkit/catalog.py`, tier extended) y son invocables por
+> el agente — igual que `evtxecmd`/`mftecmd` (core). **`bstrings` queda fuera
+> del catálogo**: en Linux solo procesa por stdin y el canal exec-agent
+> ejecuta argv sin shell (sin tuberías) — herramienta de uso manual.
 
 | Herramienta | Comando | Artefacto |
 |---|---|---|

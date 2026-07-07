@@ -142,6 +142,14 @@ _EVIDENCE_INJECTION: dict[str, str] = {
     "regripper": "hive_path",
     "evtxecmd": "evtx_path",
     "mftecmd": "mft_path",
+    "lecmd": "target_path",
+    "jlecmd": "target_path",
+    "recmd": "hive_path",
+    "amcacheparser": "hive_path",
+    "appcompatcacheparser": "hive_path",
+    "sbecmd": "target_path",
+    "wxtcmd": "target_path",
+    "rbcmd": "target_path",
 }
 
 

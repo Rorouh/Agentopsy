@@ -21,6 +21,15 @@ allowed:
   - evtxecmd           # EVTX -> CSV normalizado
   - hayabusa           # detecciones Sigma sobre EVTX
   - chainsaw           # detecciones Sigma / hunting sobre EVTX
+  # --- EZ Tools (parsers de los Modules de KAPE, absorbidas 2026-07-07) ---
+  - lecmd              # accesos directos .lnk -> CSV (rutas objetivo, timestamps)
+  - jlecmd             # Jump Lists -> CSV (historial de documentos por app)
+  - recmd              # batch RECmd (p.ej. Kroll_Batch.reb) sobre hives -> CSV
+  - amcacheparser      # Amcache.hve -> CSV (evidencia de ejecución)
+  - appcompatcacheparser  # ShimCache del hive SYSTEM -> CSV
+  - sbecmd             # ShellBags -> CSV (carpetas visitadas, incl. borradas)
+  - wxtcmd             # ActivitiesCache.db (Windows Timeline, Win10 1803+) -> CSV
+  - rbcmd              # $Recycle.Bin ($I) -> CSV (ruta original y borrado)
   # --- IOCs / firmas ---
   - bulk_extractor      # emails, urls, ips, PII en no-asignado (artefacto)
   - yara                # reglas (malware, persistencia, webshell)

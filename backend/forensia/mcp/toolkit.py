@@ -348,6 +348,14 @@ def _inject_evidence_path(tool_id: str, params: dict[str, Any], path: str) -> di
         "regripper": "hive_path",
         "evtxecmd": "evtx_path",
         "mftecmd": "mft_path",
+        "lecmd": "target_path",
+        "jlecmd": "target_path",
+        "recmd": "hive_path",
+        "amcacheparser": "hive_path",
+        "appcompatcacheparser": "hive_path",
+        "sbecmd": "target_path",
+        "wxtcmd": "target_path",
+        "rbcmd": "target_path",
     }
     key = injection_map.get(tool_id)
     if key is not None and params.get(key) in (None, ""):

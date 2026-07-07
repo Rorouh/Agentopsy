@@ -234,6 +234,81 @@ class MFTECmdParams(_StrictModel):
     pass
 
 
+class LECmdParams(_StrictModel):
+    """``lecmd`` — parse Windows shortcut `.lnk` files (file or directory) into
+    CSV. Evidence path injected."""
+
+    pass
+
+
+class JLECmdParams(_StrictModel):
+    """``jlecmd`` — parse Jump Lists (`*Destinations-ms`, file or directory)
+    into CSV. Evidence path injected."""
+
+    pass
+
+
+class RECmdParams(_StrictModel):
+    """``recmd`` — run a RECmd batch against a registry hive (evidence injected).
+
+    ``batch`` is a batch file NAME from the ``BatchExamples/`` directory the
+    maletín ships (e.g. ``Kroll_Batch.reb``) — a bare name, never a path
+    (RULE 2: closed contract; the wrapper anchors it to the shipped directory).
+    """
+
+    batch: str = Field(
+        max_length=128,
+        pattern=r"^[A-Za-z0-9._-]+\.reb$",
+        description=(
+            "RECmd batch file name from the maletín's BatchExamples/ "
+            "(e.g. `Kroll_Batch.reb`). A bare name — never a path."
+        ),
+    )
+    is_directory: bool = Field(
+        default=False,
+        description="Treat the evidence as a directory of hives (-d) instead of a single hive (-f).",
+    )
+
+
+class AmcacheParserParams(_StrictModel):
+    """``amcacheparser`` — parse `Amcache.hve` into CSVs (evidence injected)."""
+
+    include_linked: bool = Field(
+        default=False,
+        description="Also emit file entries linked to program entries (-i).",
+    )
+
+
+class AppCompatCacheParserParams(_StrictModel):
+    """``appcompatcacheparser`` — parse the ShimCache from a `SYSTEM` hive into
+    CSV. Evidence path injected."""
+
+    pass
+
+
+class SBECmdParams(_StrictModel):
+    """``sbecmd`` — parse ShellBags from the user hives under a directory into
+    CSV. Evidence path (a directory) injected."""
+
+    pass
+
+
+class WxTCmdParams(_StrictModel):
+    """``wxtcmd`` — parse a Windows Timeline `ActivitiesCache.db` into CSV.
+    Evidence path injected."""
+
+    pass
+
+
+class RBCmdParams(_StrictModel):
+    """``rbcmd`` — parse Recycle Bin `$I` metadata into CSV (evidence injected)."""
+
+    is_file: bool = Field(
+        default=False,
+        description="Treat the evidence as a single $I file (-f) instead of a $Recycle.Bin directory (-d).",
+    )
+
+
 class RegRipperParams(_StrictModel):
     """``rip`` (RegRipper) — run a registry-analysis plugin against a hive file.
 
@@ -520,6 +595,15 @@ SCHEMA_BY_TOOL: dict[str, type[BaseModel]] = {
     "bulk_extractor": BulkExtractorParams,
     "hayabusa": HayabusaParams,
     "chainsaw": ChainsawParams,
+    # EZ Tools absorbidas el 2026-07-07 (extended tier)
+    "lecmd": LECmdParams,
+    "jlecmd": JLECmdParams,
+    "recmd": RECmdParams,
+    "amcacheparser": AmcacheParserParams,
+    "appcompatcacheparser": AppCompatCacheParserParams,
+    "sbecmd": SBECmdParams,
+    "wxtcmd": WxTCmdParams,
+    "rbcmd": RBCmdParams,
 }
 
 
@@ -534,6 +618,14 @@ __all__ = [
     "EwfInfoParams",
     "EvtxECmdParams",
     "MFTECmdParams",
+    "LECmdParams",
+    "JLECmdParams",
+    "RECmdParams",
+    "AmcacheParserParams",
+    "AppCompatCacheParserParams",
+    "SBECmdParams",
+    "WxTCmdParams",
+    "RBCmdParams",
     "RegRipperParams",
     "YaraParams",
     "JqParams",

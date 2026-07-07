@@ -23,6 +23,12 @@ from __future__ import annotations
 from forensia.toolkit.maletin import MALETINES, TOOLKIT_WINDOWS
 from forensia.toolkit.tool import Tool
 from forensia.toolkit.wrappers import (
+    amcacheparser as _amcacheparser,
+)
+from forensia.toolkit.wrappers import (
+    appcompatcacheparser as _appcompatcacheparser,
+)
+from forensia.toolkit.wrappers import (
     bulk_extractor as _bulk_extractor,
 )
 from forensia.toolkit.wrappers import (
@@ -62,13 +68,28 @@ from forensia.toolkit.wrappers import (
     hayabusa as _hayabusa,
 )
 from forensia.toolkit.wrappers import (
+    jlecmd as _jlecmd,
+)
+from forensia.toolkit.wrappers import (
     jq as _jq,
+)
+from forensia.toolkit.wrappers import (
+    lecmd as _lecmd,
 )
 from forensia.toolkit.wrappers import (
     mftecmd as _mftecmd,
 )
 from forensia.toolkit.wrappers import (
+    rbcmd as _rbcmd,
+)
+from forensia.toolkit.wrappers import (
+    recmd as _recmd,
+)
+from forensia.toolkit.wrappers import (
     regripper as _regripper,
+)
+from forensia.toolkit.wrappers import (
+    sbecmd as _sbecmd,
 )
 from forensia.toolkit.wrappers import (
     tsk_fls as _tsk_fls,
@@ -84,6 +105,9 @@ from forensia.toolkit.wrappers import (
 )
 from forensia.toolkit.wrappers import (
     volatility3 as _volatility3,
+)
+from forensia.toolkit.wrappers import (
+    wxtcmd as _wxtcmd,
 )
 from forensia.toolkit.wrappers import (
     yara as _yara,
@@ -356,6 +380,94 @@ CATALOG: tuple[Tool, ...] = (
         allowed_flags=_qemu_nbd.ALLOWED_FLAGS,
         build_argv=_qemu_nbd.build_argv,
         parse=_qemu_nbd.parse,
+    ),
+
+    # --- EZ Tools (Eric Zimmerman, .NET): los parsers de los Modules de KAPE
+    #     absorbidos en el maletín windows el 2026-07-07 (wrappers en minúsculas
+    #     en su PATH; ver docker/docs/CATALOGO_MALETIN.md § EZ Tools). PECmd y
+    #     SrumECmd NO existen en el maletín (Windows-only: ntdll/ESENT) y
+    #     bstrings queda fuera del catálogo: en Linux solo procesa por stdin y
+    #     el canal exec-agent ejecuta argv sin shell (sin tuberías) — es una
+    #     herramienta de uso manual del maletín. ---
+    Tool(
+        "lecmd",
+        "lecmd",
+        ("windows",),
+        returns="artifact",
+        toolkits=_WINDOWS,
+        allowed_flags=_lecmd.ALLOWED_FLAGS,
+        build_argv=_lecmd.build_argv,
+        parse=_lecmd.parse,
+    ),
+    Tool(
+        "jlecmd",
+        "jlecmd",
+        ("windows",),
+        returns="artifact",
+        toolkits=_WINDOWS,
+        allowed_flags=_jlecmd.ALLOWED_FLAGS,
+        build_argv=_jlecmd.build_argv,
+        parse=_jlecmd.parse,
+    ),
+    Tool(
+        "recmd",
+        "recmd",
+        ("windows",),
+        returns="artifact",
+        toolkits=_WINDOWS,
+        allowed_flags=_recmd.ALLOWED_FLAGS,
+        build_argv=_recmd.build_argv,
+        parse=_recmd.parse,
+    ),
+    Tool(
+        "amcacheparser",
+        "amcacheparser",
+        ("windows",),
+        returns="artifact",
+        toolkits=_WINDOWS,
+        allowed_flags=_amcacheparser.ALLOWED_FLAGS,
+        build_argv=_amcacheparser.build_argv,
+        parse=_amcacheparser.parse,
+    ),
+    Tool(
+        "appcompatcacheparser",
+        "appcompatcacheparser",
+        ("windows",),
+        returns="artifact",
+        toolkits=_WINDOWS,
+        allowed_flags=_appcompatcacheparser.ALLOWED_FLAGS,
+        build_argv=_appcompatcacheparser.build_argv,
+        parse=_appcompatcacheparser.parse,
+    ),
+    Tool(
+        "sbecmd",
+        "sbecmd",
+        ("windows",),
+        returns="artifact",
+        toolkits=_WINDOWS,
+        allowed_flags=_sbecmd.ALLOWED_FLAGS,
+        build_argv=_sbecmd.build_argv,
+        parse=_sbecmd.parse,
+    ),
+    Tool(
+        "wxtcmd",
+        "wxtcmd",
+        ("windows",),
+        returns="artifact",
+        toolkits=_WINDOWS,
+        allowed_flags=_wxtcmd.ALLOWED_FLAGS,
+        build_argv=_wxtcmd.build_argv,
+        parse=_wxtcmd.parse,
+    ),
+    Tool(
+        "rbcmd",
+        "rbcmd",
+        ("windows",),
+        returns="artifact",
+        toolkits=_WINDOWS,
+        allowed_flags=_rbcmd.ALLOWED_FLAGS,
+        build_argv=_rbcmd.build_argv,
+        parse=_rbcmd.parse,
     ),
 )
 

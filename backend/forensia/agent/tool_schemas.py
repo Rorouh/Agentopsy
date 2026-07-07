@@ -242,6 +242,73 @@ TOOL_PARAM_SCHEMAS: dict[str, dict[str, Any]] = {
         "properties": {},
         "additionalProperties": False,
     },
+    "lecmd": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": False,
+    },
+    "jlecmd": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": False,
+    },
+    "recmd": {
+        "type": "object",
+        "properties": {
+            "batch": {
+                "type": "string",
+                "pattern": r"^[A-Za-z0-9._-]+\.reb$",
+                "description": (
+                    "RECmd batch file NAME from the BatchExamples/ shipped in the "
+                    "maletín (e.g. Kroll_Batch.reb). A bare name — never a path."
+                ),
+            },
+            "is_directory": {
+                "type": "boolean",
+                "default": False,
+                "description": "Treat the evidence as a directory of hives (-d) instead of a single hive (-f).",
+            },
+        },
+        "required": ["batch"],
+        "additionalProperties": False,
+    },
+    "amcacheparser": {
+        "type": "object",
+        "properties": {
+            "include_linked": {
+                "type": "boolean",
+                "default": False,
+                "description": "Also emit file entries linked to program entries (-i).",
+            },
+        },
+        "additionalProperties": False,
+    },
+    "appcompatcacheparser": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": False,
+    },
+    "sbecmd": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": False,
+    },
+    "wxtcmd": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": False,
+    },
+    "rbcmd": {
+        "type": "object",
+        "properties": {
+            "is_file": {
+                "type": "boolean",
+                "default": False,
+                "description": "Treat the evidence as a single $I file (-f) instead of a $Recycle.Bin directory (-d).",
+            },
+        },
+        "additionalProperties": False,
+    },
     "jq": {
         "type": "object",
         "properties": {
@@ -273,6 +340,14 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "regripper": "Run RegRipper against a pre-extracted Windows registry hive.",
     "evtxecmd": "Parse a pre-extracted .evtx file (or directory) into CSV.",
     "mftecmd": "Parse a pre-extracted $MFT into CSV.",
+    "lecmd": "Parse pre-extracted Windows shortcut .lnk files (file or directory) into CSV — target paths, timestamps, volume info.",
+    "jlecmd": "Parse pre-extracted Jump Lists (Automatic/CustomDestinations-ms, from the user's Recent/ folder) into CSV — per-app document access history.",
+    "recmd": "Run a RECmd batch (e.g. Kroll_Batch.reb) against a pre-extracted registry hive (or directory of hives) into CSV.",
+    "amcacheparser": "Parse a pre-extracted Amcache.hve into CSVs — program/file inventory, evidence of execution.",
+    "appcompatcacheparser": "Parse the ShimCache (AppCompatCache) from a pre-extracted SYSTEM hive into CSV — executables present/run on the system.",
+    "sbecmd": "Parse ShellBags from UsrClass.dat/NTUSER.DAT hives under a directory into CSV — folders the user browsed, even if deleted.",
+    "wxtcmd": "Parse a pre-extracted Windows Timeline ActivitiesCache.db (Win10 1803+) into CSV — app/document activity history.",
+    "rbcmd": "Parse Recycle Bin $I metadata (directory or single file) into CSV — original path, size and deletion time of recycled files.",
     "jq": "Filter JSON output from other tools.",
 }
 

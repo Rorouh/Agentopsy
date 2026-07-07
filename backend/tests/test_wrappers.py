@@ -1,6 +1,7 @@
 """Per-wrapper contract tests.
 
-For each of the 13 core-tier wrappers we exercise:
+For each catalog wrapper (the 13 core-tier ones plus the EZ Tools absorbed on
+2026-07-07 into the extended tier) we exercise:
     - build_argv with valid minimum params returns a list[str] including the
       expected flags / paths.
     - build_argv with missing required params raises ValueError with an
@@ -21,6 +22,8 @@ from __future__ import annotations
 import pytest
 
 from forensia.toolkit.wrappers import (
+    amcacheparser,
+    appcompatcacheparser,
     bulk_extractor,
     chainsaw,
     evtxecmd,
@@ -28,17 +31,23 @@ from forensia.toolkit.wrappers import (
     foremost,
     hashdeep,
     hayabusa,
+    jlecmd,
     jq,
+    lecmd,
     mftecmd,
     plaso_log2timeline,
     plaso_psort,
     qemu_nbd,
+    rbcmd,
+    recmd,
     regripper,
+    sbecmd,
     tsk_fls,
     tsk_icat,
     tsk_mactime,
     tsk_mmls,
     volatility3,
+    wxtcmd,
     yara,
 )
 
@@ -847,6 +856,366 @@ class TestMftECmd:
     def test_no_legacy_host_mounts(self):
         # Realineado al maletín: ya no hay host_mounts (modelo container-por-tool muerto).
         assert not hasattr(mftecmd, "host_mounts")
+
+
+# --------------------------------------------------------------------------- #
+# lecmd
+# --------------------------------------------------------------------------- #
+class TestLECmd:
+    def test_build_argv_single_file(self):
+        argv = lecmd.build_argv(
+            {"target_path": "/evidence/Recent/doc.lnk", "output_dir": "/tmp/out"}
+        )
+        assert "-f" in argv and "/evidence/Recent/doc.lnk" in argv
+        assert "--csv" in argv and "/tmp/out" in argv
+
+    def test_build_argv_directory(self):
+        argv = lecmd.build_argv({"target_path": "/evidence/Recent", "output_dir": "/tmp/out"})
+        assert "-d" in argv and "/evidence/Recent" in argv
+
+    def test_build_argv_missing_target_path_raises(self):
+        with pytest.raises(ValueError, match="target_path"):
+            lecmd.build_argv({"output_dir": "/o"})
+
+    def test_build_argv_missing_output_dir_raises(self):
+        with pytest.raises(ValueError, match="output_dir"):
+            lecmd.build_argv({"target_path": "/x.lnk"})
+
+    def test_build_argv_non_str_target_path_raises(self):
+        with pytest.raises(ValueError, match="target_path"):
+            lecmd.build_argv({"target_path": 42, "output_dir": "/o"})
+
+    def test_parse_summary(self):
+        sample = (
+            "LECmd version 2026.5.0\n"
+            "Processed 3 files\n"
+            "Errors: 0\n"
+        )
+        result = lecmd.parse(sample)
+        assert result["summary"]["processed"].startswith("Processed 3")
+        assert result["summary"]["errors"] == "0"
+
+    def test_parse_empty(self):
+        assert lecmd.parse("") == {"summary": {}, "summary_count": 0}
+
+    def test_no_legacy_host_mounts(self):
+        assert not hasattr(lecmd, "host_mounts")
+
+
+# --------------------------------------------------------------------------- #
+# jlecmd
+# --------------------------------------------------------------------------- #
+class TestJLECmd:
+    def test_build_argv_single_file(self):
+        argv = jlecmd.build_argv(
+            {
+                "target_path": "/evidence/Recent/abc.automaticDestinations-ms",
+                "output_dir": "/tmp/out",
+            }
+        )
+        assert "-f" in argv
+        assert "/evidence/Recent/abc.automaticDestinations-ms" in argv
+        assert "--csv" in argv and "/tmp/out" in argv
+
+    def test_build_argv_directory(self):
+        argv = jlecmd.build_argv({"target_path": "/evidence/Recent", "output_dir": "/tmp/out"})
+        assert "-d" in argv and "/evidence/Recent" in argv
+
+    def test_build_argv_missing_target_path_raises(self):
+        with pytest.raises(ValueError, match="target_path"):
+            jlecmd.build_argv({"output_dir": "/o"})
+
+    def test_build_argv_missing_output_dir_raises(self):
+        with pytest.raises(ValueError, match="output_dir"):
+            jlecmd.build_argv({"target_path": "/evidence/Recent"})
+
+    def test_parse_summary(self):
+        sample = (
+            "JLECmd version 2026.5.0\n"
+            "Processed 12 files\n"
+            "AutomaticDestinations: 10\n"
+        )
+        result = jlecmd.parse(sample)
+        assert result["summary"]["processed"].startswith("Processed 12")
+        assert result["summary"]["automaticdestinations"] == "10"
+
+    def test_parse_empty(self):
+        assert jlecmd.parse("") == {"summary": {}, "summary_count": 0}
+
+    def test_no_legacy_host_mounts(self):
+        assert not hasattr(jlecmd, "host_mounts")
+
+
+# --------------------------------------------------------------------------- #
+# recmd
+# --------------------------------------------------------------------------- #
+class TestRECmd:
+    def test_build_argv_single_hive(self):
+        argv = recmd.build_argv(
+            {
+                "hive_path": "/evidence/config/SOFTWARE",
+                "output_dir": "/tmp/out",
+                "batch": "Kroll_Batch.reb",
+            }
+        )
+        assert "--bn" in argv
+        assert "/opt/eztools/RECmd/RECmd/BatchExamples/Kroll_Batch.reb" in argv
+        assert "-f" in argv and "/evidence/config/SOFTWARE" in argv
+        assert "--csv" in argv and "/tmp/out" in argv
+
+    def test_build_argv_directory(self):
+        argv = recmd.build_argv(
+            {
+                "hive_path": "/evidence/config",
+                "output_dir": "/tmp/out",
+                "batch": "Kroll_Batch.reb",
+                "is_directory": True,
+            }
+        )
+        assert "-d" in argv and "/evidence/config" in argv
+
+    def test_build_argv_missing_batch_raises(self):
+        with pytest.raises(ValueError, match="batch"):
+            recmd.build_argv({"hive_path": "/x", "output_dir": "/o"})
+
+    def test_build_argv_batch_with_path_separator_raises(self):
+        # RULE 2 / closed contract: el batch es un NOMBRE, nunca una ruta.
+        with pytest.raises(ValueError, match="batch"):
+            recmd.build_argv(
+                {"hive_path": "/x", "output_dir": "/o", "batch": "../../etc/passwd.reb"}
+            )
+
+    def test_build_argv_batch_without_reb_extension_raises(self):
+        with pytest.raises(ValueError, match="batch"):
+            recmd.build_argv({"hive_path": "/x", "output_dir": "/o", "batch": "Kroll_Batch"})
+
+    def test_build_argv_missing_hive_path_raises(self):
+        with pytest.raises(ValueError, match="hive_path"):
+            recmd.build_argv({"output_dir": "/o", "batch": "Kroll_Batch.reb"})
+
+    def test_build_argv_non_bool_is_directory_raises(self):
+        with pytest.raises(ValueError, match="is_directory"):
+            recmd.build_argv(
+                {
+                    "hive_path": "/x",
+                    "output_dir": "/o",
+                    "batch": "Kroll_Batch.reb",
+                    "is_directory": "yes",
+                }
+            )
+
+    def test_parse_summary(self):
+        sample = (
+            "RECmd version 2026.5.0\n"
+            "Found 618 key/value pairs across 1 file\n"
+            "Total search time: 7.049 seconds\n"
+        )
+        result = recmd.parse(sample)
+        assert result["summary"]["total_search_time"].startswith("7.049")
+
+    def test_parse_empty(self):
+        assert recmd.parse("") == {"summary": {}, "summary_count": 0}
+
+    def test_no_legacy_host_mounts(self):
+        assert not hasattr(recmd, "host_mounts")
+
+
+# --------------------------------------------------------------------------- #
+# amcacheparser
+# --------------------------------------------------------------------------- #
+class TestAmcacheParser:
+    def test_build_argv_minimum_valid(self):
+        argv = amcacheparser.build_argv(
+            {"hive_path": "/evidence/Programs/Amcache.hve", "output_dir": "/tmp/out"}
+        )
+        assert "-f" in argv and "/evidence/Programs/Amcache.hve" in argv
+        assert "--csv" in argv and "/tmp/out" in argv
+        assert "-i" not in argv
+
+    def test_build_argv_include_linked(self):
+        argv = amcacheparser.build_argv(
+            {
+                "hive_path": "/evidence/Programs/Amcache.hve",
+                "output_dir": "/tmp/out",
+                "include_linked": True,
+            }
+        )
+        assert "-i" in argv
+
+    def test_build_argv_missing_hive_path_raises(self):
+        with pytest.raises(ValueError, match="hive_path"):
+            amcacheparser.build_argv({"output_dir": "/o"})
+
+    def test_build_argv_non_bool_include_linked_raises(self):
+        with pytest.raises(ValueError, match="include_linked"):
+            amcacheparser.build_argv(
+                {"hive_path": "/x", "output_dir": "/o", "include_linked": "yes"}
+            )
+
+    def test_parse_summary(self):
+        sample = (
+            "AmcacheParser version 2026.5.0\n"
+            "Total program entries found: 68\n"
+            "Total parsing time: 0.336 seconds\n"
+        )
+        result = amcacheparser.parse(sample)
+        assert result["summary"]["total_program_entries_found"] == "68"
+
+    def test_parse_empty(self):
+        assert amcacheparser.parse("") == {"summary": {}, "summary_count": 0}
+
+    def test_no_legacy_host_mounts(self):
+        assert not hasattr(amcacheparser, "host_mounts")
+
+
+# --------------------------------------------------------------------------- #
+# appcompatcacheparser
+# --------------------------------------------------------------------------- #
+class TestAppCompatCacheParser:
+    def test_build_argv_minimum_valid(self):
+        argv = appcompatcacheparser.build_argv(
+            {"hive_path": "/evidence/config/SYSTEM", "output_dir": "/tmp/out"}
+        )
+        assert "-f" in argv and "/evidence/config/SYSTEM" in argv
+        assert "--csv" in argv and "/tmp/out" in argv
+
+    def test_build_argv_missing_hive_path_raises(self):
+        with pytest.raises(ValueError, match="hive_path"):
+            appcompatcacheparser.build_argv({"output_dir": "/o"})
+
+    def test_build_argv_missing_output_dir_raises(self):
+        with pytest.raises(ValueError, match="output_dir"):
+            appcompatcacheparser.build_argv({"hive_path": "/x"})
+
+    def test_parse_summary(self):
+        sample = (
+            "AppCompatCache Parser version 2026.5.0\n"
+            "Found 24 cache entries for Windows7x64_Windows2008R2 in ControlSet002\n"
+            "Results saved to: /cases/out.csv\n"
+        )
+        result = appcompatcacheparser.parse(sample)
+        assert result["summary"]["results_saved_to"] == "/cases/out.csv"
+
+    def test_parse_empty(self):
+        assert appcompatcacheparser.parse("") == {"summary": {}, "summary_count": 0}
+
+    def test_no_legacy_host_mounts(self):
+        assert not hasattr(appcompatcacheparser, "host_mounts")
+
+
+# --------------------------------------------------------------------------- #
+# sbecmd
+# --------------------------------------------------------------------------- #
+class TestSBECmd:
+    def test_build_argv_minimum_valid(self):
+        argv = sbecmd.build_argv(
+            {"target_path": "/evidence/Users/x/AppData/Local/Microsoft/Windows", "output_dir": "/tmp/out"}
+        )
+        assert "-d" in argv
+        assert "/evidence/Users/x/AppData/Local/Microsoft/Windows" in argv
+        assert "--csv" in argv and "/tmp/out" in argv
+
+    def test_build_argv_missing_target_path_raises(self):
+        with pytest.raises(ValueError, match="target_path"):
+            sbecmd.build_argv({"output_dir": "/o"})
+
+    def test_build_argv_missing_output_dir_raises(self):
+        with pytest.raises(ValueError, match="output_dir"):
+            sbecmd.build_argv({"target_path": "/x"})
+
+    def test_parse_summary(self):
+        sample = (
+            "SBECmd version 2026.5.0\n"
+            "Processed 1 file in 0.17 seconds!\n"
+            "Total ShellBags found: 78\n"
+        )
+        result = sbecmd.parse(sample)
+        assert result["summary"]["processed"].startswith("Processed 1 file")
+        assert result["summary"]["total_shellbags_found"] == "78"
+
+    def test_parse_empty(self):
+        assert sbecmd.parse("") == {"summary": {}, "summary_count": 0}
+
+    def test_no_legacy_host_mounts(self):
+        assert not hasattr(sbecmd, "host_mounts")
+
+
+# --------------------------------------------------------------------------- #
+# wxtcmd
+# --------------------------------------------------------------------------- #
+class TestWxTCmd:
+    def test_build_argv_minimum_valid(self):
+        argv = wxtcmd.build_argv(
+            {"target_path": "/evidence/CDP/ActivitiesCache.db", "output_dir": "/tmp/out"}
+        )
+        assert "-f" in argv and "/evidence/CDP/ActivitiesCache.db" in argv
+        assert "--csv" in argv and "/tmp/out" in argv
+
+    def test_build_argv_missing_target_path_raises(self):
+        with pytest.raises(ValueError, match="target_path"):
+            wxtcmd.build_argv({"output_dir": "/o"})
+
+    def test_build_argv_missing_output_dir_raises(self):
+        with pytest.raises(ValueError, match="output_dir"):
+            wxtcmd.build_argv({"target_path": "/x.db"})
+
+    def test_parse_summary(self):
+        sample = (
+            "WxTCmd version 2026.5.0\n"
+            "Activity entries found: 122\n"
+        )
+        result = wxtcmd.parse(sample)
+        assert result["summary"]["activity_entries_found"] == "122"
+
+    def test_parse_empty(self):
+        assert wxtcmd.parse("") == {"summary": {}, "summary_count": 0}
+
+    def test_no_legacy_host_mounts(self):
+        assert not hasattr(wxtcmd, "host_mounts")
+
+
+# --------------------------------------------------------------------------- #
+# rbcmd
+# --------------------------------------------------------------------------- #
+class TestRBCmd:
+    def test_build_argv_directory_default(self):
+        argv = rbcmd.build_argv(
+            {"target_path": "/evidence/$Recycle.Bin", "output_dir": "/tmp/out"}
+        )
+        assert "-d" in argv and "/evidence/$Recycle.Bin" in argv
+        assert "--csv" in argv and "/tmp/out" in argv
+
+    def test_build_argv_single_file(self):
+        argv = rbcmd.build_argv(
+            {
+                "target_path": "/evidence/$Recycle.Bin/S-1-5-21/$IKWQPOX.doc",
+                "output_dir": "/tmp/out",
+                "is_file": True,
+            }
+        )
+        assert "-f" in argv
+
+    def test_build_argv_missing_target_path_raises(self):
+        with pytest.raises(ValueError, match="target_path"):
+            rbcmd.build_argv({"output_dir": "/o"})
+
+    def test_build_argv_non_bool_is_file_raises(self):
+        with pytest.raises(ValueError, match="is_file"):
+            rbcmd.build_argv({"target_path": "/x", "output_dir": "/o", "is_file": 1})
+
+    def test_parse_summary(self):
+        sample = (
+            "RBCmd version 2026.5.0\n"
+            "Processed 2 out of 2 files in 0.0467 seconds\n"
+        )
+        result = rbcmd.parse(sample)
+        assert result["summary"]["processed"].startswith("Processed 2 out of 2")
+
+    def test_parse_empty(self):
+        assert rbcmd.parse("") == {"summary": {}, "summary_count": 0}
+
+    def test_no_legacy_host_mounts(self):
+        assert not hasattr(rbcmd, "host_mounts")
 
 
 # --------------------------------------------------------------------------- #
