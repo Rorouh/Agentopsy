@@ -428,39 +428,13 @@ export function SettingsPage({ caps, version, onNavigate, onCapsRefresh }: Setti
           className="settings-panel"
         >
           <div className="settings-form">
-            <div>
-              <div className="settings-toggle-row">
-                <input type="checkbox" checked disabled />
-                <div>
-                  <div className="settings-toggle-title">Ollama = opción 100 % local</div>
-                  <div className="settings-toggle-desc">
-                    Con el ejecutor Ollama ningún dato del caso sale de esta máquina. FORENSIA
-                    no fija un ejecutor por defecto: la elección es siempre del operador.
-                  </div>
-                </div>
-              </div>
-              <div className="settings-toggle-row">
-                <input type="checkbox" checked disabled />
-                <div>
-                  <div className="settings-toggle-title">Ejecutores cloud: aviso + consentimiento auditado</div>
-                  <div className="settings-toggle-desc">
-                    Al elegir Claude Code, Codex o Gemini CLI, el contenido derivado del caso
-                    sale al proveedor bajo tu propia suscripción (la evidencia puede contener
-                    datos personales reales → RGPD). La UI exige confirmarlo una vez por caso
-                    y ejecutor, y el consentimiento queda registrado en el audit log del caso.
-                  </div>
-                </div>
-              </div>
-            </div>
-
             {caps ? (
               <div className="form-field">
                 <label className="form-label">Diagnóstico</label>
                 <KeyValueList
                   items={[
+                    { label: "Producto", value: "FORENSIA" },
                     { label: "Versión", value: version ? `v${version}` : "—" },
-                    { label: "Sistema Operativo", value: caps.os },
-                    { label: "Arquitectura", value: caps.arch },
                     { label: "Python (servicio api)", value: caps.python },
                     { label: "Ejecutores disponibles", value: `${executors.filter(([, s]) => s.available).length} / ${executors.length}` },
                     { label: "Herramientas detectadas", value: `${Object.values(caps.tools).filter((t) => t.available).length} / ${Object.keys(caps.tools).length}` },
@@ -480,19 +454,6 @@ export function SettingsPage({ caps, version, onNavigate, onCapsRefresh }: Setti
                 description="No se pudo obtener el diagnóstico del stack."
               />
             )}
-
-            <div className="form-field">
-              <label className="form-label">Acerca de</label>
-              <KeyValueList
-                items={[
-                  { label: "Producto", value: "FORENSIA" },
-                  { label: "Versión", value: version ? `v${version}` : "no conectado" },
-                  { label: "Tipo de proyecto", value: "TFM académico" },
-                  { label: "Validez legal", value: "Sin certificación legal — uso académico" },
-                ]}
-              />
-              <span className="field-hint">Equipo y licencia: ver README.md del repositorio.</span>
-            </div>
           </div>
         </div>
       )}
