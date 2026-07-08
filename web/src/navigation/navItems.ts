@@ -22,8 +22,8 @@ export interface NavItem {
 }
 
 export const NAV_ITEMS: NavItem[] = [
-  { id: "investigation", label: "Chat Investigación", section: "primary" },
   { id: "repository", label: "Casos y evidencias", section: "primary" },
+  { id: "investigation", label: "Chat Investigación", section: "primary" },
   { id: "timeline", label: "Timeline", section: "primary" },
   { id: "document-viewer", label: "Documentos", section: "primary" },
   { id: "mitre", label: "MITRE ATT&CK", section: "primary" },
@@ -32,4 +32,6 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "guide", label: "Guía", section: "secondary" },
 ];
 
-export const DEFAULT_VIEW: ViewId = "investigation";
+// El flujo real empieza por el caso: primero se crea/selecciona y se registra
+// evidencia; investigar sin caso solo puede degradar (RULE 2).
+export const DEFAULT_VIEW: ViewId = "repository";

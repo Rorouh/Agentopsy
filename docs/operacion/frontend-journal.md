@@ -6,6 +6,68 @@ No reemplaza ni contradice `arquitectura.md` ni `modelo-amenazas.md`; los comple
 
 ---
 
+## Entrada 2026-07-08 (2) — El panel lateral de casos se sustituye por un buscador en modal
+
+Iteración sobre el master-detail del mismo día: el panel izquierdo
+(`CaseNavigator`, 280 px fijos) desaparece y el workspace del caso activo pasa
+a ocupar el ancho completo. Los casos se localizan ahora con
+`CaseSearchModal` (`web/src/components/CaseSearchModal.tsx`), un buscador
+estilo command-palette abierto desde el botón «Buscar casos» del header (o
+desde el empty-state cuando no hay caso activo): input con autofocus, filtros
+Todos/Abiertos/Cerrados, orden, paginación de 8 y footer con las teclas
+(ESC/↵). Seleccionar un resultado activa el caso y cierra el modal. Toda la
+lógica de filtrado client-side se movió tal cual desde `CaseNavigator` (que
+se elimina); `Modal` gana una prop opcional `panelClassName` para la variante
+a sangre (600 px, body sin padding). El fallo de carga del listado se pinta
+también en el workspace con su «Reintentar» — no solo dentro del modal, que
+quizá nadie abra (RULE 2: fail loud). Se eliminan del CSS `.repository-layout`
+y `.case-navigator` junto con su media query; el media <900px ya no es
+necesario porque el flujo es una sola columna siempre.
+
+---
+
+## Entrada 2026-07-08 — «Casos y evidencias» pasa a master-detail
+
+`RepositoryPage.tsx` se reorganiza en dos columnas: navegador de casos a la
+izquierda (280 px; búsqueda, filtros Todos/Abiertos/Cerrados, orden y paginación
+de 8/página — todo client-side: no existe search/filter/paginate en el backend)
+y workspace del caso activo a la derecha (header compacto con acciones, métricas
+inline, zona de registro y tabla de evidencias). En < 900 px degrada a pila
+vertical. La página conserva TODO el estado y las llamadas; las piezas visuales
+se extraen a `web/src/components/` (`CaseNavigator`, `ActiveCaseHeader`,
+`EvidenceInbox`, `EvidenceTable`, `Pagination`).
+
+Decisiones que conviene conocer:
+
+- **Ciclo de vida completo del caso en una pantalla**: crear (Modal, sin campo
+  de SO — lo deriva el triage del contenido de la evidencia), editar inline,
+  cerrar (Modal de confirmación detrás del menú «Más ▾») y reabrir (acción
+  prominente cuando el caso está cerrado; la zona de registro queda
+  deshabilitada mientras tanto, igual que el backend, que responde 422).
+- **La bandeja sigue siendo la única vía de entrada de evidencia** (sin File
+  API ni upload HTTP). El "drag-and-drop" es solo affordance: si se suelta un
+  fichero del SO sobre la zona, se muestra la instrucción de copiarlo a
+  `./evidence` — nunca se lee el `File`. La compatibilidad de formato se
+  valida client-side contra `SUPPORTED_EXTENSIONS`
+  (`web/src/utils/evidence.ts`, espejo de `toolkit/catalog.py` + `triage.py`);
+  el backend re-valida siempre.
+- **Registro sin progreso ni cancelación, a propósito**: el hash gate del
+  backend es atómico; la UI muestra estado indeterminado con aviso de que
+  puede tardar minutos. Tras registrar se refresca el `Case` (el triage puede
+  haber derivado `os_profile` con esa evidencia) para que el header y la lista
+  pasen de «sin determinar» al perfil real sin recargar.
+- **Tabla semántica** para las evidencias (columnas Nombre/Tipo/Tamaño/
+  SHA-256 con botón Copiar/Estado/Fecha/Acciones), con búsqueda (> 5 filas) y
+  paginación (10/página) client-side. Los badges de estado no dependen solo
+  del color (✓ / ⚠ / texto).
+- **Deuda conocida**: la columna Nombre muestra `original.<ext>` porque
+  `EvidenceHandle.original_path` apunta a la copia interna del caso y el
+  handle no expone el basename de origen (está en `baseline.json` como
+  `source_path`, pero no viaja en el contrato HTTP). Exponerlo es cambio de
+  backend; se anota para coordinarlo.
+
+---
+
 ## Entrada 2026-07-04 — Migración visual selectiva desde `dev/local-changes`
 
 Se traslada a la SPA de `web/` la organización, jerarquía y acabado visual más reciente

@@ -130,13 +130,22 @@ web/src/                       ← the SPA (own package.json + vite.config.ts at
 │   └── domain.ts            Domain contracts meant to mirror future backend shapes: CaseSummary, EvidenceFile, ReportDocument, TimelineEvent, MitreTechniqueMatch, InvestigationFinding, GuideStep, LoadState.
 ├── mocks/
 │   └── frontendPreviewData.ts  All mock data. Imported ONLY in App.tsx and passed down as typed props — pages never import mocks directly.
+├── utils/
+│   ├── format.ts            Pure formatting helpers (formatBytes, formatDate, shortHash).
+│   └── evidence.ts          SUPPORTED_EXTENSIONS (single source, mirrors toolkit/catalog.py + triage.py), fileExtension/isSupportedEvidence (client-side inbox validation; backend re-validates), DETECTED_KIND_LABEL.
+├── components/              Presentational pieces of RepositoryPage (page keeps ALL state/data logic):
+│   ├── CaseSearchModal.tsx  Command-palette case finder (opened from the "Buscar casos" header button — there is no left panel): client-side search/filter/sort + pagination (8/page) over the loaded Case[]; selecting a case activates it and closes the modal; error+retry state.
+│   ├── ActiveCaseHeader.tsx Compact case header: name+badge, meta line, actions (Investigar/Editar/Más▾ menu with click-outside; closed case → "Reabrir" prominent), collapsible notes.
+│   ├── EvidenceInbox.tsx    Register-evidence zone; states for closed case / inbox not loaded / loading / empty / selectable sources (client-side extension check) / registering (indeterminate, no cancel — none exists server-side) / inline error+retry / 2s success flash. DnD is visual affordance only — NO File API; OS file drops show the "copy to ./evidence" hint.
+│   └── EvidenceTable.tsx    Semantic <table> of registered evidence: kind label, size, short hash + copy button, verification badge, per-row verify; client-side search (>5 rows) + pagination (10/page).
+│   └── Pagination.tsx       Shared "‹ Anterior N/M Siguiente ›" client-side pager.
 ├── layout/
 │   ├── AppShell.tsx        Visual frame: CSS grid (sidebar 260px + main), error banner via ErrorState. No topbar/ThemeToggle here anymore.
 │   └── Sidebar.tsx         Brand + full nav list (8 items, primary + secondary sections) with aria-current="page" on the active item. No footer: connection + version moved to SystemStatusPage (2026-07-04).
 ├── pages/
 │   ├── ChatPage.tsx        Full chat UI + send logic via api.query(). Executor selector (4 chips; unavailable ones disabled with the actionable reason as tooltip) + cloud warning/consent flow (blocks send until the operator confirms; consent recorded in the case audit via /api/agent/cloud-consent). Has ownership constraint (see below).
 │   ├── GuidePage.tsx       Static onboarding/flow explainer. CTA → repository.
-│   ├── RepositoryPage.tsx  "Casos y evidencias". Real case CRUD + evidence registration from the /api/evidence/sources inbox (./evidence on the host) + hash verify. CTA → investigation.
+│   ├── RepositoryPage.tsx  "Casos y evidencias". Full-width case workspace; cases are located via CaseSearchModal (command-palette, "Buscar casos" header button — no side panel). Real case lifecycle (create in Modal — no os_profile field, the orchestrator derives it —, edit inline, close with confirm Modal, reopen) + evidence registration from the /api/evidence/sources inbox (./evidence on the host) + hash verify. Orchestrates state; presentational pieces live in components/. CTA → investigation (in ActiveCaseHeader).
 │   ├── InvestigationPage.tsx  Wraps ChatPage, adds ContextBanner + findings side panel. CTA → timeline.
 │   ├── TimelinePage.tsx    Mock chronological events with severity filter ("Vista demo" banner). CTA → document-viewer.
 │   ├── DocumentViewerPage.tsx  Mock report list + viewer pane ("Vista demo" banner). CTA → mitre.
@@ -148,7 +157,8 @@ web/src/                       ← the SPA (own package.json + vite.config.ts at
     ├── Badge.tsx, EmptyState.tsx, LoadingState.tsx, ErrorState.tsx   Visual state primitives.
     ├── PageHeader.tsx, PageSection.tsx       Page-level layout primitives.
     ├── MetricCard.tsx, KeyValueList.tsx      Data display primitives.
-    └── ContextBanner.tsx                      Shows active case/evidence; used on Repository/Investigation/Timeline/DocumentViewer/Mitre.
+    ├── Modal.tsx                              Minimal dialog: fixed backdrop + centered panel; closes on backdrop click / Escape / ×; optional panelClassName for variants. Used for case creation, close-case confirmation and the case search palette.
+    └── ContextBanner.tsx                      Shows active case/evidence; used on Timeline/DocumentViewer/Mitre (Repository/Investigation render their own banners inline).
 ```
 
 Most pages are a **visual demo layer**: mock data typed as props, no direct backend

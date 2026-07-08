@@ -2,14 +2,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
 import type { Case, EvidenceHandle, EvidenceSource } from "../api/types";
 import type { ViewId } from "../navigation/navItems";
-import { Badge } from "../ui/Badge";
+import { ActiveCaseHeader } from "../components/ActiveCaseHeader";
+import { CaseSearchModal } from "../components/CaseSearchModal";
+import { EvidenceInbox } from "../components/EvidenceInbox";
+import { EvidenceTable } from "../components/EvidenceTable";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
+import { EmptyState } from "../ui/EmptyState";
 import { ErrorState } from "../ui/ErrorState";
 import { LoadingState } from "../ui/LoadingState";
-import { MetricCard } from "../ui/MetricCard";
+import { Modal } from "../ui/Modal";
 import { PageHeader } from "../ui/PageHeader";
-import { formatBytes, formatDate, shortHash } from "../utils/format";
+import { PageSection } from "../ui/PageSection";
 
 interface RepositoryPageProps {
   onNavigate?: (view: ViewId) => void;
@@ -17,26 +21,22 @@ interface RepositoryPageProps {
 
 type LoadingPhase = "loading" | "ready" | "error";
 
-function rowStatus(ev: EvidenceHandle): "unknown" | "verified" | "mismatch" {
-  const lv = ev.last_verification;
-  if (!lv) return "unknown";
-  return lv.verified ? "verified" : "mismatch";
-}
-
 interface FormState {
   name: string;
   examiner: string;
-  os_profile: "unix" | "windows";
   notes: string;
 }
 
 const EMPTY_FORM: FormState = {
   name: "",
   examiner: "",
-  os_profile: "unix",
   notes: "",
 };
 
+// Workspace del caso activo a ancho completo (header + métricas + registrar
+// evidencia + tabla). Los casos se localizan con el CaseSearchModal (botón
+// «Buscar casos» del header, estilo command-palette) — ya no hay panel
+// lateral. Toda la carga/persistencia vive aquí; components/ es presentacional.
 export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
   const [cases, setCases] = useState<Case[]>([]);
   const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
@@ -47,8 +47,26 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [newCaseOpen, setNewCaseOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  // Ancla del scroll-to tras crear un caso: baja directo a la zona de
+  // "Registrar evidencia" del caso recién creado — encadena crear → registrar
+  // como un flujo guiado sin fusionar las dos operaciones en un solo formulario.
+  const evidenceCardRef = useRef<HTMLDivElement>(null);
+
+  // Panel de detalle del caso activo: ver / editar (nombre, examinador, notas
+  // — no el os_profile, que lo deriva el orquestador) y cerrar/reabrir.
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState({ name: "", examiner: "", notes: "" });
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [caseActionBusy, setCaseActionBusy] = useState(false);
+  const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
 
   const [registering, setRegistering] = useState(false);
+  // Flash de éxito de registro (2 s) — aria-live en EvidenceInbox.
+  const [registerSuccess, setRegisterSuccess] = useState(false);
+  const successTimer = useRef<number | undefined>(undefined);
   // Bandeja de entrada de evidencias (/api/evidence/sources — ./evidence del
   // host): el operador copia el fichero a la bandeja y lo ELIGE aquí
   // (RULE 2: nunca "el único" ni "el más reciente").
@@ -78,31 +96,30 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
     activeCaseIdRef.current = activeCaseId;
   }, [activeCaseId]);
 
-  // Initial load: list cases and pick the most recent as active. Evidence
-  // fetching is owned by the useEffect below — keyed on activeCaseId — so
-  // any subsequent change (switch chip, submitCase) refetches uniformly.
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const list = await api.cases.list();
-        if (cancelled) return;
-        setCases(list);
-        if (list.length > 0) {
-          setActiveCaseId(list[0].id);
-        }
-        setPhase("ready");
-      } catch (err) {
-        if (!cancelled) {
-          setError(String(err instanceof Error ? err.message : err));
-          setPhase("error");
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    return () => window.clearTimeout(successTimer.current);
   }, []);
+
+  // Initial load (y Reintentar del navegador de casos): lista casos y activa
+  // el más reciente. El fetch de evidencias lo gobierna el effect de abajo,
+  // keyed en activeCaseId, para que cualquier cambio refetchee uniformemente.
+  const loadCases = useCallback(async () => {
+    setPhase("loading");
+    setError(null);
+    try {
+      const list = await api.cases.list();
+      setCases(list);
+      setActiveCaseId((prev) => prev ?? (list.length > 0 ? list[0].id : null));
+      setPhase("ready");
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+      setPhase("error");
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadCases();
+  }, [loadCases]);
 
   // Single source of truth for the evidence list: it follows activeCaseId.
   // We clear immediately so the UI never paints zombie rows from the previous
@@ -143,20 +160,34 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
     [activeCaseId]
   );
 
+  // El modo edición es por caso: si el operador cambia de caso a mitad de
+  // edición, se descarta el borrador en vez de guardarlo contra el caso nuevo.
+  useEffect(() => {
+    setEditing(false);
+    setEditError(null);
+  }, [activeCaseId]);
+
   const submitCase = useCallback(async () => {
     setCreating(true);
     setCreateError(null);
     try {
+      // os_profile se omite a propósito — lo deriva el orquestador del
+      // contenido de la evidencia al registrarla (auto-detección de SO).
       const created = await api.cases.create({
         name: form.name.trim(),
         examiner: form.examiner.trim(),
-        os_profile: form.os_profile,
         notes: form.notes.trim(),
       });
       setCases((prev) => [created, ...prev]);
       setActiveCaseId(created.id);
       // Evidence is reset by the activeCaseId effect (it always clears first).
       setForm(EMPTY_FORM);
+      setNewCaseOpen(false);
+      // Guía al operador directo al siguiente paso: registrar evidencia para
+      // el caso que acaba de crear.
+      requestAnimationFrame(() => {
+        evidenceCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
     } catch (err) {
       setCreateError(String(err instanceof Error ? err.message : err));
     } finally {
@@ -202,6 +233,17 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
         setEvidence((prev) => [handle, ...prev]);
       }
       setSelectedSourcePath("");
+      // El caso puede haber cambiado en el servidor (triage deriva os_profile
+      // al registrar la primera evidencia enrutable) — refresca la fila.
+      try {
+        const refreshed = await api.cases.get(intendedCaseId);
+        setCases((prev) => prev.map((c) => (c.id === refreshed.id ? refreshed : c)));
+      } catch {
+        /* refresco best-effort; la evidencia ya quedó registrada */
+      }
+      setRegisterSuccess(true);
+      window.clearTimeout(successTimer.current);
+      successTimer.current = window.setTimeout(() => setRegisterSuccess(false), 2000);
     } catch (err) {
       setEvidenceError({
         kind: "register",
@@ -250,9 +292,11 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
 
   const closeActiveCase = useCallback(async () => {
     if (!activeCase) return;
+    setCaseActionBusy(true);
     try {
       const updated = await api.cases.close(activeCase.id);
       setCases((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+      setConfirmCloseOpen(false);
     } catch (err) {
       // Cierre de caso comparte el slot de errores con register/verify; el copy
       // "no se pudo verificar" cuadra peor que el de register, así que va aquí.
@@ -260,8 +304,62 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
         kind: "register",
         message: String(err instanceof Error ? err.message : err),
       });
+      setConfirmCloseOpen(false);
+    } finally {
+      setCaseActionBusy(false);
     }
   }, [activeCase]);
+
+  const reopenActiveCase = useCallback(async () => {
+    if (!activeCase) return;
+    setCaseActionBusy(true);
+    try {
+      const updated = await api.cases.reopen(activeCase.id);
+      setCases((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+    } catch (err) {
+      setEvidenceError({
+        kind: "register",
+        message: String(err instanceof Error ? err.message : err),
+      });
+    } finally {
+      setCaseActionBusy(false);
+    }
+  }, [activeCase]);
+
+  const startEdit = useCallback(() => {
+    if (!activeCase) return;
+    setEditForm({
+      name: activeCase.name,
+      examiner: activeCase.examiner,
+      notes: activeCase.notes,
+    });
+    setEditError(null);
+    setEditing(true);
+  }, [activeCase]);
+
+  const cancelEdit = useCallback(() => {
+    setEditing(false);
+    setEditError(null);
+  }, []);
+
+  const saveEdit = useCallback(async () => {
+    if (!activeCase) return;
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      const updated = await api.cases.update(activeCase.id, {
+        name: editForm.name.trim(),
+        examiner: editForm.examiner.trim(),
+        notes: editForm.notes.trim(),
+      });
+      setCases((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+      setEditing(false);
+    } catch (err) {
+      setEditError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setEditSaving(false);
+    }
+  }, [activeCase, editForm]);
 
   const verifiedCount = useMemo(
     () => evidence.filter((e) => e.last_verification?.verified === true).length,
@@ -274,6 +372,14 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
     form.name.trim().length <= 200 &&
     form.examiner.trim().length > 0 &&
     form.examiner.trim().length <= 200;
+
+  const editValid =
+    editForm.name.trim().length > 0 &&
+    editForm.name.trim().length <= 200 &&
+    editForm.examiner.trim().length > 0 &&
+    editForm.examiner.trim().length <= 200;
+
+  const caseClosed = activeCase?.status === "closed";
 
   if (phase === "loading") {
     return (
@@ -290,268 +396,269 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
         title="Casos y evidencias"
         subtitle="Crea el caso, registra la evidencia y deja que FORENSIA calcule el hash baseline antes de exponerla a cualquier herramienta."
         actions={
-          onNavigate &&
-          activeCase && (
-            <Button variant="chip" onClick={() => onNavigate("investigation")}>
-              Investigar este caso →
+          <>
+            <Button variant="chip" onClick={() => setSearchOpen(true)}>
+              Buscar casos
             </Button>
-          )
+            <Button variant="primary" onClick={() => setNewCaseOpen(true)}>
+              + Abrir caso nuevo
+            </Button>
+          </>
         }
       />
 
-      {error && <ErrorState message={error} />}
-
-      {activeCase ? (
-        <div className="context-banner">
-          <div className="context-banner-main">
-            Caso activo: <strong>{activeCase.name}</strong>
-            <span className="context-banner-evidence">
-              {" · "}
-              {activeCase.examiner}
-              {" · "}
-              perfil <strong>{activeCase.os_profile}</strong>
-            </span>
-          </div>
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <Badge variant={activeCase.status === "active" ? "low" : "neutral"}>
-              {activeCase.status === "active" ? "Abierto" : "Cerrado"}
-            </Badge>
-            {activeCase.status === "active" && (
-              <Button variant="chip" onClick={closeActiveCase}>
-                Cerrar caso
-              </Button>
-            )}
-          </div>
-        </div>
-      ) : (
-        <div className="empty-state">
-          Aún no hay casos. Crea uno con el formulario inferior para empezar.
-        </div>
-      )}
-
-      {cases.length > 1 && (
-        <div className="filters-row" style={{ marginBottom: 18 }}>
-          {cases.map((c) => (
-            <Button
-              key={c.id}
-              variant="chip"
-              onClick={() => switchCase(c.id)}
-              className={c.id === activeCaseId ? "chip active" : undefined}
-            >
-              {c.name}
-            </Button>
-          ))}
-        </div>
-      )}
-
-      <div className="metric-row">
-        <MetricCard label="Evidencias registradas" value={String(evidence.length)} />
-        <MetricCard
-          label="Verificadas (hash OK)"
-          value={String(verifiedCount)}
-          variant="success"
-        />
-        <MetricCard
-          label="Pendientes / sin verificar"
-          value={String(pendingCount)}
-          variant={pendingCount > 0 ? "warning" : "neutral"}
-        />
-      </div>
-
-      <div className="status-grid">
-        <Card fullWidth>
-          <h3>Registrar evidencia</h3>
-          <div className="dropzone">
-            <div className="dropzone-title">
-              {activeCase
-                ? "Elige la imagen forense desde la bandeja de evidencias"
-                : "Crea un caso antes de registrar evidencia"}
-            </div>
-            <div className="dropzone-hint">
-              Copia el fichero (.E01 · .raw · .vmdk · volcado de memoria) a la carpeta{" "}
-              <code>./evidence</code> del repositorio en tu máquina y búscalo aquí. La copia
-              interna queda en read-only y FORENSIA calcula el SHA-256 baseline antes de
-              exponerla.
-            </div>
-            {sources !== null && sources.length > 0 && (
-              <div className="form-field full-width" style={{ marginTop: 10 }}>
-                <select
-                  className="form-select"
-                  aria-label="Fuente de evidencia"
-                  value={selectedSourcePath}
-                  onChange={(e) => setSelectedSourcePath(e.target.value)}
-                  disabled={registering}
-                >
-                  <option value="">Selecciona una fuente de evidencia</option>
-                  {sources.map((s) => (
-                    <option key={s.path} value={s.path}>
-                      {s.name} · {formatBytes(s.size)}
-                    </option>
-                  ))}
-                </select>
+      <section className="case-workspace">
+          {phase === "error" ? (
+            // RULE 2: el fallo del listado se muestra aquí mismo, no solo
+            // dentro del modal de búsqueda que quizá nadie abra.
+            <>
+              <ErrorState message={error ?? "no se pudo listar los casos"} />
+              <div className="cta-row">
+                <Button variant="chip" onClick={loadCases}>
+                  Reintentar
+                </Button>
               </div>
-            )}
-            {sources !== null && sources.length === 0 && (
-              <div className="dropzone-hint" style={{ marginTop: 10 }}>
-                La bandeja está vacía. Copia la imagen a <code>./evidence</code> y vuelve a
-                buscar.
-              </div>
-            )}
-            <div className="cta-row" style={{ justifyContent: "center" }}>
-              <Button
-                variant="chip"
-                disabled={!activeCase || loadingSources || registering}
-                onClick={loadSources}
-              >
-                {loadingSources
-                  ? "Buscando…"
-                  : sources === null
-                    ? "Buscar en la bandeja"
-                    : "Actualizar bandeja"}
-              </Button>
-              <Button
-                variant="primary"
-                disabled={!activeCase || !selectedSourcePath || registering}
-                onClick={registerSelectedSource}
-              >
-                {registering ? "Registrando (hashing)…" : "Registrar evidencia"}
-              </Button>
-            </div>
-          </div>
-          {evidenceError && (
-            <div className="error-state" style={{ marginTop: 8 }}>
-              <strong>
-                {evidenceError.kind === "register"
-                  ? "No se pudo registrar la evidencia:"
-                  : "No se pudo verificar la evidencia:"}
-              </strong>{" "}
-              {evidenceError.message}
-            </div>
-          )}
-        </Card>
-
-        <Card>
-          <h3>Nuevo caso</h3>
-          <div className="form-grid">
-            <div className="form-field full-width">
-              <label className="form-label" htmlFor="case-name">Nombre del caso</label>
-              <input
-                id="case-name"
-                className="form-input"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                maxLength={200}
-                placeholder="Nombre o referencia del caso"
-              />
-            </div>
-            <div className="form-field">
-              <label className="form-label" htmlFor="case-examiner">Examinador</label>
-              <input
-                id="case-examiner"
-                className="form-input"
-                value={form.examiner}
-                onChange={(e) => setForm({ ...form, examiner: e.target.value })}
-                maxLength={200}
-                placeholder="Nombre completo"
-              />
-            </div>
-            <div className="form-field">
-              <label className="form-label" htmlFor="case-os-profile">Perfil de SO</label>
-              <select
-                id="case-os-profile"
-                className="form-select"
-                value={form.os_profile}
-                onChange={(e) =>
-                  setForm({ ...form, os_profile: e.target.value as "unix" | "windows" })
-                }
-              >
-                <option value="unix">Unix-like</option>
-                <option value="windows">Windows</option>
-              </select>
-            </div>
-            <div className="form-field full-width">
-              <label className="form-label" htmlFor="case-notes">Descripción / notas</label>
-              <textarea
-                id="case-notes"
-                className="form-textarea"
-                rows={3}
-                value={form.notes}
-                onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                placeholder="Descripción breve del caso (opcional)"
-              />
-            </div>
-          </div>
-          {createError && (
-            <div className="error-state" style={{ marginTop: 8 }}>
-              <strong>No se pudo crear el caso:</strong> {createError}
-            </div>
-          )}
-          <div className="cta-row">
-            <Button variant="primary" disabled={!formValid || creating} onClick={submitCase}>
-              {creating ? "Guardando…" : "Guardar caso"}
-            </Button>
-          </div>
-        </Card>
-
-        <Card>
-          <h3>Evidencias del caso ({evidence.length})</h3>
-          {evidence.length === 0 ? (
-            <div className="empty-state">
-              {activeCase
-                ? "Aún no hay evidencia registrada en este caso."
-                : "Selecciona o crea un caso para ver sus evidencias."}
-            </div>
+            </>
+          ) : !activeCase ? (
+            <EmptyState
+              title="Sin caso activo"
+              description="Busca un caso existente o crea uno nuevo para empezar."
+              action={
+                <div style={{ display: "flex", gap: 10 }}>
+                  <Button variant="chip" onClick={() => setSearchOpen(true)}>
+                    Buscar casos
+                  </Button>
+                  <Button variant="primary" onClick={() => setNewCaseOpen(true)}>
+                    + Abrir caso nuevo
+                  </Button>
+                </div>
+              }
+            />
           ) : (
-            <div className="file-list">
-              {evidence.map((ev) => {
-                const status = rowStatus(ev);
-                const verifying = verifyingIds.has(ev.evidence_id);
-                const fileName = ev.original_path.split("/").pop() ?? ev.original_path;
-                return (
-                  <div className="file-row" key={ev.evidence_id}>
-                    <div className="file-row-main">
-                      <div>
-                        <div className="file-row-name">{fileName}</div>
-                        <div className="file-row-meta">
-                          {formatBytes(ev.size)} · añadido {formatDate(ev.registered_at)} ·{" "}
-                          {ev.evidence_id.slice(0, 8)}
-                          {ev.last_verification && (
-                            <>
-                              {" · "}último verify {formatDate(ev.last_verification.verified_at)}
-                            </>
-                          )}
-                        </div>
+            <>
+              <Card fullWidth>
+                {editing ? (
+                  <>
+                    <h3>Editar caso</h3>
+                    <div className="form-grid">
+                      <div className="form-field full-width">
+                        <label className="form-label" htmlFor="edit-case-name">
+                          Nombre del caso
+                        </label>
+                        <input
+                          id="edit-case-name"
+                          className="form-input"
+                          value={editForm.name}
+                          onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                          maxLength={200}
+                        />
+                      </div>
+                      <div className="form-field">
+                        <label className="form-label" htmlFor="edit-case-examiner">
+                          Examinador
+                        </label>
+                        <input
+                          id="edit-case-examiner"
+                          className="form-input"
+                          value={editForm.examiner}
+                          onChange={(e) =>
+                            setEditForm({ ...editForm, examiner: e.target.value })
+                          }
+                          maxLength={200}
+                        />
+                      </div>
+                      <div className="form-field full-width">
+                        <label className="form-label" htmlFor="edit-case-notes">
+                          Descripción / notas
+                        </label>
+                        <textarea
+                          id="edit-case-notes"
+                          className="form-textarea"
+                          rows={3}
+                          value={editForm.notes}
+                          onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                        />
                       </div>
                     </div>
-                    <div className="file-row-side">
-                      <span className="file-row-hash" title={ev.sha256}>
-                        SHA-256: {shortHash(ev.sha256)}
-                      </span>
-                      {status === "verified" && <Badge variant="success">Verificado</Badge>}
-                      {status === "mismatch" && <Badge variant="critical">Hash MISMATCH</Badge>}
-                      {status === "unknown" && !verifying && (
-                        <Badge variant="neutral">Sin verificar</Badge>
-                      )}
-                      {verifying && <Badge variant="medium">Re-hasheando…</Badge>}
+                    {editError && (
+                      <div className="error-state" style={{ marginTop: 8 }}>
+                        <strong>No se pudo guardar:</strong> {editError}
+                      </div>
+                    )}
+                    <div className="cta-row">
                       <Button
-                        variant="chip"
-                        disabled={verifying}
-                        onClick={() => verifyOne(ev.evidence_id)}
+                        variant="primary"
+                        disabled={!editValid || editSaving}
+                        onClick={saveEdit}
                       >
-                        {verifying
-                          ? "Verificando…"
-                          : ev.last_verification
-                            ? "Re-verificar"
-                            : "Verificar ahora"}
+                        {editSaving ? "Guardando…" : "Guardar cambios"}
+                      </Button>
+                      <Button variant="chip" disabled={editSaving} onClick={cancelEdit}>
+                        Cancelar
                       </Button>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  </>
+                ) : (
+                  <ActiveCaseHeader
+                    c={activeCase}
+                    busy={caseActionBusy}
+                    onInvestigate={
+                      onNavigate ? () => onNavigate("investigation") : undefined
+                    }
+                    onEdit={startEdit}
+                    onRequestClose={() => setConfirmCloseOpen(true)}
+                    onReopen={reopenActiveCase}
+                  />
+                )}
+              </Card>
+
+              <div className="metrics-inline">
+                <div className="metrics-inline-item">
+                  <strong>{evidence.length}</strong> Evidencias
+                </div>
+                <div className="metrics-inline-item metrics-inline-item--success">
+                  <strong>{verifiedCount}</strong> ✓ Verificadas
+                </div>
+                <div
+                  className={
+                    pendingCount > 0
+                      ? "metrics-inline-item metrics-inline-item--warning"
+                      : "metrics-inline-item"
+                  }
+                >
+                  <strong>{pendingCount}</strong> ◷ Pendientes
+                </div>
+              </div>
+
+              <div ref={evidenceCardRef}>
+                <PageSection title="Registrar evidencia">
+                  <EvidenceInbox
+                    caseClosed={caseClosed}
+                    sources={sources}
+                    loadingSources={loadingSources}
+                    selectedSourcePath={selectedSourcePath}
+                    registering={registering}
+                    registerError={
+                      evidenceError?.kind === "register" ? evidenceError.message : null
+                    }
+                    registerSuccess={registerSuccess}
+                    onSelectSource={setSelectedSourcePath}
+                    onLoadSources={loadSources}
+                    onRegister={registerSelectedSource}
+                  />
+                </PageSection>
+              </div>
+
+              <PageSection title={`Evidencias del caso (${evidence.length})`}>
+                <EvidenceTable
+                  evidence={evidence}
+                  verifyingIds={verifyingIds}
+                  onVerify={verifyOne}
+                  verifyError={
+                    evidenceError?.kind === "verify" ? evidenceError.message : null
+                  }
+                />
+              </PageSection>
+            </>
           )}
-        </Card>
-      </div>
+      </section>
+
+      <CaseSearchModal
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        cases={cases}
+        activeCaseId={activeCaseId}
+        onSelect={switchCase}
+        error={phase === "error" ? error : null}
+        onRetry={loadCases}
+      />
+
+      <Modal open={newCaseOpen} title="Nuevo caso" onClose={() => setNewCaseOpen(false)}>
+        <div className="form-grid">
+          <div className="form-field full-width">
+            <label className="form-label" htmlFor="case-name">Nombre del caso</label>
+            <input
+              id="case-name"
+              className="form-input"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              maxLength={200}
+              placeholder="Nombre o referencia del caso"
+              autoFocus
+            />
+          </div>
+          <div className="form-field full-width">
+            <label className="form-label" htmlFor="case-examiner">Examinador</label>
+            <input
+              id="case-examiner"
+              className="form-input"
+              value={form.examiner}
+              onChange={(e) => setForm({ ...form, examiner: e.target.value })}
+              maxLength={200}
+              placeholder="Nombre completo"
+            />
+          </div>
+          <div className="form-field full-width">
+            <label className="form-label" htmlFor="case-notes">Descripción / notas</label>
+            <textarea
+              id="case-notes"
+              className="form-textarea"
+              rows={3}
+              value={form.notes}
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              onKeyDown={(e) => {
+                // Enter en el último campo = enviar (Shift+Enter para salto de línea,
+                // mismo gesto que el composer del chat).
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  if (formValid && !creating) void submitCase();
+                }
+              }}
+              placeholder="Descripción breve del caso (opcional)"
+            />
+          </div>
+        </div>
+        <div className="dropzone-hint" style={{ marginTop: 4 }}>
+          El perfil de sistema operativo no se elige aquí — el orquestador lo deriva
+          automáticamente del contenido de la evidencia al registrarla.
+        </div>
+        {createError && (
+          <div className="error-state" style={{ marginTop: 8 }}>
+            <strong>No se pudo crear el caso:</strong> {createError}
+          </div>
+        )}
+        <div className="cta-row">
+          <Button variant="primary" disabled={!formValid || creating} onClick={submitCase}>
+            {creating ? "Guardando…" : "Guardar caso"}
+          </Button>
+          <Button variant="chip" disabled={creating} onClick={() => setNewCaseOpen(false)}>
+            Cancelar
+          </Button>
+        </div>
+      </Modal>
+
+      <Modal
+        open={confirmCloseOpen}
+        title="Cerrar caso"
+        onClose={() => setConfirmCloseOpen(false)}
+      >
+        <p style={{ marginTop: 0 }}>
+          ¿Deseas cerrar «{activeCase?.name}»? Las evidencias registradas no serán
+          eliminadas.
+        </p>
+        <div className="cta-row">
+          <Button
+            variant="chip"
+            disabled={caseActionBusy}
+            onClick={() => setConfirmCloseOpen(false)}
+          >
+            Cancelar
+          </Button>
+          <Button variant="primary" disabled={caseActionBusy} onClick={closeActiveCase}>
+            {caseActionBusy ? "Cerrando…" : "Cerrar caso"}
+          </Button>
+        </div>
+      </Modal>
     </div>
   );
 }
