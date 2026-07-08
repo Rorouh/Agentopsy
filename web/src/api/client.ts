@@ -22,6 +22,7 @@ import type {
   QueryRequest,
   QueryResponse,
   ToolUsage,
+  UpdateCaseRequest,
   VerifyResult,
 } from "./types";
 
@@ -173,6 +174,10 @@ export const api = {
     get: (caseId: string) => request<Case>(`/api/cases/${encodeURIComponent(caseId)}`),
     close: (caseId: string) =>
       post<Case>(`/api/cases/${encodeURIComponent(caseId)}/close`, {}),
+    reopen: (caseId: string) =>
+      post<Case>(`/api/cases/${encodeURIComponent(caseId)}/reopen`, {}),
+    update: (caseId: string, body: UpdateCaseRequest) =>
+      post<Case>(`/api/cases/${encodeURIComponent(caseId)}/update`, body),
     registerEvidence: (caseId: string, source_path: string) =>
       post<EvidenceHandle>(`/api/cases/${encodeURIComponent(caseId)}/evidence`, {
         source_path,

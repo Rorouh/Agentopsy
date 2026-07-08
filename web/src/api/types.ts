@@ -123,7 +123,10 @@ export interface Case {
   name: string;
   examiner: string;
   created_at: string;
-  os_profile: "unix" | "windows";
+  // El operador ya no lo elige al crear el caso — lo deriva el orquestador
+  // del contenido de la evidencia (forensia.triage). `null` hasta que haya
+  // evidencia enrutable registrada.
+  os_profile: "unix" | "windows" | null;
   status: "active" | "closed";
   notes: string;
 }
@@ -151,7 +154,19 @@ export interface EvidenceHandle {
 export interface CreateCaseRequest {
   name: string;
   examiner: string;
-  os_profile: "unix" | "windows";
+  // Opcional: normalmente se omite y el orquestador lo deriva del contenido
+  // de la evidencia al registrarla (auto-detección de SO).
+  os_profile?: "unix" | "windows";
+  notes?: string;
+}
+
+// Edición de metadatos del caso (POST /api/cases/{id}/update). Todos
+// opcionales — se manda solo lo que cambia; el backend exige al menos uno
+// (RULE 2: un update sin campos es un bug del caller, no un no-op silencioso).
+// No incluye os_profile: el anclaje de SO tiene su propio endpoint dedicado.
+export interface UpdateCaseRequest {
+  name?: string;
+  examiner?: string;
   notes?: string;
 }
 

@@ -319,7 +319,9 @@ export function ChatPage({ caps, activeCase, activeEvidence, onTurnComplete }: C
   // host's. Only when no case is open we fall back to host detection. RULE 2 in
   // the backend: /api/agent/query returns 503 if there is no package for the
   // requested profile — we surface that explicitly instead of inventing a default.
-  const activeProfile: "unix" | "windows" = activeCase
+  // `null` means the orchestrator hasn't derived it yet (no routable evidence
+  // registered on the case) — not an error, just "not yet".
+  const activeProfile: "unix" | "windows" | null = activeCase
     ? activeCase.os_profile
     : caps?.os === "windows"
       ? "windows"
@@ -447,7 +449,10 @@ export function ChatPage({ caps, activeCase, activeEvidence, onTurnComplete }: C
       await api.queryStream(
         {
           prompt: text,
-          os_profile: activeProfile,
+          // El backend resuelve el os_profile del caso en el servidor y
+          // ignora esta clave si se manda (ver QueryRequest en
+          // backend/forensia/routers/agent.py) — no hace falta enviarla, y
+          // activeProfile puede ser null (SO aún sin determinar).
           evidence_id: activeEvidence?.evidence_id ?? "",
           case_id: activeCase?.id,
           executor: executor || undefined,
@@ -757,6 +762,12 @@ export function ChatPage({ caps, activeCase, activeEvidence, onTurnComplete }: C
                   v{activeAgent.version} · {activeAgent.os_profile} · modelo local
                   recomendado: {activeAgent.model.name}
                 </span>
+              </>
+            ) : activeProfile === null ? (
+              <>
+                <span className="agent-badge-dot agent-badge-dot--warn" />
+                El sistema operativo de este caso aún no está determinado —
+                regístrale una evidencia para que el orquestador lo derive.
               </>
             ) : (
               <>

@@ -142,7 +142,10 @@ export function InvestigationPage({ caps, onNavigate }: InvestigationPageProps) 
   // RULE 2: detected_os NEVER auto-switches the case. We only surface the
   // disagreement and tell the operator which profile would be appropriate.
   // "unknown" is not a mismatch — triage was inconclusive, not contradictory.
+  // A case whose os_profile is still null (not yet derived) is not a
+  // mismatch either — it's "not yet", not "contradicts".
   const profileMismatch =
+    activeCase.os_profile != null &&
     activeEvidence != null &&
     activeEvidence.detected_os !== "unknown" &&
     activeEvidence.detected_os !== activeCase.os_profile
@@ -176,7 +179,7 @@ export function InvestigationPage({ caps, onNavigate }: InvestigationPageProps) 
                 {" · "}
                 {activeCase.examiner}
                 {" · perfil "}
-                <strong>{activeCase.os_profile}</strong>
+                <strong>{activeCase.os_profile ?? "sin determinar"}</strong>
                 {" · evidencia: "}
                 <strong>{evidenceLabel}</strong>
                 {activeEvidence && (
