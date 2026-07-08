@@ -240,6 +240,73 @@ class CaseManager:
             return case
         updated = replace(case, status="closed")
         self._write_case_json(case_dir, updated)
+        AuditLog(case_dir / "audit.jsonl").append(
+            {"action": "case_closed", "case_id": case_id}
+        )
+        return updated
+
+    def reopen(self, case_id: str) -> Case:
+        """Flip a closed case back to ``active`` — the only way to register
+        more evidence or query the agent on it again (``EvidenceManager.register``
+        and the ``/agent/query`` gate both require ``status == "active"``).
+        Symmetric to ``close()``: idempotent when already active, audited when
+        it actually transitions (FORENSIC INVARIANT 4)."""
+        case_dir = self.case_dir(case_id)
+        case = self._read_case_json(case_dir)
+        if case.status == "active":
+            return case
+        updated = replace(case, status="active")
+        self._write_case_json(case_dir, updated)
+        AuditLog(case_dir / "audit.jsonl").append(
+            {"action": "case_reopened", "case_id": case_id}
+        )
+        return updated
+
+    def update(
+        self,
+        case_id: str,
+        *,
+        name: str | None = None,
+        examiner: str | None = None,
+        notes: str | None = None,
+    ) -> Case:
+        """Edit case metadata. Only the provided fields change — ``None`` means
+        "leave as is", not "clear" (RULE 2: the operator states intent
+        explicitly; a bare no-op call is a caller bug, not a silent success).
+        The evidence hash chain, ``os_profile``, and ``id``/``created_at`` are
+        never touched here."""
+        if name is None and examiner is None and notes is None:
+            raise ValueError(
+                "update requires at least one field: name, examiner, or notes"
+            )
+        case_dir = self.case_dir(case_id)
+        case = self._read_case_json(case_dir)
+
+        changes: dict[str, tuple[str, str]] = {}
+        fields: dict[str, str] = {}
+        if name is not None:
+            fields["name"] = _validate_text_field(name, "name")
+            if fields["name"] != case.name:
+                changes["name"] = (case.name, fields["name"])
+        if examiner is not None:
+            fields["examiner"] = _validate_text_field(examiner, "examiner")
+            if fields["examiner"] != case.examiner:
+                changes["examiner"] = (case.examiner, fields["examiner"])
+        if notes is not None:
+            fields["notes"] = _validate_notes(notes)
+            if fields["notes"] != case.notes:
+                changes["notes"] = (case.notes, fields["notes"])
+
+        updated = replace(case, **fields)
+        self._write_case_json(case_dir, updated)
+        if changes:
+            AuditLog(case_dir / "audit.jsonl").append(
+                {
+                    "action": "case_updated",
+                    "case_id": case_id,
+                    "changes": {k: {"from": v[0], "to": v[1]} for k, v in changes.items()},
+                }
+            )
         return updated
 
     def apply_detected_evidence(

@@ -115,6 +115,19 @@ class TestRegister:
         with pytest.raises(KeyError):
             manager.register("11111111-1111-4111-8111-111111111111", str(src))
 
+    def test_register_on_closed_case_raises_valueerror(self, manager, cases, case, known_file):
+        src, _, _ = known_file
+        cases.close(case.id)
+        with pytest.raises(ValueError, match="closed"):
+            manager.register(case.id, str(src))
+
+    def test_register_after_reopen_succeeds(self, manager, cases, case, known_file):
+        src, _, _ = known_file
+        cases.close(case.id)
+        cases.reopen(case.id)
+        handle = manager.register(case.id, str(src))
+        assert handle.original_path.is_file()
+
 
 class TestHashGateCleanup:
     def test_corrupted_copy_raises_ioerror_and_cleans_up(

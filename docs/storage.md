@@ -112,8 +112,10 @@ Todos los endpoints usan `Depends(require_token)` (ver `backend/forensia/securit
 | `POST`  | `/api/cases`                                                    | crea caso (`{name, examiner, os_profile, notes?}`) |
 | `GET`   | `/api/cases`                                                    | lista casos (orden `created_at` desc) |
 | `GET`   | `/api/cases/{case_id}`                                          | carga un caso |
-| `POST`  | `/api/cases/{case_id}/close`                                    | marca `status="closed"` |
-| `POST`  | `/api/cases/{case_id}/evidence`                                 | registra evidencia (`{source_path}`); ejecuta el hash gate |
+| `POST`  | `/api/cases/{case_id}/close`                                    | marca `status="closed"`; audita `case_closed` |
+| `POST`  | `/api/cases/{case_id}/reopen`                                   | marca `status="active"`; audita `case_reopened` (única forma de volver a registrar evidencia en un caso cerrado) |
+| `POST`  | `/api/cases/{case_id}/update`                                   | edita `{name?, examiner?, notes?}`; audita `case_updated` con el before/after de cada campo cambiado |
+| `POST`  | `/api/cases/{case_id}/evidence`                                 | registra evidencia (`{source_path}`); ejecuta el hash gate; rechaza con 422 si el caso está `closed` |
 | `GET`   | `/api/cases/{case_id}/evidence`                                 | lista handles |
 | `POST`  | `/api/cases/{case_id}/evidence/{evidence_id}/verify`            | re-hashea y compara a `baseline.json` |
 | `GET`   | `/api/cases/{case_id}/artifacts`                                | lista runs |

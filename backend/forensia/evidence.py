@@ -138,7 +138,15 @@ class EvidenceManager:
         if not isinstance(source_path, str) or not source_path.strip():
             raise ValueError("source_path must be a non-empty string")
 
-        # 1. Validate the case exists (case_dir() raises on bad id / missing case).
+        # 1. Validate the case exists (load() raises KeyError on bad id / missing
+        #    case) and is still open — a closed case is a closed chain of custody;
+        #    registering more evidence into it needs an explicit reopen first.
+        case = self._cases.load(case_id)
+        if case.status != "active":
+            raise ValueError(
+                f"case {case_id} is closed — reopen it (POST /api/cases/{case_id}"
+                "/reopen) before registering evidence"
+            )
         case_dir = self._cases.case_dir(case_id)
 
         # 2. Canonicalize source; reject if missing, non-file, or a symlink.

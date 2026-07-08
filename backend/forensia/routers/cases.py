@@ -39,6 +39,15 @@ class AnchorOsProfileRequest(BaseModel):
     os_profile: str
 
 
+class UpdateCaseRequest(BaseModel):
+    # All optional — the operator sends only the fields they're changing.
+    # RULE 2: sending none is a caller bug, not a silent no-op; the manager
+    # raises ValueError for that (→ 422 below).
+    name: str | None = None
+    examiner: str | None = None
+    notes: str | None = None
+
+
 class GrantConsentRequest(BaseModel):
     by: str
 
@@ -107,6 +116,34 @@ def anchor_os_profile(case_id: str, req: AnchorOsProfileRequest) -> dict[str, An
 def close_case(case_id: str) -> dict[str, Any]:
     try:
         case = case_manager.close(case_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _case_dict(case)
+
+
+@router.post("/api/cases/{case_id}/reopen", dependencies=[Depends(require_token)])
+def reopen_case(case_id: str) -> dict[str, Any]:
+    """Flip a closed case back to ``active`` — the only way to register more
+    evidence or query the agent on it again. Symmetric to ``/close``."""
+    try:
+        case = case_manager.reopen(case_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _case_dict(case)
+
+
+@router.post("/api/cases/{case_id}/update", dependencies=[Depends(require_token)])
+def update_case(case_id: str, req: UpdateCaseRequest) -> dict[str, Any]:
+    """Edit case metadata (name/examiner/notes). Every applied change is
+    recorded in the case's audit log (FORENSIC INVARIANT 4)."""
+    try:
+        case = case_manager.update(
+            case_id, name=req.name, examiner=req.examiner, notes=req.notes
+        )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:

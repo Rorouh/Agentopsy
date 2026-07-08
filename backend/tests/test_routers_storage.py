@@ -135,6 +135,54 @@ class TestCasesRoutes:
         r = client.get("/api/cases/not-a-uuid", headers=auth)
         assert r.status_code == 422
 
+    def test_update_edits_fields(self, client, auth):
+        created = client.post(
+            "/api/cases",
+            json={"name": "op", "examiner": "alice"},
+            headers=auth,
+        ).json()
+        r = client.post(
+            f"/api/cases/{created['id']}/update",
+            json={"name": "op renamed", "notes": "updated notes"},
+            headers=auth,
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["name"] == "op renamed"
+        assert body["notes"] == "updated notes"
+        assert body["examiner"] == "alice"
+
+    def test_update_with_no_fields_returns_422(self, client, auth):
+        created = client.post(
+            "/api/cases", json={"name": "op", "examiner": "alice"}, headers=auth
+        ).json()
+        r = client.post(f"/api/cases/{created['id']}/update", json={}, headers=auth)
+        assert r.status_code == 422
+
+    def test_update_unknown_case_returns_404(self, client, auth):
+        r = client.post(
+            "/api/cases/11111111-1111-4111-8111-111111111111/update",
+            json={"name": "x"},
+            headers=auth,
+        )
+        assert r.status_code == 404
+
+    def test_close_then_reopen_roundtrip(self, client, auth):
+        created = client.post(
+            "/api/cases", json={"name": "op", "examiner": "alice"}, headers=auth
+        ).json()
+        closed = client.post(f"/api/cases/{created['id']}/close", headers=auth)
+        assert closed.json()["status"] == "closed"
+        reopened = client.post(f"/api/cases/{created['id']}/reopen", headers=auth)
+        assert reopened.status_code == 200
+        assert reopened.json()["status"] == "active"
+
+    def test_reopen_unknown_case_returns_404(self, client, auth):
+        r = client.post(
+            "/api/cases/11111111-1111-4111-8111-111111111111/reopen", headers=auth
+        )
+        assert r.status_code == 404
+
 
 # --------------------------------------------------------------------------- #
 # /api/cases/{case_id}/evidence
@@ -201,6 +249,18 @@ class TestEvidenceRoutes:
             headers=auth,
         )
         assert r.status_code == 404
+
+    def test_register_on_closed_case_returns_422(self, client, auth, tmp_path):
+        case_id = self._new_case(client, auth)
+        client.post(f"/api/cases/{case_id}/close", headers=auth)
+        src = tmp_path / "img.raw"
+        src.write_bytes(b"x")
+        r = client.post(
+            f"/api/cases/{case_id}/evidence",
+            json={"source_path": str(src)},
+            headers=auth,
+        )
+        assert r.status_code == 422
 
 
 # --------------------------------------------------------------------------- #

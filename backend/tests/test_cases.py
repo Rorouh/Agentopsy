@@ -152,6 +152,13 @@ class TestList:
         assert any("skipping unreadable case" in m for m in caplog.messages)
 
 
+def _audit(manager: CaseManager, case_id: str) -> list[dict]:
+    path = manager.case_dir(case_id) / "audit.jsonl"
+    if not path.exists():
+        return []
+    return [json.loads(ln) for ln in path.read_text().splitlines() if ln.strip()]
+
+
 class TestClose:
     def test_close_flips_status_to_closed_and_rewrites_disk(self, manager):
         case = manager.create(name="op", examiner="alice", os_profile="unix")
@@ -172,3 +179,105 @@ class TestClose:
     def test_close_unknown_id_raises_keyerror(self, manager):
         with pytest.raises(KeyError):
             manager.close("11111111-1111-4111-8111-111111111111")
+
+    def test_close_records_case_closed_in_audit(self, manager):
+        case = manager.create(name="op", examiner="alice", os_profile="unix")
+        manager.close(case.id)
+        events = [e["action"] for e in _audit(manager, case.id)]
+        assert events == ["case_closed"]
+
+    def test_close_idempotent_second_call_does_not_re_audit(self, manager):
+        case = manager.create(name="op", examiner="alice", os_profile="unix")
+        manager.close(case.id)
+        manager.close(case.id)
+        events = [e["action"] for e in _audit(manager, case.id)]
+        assert events == ["case_closed"]
+
+
+class TestReopen:
+    def test_reopen_flips_closed_case_back_to_active(self, manager):
+        case = manager.create(name="op", examiner="alice", os_profile="unix")
+        manager.close(case.id)
+        reopened = manager.reopen(case.id)
+        assert reopened.status == "active"
+        on_disk = json.loads((manager.root / case.id / "case.json").read_text())
+        assert on_disk["status"] == "active"
+
+    def test_reopen_is_idempotent_on_active_case(self, manager):
+        case = manager.create(name="op", examiner="alice", os_profile="unix")
+        first = manager.reopen(case.id)
+        second = manager.reopen(case.id)
+        assert first == case
+        assert second == case
+
+    def test_reopen_unknown_id_raises_keyerror(self, manager):
+        with pytest.raises(KeyError):
+            manager.reopen("11111111-1111-4111-8111-111111111111")
+
+    def test_reopen_records_case_reopened_in_audit(self, manager):
+        case = manager.create(name="op", examiner="alice", os_profile="unix")
+        manager.close(case.id)
+        manager.reopen(case.id)
+        events = [e["action"] for e in _audit(manager, case.id)]
+        assert events == ["case_closed", "case_reopened"]
+
+    def test_reopen_on_never_closed_case_does_not_audit(self, manager):
+        case = manager.create(name="op", examiner="alice", os_profile="unix")
+        manager.reopen(case.id)
+        assert _audit(manager, case.id) == []
+
+
+class TestUpdate:
+    def test_update_single_field(self, manager):
+        case = manager.create(name="op", examiner="alice", os_profile="unix")
+        updated = manager.update(case.id, notes="new notes")
+        assert updated.notes == "new notes"
+        assert updated.name == case.name
+        assert updated.examiner == case.examiner
+
+    def test_update_multiple_fields(self, manager):
+        case = manager.create(name="op", examiner="alice", os_profile="unix")
+        updated = manager.update(case.id, name="op renamed", examiner="bob")
+        assert updated.name == "op renamed"
+        assert updated.examiner == "bob"
+        on_disk = json.loads((manager.root / case.id / "case.json").read_text())
+        assert on_disk["name"] == "op renamed"
+        assert on_disk["examiner"] == "bob"
+
+    def test_update_with_no_fields_raises_valueerror(self, manager):
+        case = manager.create(name="op", examiner="alice", os_profile="unix")
+        with pytest.raises(ValueError, match="at least one field"):
+            manager.update(case.id)
+
+    def test_update_unknown_id_raises_keyerror(self, manager):
+        with pytest.raises(KeyError):
+            manager.update("11111111-1111-4111-8111-111111111111", notes="x")
+
+    def test_update_rejects_empty_name(self, manager):
+        case = manager.create(name="op", examiner="alice", os_profile="unix")
+        with pytest.raises(ValueError, match="name"):
+            manager.update(case.id, name="   ")
+
+    def test_update_does_not_touch_os_profile_or_id(self, manager):
+        case = manager.create(name="op", examiner="alice", os_profile="windows")
+        updated = manager.update(case.id, notes="x")
+        assert updated.id == case.id
+        assert updated.os_profile == case.os_profile
+        assert updated.os_profile_source == case.os_profile_source
+        assert updated.created_at == case.created_at
+
+    def test_update_records_changed_fields_in_audit(self, manager):
+        case = manager.create(name="op", examiner="alice", os_profile="unix")
+        manager.update(case.id, name="op2", notes="hi")
+        events = _audit(manager, case.id)
+        assert len(events) == 1
+        assert events[0]["action"] == "case_updated"
+        assert events[0]["changes"] == {
+            "name": {"from": "op", "to": "op2"},
+            "notes": {"from": "", "to": "hi"},
+        }
+
+    def test_update_with_same_value_does_not_audit(self, manager):
+        case = manager.create(name="op", examiner="alice", os_profile="unix")
+        manager.update(case.id, name="op")
+        assert _audit(manager, case.id) == []
