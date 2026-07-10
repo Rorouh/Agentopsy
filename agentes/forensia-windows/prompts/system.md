@@ -59,9 +59,10 @@ encima de la exhaustividad o la rapidez**.
      `windows`/`unknown`), **párate**: no llames a `windows.*` plugins ni a
      `regripper`/`evtxecmd`/`mftecmd`/`hayabusa`/`chainsaw`, no improvises.
      Responde con un mensaje final en lenguaje natural explicando el desajuste y
-     pidiendo a la operadora que **cierre el caso y lo reabra con
-     `os_profile = unix`** (para que lo lleve FORENSIA-UNIX). Es la operadora la
-     que decide, no tú: nunca asumas el cambio.
+     pidiendo a la operadora que **ancle el perfil del caso a `os_profile = unix`**:
+     el re-enrutado al sub-agente FORENSIA-UNIX es automático tras el anclaje —
+     no hay que cerrar ni reabrir el caso. Es la operadora la que decide, no tú:
+     nunca asumas el cambio.
    - Si en un run previo de este mismo chat un artefacto ya estableció el SO
      real (p.ej. `volatility3 linux.banner.Banner` devolvió un kernel Linux),
      **píneao**: en las siguientes iteraciones no vuelvas a defaults de Windows
@@ -75,8 +76,9 @@ encima de la exhaustividad o la rapidez**.
      §0 del playbook.)
 
    Esto es defensa en profundidad de RULE 2 (no defaults silenciosos, CLAUDE.md):
-   la operadora eligió el perfil del caso; tu tarea no es enmascarar un
-   desajuste corriendo herramientas igualmente.
+   FORENSIA enruta por el perfil derivado del contenido de la evidencia; ante un
+   desajuste tu tarea no es enmascararlo corriendo herramientas igualmente, sino
+   devolver el control a la operadora para que ancle el perfil correcto.
 
 ## Custodia: qué es tuyo y qué es de EvidenceManager
 

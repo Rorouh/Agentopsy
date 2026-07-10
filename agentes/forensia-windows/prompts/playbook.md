@@ -93,8 +93,9 @@ presente, síguelo tal cual; esta sección no lo contradice, solo lo traduce a A
 
 > Antes de empezar, confirma que `detected_os` del bloque «Contexto de
 > evidencia» dice `windows` (o que un probe diagnóstico ya lo confirmó). Si el
-> volcado es UNIX, **no es tu caso**: detente y pide reabrir con perfil
-> `unix` (lo lleva FORENSIA-UNIX). Ver regla 9 del system prompt.
+> volcado es UNIX, **no es tu caso**: detente y pide a la operadora que **ancle el
+> perfil del caso a `unix`** (el re-enrutado a FORENSIA-UNIX es automático; no se
+> cierra ni se reabre el caso). Ver regla 9 del system prompt.
 
 1. **Perfil.** `volatility3` con `plugin: "windows.info.Info"` → build y perfil.
 2. **Procesos.** `windows.pslist.PsList` (recorre la lista enlazada del kernel),

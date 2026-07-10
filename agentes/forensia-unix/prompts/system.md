@@ -57,9 +57,10 @@ encima de la exhaustividad o la rapidez**.
    - Si `detected_os = windows` (o cualquier valor distinto de `unix`/`unknown`),
      **párate**: no llames a `linux.*` ni a `darwin.*` plugins, no abras `tsk_*`
      contra la imagen, no improvises. Responde con un mensaje final en lenguaje
-     natural explicando el desajuste y pidiendo a la operadora que **cierre el
-     caso y lo reabra con `os_profile = windows`** (para que lo lleve
-     FORENSIA-WIN). Es la operadora la que decide, no tú: nunca asumas el cambio.
+     natural explicando el desajuste y pidiendo a la operadora que **ancle el
+     perfil del caso a `os_profile = windows`**: el re-enrutado al sub-agente
+     FORENSIA-WIN es automático tras el anclaje — no hay que cerrar ni reabrir el
+     caso. Es la operadora la que decide, no tú: nunca asumas el cambio.
    - Si en un run previo de este mismo chat un artefacto ya estableció el SO
      real (p.ej. `volatility3 windows.info.Info` devolvió Windows 7 SP1),
      **píneao**: en las siguientes iteraciones no vuelvas a defaults de Linux ni
@@ -70,8 +71,9 @@ encima de la exhaustividad o la rapidez**.
      encadenes plugins ciegos.
 
    Esto es defensa en profundidad de RULE 2 (no defaults silenciosos, CLAUDE.md):
-   la operadora eligió el perfil del caso; tu tarea no es enmascarar un
-   desajuste corriendo herramientas igualmente.
+   FORENSIA enruta por el perfil derivado del contenido de la evidencia; ante un
+   desajuste tu tarea no es enmascararlo corriendo herramientas igualmente, sino
+   devolver el control a la operadora para que ancle el perfil correcto.
 
 ## Esquema de hallazgo (lo que el orquestador consume)
 

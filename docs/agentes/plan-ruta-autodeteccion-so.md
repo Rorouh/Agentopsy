@@ -184,7 +184,7 @@ declarativo (orquestador KB / docs, lane del auditor) · **[gov]** decisión equ
 | 2b Multi-SO [be] | ⬜ | — | perfil por-evidencia; hoy mezcla = conflicto/escala |
 | 3 UI [fe] | ⬜ | — | quitar selector SO |
 | 4 Orquestador/docs [decl] | ✅ hecha | (este commit) | docs sincronizadas; _orchestrator agnóstico del SO (sin cambios) |
-| 4b Prompts sub-agente [decl] | ⬜ | — | quitar la instrucción de "reabrir el caso" de `system.md`/`playbook.md` (unix+windows), migrar al flujo de anclaje; pase metodológico |
+| 4b Prompts sub-agente [decl] | ✅ hecha | (este commit) | `system.md`/`playbook.md` (unix+windows): el guard rail de mismatch pide **anclar el perfil** (re-enrutado automático), ya no "reabrir el caso"; verificado que no altera los 12 evals (el escenario del harness inyecta siempre `detected_os` del propio SO) |
 | 5 Validación | ⬜ | — | incluye caso multi-SO y caso ambiguo |
 
 ---
