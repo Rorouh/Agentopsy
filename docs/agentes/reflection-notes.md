@@ -214,3 +214,36 @@ memoria está degradada (pslist/pstree/cmdline/hivelist/filescan = 0 filas; solo
 pool-scanners y netscan responden). El agente se comporta bien, pero el
 rendimiento probatorio es bajo. Decisión pendiente del flujo de corpus:
 conseguir símbolos/ISF que casen o registrar la degradación como constraint.
+
+## Reconciliación de capacidad (2026-07-10): EZ Tools en playbook/KB
+
+No es una mejora dirigida por un fallo recurrente, sino la segunda mitad de la
+reconciliación de las 8 EZ Tools (parsers KAPE) que entraron al maletín y al catálogo en
+`5be5667`. La allowlist ya las incluía; faltaba enseñárselas al agente.
+
+**Cambio (declarativo).** `prompts/playbook.md`: §A paso 5 (regripper↔parser EZ para CSV
+estructurado, regripper como triage por defecto), pasos 10-11 nuevos (acceso a ficheros
+`lecmd`/`jlecmd`/`wxtcmd` condicionado a preguntas de acceso/insider, y borrado `rbcmd`),
+cadena de correlación 6 «Acceso y staging de ficheros (disco)», y subsección de Anexo «EZ
+Tools». `knowledge/artefactos-windows.md`: alternativa CSV en Amcache/ShimCache/ShellBags y
+cuatro guías nuevas (LNK, Jump Lists, Windows Timeline, Papelera) en formato fijo.
+`prompts/identity.md`: presentación y lista de artefactos.
+
+**Decisión hold-out-safe.** Las 3 EZ que solapan con `regripper`
+(`amcacheparser`/`appcompatcacheparser`/`sbecmd`) se documentan como **alternativa
+CSV-estructurada**, no como preferidas: `regripper` sigue siendo el `provenance_tool`
+canónico que califican los evals (en especial `case-win-004`, Amcache/AppCompatCache). Así
+el agente no cambia su elección por defecto y no se toca la traza dorada ni la
+comparabilidad local-vs-cloud. Las tools sin solape (LNK, Jump Lists, Timeline, Papelera,
+`recmd`) no las referencia ningún eval → riesgo de regresión nulo; amplían recall en
+escenarios de acceso/exfiltración (M5-C/D/E).
+
+**MITRE (enum cerrada).** Ids citados existentes en la semilla: `T1083` (LNK/Jump
+Lists/Timeline), `T1074.001`/`T1052.001` (corroboración de staging/USB), `T1070`
+(papelera, técnica padre: la semilla no tiene *File Deletion*), `T1005`. Sin ids nuevos ni
+inventados.
+
+**Verificación.** `pytest -q` en `backend/` verde; enum MITRE cerrada intacta; RULE 0
+limpio; los 12 evals deben re-correrse para confirmar que `tool_recall` no baja en los
+casos con `regripper` (001/002/003/004/008/010) y que no aparecen técnicas fuera de semilla
+(pendiente de corrida del operador con el harness).

@@ -47,6 +47,14 @@ presente, síguelo tal cual; esta sección no lo contradice, solo lo traduce a A
    `NTUSER.DAT`, `UsrClass.dat`) con `tsk_icat` y procésalos con `regripper`.
    Busca: persistencia (`Run`/`RunOnce`, `Services`, `Scheduled Tasks`), ejecución
    (`Amcache`, `ShimCache`/AppCompatCache), USB, cuentas (`SAM`), `ShellBags`.
+
+   Para volcar esas mismas claves a **CSV estructurado** (timelining y correlación a
+   escala) el maletín trae los parsers EZ dedicados sobre el **mismo hive pre-extraído**:
+   `amcacheparser` (Amcache), `appcompatcacheparser` (ShimCache), `sbecmd` (ShellBags) y
+   `recmd` (lote de varias claves con un batch tipo `Kroll_Batch.reb`). `regripper` sigue
+   siendo el camino rápido de triage por clave; recurre al parser EZ cuando necesites el
+   CSV completo para cruzarlo con la timeline. Una clave, una fuente citada por hallazgo
+   (no mezcles regripper y el parser EZ en el mismo finding).
 6. **Eventos (EVTX).** Extrae `Security.evtx`, `System.evtx`, `Application.evtx`,
    `Microsoft-Windows-Sysmon%4Operational.evtx` con `tsk_icat`. Procésalos con:
    - `evtxecmd` → CSV normalizado (consulta puntual de IDs: 4624/4625 logon,
@@ -58,6 +66,26 @@ presente, síguelo tal cual; esta sección no lo contradice, solo lo traduce a A
    (`%TEMP%`, `%APPDATA%`, `C:\Windows\Tasks`, perfiles de usuario).
 9. **Super-timeline (opcional, pesado).** `plaso_log2timeline` → `.plaso`;
    `plaso_psort` para acotar por rango y exportar CSV.
+10. **Acceso a ficheros y actividad de usuario (EZ Tools) — cuando la pregunta del caso
+    pasa por *qué ficheros se abrieron o desde dónde*** (insider, acceso indebido,
+    exfiltración; **no** en un barrido de persistencia/ejecución). Localiza y pre-extrae
+    con `tsk_fls`→`tsk_icat`, procesa el artefacto derivado:
+    - `lecmd` sobre los `.lnk` (`Recent`, escritorio) → CSV con ruta objetivo, volumen y
+      número de serie (delata medios extraíbles) y marcas del objetivo.
+    - `jlecmd` sobre las Jump Lists (`AutomaticDestinations`/`CustomDestinations`) → CSV con
+      el historial de documentos por aplicación.
+    - `wxtcmd` sobre `ActivitiesCache.db` (Windows Timeline, Win10 1803+) → CSV con
+      app/documento y su marca temporal.
+    Cruza las rutas con la timeline (`tsk_mactime`), con ShellBags y con USBSTOR.
+    `mitre_hints`: `T1083`; si apuntan a medio extraíble o a una carpeta de staging,
+    corrobora `T1052.001` / `T1074.001` (nunca en solitario).
+11. **Borrado / papelera.** `rbcmd` sobre `$Recycle.Bin` (ficheros `$I`) → CSV con la ruta
+    original y la hora de borrado de lo eliminado. Reconstruye qué se quiso hacer
+    desaparecer y ayuda a recuperar documentos de interés (crúzalo con `$MFT` y la
+    timeline). `mitre_hints`: `T1070` (Indicator Removal; la semilla no tiene subtécnica
+    *File Deletion* → técnica padre) cuando el borrado sea anti-forense; si solo recuperas
+    documentos relevantes, decláralo como evidencia de `T1005`/`T1074.001` o «sin técnica
+    de la semilla aplicable».
 
 ---
 
@@ -187,6 +215,15 @@ coinciden en la misma ventana temporal, sube la `confidence` del finding.
    sin `Owner` no atribuyen el tráfico a ese cliente (dilo); dos eslabones =
    hipótesis a seguir en el disco par (carpeta del cliente, historial web), no
    conclusión.
+6. **Acceso y staging de ficheros (disco).** `lecmd`/`jlecmd` (documento abierto o
+   copiado, con ruta y —si aplica— volumen extraíble) + `tsk_mactime`/`mftecmd` (el
+   fichero existió y cuándo) + `rbcmd` (si acabó borrado) + `regripper` `usbstor` / `sbecmd`
+   (medio extraíble o carpeta navegada) en la misma ventana ⇒ acceso y preparación de
+   datos para exfiltración. `mitre_hints`: `T1083` (acceso/descubrimiento), `T1074.001`
+   (staging local), `T1052.001` (si el destino es USB). **Cautela dura:** abrir o navegar
+   a un fichero es actividad normal de usuario; sin la coincidencia temporal con medio
+   extraíble, staging o borrado no subas de `low`, y un LNK a una unidad de red no prueba
+   copia.
 
 Registra cada correlación con `record_finding` citando el `run_id` del eslabón
 principal; los demás eslabones van en el `summary`.
@@ -292,6 +329,45 @@ pongas tú**), coste, errores comunes y cómo leer su salida.
 - **`chainsaw`** — hunting Sigma sobre EVTX/JSON. Params: `output_format`
   (`csv`|`json`) y al menos uno de `sigma_dir` / `rules_dir`; las rutas de salida
   las asigna FORENSIA. Coste: medio. Salida: nº de `detections`.
+
+### EZ Tools (parsers KAPE — maletín windows)
+
+Parsers dedicados de Eric Zimmerman (los *Modules* de KAPE) que viven en el maletín
+windows y se ejecutan por el exec-agent como el resto de tools de contenedor: **misma
+disciplina de custodia** (regla 5) — `tsk_fls`→`tsk_icat` y procesar solo el artefacto
+derivado, nunca la imagen cruda. Todos **devuelven CSV como artefacto** → fíltralo con
+`jq`/top-N (regla 8). FORENSIA inyecta el path del artefacto pre-extraído y el
+`output_dir`; **no los pongas tú**.
+
+- **`amcacheparser`** — `Amcache.hve` pre-extraído → CSV. Alternativa CSV-estructurada a
+  `regripper` `plugin: amcache` para timelining a escala; `regripper` sigue siendo el
+  triage rápido por clave. Params que eliges: `include_linked` (bool; añade las entradas de
+  fichero enlazadas a las de programa). Uso: presencia/ejecución de binarios (cruza con
+  4688/`$MFT`). Recuerda: «primera aparición» ≠ «primera ejecución».
+- **`appcompatcacheparser`** — ShimCache del hive `SYSTEM` pre-extraído → CSV. Alternativa a
+  `regripper` `plugin: appcompatcache`. Params: ninguno que elijas. ShimCache prueba
+  **existencia/registro**, no ejecución: corrobora con Amcache/4688.
+- **`sbecmd`** — ShellBags desde un **directorio** con `UsrClass.dat`/`NTUSER.DAT` → CSV.
+  Alternativa a `regripper` `plugin: shellbags`. Params: ninguno que elijas. Uso: carpetas
+  navegadas (incl. borradas, de red o de unidades extraíbles).
+- **`recmd`** — RECmd en **modo lote** sobre hives pre-extraídos → CSV. Params que eliges:
+  `batch` (**obligatorio**, el NOMBRE de un batch de los que trae el maletín, p.ej.
+  `Kroll_Batch.reb`; nunca una ruta ni separadores), `is_directory` (bool; si apuntas a un
+  directorio de hives en vez de a uno solo). Uso: volcar de golpe muchas claves de valor
+  forense a CSV; más pesado que un `regripper` puntual — úsalo para la foto completa del
+  hive, no para un valor concreto.
+- **`lecmd`** — accesos directos `.lnk` (un fichero o un directorio) pre-extraídos → CSV:
+  ruta objetivo, volumen y nº de serie (delata medios extraíbles), marcas del objetivo.
+  Params: ninguno que elijas. Uso: qué ficheros se abrieron y desde dónde. `T1083`.
+- **`jlecmd`** — Jump Lists (`AutomaticDestinations`/`CustomDestinations`) pre-extraídas →
+  CSV: historial de documentos por aplicación. Params: ninguno que elijas. `T1083`.
+- **`wxtcmd`** — `ActivitiesCache.db` (Windows Timeline, Win10 1803+) pre-extraída → CSV:
+  app/documento y marca temporal de la actividad. Params: ninguno que elijas. Corrobora el
+  acceso a ficheros; en solitario suele quedar «sin técnica de la semilla aplicable».
+- **`rbcmd`** — metadatos `$I` de `$Recycle.Bin` (un fichero o un directorio) pre-extraídos
+  → CSV: ruta original y hora de borrado. Params: ninguno que elijas. Uso: qué se borró y
+  cuándo (cruza con `$MFT`/timeline). `T1070` (padre; sin subtécnica *File Deletion* en la
+  semilla).
 
 ### IOCs / firmas
 

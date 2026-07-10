@@ -37,7 +37,7 @@ primera aparición. Evidencia de **presencia y ejecución** de binarios.
 **Cómo se lee.** Es un hive: `tsk_fls` para localizarlo → `tsk_icat` para
 extraerlo (handle read-only) → `regripper` con `plugin: amcache` sobre el fichero
 derivado. Cruza el SHA-1 y la ruta con el `$MFT` (`mftecmd`) y con EVTX 4688
-(`evtxecmd`) para fijar la hora de ejecución.
+(`evtxecmd`) para fijar la hora de ejecución. Alternativa CSV: `amcacheparser` sobre el mismo hive derivado emite un CSV estructurado (mejor para timelining y cruce a escala); `regripper` `plugin: amcache` sigue siendo el triage rápido. Cita una sola fuente por hallazgo.
 
 **Técnica(s) MITRE.** `T1059` (Command and Scripting Interpreter) / `T1059.003`
 (Windows Command Shell) como evidencia de ejecución del binario. Si el binario
@@ -84,7 +84,7 @@ INFORMATION` del binario y (según versión) un flag de ejecución. Evidencia de
 
 **Cómo se lee.** Hive `SYSTEM`: `tsk_fls` → `tsk_icat` → `regripper` con
 `plugin: appcompatcache` sobre el hive derivado. Cruza el orden de la caché y las
-rutas con Amcache y con la timeline (`tsk_mactime`).
+rutas con Amcache y con la timeline (`tsk_mactime`). Alternativa CSV: `appcompatcacheparser` sobre el hive `SYSTEM` derivado → CSV estructurado; `regripper` `plugin: appcompatcache` para el triage rápido.
 
 **Técnica(s) MITRE.** `T1059` / `T1059.003` (presencia/ejecución de un binario de
 línea de comandos). Prefiere la sub-técnica solo si el binario lo justifica.
@@ -104,7 +104,7 @@ concreta, incluidas rutas de red, dispositivos extraíbles y carpetas ya borrada
 
 **Cómo se lee.** Hives de usuario (`UsrClass.dat`, `NTUSER.DAT`): `tsk_fls` →
 `tsk_icat` → `regripper` con `plugin: shellbags`. Cruza las rutas con la timeline
-(`tsk_mactime`) y con USBSTOR si aparecen letras de unidad extraíble.
+(`tsk_mactime`) y con USBSTOR si aparecen letras de unidad extraíble. Alternativa CSV: `sbecmd` sobre el **directorio** de hives de usuario → CSV; `regripper` `plugin: shellbags` para el triage rápido.
 
 **Técnica(s) MITRE.** `T1083` (File and Directory Discovery): evidencia de
 navegación/descubrimiento de carpetas por parte del usuario o del atacante.
@@ -341,8 +341,88 @@ hipótesis a seguir en el disco, no una conclusión.
 
 ---
 
+## LNK / Accesos directos (`.lnk`)
+
+**Qué es.** Ficheros de acceso directo que Windows crea al abrir documentos y al navegar
+(carpeta `Recent`, escritorio, listas de recientes). Guardan la **ruta objetivo**, el
+volumen y su número de serie (delata unidades extraíbles y de red) y las marcas de tiempo
+del objetivo. Prueban **qué fichero se abrió y desde dónde**.
+
+**Cómo se lee.** `tsk_fls` para localizar los `.lnk` → `tsk_icat` para extraerlos → `lecmd`
+sobre el fichero o el directorio derivado → CSV. Cruza la ruta objetivo y el nº de serie
+del volumen con USBSTOR (`regripper`), con ShellBags y con la timeline (`tsk_mactime`).
+
+**Técnica(s) MITRE.** `T1083` (File and Directory Discovery): evidencia de acceso a
+ficheros/carpetas. Como **corroboración** de una cadena: `T1052.001` (si el volumen es un
+USB) o `T1074.001` (si la ruta apunta a una carpeta de staging) — nunca en solitario.
+
+**Falsos positivos / cautelas.** Abrir un fichero es actividad normal; un LNK no prueba
+copia ni intención. La marca del LNK es la de la última apertura, no la de creación del
+objetivo. Un LNK a una unidad de red demuestra acceso, no exfiltración. Sitúa actividad;
+concluye solo con la correlación temporal.
+
+## Jump Lists (`AutomaticDestinations` / `CustomDestinations`)
+
+**Qué es.** Estructuras por aplicación (barra de tareas / menú de saltos) que registran los
+documentos y destinos recientes de cada programa. Complementan a los LNK con el **historial
+de documentos por app**.
+
+**Cómo se lee.** `tsk_fls` → `tsk_icat` (los ficheros de
+`...\AutomaticDestinations-ms` / `CustomDestinations-ms` del perfil de usuario) → `jlecmd`
+sobre el fichero o directorio derivado → CSV. Cruza los documentos y sus horas con LNK, con
+la timeline (`tsk_mactime`) y con `wxtcmd`.
+
+**Técnica(s) MITRE.** `T1083` (File and Directory Discovery): qué documentos manejó el
+usuario. Como corroboración de una cadena de acceso/staging, ver `T1074.001`.
+
+**Falsos positivos / cautelas.** Reflejan uso normal de aplicaciones; la mera presencia de
+un documento en la Jump List no es maliciosa. El `AppId` identifica la app, no siempre de
+forma evidente. Úsalas para reconstruir actividad, no como prueba única.
+
+## Windows Timeline / ActivitiesCache (`ActivitiesCache.db`)
+
+**Qué es.** Base de datos de la Línea de tiempo de Windows (Win10 1803+,
+`...\ConnectedDevicesPlatform\...\ActivitiesCache.db`) que registra aplicaciones y
+documentos usados con su marca temporal. Fuente de **actividad de usuario** correlacionable.
+
+**Cómo se lee.** `tsk_fls` → `tsk_icat` (la `ActivitiesCache.db` del perfil) → `wxtcmd`
+sobre el fichero derivado → CSV. Cruza app/documento y hora con LNK, Jump Lists y la
+timeline (`tsk_mactime`).
+
+**Técnica(s) MITRE.** Corrobora `T1083` (acceso/descubrimiento) dentro de una cadena; en
+solitario suele quedar **«sin técnica de la semilla aplicable»** — es contexto temporal,
+no una técnica por sí misma.
+
+**Falsos positivos / cautelas.** Puede estar **deshabilitada** o vacía (política de grupo,
+build anterior a 1803) → su ausencia no prueba inactividad. Registra uso legítimo
+mayoritariamente; su valor es situar actividad en el tiempo, no imputar intención.
+
+## Papelera de reciclaje (`$Recycle.Bin`, `$I` / `$R`)
+
+**Qué es.** Por cada fichero enviado a la papelera, NTFS guarda un `$I` (metadatos: ruta
+original y hora de borrado) y un `$R` (contenido). Evidencia de **qué se borró, cuándo y
+desde dónde**.
+
+**Cómo se lee.** `tsk_fls` para localizar `$Recycle.Bin` (por SID de usuario) → `tsk_icat`
+para extraer los `$I` → `rbcmd` sobre el fichero o directorio derivado → CSV con ruta
+original y hora de borrado. Para recuperar el contenido, ubica el `$R` correspondiente en
+el árbol y extráelo con `tsk_icat`. Cruza con el `$MFT` (`mftecmd`) y la timeline.
+
+**Técnica(s) MITRE.** `T1070` (Indicator Removal; la semilla no tiene subtécnica *File
+Deletion* → técnica padre) cuando el borrado tenga carácter anti-forense. Si lo relevante
+es **recuperar** documentos de interés (no el borrado en sí), trátalo como evidencia de
+`T1005` (Data from Local System) / `T1074.001` (staging) o declara «sin técnica de la
+semilla aplicable».
+
+**Falsos positivos / cautelas.** Borrar ficheros es rutinario; la papelera llena no es
+sospechosa por sí sola. Un `$I` sin su `$R` da la metadata pero no el contenido. Vaciar la
+papelera elimina `$I`/`$R` (correlaciona con `$MFT`/`$UsnJrnl` y la timeline). La hora es la
+del borrado, no la de creación del fichero.
+
 > **Recordatorio de custodia:** ninguna guía de arriba procesa la imagen cruda con
-> una herramienta de contenedor (`regripper`, `evtxecmd`, `mftecmd`). El flujo es
+> una herramienta de contenedor (`regripper`, `evtxecmd`, `mftecmd`, y los parsers EZ
+> `amcacheparser`/`appcompatcacheparser`/`sbecmd`/`recmd`/`lecmd`/`jlecmd`/`wxtcmd`/`rbcmd`).
+> El flujo es
 > siempre `tsk_fls` → `tsk_icat` → procesar el artefacto derivado (soundness §7);
 > los volcados de memoria se leen con `volatility3` a través del handle read-only.
 > Los artefactos sin parser dedicado (Prefetch, `setupapi.dev.log`) se corroboran
