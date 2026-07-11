@@ -68,6 +68,11 @@ class Tool:
     # a tool is NEVER resolved against a maletín it does not declare here.
     toolkits: tuple[str, ...] = ()
     tier: Tier = "extended"
+    # The tool streams RAW BINARY to stdout (e.g. TSK `icat` extracting a file's bytes).
+    # Its stdout must NOT be decoded as text — the transport captures it to a file inside
+    # the run's ``out/`` directory (hashed there, FORENSIC INVARIANT 4) instead of carrying
+    # it as a (lossy) string. Text tools keep the default and are unaffected.
+    binary_stdout: bool = False
     build_argv: Callable[[dict[str, Any]], list[str]] = _not_built
     parse: Callable[[str], Any] = _not_built
     # Container-delivered tools set this so the executor knows what to mount.
@@ -81,15 +86,41 @@ class Tool:
         return None
 
 
-def run_argv(argv: list[str], *, cwd: str | None = None, timeout: int | None = None):
-    """Execute a fully-resolved argv array. shell-free by construction."""
+def run_argv(
+    argv: list[str],
+    *,
+    cwd: str | None = None,
+    timeout: int | None = None,
+    stdout_path: str | None = None,
+):
+    """Execute a fully-resolved argv array. shell-free by construction.
+
+    Default: capture stdout+stderr as decoded text (the common case). When
+    ``stdout_path`` is given, the child's stdout is written as RAW BYTES to that file
+    (never decoded) — the binary-safe path for tools like TSK ``icat`` whose stdout is
+    a file's exact bytes. stderr is still captured as text. The returned
+    ``CompletedProcess.stdout`` is then ``""`` (the payload lives on disk).
+    """
     if not isinstance(argv, list) or not all(isinstance(a, str) for a in argv):
         raise TypeError("argv must be a list[str] — never a shell string")
-    return subprocess.run(  # noqa: S603 — shell=False, argv is validated above
-        argv,
-        cwd=cwd,
-        timeout=timeout,
-        capture_output=True,
-        text=True,
-        shell=False,
-    )
+    if stdout_path is None:
+        return subprocess.run(  # noqa: S603 — shell=False, argv is validated above
+            argv,
+            cwd=cwd,
+            timeout=timeout,
+            capture_output=True,
+            text=True,
+            shell=False,
+        )
+    with open(stdout_path, "wb") as stdout_file:  # noqa: PTH123 — need a real fd for the child
+        completed = subprocess.run(  # noqa: S603 — shell=False, argv is validated above
+            argv,
+            cwd=cwd,
+            timeout=timeout,
+            stdout=stdout_file,
+            stderr=subprocess.PIPE,
+            text=True,
+            errors="replace",
+            shell=False,
+        )
+    return subprocess.CompletedProcess(argv, completed.returncode, "", completed.stderr)

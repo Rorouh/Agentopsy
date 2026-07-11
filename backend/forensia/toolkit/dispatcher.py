@@ -46,12 +46,20 @@ class ToolExecutionError(RuntimeError):
 _PENDING_OUTPUT_DIR = "__forensia_pending_output_dir__"
 
 
+# Filename, inside the run's ``out/`` dir, that receives the raw stdout of a
+# ``binary_stdout`` tool. It is hashed by the artifact store like any other output file.
+_BINARY_STDOUT_FILENAME = "stdout.bin"
+
+
 @dataclass(frozen=True)
 class _PreparedExecution:
     """Literal argv plus its single, already-resolved execution venue."""
 
     argv: list[str]
     maletin_service: str | None
+    # Set only for ``binary_stdout`` tools: the file (inside the run's ``out/``) the
+    # runner must write the child's raw stdout to, instead of decoding it as text.
+    stdout_path: str | None = None
 
 
 def execute(
@@ -75,12 +83,23 @@ def execute(
     if tool is None:
         raise ToolExecutionError(f"unknown tool id: {tool_id!r}")
 
+    # A ``binary_stdout`` tool streams raw bytes; those bytes must land in a hashed
+    # artifact file, which only exists for an anchored run. Refuse loudly rather than
+    # fall back to a lossy text capture (RULE 2, FORENSIC INVARIANT 4).
+    if tool.binary_stdout and case_id is None:
+        raise ToolExecutionError(
+            f"tool {tool_id!r} emite stdout binario y debe ejecutarse anclado a un caso "
+            "(case_id) para que su salida se guarde y hashee como artefacto; no hay "
+            "captura en texto para binario (RULE 2 / FORENSIC INVARIANT 4)."
+        )
+
     # Validate caller-controlled params before allocating an ArtifactRun. Wrappers that
     # require the dispatcher-owned output_dir receive a non-executable marker during
     # this pure validation pass; the literal argv is built once the real run dir exists.
     run_id: str | None = None
     audit: AuditLog | None = None
     effective_params: dict[str, Any] = dict(params)
+    binary_stdout_path: str | None = None
 
     if case_id is not None:
         _validate_params_before_artifact(tool, effective_params)
@@ -89,10 +108,14 @@ def execute(
         run_id, out_dir = artifact_store.start_run(case_id, tool_id, argv=[])
         if "output_dir" not in effective_params:
             effective_params["output_dir"] = str(out_dir)
+        if tool.binary_stdout:
+            binary_stdout_path = str(out_dir / _BINARY_STDOUT_FILENAME)
 
     try:
         argv_tail = _build_argv_tail(tool, effective_params)
-        prepared = _prepare_execution(tool, argv_tail, os_profile=os_profile)
+        prepared = _prepare_execution(
+            tool, argv_tail, os_profile=os_profile, stdout_path=binary_stdout_path
+        )
         if case_id is not None and run_id is not None:
             artifact_store.set_run_argv(case_id, run_id, prepared.argv)
     except Exception as exc:
@@ -292,7 +315,7 @@ def _build_argv_tail(tool: Tool, params: dict[str, Any]) -> list[str]:
 
 
 def _prepare_execution(
-    tool: Tool, argv_tail: list[str], *, os_profile: str | None
+    tool: Tool, argv_tail: list[str], *, os_profile: str | None, stdout_path: str | None = None
 ) -> _PreparedExecution:
     """Resolve one venue and construct the exact argv without invoking a runner."""
     binary_path = resolve(tool.binary)
@@ -300,12 +323,14 @@ def _prepare_execution(
         return _PreparedExecution(
             argv=[str(binary_path), *argv_tail],
             maletin_service=None,
+            stdout_path=stdout_path,
         )
 
     service = _select_maletin(tool, os_profile)
     return _PreparedExecution(
         argv=[tool.binary, *argv_tail],
         maletin_service=service,
+        stdout_path=stdout_path,
     )
 
 
@@ -343,13 +368,17 @@ def _invoke_prepared(
     prepared: _PreparedExecution, *, timeout: int | None
 ) -> tuple[int, str, str]:
     """Cross the runner boundary for an already-fixed literal argv and venue."""
+    # `stdout_path` (binary_stdout tools only) is threaded conditionally so text tools —
+    # and every existing runner stub — keep their unchanged (service, argv, timeout) call.
+    extra = {} if prepared.stdout_path is None else {"stdout_path": prepared.stdout_path}
     if prepared.maletin_service is not None:
         return maletin.run_argv_in_maletin(
             prepared.maletin_service,
             prepared.argv,
             timeout=timeout,
+            **extra,
         )
-    completed = run_argv(prepared.argv, timeout=timeout)
+    completed = run_argv(prepared.argv, timeout=timeout, **extra)
     return completed.returncode, completed.stdout, completed.stderr
 
 

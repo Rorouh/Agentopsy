@@ -8,7 +8,17 @@ ejecutar herramientas sin necesidad del socket de Docker del host:
   - GET  /health                          -> ¿el maletín está vivo? (+ su stage)
   - POST /which  {"binaries": [...]}       -> subconjunto de binarios presentes en PATH
   - POST /exec   {"argv": [...],           -> ejecuta argv shell-free y devuelve
-                  "timeout": N|null}          {exit, stdout, stderr, timed_out}
+                  "timeout": N|null,          {exit, stdout, stderr, timed_out}
+                  "stdout_path": P|null}      con stdout_path: {exit, stdout_file,
+                                              stdout_sha256, stdout_size, stderr,
+                                              timed_out} — stdout va a fichero CRUDO
+
+Canal binario-seguro (`stdout_path`): herramientas como TSK `icat` emiten BYTES CRUDOS
+por stdout (hives, EVTX, $MFT, ejecutables). Decodificarlos como texto los corrompe
+(cada byte no-UTF-8 → U+FFFD, irreversible). Cuando el api pasa `stdout_path`, el hijo
+escribe su stdout DIRECTAMENTE a ese fichero (sin decodificar) en el volumen `/cases`
+compartido; el agente devuelve ruta+SHA-256+tamaño en vez del texto. stderr sigue como
+texto (es diagnóstico). El api re-hashea el artefacto (defensa en profundidad).
 
 Por qué existe (docs/operacion/exec-agent.md, proximos-pasos.md §B):
 La alternativa §A (montar `/var/run/docker.sock` en el `api` + docker-cli) le daría al
@@ -34,6 +44,7 @@ Solo stdlib: el maletín trae python3 (`http.server` + `json` + `subprocess`).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -46,6 +57,23 @@ _TOKEN = os.environ.get("FORENSIA_EXEC_AGENT_TOKEN") or None
 # Tope duro de tiempo por ejecución: una tool que no termina no bloquea al agente para
 # siempre. El api pide su propio timeout; este es el techo defensivo.
 _MAX_TIMEOUT_S = 1800
+# Lectura por bloques para hashear el stdout crudo sin cargar el fichero entero en RAM
+# (icat puede extraer artefactos grandes: $MFT, hives).
+_HASH_CHUNK = 1024 * 1024  # 1 MiB
+
+
+def _sha256_size(path: str) -> tuple[str, int]:
+    """SHA-256 + tamaño en bytes de un fichero, leído por bloques (nunca entero en RAM)."""
+    digest = hashlib.sha256()
+    size = 0
+    with open(path, "rb") as handle:
+        while True:
+            chunk = handle.read(_HASH_CHUNK)
+            if not chunk:
+                break
+            digest.update(chunk)
+            size += len(chunk)
+    return digest.hexdigest(), size
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -110,6 +138,15 @@ class Handler(BaseHTTPRequestHandler):
                 timeout = min(float(timeout), _MAX_TIMEOUT_S)
             except (TypeError, ValueError):
                 return self._send(400, {"error": "'timeout' must be a number or null"})
+        stdout_path = payload.get("stdout_path")
+        if stdout_path is not None:
+            if not isinstance(stdout_path, str) or not stdout_path:
+                return self._send(400, {"error": "'stdout_path' must be a non-empty string or null"})
+            # El api resuelve esta ruta desde el ArtifactRun (confinada al caso, jamás la
+            # elige el LLM). Guarda defensiva mínima: absoluta y sin traversal.
+            if not os.path.isabs(stdout_path) or ".." in stdout_path.split("/"):
+                return self._send(400, {"error": "'stdout_path' must be an absolute path without '..'"})
+            return self._exec_to_file(argv, timeout, stdout_path)
         try:
             # errors="replace": la salida forense (nombres de fichero, bytes crudos) a
             # menudo NO es UTF-8 válido; sin esto, text=True lanzaría UnicodeDecodeError y
@@ -134,6 +171,44 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(
             200,
             {"exit": proc.returncode, "stdout": proc.stdout, "stderr": proc.stderr, "timed_out": False},
+        )
+
+    def _exec_to_file(self, argv: list[str], timeout, stdout_path: str) -> None:
+        """Canal binario-seguro: el stdout del hijo se escribe CRUDO a `stdout_path`
+        (sin decodificar), y se devuelve su SHA-256 + tamaño en vez del texto. stderr
+        sigue como texto (diagnóstico). Idéntico contrato shell-free (argv, shell=False)."""
+        timed_out = False
+        exit_code = 0
+        stderr = ""
+        try:
+            with open(stdout_path, "wb") as stdout_file:
+                proc = subprocess.run(  # noqa: S603 — argv list, shell=False, resolved by the api allowlist
+                    argv,
+                    stdout=stdout_file,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    errors="replace",
+                    timeout=timeout,
+                    shell=False,
+                )
+            exit_code, stderr = proc.returncode, proc.stderr
+        except FileNotFoundError:
+            exit_code, stderr = 127, f"{argv[0]}: not found"
+        except subprocess.TimeoutExpired as exc:
+            timed_out = True
+            exit_code = 124
+            stderr = (exc.stderr or "") + "\n[exec-agent] timeout"
+        sha256, size = _sha256_size(stdout_path)
+        return self._send(
+            200,
+            {
+                "exit": exit_code,
+                "stdout_file": stdout_path,
+                "stdout_sha256": sha256,
+                "stdout_size": size,
+                "stderr": stderr,
+                "timed_out": timed_out,
+            },
         )
 
 

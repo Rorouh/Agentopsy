@@ -4,9 +4,11 @@ Given the metadata address (inode) of a file located with `tsk_fls`, `icat` stre
 bytes from the raw image (allocated or deleted) to stdout — the surgical extraction step
 that follows a listing. Returns the content as an artifact.
 
-Caveat: the exec-agent decodes stdout as text; a purely binary file may come back with
-replacement chars. For binary artifacts prefer extracting and inspecting via the artifact
-file rather than the parsed preview.
+Binary-safe channel: the catalog marks this tool `binary_stdout=True`, so the dispatcher
+captures icat's RAW stdout to a hashed artifact file (`out/stdout.bin`) instead of
+decoding it as text — hives, EVTX, `$MFT` and executables come back byte-for-byte, with a
+stable SHA-256 (FORENSIC INVARIANT 4). The derived file (not `parse`'s preview) is the
+authoritative deliverable; downstream parsers read it from the ArtifactRun's output_files.
 """
 
 from __future__ import annotations

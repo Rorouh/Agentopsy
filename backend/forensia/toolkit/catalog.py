@@ -320,6 +320,9 @@ CATALOG: tuple[Tool, ...] = (
         "icat",
         ("unix", "windows"),
         returns="artifact",
+        # icat streams a file's RAW BYTES to stdout; capture them to a hashed artifact
+        # file, never decode as text (would corrupt hives/EVTX/$MFT/executables).
+        binary_stdout=True,
         toolkits=_BOTH,
         allowed_flags=_tsk_icat.ALLOWED_FLAGS,
         build_argv=_tsk_icat.build_argv,

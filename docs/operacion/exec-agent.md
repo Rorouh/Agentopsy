@@ -44,6 +44,17 @@ api  ──HTTP (red interna del compose)──▶  exec-agent  ──subprocess
 | `GET`  | `/health` | — | `{"ok": true, "stage": "unix"\|"windows"}` |
 | `POST` | `/which`  | `{"binaries": ["fls","vol",…]}` | `{"present": ["fls",…]}` (subconjunto en PATH) |
 | `POST` | `/exec`   | `{"argv": ["fls","-r","/evidence/…"], "timeout": 300}` | `{"exit": int, "stdout": str, "stderr": str, "timed_out": bool}` |
+| `POST` | `/exec` (binario) | `{"argv": ["icat",…], "timeout": 300, "stdout_path": "/cases/…/out/stdout.bin"}` | `{"exit": int, "stdout_file": str, "stdout_sha256": str, "stdout_size": int, "stderr": str, "timed_out": bool}` |
+
+**Canal binario-seguro (`stdout_path`).** Algunas tools (TSK `icat`) emiten **bytes crudos**
+por stdout (hives, EVTX, `$MFT`, ejecutables). Decodificarlos como texto los corrompe
+irreversiblemente (cada byte no-UTF-8 → `U+FFFD`). Cuando el api pasa `stdout_path` —una
+ruta dentro del volumen `/cases` compartido, derivada del `ArtifactRun` (nunca la elige el
+LLM)— el exec-agent conecta el stdout del hijo **directamente a ese fichero** (`shell=False`,
+sin decodificar) y responde con su `stdout_sha256`/`stdout_size` en vez del texto; stderr
+sigue como texto (diagnóstico). El catálogo marca esas tools con `binary_stdout=True`; el
+dispatcher exige que corran ancladas a un caso (si no, error accionable) y el `ArtifactStore`
+re-hashea `out/stdout.bin` (defensa en profundidad, FORENSIC INVARIANT 4).
 
 El **dispatcher** (`toolkit/dispatcher.py`) ejecuta las tools sobre este canal:
 resuelve el argv desde el allowlist, elige el maletín por el `os_profile` del caso

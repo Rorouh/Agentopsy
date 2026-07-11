@@ -114,7 +114,11 @@ def _request(
 
 
 def run_argv_in_maletin(
-    service: str, argv: list[str], *, timeout: float | None = None
+    service: str,
+    argv: list[str],
+    *,
+    timeout: float | None = None,
+    stdout_path: str | None = None,
 ) -> tuple[int, str, str]:
     """Run a fully-resolved argv inside a maletín via its exec-agent `POST /exec`.
 
@@ -123,6 +127,12 @@ def run_argv_in_maletin(
     dirs the api mounts, so no path translation is needed. Returns (exit, stdout, stderr).
     Raises `MaletinExecError` when the exec-agent cannot be reached / is not configured;
     a tool that runs and fails returns a non-zero exit code (not an exception).
+
+    Binary-safe mode (`stdout_path`): for tools whose stdout is RAW BINARY (TSK `icat`),
+    the exec-agent writes the child's stdout CRUDO to `stdout_path` — a path inside the
+    shared `/cases` mount, so the api reads the exact same file — and answers with its
+    SHA-256/size instead of a (lossy) text field. The returned stdout is then `""`; the
+    payload lives on disk, where the api re-hashes it as an artifact (INVARIANT 4).
     """
     base_url = service_url(service)
     if not base_url:
@@ -130,9 +140,12 @@ def run_argv_in_maletin(
     if not isinstance(argv, list) or not argv or not all(isinstance(a, str) for a in argv):
         raise MaletinExecError("argv debe ser una list[str] no vacía (shell-free)")
     http_timeout = (float(timeout) if timeout else _EXEC_DEFAULT_TIMEOUT) + 30
+    request_body: dict[str, Any] = {"argv": argv, "timeout": timeout}
+    if stdout_path is not None:
+        request_body["stdout_path"] = stdout_path
     try:
         status, body = _request(
-            "POST", f"{base_url}/exec", {"argv": argv, "timeout": timeout}, timeout=http_timeout
+            "POST", f"{base_url}/exec", request_body, timeout=http_timeout
         )
     except (urllib.error.URLError, OSError, ValueError) as exc:
         raise MaletinExecError(
@@ -142,6 +155,9 @@ def run_argv_in_maletin(
         raise MaletinExecError(
             f"el exec-agent {base_url} devolvió una respuesta inesperada (estado {status})"
         )
+    if stdout_path is not None:
+        # Binary-safe: stdout went to `stdout_path` on the shared mount, not over the wire.
+        return int(body["exit"]), "", str(body.get("stderr", ""))
     return int(body["exit"]), str(body.get("stdout", "")), str(body.get("stderr", ""))
 
 
