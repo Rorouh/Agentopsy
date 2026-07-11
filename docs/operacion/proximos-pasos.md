@@ -215,10 +215,25 @@ respeta SECURITY INVARIANT 1.
   traducción: `/evidence` (ro) y `/cases` están montados en las MISMAS rutas en api y
   maletín. Se retiró el path muerto `docker run <container_image>` (el `delivery`/
   `container_image` legacy del `Tool` queda sin usar). `os_profile` se cablea desde los
-  dos llamadores (`agent.py`, `mcp/toolkit.py`). Verificado end-to-end sobre una imagen
-  real (`tsk_fls` → 22 entradas, ArtifactRun + audit hash-chained). Tests:
-  `backend/tests/test_dispatcher.py`. **Con esto el agente ejecuta herramientas end-to-end
-  desde el chat.**
+  dos llamadores (`agent.py`, `mcp/toolkit.py`). Se observó una integración sobre una
+  imagen real (`tsk_fls` → 22 entradas, ArtifactRun + audit hash-chained); ese ejercicio
+  puntual no declara el E2E completo. Tests: `backend/tests/test_dispatcher.py`.
+- **Ciclo auditable P0 corregido (2026-07-11)** — en ejecuciones ancladas, el dispatcher
+  construye y fija primero el argv literal y añade `tool_run_start` al AuditLog **antes**
+  de invocar `run_argv` o el exec-agent. En los caminos controlados se intenta emitir
+  como máximo un `tool_run_finish`; el pareado depende de que `ArtifactStore` y
+  `AuditLog` sigan escribibles. Un exit code normal (incluido distinto de cero) se
+  conserva literalmente; una excepción de transporte, timeout local o runner cierra el
+  `ArtifactRun` con estado `error`, tipo/mensaje accionable y `exit_code: null`. Si no
+  puede persistirse el start, la tool no se ejecuta y el run reservado se cierra como
+  error sin inventar un finish. Params o tool ids rechazados antes de disponer de argv
+  ejecutable no generan un start falso. Si falla el append del finish, se propaga un
+  `ToolExecutionError` con todas las causas disponibles, sin retry ni reejecución.
+  El timeout interno del exec-agent remoto sigue siendo un gap separado: hoy responde
+  `timed_out=true` y `exit=124`, que `maletin.py` devuelve como resultado normal y el
+  dispatcher registra como `finished/124`; este P0 no cambia esa semántica.
+  Esto corrige únicamente el orden/cierre auditable del dispatcher; no completa la Vía 2,
+  la Fase 5 ni el E2E, y no aborda el gap `tsk_icat` → artefacto derivado.
 
 **Pendiente menor:** retirar formalmente los campos `delivery`/`container_image` del
 `Tool` y `toolkit/container.py` (hoy sin consumidores en el dispatcher; los conserva

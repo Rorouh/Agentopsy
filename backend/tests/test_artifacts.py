@@ -60,6 +60,20 @@ class TestStartRun:
         with pytest.raises(ValueError, match="argv"):
             store.start_run(case.id, "tool_x", argv="not-a-list")  # type: ignore[arg-type]
 
+    def test_set_run_argv_persists_literal_command_while_running(
+        self, store, cases, case
+    ):
+        run_id, _ = store.start_run(case.id, "tool_x", argv=[])
+        run = store.set_run_argv(case.id, run_id, ["resolved-x", "--literal"])
+        assert run.status == "running"
+        assert run.argv == ["resolved-x", "--literal"]
+        manifest = json.loads(
+            (
+                cases.root / case.id / "artifacts" / run_id / "manifest.json"
+            ).read_text()
+        )
+        assert manifest["argv"] == ["resolved-x", "--literal"]
+
 
 # --------------------------------------------------------------------------- #
 # finalize_run
@@ -200,6 +214,49 @@ class TestFinalizeRun:
         # The pre-failure manifest is still in 'running' state — we did not corrupt it.
         manifest = json.loads((run_dir / "manifest.json").read_text())
         assert manifest["status"] == "running"
+
+
+# --------------------------------------------------------------------------- #
+# fail_run
+# --------------------------------------------------------------------------- #
+class TestFailRun:
+    def test_fail_run_closes_with_error_and_null_exit_code(
+        self, store, cases, case
+    ):
+        run_id, out_dir = store.start_run(case.id, "tool_x", argv=["x"])
+        (out_dir / "partial.bin").write_bytes(b"partial")
+        run = store.fail_run(
+            case.id,
+            run_id,
+            error_type="TimeoutExpired",
+            error_message="timed out after 10 seconds",
+            stdout="partial stdout",
+            stderr="",
+        )
+
+        assert run.status == "error"
+        assert run.exit_code is None
+        assert run.finished_at is not None
+        assert run.error_type == "TimeoutExpired"
+        assert run.error_message == "timed out after 10 seconds"
+        assert run.stdout_sha256 == hashlib.sha256(b"partial stdout").hexdigest()
+        assert [item.relpath for item in run.output_files] == ["partial.bin"]
+
+        manifest = json.loads(
+            (
+                cases.root / case.id / "artifacts" / run_id / "manifest.json"
+            ).read_text()
+        )
+        assert manifest["status"] == "error"
+        assert manifest["exit_code"] is None
+        with pytest.raises(KeyError, match="already finalized"):
+            store.finalize_run(
+                case.id,
+                run_id,
+                exit_code=0,
+                stdout="",
+                stderr="",
+            )
 
 
 # --------------------------------------------------------------------------- #

@@ -56,7 +56,7 @@ auxiliares.
 |---|---|---|
 | `cases/<case-id>/case.json` | `forensia.cases.manager` (`CaseManager`) | Crear / listar / cargar / cerrar casos. UUID4 obligatorio; `os_profile` opcional/nullable — derivado del contenido de la evidencia (triage) o anclado por el operador; validado `in {unix, windows}` solo cuando está presente (+ `os_profile_source ∈ {derived, operator, conflict}`); subdirectorios (`evidence/`, `artifacts/`, `chats/`, `reports/`) materializados al crear. |
 | `cases/<case-id>/evidence/<id>/` | `forensia.evidence` (`EvidenceManager`) | Hash gate estricto: stream SHA-256 de la fuente → `shutil.copy2` → re-hash de la copia (abort + cleanup si mismatch) → `chmod 0o444` → `baseline.json`. La fuente nunca se modifica; el handle devuelto apunta SIEMPRE a la copia inmutable. |
-| `cases/<case-id>/artifacts/<run>/` | `forensia.artifacts.store` (`ArtifactStore`) | `start_run` reserva `run_id` (UUID4) y abre `manifest.json` en estado `running`. `finalize_run` escribe `stdout.txt`/`stderr.txt`, hashea recursivamente cada fichero en `out/` con chunks de 1 MiB, y cierra el manifest atómicamente (`os.replace`). |
+| `cases/<case-id>/artifacts/<run>/` | `forensia.artifacts.store` (`ArtifactStore`) | `start_run` reserva `run_id` (UUID4) y abre `manifest.json` en estado `running`; `set_run_argv` fija después el argv literal ya resuelto. `finalize_run` cierra una ejecución que devolvió código como `finished`; `fail_run` cierra una invocación sin código como `error`. Ambos escriben y hashean `stdout.txt`/`stderr.txt` (también si son parciales), hashean recursivamente `out/` en chunks de 1 MiB y reemplazan el manifest atómicamente. |
 | `cases/<case-id>/chats/<session>.jsonl` | `forensia.chats.store` (`ChatStore`) | Append-only line-buffered JSONL. `session_id` UUID4 o slug `^[a-zA-Z0-9_-]{1,64}$`. Roles validados contra `{user, assistant, system, tool}`. Lectura tolera última línea truncada (warning). |
 | `cases/<case-id>/audit.jsonl` | `forensia.audit.log` (`AuditLog`) | Append-only encadenado por hash. Una instancia por caso: el dispatcher la crea con `AuditLog(case_dir / "audit.jsonl")` por cada ejecución. La cadena `prev_hash → entry_hash` se verifica con `audit_log.verify()`. |
 | `cases/<case-id>/reports/<id>.{md,pdf}` | (pendiente — `forensia.reports`) | Pendiente para el slice de generación de informes. El layout está reservado. |
@@ -77,21 +77,28 @@ dispatcher.execute(tool_id, params, case_id="…")
    │     · crea cases/<id>/artifacts/<run_id>/{manifest.json, out/}
    │     · manifest.json en estado "running"
    │
-   ├─ params["output_dir"] = str(out_dir)   (solo si el wrapper acepta output_dir)
+   ├─ params.setdefault("output_dir", str(out_dir))
+   │     · los wrappers que no declaran ese campo lo ignoran y no lo llevan al argv
    │
    ├─ build_argv(params) → argv_tail
-   ├─ resolve binario   (bundled) o run_in_container (container)
-   ├─ subprocess.run(argv, shell=False)
+   ├─ resolve binario local o seleccionar un único maletín por os_profile
+   ├─ artifact_store.set_run_argv(…)         → persiste el argv literal
    │
    ├─ audit.append({ action: "tool_run_start", argv literal, run_id, case_id, params })
    │
-   ├─ artifact_store.finalize_run(…)        → ArtifactRun
-   │     · escribe stdout.txt / stderr.txt (con SHA-256 propio)
-   │     · hashea recursivamente cada fichero en out/  (1 MiB blocks)
-   │     · manifest.json en estado "finished" + lista completa de output_files
+   ├─ run_argv(argv, shell=False) o POST /exec al maletín seleccionado
    │
-   ├─ audit.append({ action: "tool_run_finish", run_id, exit_code,
-   │                 stdout_sha256, stderr_sha256, output_files_count })
+   ├─ si el runner devuelve un exit code (0 o distinto de 0):
+   │     artifact_store.finalize_run(…)      → status "finished", exit_code literal
+   │
+   ├─ si el runner/transporte lanza sin devolver código:
+   │     artifact_store.fail_run(…)          → status "error", exit_code null,
+   │                                           error_type + error_message
+   │     · conserva stdout/stderr parciales cuando la excepción los aporta
+   │
+   ├─ audit.append({ action: "tool_run_finish", run_id, status, exit_code,
+   │                 hashes, error_type?, error_message? })
+   │     · se intenta una sola vez; un fallo se propaga sin retry ni reejecución
    │
    └─ devuelve { tool_id, argv, exit_code, stdout_sample, stderr_sample, parsed,
                  case_id, run_id, artifact_run }
@@ -118,7 +125,7 @@ Todos los endpoints usan `Depends(require_token)` (ver `backend/forensia/securit
 | `POST`  | `/api/cases/{case_id}/evidence`                                 | registra evidencia (`{source_path}`); ejecuta el hash gate; rechaza con 422 si el caso está `closed` |
 | `GET`   | `/api/cases/{case_id}/evidence`                                 | lista handles |
 | `POST`  | `/api/cases/{case_id}/evidence/{evidence_id}/verify`            | re-hashea y compara a `baseline.json` |
-| `GET`   | `/api/cases/{case_id}/artifacts`                                | lista runs |
+| `GET`   | `/api/cases/{case_id}/artifacts`                                | lista manifests completos de runs |
 | `GET`   | `/api/cases/{case_id}/artifacts/{run_id}`                       | manifest completo de un run |
 | `GET`   | `/api/cases/{case_id}/chats`                                    | lista session_ids |
 | `GET`   | `/api/cases/{case_id}/chats/{session_id}`                       | mensajes de la sesión |
@@ -126,6 +133,17 @@ Todos los endpoints usan `Depends(require_token)` (ver `backend/forensia/securit
 
 `audit.jsonl` **NO** se expone por HTTP — es un artefacto forense que se consulta desde
 el filesystem por un perito autorizado, no por la app.
+
+El contrato HTTP completo de cada `ArtifactRun` es:
+`run_id`, `case_id`, `tool_id`, `argv`, `started_at`, `finished_at`,
+`status` (`running | finished | error`), `exit_code`, `output_files`
+(cada elemento contiene `relpath`, `sha256` y `size`), `stdout_sha256`,
+`stderr_sha256`, `error_type` y `error_message`. En `running`,
+`finished_at` y `exit_code` aún pueden ser `null`; en `error` por excepción
+del runner/transporte, `finished_at` ya está fijado, `exit_code` es `null` y
+los campos de error son accionables. Este manifest HTTP es más amplio que el
+`artifact_run` embebido de compatibilidad que devuelve `dispatcher.execute()`
+cuando una ejecución retorna normalmente.
 
 ## Invariantes que el layout fija
 
@@ -167,7 +185,8 @@ el filesystem por un perito autorizado, no por la app.
 ## Tests
 
 `backend/tests/` cubre el contrato de cada módulo: case create/list/load/close, evidence
-hash gate completo (incluido mismatch durante la copia), artifact start/finalize con
-ficheros vacíos y con árboles anidados, chat append/read con líneas truncadas, y la rama
-de dispatcher con `case_id` (audit + manifest + integración con wrappers). El conjunto
-total que debe estar verde antes de mergear ronda los 172+ asserts.
+hash gate completo (incluido mismatch durante la copia), ArtifactRun
+`start_run`/`set_run_argv`/`finalize_run`/`fail_run` con ficheros vacíos,
+parciales y árboles anidados, estados HTTP `running | finished | error`, chat
+append/read con líneas truncadas, y la rama de dispatcher con `case_id` (audit +
+manifest + integración con wrappers).

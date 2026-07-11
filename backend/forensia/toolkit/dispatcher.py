@@ -11,10 +11,12 @@ with no cross-maletín fallback (RULE 2).
 When ``case_id`` is supplied, the run is anchored to that case:
     - an ``ArtifactRun`` is opened via ``artifact_store`` (output_dir injected
       into params if the wrapper expects one and the caller did not pre-fill it),
-    - the literal argv + result are recorded in the per-case append-only audit log
-      (``case_dir/audit.jsonl``), and
-    - the returned dict carries ``case_id``, ``run_id`` and the full ``artifact_run``
-      manifest so the caller can render/forward it.
+    - the literal argv is recorded as ``tool_run_start`` in the per-case append-only
+      audit log *before* the runner is invoked; controlled completion and failure paths
+      attempt at most one ``tool_run_finish`` (transport/timeout errors invent no exit
+      code, and a finish-append failure is propagated without retry), and
+    - the returned dict carries ``case_id``, ``run_id`` and the established successful
+      ``artifact_run`` projection. The storage API exposes the full canonical manifest.
 
 When ``case_id`` is ``None`` the behaviour is identical to the original signature
 ``execute(tool_id, params)`` — used by the dev toolkit-tester panel.
@@ -23,7 +25,8 @@ When ``case_id`` is ``None`` the behaviour is identical to the original signatur
 from __future__ import annotations
 
 import inspect
-from dataclasses import asdict
+import subprocess
+from dataclasses import asdict, dataclass
 from typing import Any
 
 from forensia.artifacts.store import artifact_store
@@ -38,6 +41,17 @@ from forensia.toolkit.tool import Tool, run_argv
 class ToolExecutionError(RuntimeError):
     """Raised when a tool cannot be executed (not when it runs and fails — that
     case returns a non-zero exit_code in the result dict)."""
+
+
+_PENDING_OUTPUT_DIR = "__forensia_pending_output_dir__"
+
+
+@dataclass(frozen=True)
+class _PreparedExecution:
+    """Literal argv plus its single, already-resolved execution venue."""
+
+    argv: list[str]
+    maletin_service: str | None
 
 
 def execute(
@@ -61,100 +75,238 @@ def execute(
     if tool is None:
         raise ToolExecutionError(f"unknown tool id: {tool_id!r}")
 
-    # If we're anchored to a case, we have to allocate the output directory BEFORE
-    # asking the wrapper to build argv — some wrappers embed output_dir into the
-    # argv array (e.g. bulk_extractor -o, EvtxECmd --csv). We open the run first,
-    # inject the path, then build argv.
+    # Validate caller-controlled params before allocating an ArtifactRun. Wrappers that
+    # require the dispatcher-owned output_dir receive a non-executable marker during
+    # this pure validation pass; the literal argv is built once the real run dir exists.
     run_id: str | None = None
     audit: AuditLog | None = None
     effective_params: dict[str, Any] = dict(params)
 
     if case_id is not None:
+        _validate_params_before_artifact(tool, effective_params)
         case_dir = case_manager.case_dir(case_id)
         audit = AuditLog(case_dir / "audit.jsonl")
-        # Pre-allocate the run with a placeholder argv; we patch it after build_argv
-        # (the store keeps run_id stable, only the argv field is overwritten by the
-        # finalize_run step using whatever the dispatcher actually ran).
         run_id, out_dir = artifact_store.start_run(case_id, tool_id, argv=[])
-        # Only inject output_dir if the caller did not pre-fill it. That preserves
-        # the contract of wrappers that explicitly accept output_dir as a param.
         if "output_dir" not in effective_params:
             effective_params["output_dir"] = str(out_dir)
 
-    argv_tail = tool.build_argv(effective_params)
-    if not isinstance(argv_tail, list) or not all(isinstance(a, str) for a in argv_tail):
-        raise ToolExecutionError(
-            f"tool {tool_id!r} build_argv returned a non-list[str]: {type(argv_tail).__name__}"
-        )
-
-    # Execution venue (RULE 1 resolver order): an env override / a binary on the api's
-    # own PATH wins outright (dev / standalone). Otherwise the tool's binary lives inside
-    # its maletín — run it there through the exec-agent (§B, docs/operacion/exec-agent.md).
-    # The evidence (/cases, /evidence) is mounted at the SAME paths in api and maletín, so
-    # the argv paths need no translation.
-    if resolve(tool.binary) is not None:
-        argv, exit_code, stdout, stderr = _run_bundled(tool, argv_tail, timeout=timeout)
-    else:
-        argv, exit_code, stdout, stderr = _run_maletin(
-            tool, argv_tail, os_profile=os_profile, timeout=timeout
-        )
-
-    result = _build_result(tool, argv, exit_code, stdout, stderr)
+    try:
+        argv_tail = _build_argv_tail(tool, effective_params)
+        prepared = _prepare_execution(tool, argv_tail, os_profile=os_profile)
+        if case_id is not None and run_id is not None:
+            artifact_store.set_run_argv(case_id, run_id, prepared.argv)
+    except Exception as exc:
+        # No executable argv reached the audit log or runner. If a run had already
+        # been allocated for output_dir, close it explicitly rather than leaving a
+        # misleading in-flight manifest.
+        if case_id is not None and run_id is not None:
+            try:
+                artifact_store.fail_run(
+                    case_id,
+                    run_id,
+                    error_type=type(exc).__name__,
+                    error_message=_exception_message(exc),
+                )
+            except Exception as close_exc:  # noqa: BLE001 — preserve the original failure
+                exc.add_note(
+                    "ArtifactRun could not be closed after pre-execution failure: "
+                    f"{type(close_exc).__name__}: {close_exc}"
+                )
+        raise
 
     if case_id is None or run_id is None or audit is None:
-        return result
+        try:
+            exit_code, stdout, stderr = _invoke_prepared(prepared, timeout=timeout)
+        except maletin.MaletinExecError as exc:
+            raise ToolExecutionError(str(exc)) from exc
+        return _build_result(tool, prepared.argv, exit_code, stdout, stderr)
 
-    # Audit BEFORE finalize so a crash during finalize still leaves a record that
-    # the tool actually ran. We record the literal argv (not the LLM's intent).
-    audit.append(
-        {
-            "action": "tool_run_start",
+    # The literal command and its venue are fixed. Persist the start before crossing
+    # the runner boundary so transport/exec-agent/process failures remain auditable.
+    try:
+        audit.append(
+            {
+                "action": "tool_run_start",
+                "case_id": case_id,
+                "run_id": run_id,
+                "tool_id": tool_id,
+                "argv": prepared.argv,
+                "params": _scrub_for_audit(effective_params),
+            }
+        )
+    except Exception as exc:  # noqa: BLE001 — execution is forbidden without durable start
+        artifact_close_error: Exception | None = None
+        try:
+            artifact_store.fail_run(
+                case_id,
+                run_id,
+                error_type=type(exc).__name__,
+                error_message=_exception_message(exc),
+            )
+        except Exception as close_exc:  # noqa: BLE001 — preserve both actionable causes
+            artifact_close_error = close_exc
+
+        message = (
+            f"could not persist tool_run_start for tool {tool_id!r} "
+            f"({type(exc).__name__}): {_exception_message(exc)}; "
+            "the tool was not executed"
+        )
+        if artifact_close_error is not None:
+            message += (
+                "; additionally, the ArtifactRun could not be closed "
+                f"({type(artifact_close_error).__name__}): "
+                f"{_exception_message(artifact_close_error)}"
+            )
+        raise ToolExecutionError(message) from exc
+
+    try:
+        exit_code, stdout, stderr = _invoke_prepared(prepared, timeout=timeout)
+    except Exception as exc:  # noqa: BLE001 — every post-start failure needs one closure
+        error_type = type(exc).__name__
+        error_message = _exception_message(exc)
+        partial_stdout, partial_stderr = _partial_streams(exc)
+        artifact_run = None
+        artifact_close_error: Exception | None = None
+        try:
+            artifact_run = artifact_store.fail_run(
+                case_id,
+                run_id,
+                error_type=error_type,
+                error_message=error_message,
+                stdout=partial_stdout,
+                stderr=partial_stderr,
+            )
+        except Exception as close_exc:  # noqa: BLE001 — audit the runner failure regardless
+            artifact_close_error = close_exc
+
+        finish = {
+            "action": "tool_run_finish",
             "case_id": case_id,
             "run_id": run_id,
-            "tool_id": tool_id,
-            "argv": argv,
-            "params": _scrub_for_audit(effective_params),
+            "status": "error",
+            "exit_code": None,
+            "error_type": error_type,
+            "error_message": error_message,
+            "stdout_sha256": artifact_run.stdout_sha256 if artifact_run else None,
+            "stderr_sha256": artifact_run.stderr_sha256 if artifact_run else None,
+            "output_files_count": len(artifact_run.output_files) if artifact_run else None,
         }
-    )
+        if artifact_close_error is not None:
+            finish["artifact_error_type"] = type(artifact_close_error).__name__
+            finish["artifact_error_message"] = _exception_message(artifact_close_error)
+        runner_error = _runner_error(tool, prepared, exc, artifact_close_error)
+        _append_finish_or_raise(
+            audit,
+            finish,
+            tool_id=tool_id,
+            failure_context=str(runner_error),
+            primary_error=exc,
+        )
+        raise runner_error from exc
 
-    artifact_run = artifact_store.finalize_run(
-        case_id,
-        run_id,
-        exit_code=exit_code,
-        stdout=stdout,
-        stderr=stderr,
-    )
+    try:
+        artifact_run = artifact_store.finalize_run(
+            case_id,
+            run_id,
+            exit_code=exit_code,
+            stdout=stdout,
+            stderr=stderr,
+        )
+    except Exception as exc:  # noqa: BLE001 — the start still requires one explicit closure
+        failure_context = (
+            f"tool {tool_id!r} returned exit_code {exit_code}, but its ArtifactRun "
+            f"could not be finalized ({type(exc).__name__}): {_exception_message(exc)}"
+        )
+        _append_finish_or_raise(
+            audit,
+            {
+                "action": "tool_run_finish",
+                "case_id": case_id,
+                "run_id": run_id,
+                "status": "error",
+                "exit_code": exit_code,
+                "error_type": type(exc).__name__,
+                "error_message": _exception_message(exc),
+                "stdout_sha256": None,
+                "stderr_sha256": None,
+                "output_files_count": None,
+            },
+            tool_id=tool_id,
+            failure_context=failure_context,
+            primary_error=exc,
+        )
+        raise ToolExecutionError(failure_context) from exc
 
-    audit.append(
+    _append_finish_or_raise(
+        audit,
         {
             "action": "tool_run_finish",
             "case_id": case_id,
             "run_id": run_id,
+            "status": "finished",
             "exit_code": exit_code,
             "stdout_sha256": artifact_run.stdout_sha256,
             "stderr_sha256": artifact_run.stderr_sha256,
             "output_files_count": len(artifact_run.output_files),
-        }
+        },
+        tool_id=tool_id,
+        failure_context=(
+            f"tool {tool_id!r} already executed and its ArtifactRun was finalized "
+            f"with exit_code {exit_code}"
+        ),
     )
 
+    result = _build_result(tool, prepared.argv, exit_code, stdout, stderr)
     result["case_id"] = case_id
     result["run_id"] = run_id
-    result["artifact_run"] = asdict(artifact_run)
+    artifact_result = asdict(artifact_run)
+    # ``status`` / error detail extend the store contract, not the successful
+    # execute() response. Preserve its established public shape for exit 0 and != 0.
+    for internal_field in ("status", "error_type", "error_message"):
+        artifact_result.pop(internal_field)
+    result["artifact_run"] = artifact_result
     return result
 
 
-def _run_bundled(
-    tool: Tool, argv_tail: list[str], *, timeout: int | None
-) -> tuple[list[str], int, str, str]:
-    binary_path = resolve(tool.binary)
-    if binary_path is None:
+def _validate_params_before_artifact(tool: Tool, params: dict[str, Any]) -> None:
+    """Run wrapper validation before allocating an anchored ArtifactRun.
+
+    ``build_argv`` is a pure validation/assembly contract and anchored runs call it
+    twice. Some wrappers require the dispatcher-owned ``output_dir``. A marker
+    satisfies that internal field for the first pass only; it is never resolved,
+    audited or run.
+    """
+    validation_params = dict(params)
+    validation_params.setdefault("output_dir", _PENDING_OUTPUT_DIR)
+    _build_argv_tail(tool, validation_params)
+
+
+def _build_argv_tail(tool: Tool, params: dict[str, Any]) -> list[str]:
+    argv_tail = tool.build_argv(params)
+    if not isinstance(argv_tail, list) or not all(isinstance(a, str) for a in argv_tail):
         raise ToolExecutionError(
-            f"bundled binary {tool.binary!r} for tool {tool.id!r} is not resolvable "
-            f"(env override / PATH both empty)"
+            f"tool {tool.id!r} build_argv returned a non-list[str]: "
+            f"{type(argv_tail).__name__}"
         )
-    argv = [str(binary_path), *argv_tail]
-    result = run_argv(argv, timeout=timeout)
-    return argv, result.returncode, result.stdout, result.stderr
+    return argv_tail
+
+
+def _prepare_execution(
+    tool: Tool, argv_tail: list[str], *, os_profile: str | None
+) -> _PreparedExecution:
+    """Resolve one venue and construct the exact argv without invoking a runner."""
+    binary_path = resolve(tool.binary)
+    if binary_path is not None:
+        return _PreparedExecution(
+            argv=[str(binary_path), *argv_tail],
+            maletin_service=None,
+        )
+
+    service = _select_maletin(tool, os_profile)
+    return _PreparedExecution(
+        argv=[tool.binary, *argv_tail],
+        maletin_service=service,
+    )
 
 
 def _select_maletin(tool: Tool, os_profile: str | None) -> str:
@@ -187,23 +339,92 @@ def _select_maletin(tool: Tool, os_profile: str | None) -> str:
     )
 
 
-def _run_maletin(
-    tool: Tool,
-    argv_tail: list[str],
+def _invoke_prepared(
+    prepared: _PreparedExecution, *, timeout: int | None
+) -> tuple[int, str, str]:
+    """Cross the runner boundary for an already-fixed literal argv and venue."""
+    if prepared.maletin_service is not None:
+        return maletin.run_argv_in_maletin(
+            prepared.maletin_service,
+            prepared.argv,
+            timeout=timeout,
+        )
+    completed = run_argv(prepared.argv, timeout=timeout)
+    return completed.returncode, completed.stdout, completed.stderr
+
+
+def _exception_message(exc: BaseException) -> str:
+    return str(exc) or repr(exc)
+
+
+def _append_finish_or_raise(
+    audit: AuditLog,
+    finish: dict[str, Any],
     *,
-    os_profile: str | None,
-    timeout: int | None,
-) -> tuple[list[str], int, str, str]:
-    """Run the tool inside its maletín via the exec-agent (§B). The recorded argv is
-    `[binary, *args]` as it ran inside the maletín (FORENSIC INVARIANT 4: the literal
-    command, not the transport)."""
-    service = _select_maletin(tool, os_profile)
-    argv = [tool.binary, *argv_tail]
+    tool_id: str,
+    failure_context: str,
+    primary_error: Exception | None = None,
+) -> None:
+    """Attempt one finish append and surface uncertainty without retrying.
+
+    An append may have reached the file before its flush/fsync reports failure, so
+    retrying could duplicate the closure. When another failure led here, retain it
+    as the Python cause and include the append failure in the actionable message.
+    """
     try:
-        exit_code, stdout, stderr = maletin.run_argv_in_maletin(service, argv, timeout=timeout)
-    except maletin.MaletinExecError as exc:
-        raise ToolExecutionError(str(exc)) from exc
-    return argv, exit_code, stdout, stderr
+        audit.append(finish)
+    except Exception as append_exc:  # noqa: BLE001 — every finish append is controlled
+        message = (
+            f"{failure_context}; could not persist tool_run_finish for tool "
+            f"{tool_id!r} ({type(append_exc).__name__}): "
+            f"{_exception_message(append_exc)}; the tool was not re-executed "
+            "and the finish append was not retried"
+        )
+        raise ToolExecutionError(message) from (primary_error or append_exc)
+
+
+def _stream_text(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return ""
+
+
+def _partial_streams(exc: BaseException) -> tuple[str, str]:
+    """Return subprocess timeout captures when available; transports have none."""
+    if isinstance(exc, subprocess.TimeoutExpired):
+        return _stream_text(exc.stdout), _stream_text(exc.stderr)
+    return "", ""
+
+
+def _runner_error(
+    tool: Tool,
+    prepared: _PreparedExecution,
+    exc: Exception,
+    artifact_close_error: Exception | None,
+) -> ToolExecutionError:
+    """Translate a runner exception while retaining it as the Python cause."""
+    if isinstance(exc, maletin.MaletinExecError):
+        message = str(exc)
+    elif isinstance(exc, subprocess.TimeoutExpired):
+        message = (
+            f"tool {tool.id!r} timed out after {exc.timeout}s while executing "
+            f"{prepared.argv[0]!r}"
+        )
+    else:
+        venue = prepared.maletin_service or "api-local"
+        message = (
+            f"tool {tool.id!r} runner failed in {venue!r} "
+            f"({type(exc).__name__}): {_exception_message(exc)}"
+        )
+    if artifact_close_error is not None:
+        message += (
+            "; additionally, ArtifactRun closure failed "
+            f"({type(artifact_close_error).__name__}): "
+            f"{_exception_message(artifact_close_error)}"
+        )
+    return ToolExecutionError(message)
 
 
 def _parse_wants_stderr(parse_fn: Any) -> bool:

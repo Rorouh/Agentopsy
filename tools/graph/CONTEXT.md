@@ -33,7 +33,8 @@ sistema:
    ground-truth.
 5. **`Tool`** — contrato de tool de **enum cerrada**; la ÚNICA vía sancionada de
    ejecución (`run_argv`, shell-free). (SECURITY INVARIANTS 4-5)
-6. **`ArtifactStore` / `ArtifactRun`** — manifiesto por corrida + ficheros de salida
+6. **`ArtifactStore` / `ArtifactRun`** — manifiesto por corrida con argv literal
+   fijado antes del runner, estados `running | finished | error` y ficheros de salida
    hasheados.
 7. **`load_package()` / `AgentPackageError` / `AgentRegistry`** — carga, valida e
    indexa los paquetes declarativos `agentes/<id>/` por `os_profile`.
@@ -54,8 +55,9 @@ tamper).
 **Casos** — `Case` / `CaseManager` (ciclo de vida, `case.json` por dir, confinamiento
 de directorio).
 
-**Almacenes por caso** — `ArtifactStore`/`ArtifactRun`; `FindingStore` (findings
-estructurados, JSONL append-only); `ChatStore` (JSONL por sesión de chat).
+**Almacenes por caso** — `ArtifactStore`/`ArtifactRun` (argv fijado y estados
+`running | finished | error`); `FindingStore` (findings estructurados, JSONL
+append-only); `ChatStore` (JSONL por sesión de chat).
 
 **Paquetes de agente** — tipos (`AgentPackageModel` / `Policy` / `Prompts`), parsers
 (`AgentPackageError`), loader (`load_package`), registro (`AgentRegistry`: descubre +
@@ -74,7 +76,8 @@ replay de chat `build_replay_messages()`.
 API keys en el repo (RULE 7).
 
 **Toolkit** — `catalog` (`by_tier` / `for_profile`, `Tool` de enum cerrada);
-`dispatcher.execute()` (`(tool_id, params) → argv → resultado parseado`); `maletin`
+`dispatcher.execute()` (`tool + params → ArtifactRun → argv fijado → tool_run_start
+durable → runner → intento único de finish o error accionable`); `maletin`
 (allowlist ∩ catalog, `select_maletin` por `os_profile` sin fallback, sonda de
 disponibilidad para `capabilities`); `resolver` (binario / runtime OCI);
 `run_in_container`; `Tool.run_argv()` shell-free.

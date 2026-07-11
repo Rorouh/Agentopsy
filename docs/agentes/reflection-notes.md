@@ -247,3 +247,52 @@ inventados.
 limpio; los 12 evals deben re-correrse para confirmar que `tool_recall` no baja en los
 casos con `regripper` (001/002/003/004/008/010) y que no aparecen técnicas fuera de semilla
 (pendiente de corrida del operador con el harness).
+
+---
+
+## Nota metodológica — `codex exec` sobre evidencia real: ejecuta en el host y se contamina (2026-07-11)
+
+**Contexto.** Primera corrida de disco M57 (`jo-2009-12-11-001.E01`, día de incautación)
+con `run_investigation.py --motor codex --type disk --mode forensia`. El objetivo era
+medir la **decisión** (contrato `{tool_id, params}`, sin ejecutar). No salió limpio.
+
+**Qué pasó (evidencia en el `.md` de `results/investigations/`).**
+
+1. **`codex exec` es agéntico y ejecuta en el host pese al `--mode forensia`.** El
+   `--mode` solo cambia el prompt; el CLI corre comandos igual. En la traza: sondeó
+   binarios, hizo `Get-ChildItem C:\Program Files -Recurse` (irrelevante, sobre el HOST,
+   no la evidencia → timeout 30 s + volcado gigante), probó WSL y `docker` (→ *permission
+   denied*). No se confinó a la evidencia ni siguió el flujo de custodia.
+2. **Sin forma real de leer el `.E01`.** El entorno base no tiene `pyewf`/`pytsk3`/`dfvfs`,
+   TSK no está y docker le dio permiso denegado. Aun así el informe emitió hallazgos
+   **específicos con procedencia y SHA-256** (`dbx_Outbox.dbx` SHA-256…,
+   `js9999sj@yahoo.com`, «Jordan Stanford», `Pics\Hidden`, TrueCrypt). Si no pudo abrir la
+   imagen, esa procedencia es **fabricada**.
+3. **Contaminación de pre-entrenamiento.** M57-Patents es un CTF público conocido; el
+   modelo puede estar **recordando la solución** de su entrenamiento y presentándola como
+   «hallada» en el disco. Rompe la disciplina de hold-out (principio 1: la solución nunca
+   la ve el agente — aquí la trae de fábrica) y la cadena de custodia (regla 3/4: cada
+   afirmación cita un artefacto real; no inventar).
+
+**Regla operativa (para no repetirlo).**
+
+- **NO usar `codex`/`codex_auto` sobre el host para medir la decisión** en casos
+  **públicos** (M57, LoneWolf): ejecuta en el host y está contaminado. Que los hallazgos
+  «suenen bien» es la trampa: aciertan porque el modelo conoce el caso, no porque analice
+  la evidencia.
+- **Medición de decisión válida y sin contaminar:** `run_eval.py` single-shot sobre los
+  **12 `case-win-*` sintéticos** (generados por el equipo → no memorizables). Es el
+  baseline congelado y el instrumento limpio (`--mode forensia`, sin ejecución real).
+- **Ejecución real sobre evidencia:** solo por el **camino producto** (api → dispatcher →
+  exec-agent → maletín) con `ewfmount` para el `.E01` (RULE 1). El agente llega a la
+  evidencia SOLO por el handle read-only + su allowlist; nunca por shell del host. Vía 2 /
+  infra, pendiente.
+- **Si aun así se corre `codex_auto` de laboratorio** (validar *playbook*, no producto):
+  hacerlo sobre una imagen **NO pública / desconocida por el modelo** y con las tools
+  realmente instaladas en el entorno del CLI; y no tomar sus SHA-256/artefactos como
+  procedencia válida sin el maletín detrás.
+
+**Gap de maletín asociado.** La TSK de `toolkit-unix` no trae libewf (`mmls -i ewf` →
+«Unsupported image type»): hoy el `.E01` se abre con `ewfmount` (FUSE, RO) antes de
+`mmls`/`fls`. A cubrir en infra: recompilar sleuthkit con libewf o que el dispatcher
+enrute EWF por `ewfmount`.

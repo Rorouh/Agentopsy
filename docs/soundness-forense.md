@@ -47,6 +47,26 @@ Esquema por entrada:
   stdout_sha256, stderr_sha256, artifact_sha256, consent_ref?, entry_hash }
 ```
 
+El límite del runner distingue dos resultados que no son intercambiables. Si el
+proceso devuelve un código —cero o distinto de cero— la ejecución terminó y se
+registra ese `exit_code` literal con `status: "finished"`. Si el transporte,
+el timeout o el runner lanzan antes de devolver un código, no existe un código
+que registrar: el `ArtifactRun` se cierra con `status: "error"`,
+`exit_code: null`, el tipo/mensaje real y los streams parciales disponibles.
+Para que ese intento sea trazable, `tool_run_start` con el argv exacto debe
+haber quedado durable en el AuditLog **antes** de cruzar el límite del runner.
+Si no se puede persistir el start, la herramienta se rechaza sin ejecutar.
+Tras un start se intenta como máximo un finish, sin retry ambiguo: el pareado
+depende de que ArtifactStore y AuditLog continúen escribibles. Un fallo del
+append final se propaga sin reejecutar la herramienta y conserva la causa
+primaria cuando existe.
+
+El timeout local (`subprocess.TimeoutExpired`) pertenece al segundo caso y queda
+`error/null`. El timeout interno del exec-agent remoto todavía responde
+`timed_out=true` con `exit=124`; el cliente actual lo trata como retorno normal y
+queda `finished/124`. Esta diferencia es un gap pendiente de decisión, no una
+equivalencia forense.
+
 Además del **comando literal por tool run** (lo escribe el dispatcher), el loop del agente
 añade eventos de nivel-agente que el dispatcher no puede ver, encadenados en la misma
 `audit.jsonl`: `agent_run_start` (caso, evidencia + hash, backend, modelo), `agent_cloud_egress`
@@ -65,8 +85,10 @@ devolviendo `True` tras la mezcla.
 
 **MCP transparency** (L1 del servidor MCP): el adaptador MCP **NO** escribe en
 `audit.jsonl` directamente — solo el `dispatcher.execute()` lo hace. Una llamada
-`tools/call` por MCP produce exactamente una entrada `tool_run_start` + una
-`tool_run_finish`. Las únicas entradas adicionales que escribe la capa MCP son las del
+`tools/call` por MCP que alcanza el runner produce una entrada `tool_run_start` e
+intenta emitir como máximo un `tool_run_finish`; el pareado requiere que el
+AuditLog siga escribible. Las únicas
+entradas adicionales que escribe la capa MCP son las del
 ciclo de sesión: `mcp_session_open` (al arrancar el servidor, con `consent_ref` y
 `redaction_mode`), `mcp_session_select_case` (al seleccionar caso, con `consent_ref` y
 `agent_package`), y `mcp_session_close` (al apagar). El argv literal sigue siendo lo que

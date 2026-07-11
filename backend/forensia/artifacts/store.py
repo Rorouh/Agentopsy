@@ -2,10 +2,12 @@
 
 Each run owns a ``manifest.json`` (the canonical record), ``stdout.txt`` and
 ``stderr.txt`` captures, and an ``out/`` directory that the wrapper uses as its
-``output_dir``. Every captured byte is hashed (chunked SHA-256) on finalize so
-the chain-of-custody invariants hold: the manifest records the LITERAL argv
-executed (never the LLM's stated intent), the exit code, and the SHA-256 of
-each artifact produced.
+``output_dir``. Every captured byte is hashed (chunked SHA-256) when the run is
+closed so the chain-of-custody invariants hold: the manifest records the LITERAL
+argv executed (never the LLM's stated intent), the real exit code when one was
+returned, and the SHA-256 of each artifact produced. A runner/transport exception
+closes the run with ``status='error'`` and ``exit_code=null`` rather than inventing
+an exit code for a process that did not return one.
 
 Manifest writes are atomic (``*.tmp`` + ``os.replace``) — a crash mid-write
 never leaves a half-baked canonical record on disk.
@@ -21,6 +23,7 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Literal
 
 from forensia.cases.manager import CaseManager, case_manager
 
@@ -29,6 +32,8 @@ _UUID4_RE = re.compile(
     re.IGNORECASE,
 )
 _CHUNK_SIZE = 1024 * 1024  # 1 MiB — never read whole files into memory.
+
+RunStatus = Literal["running", "finished", "error"]
 
 
 def _now_iso() -> str:
@@ -77,10 +82,13 @@ class ArtifactRun:
     argv: list[str]  # literal argv as executed (NOT the LLM's intent)
     started_at: str  # ISO-8601 UTC
     finished_at: str | None  # None while in-flight
-    exit_code: int | None  # None while in-flight
+    status: RunStatus
+    exit_code: int | None  # None while in-flight or when the runner did not return
     output_files: list[OutputFile] = field(default_factory=list)
     stdout_sha256: str | None = None
     stderr_sha256: str | None = None
+    error_type: str | None = None
+    error_message: str | None = None
 
 
 class ArtifactStore:
@@ -127,11 +135,68 @@ class ArtifactStore:
             argv=list(manifest["argv"]),
             started_at=manifest["started_at"],
             finished_at=manifest.get("finished_at"),
+            status=manifest.get("status", "running"),
             exit_code=manifest.get("exit_code"),
             output_files=output_files,
             stdout_sha256=manifest.get("stdout_sha256"),
             stderr_sha256=manifest.get("stderr_sha256"),
+            error_type=manifest.get("error_type"),
+            error_message=manifest.get("error_message"),
         )
+
+    def _open_manifest(self, case_id: str, run_id: str) -> tuple[Path, dict]:
+        """Return ``(run_dir, manifest)`` for a still-running invocation."""
+        run_dir = self._run_dir(case_id, run_id)
+        manifest_path = run_dir / "manifest.json"
+        if not manifest_path.exists():
+            raise KeyError(f"unknown run_id for case {case_id}: {run_id}")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if manifest.get("status") != "running":
+            raise KeyError(f"run {run_id} for case {case_id} is already finalized")
+        return run_dir, manifest
+
+    def _close_run(
+        self,
+        case_id: str,
+        run_id: str,
+        *,
+        status: Literal["finished", "error"],
+        exit_code: int | None,
+        stdout: str,
+        stderr: str,
+        error_type: str | None,
+        error_message: str | None,
+    ) -> ArtifactRun:
+        """Persist streams/hashes and atomically close a running manifest."""
+        if not isinstance(stdout, str) or not isinstance(stderr, str):
+            raise ValueError("stdout/stderr must be str (decoded)")
+
+        run_dir, manifest = self._open_manifest(case_id, run_id)
+
+        # Persist stdout/stderr atomically, then hash from disk so the recorded
+        # digest matches the bytes that actually live on the filesystem.
+        stdout_path = run_dir / "stdout.txt"
+        stderr_path = run_dir / "stderr.txt"
+        _atomic_write_text(stdout_path, stdout)
+        _atomic_write_text(stderr_path, stderr)
+        stdout_sha256, _ = _hash_file(stdout_path)
+        stderr_sha256, _ = _hash_file(stderr_path)
+
+        output_files = self._scan_out_dir(run_dir / "out")
+        manifest.update(
+            {
+                "finished_at": _now_iso(),
+                "exit_code": exit_code,
+                "status": status,
+                "stdout_sha256": stdout_sha256,
+                "stderr_sha256": stderr_sha256,
+                "output_files": [asdict(of) for of in output_files],
+                "error_type": error_type,
+                "error_message": error_message,
+            }
+        )
+        _atomic_write_json(run_dir / "manifest.json", manifest)
+        return self._manifest_to_run(case_id, manifest)
 
     # ---------- public API ----------
 
@@ -166,9 +231,25 @@ class ArtifactStore:
             "output_files": [],
             "stdout_sha256": None,
             "stderr_sha256": None,
+            "error_type": None,
+            "error_message": None,
         }
         _atomic_write_json(run_dir / "manifest.json", manifest)
         return run_id, out_dir
+
+    def set_run_argv(self, case_id: str, run_id: str, argv: list[str]) -> ArtifactRun:
+        """Persist the resolved literal argv while the run is still open.
+
+        The dispatcher opens the run before building argv because wrappers may need
+        ``output_dir``. Once the venue and exact argv are known, it calls this method
+        before writing ``tool_run_start`` or invoking the runner.
+        """
+        if not isinstance(argv, list) or not argv or not all(isinstance(a, str) for a in argv):
+            raise ValueError("argv must be a non-empty list[str] (literal executed argv)")
+        run_dir, manifest = self._open_manifest(case_id, run_id)
+        manifest["argv"] = list(argv)
+        _atomic_write_json(run_dir / "manifest.json", manifest)
+        return self._manifest_to_run(case_id, manifest)
 
     def finalize_run(
         self,
@@ -189,42 +270,47 @@ class ArtifactStore:
         """
         if not isinstance(exit_code, int):
             raise ValueError("exit_code must be an int")
-        if not isinstance(stdout, str) or not isinstance(stderr, str):
-            raise ValueError("stdout/stderr must be str (decoded)")
-
-        run_dir = self._run_dir(case_id, run_id)
-        manifest_path = run_dir / "manifest.json"
-        if not manifest_path.exists():
-            raise KeyError(f"unknown run_id for case {case_id}: {run_id}")
-
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        if manifest.get("status") == "finished":
-            raise KeyError(f"run {run_id} for case {case_id} is already finalized")
-
-        # Persist stdout/stderr atomically, then hash from disk so the recorded
-        # digest matches the bytes that actually live on the filesystem.
-        stdout_path = run_dir / "stdout.txt"
-        stderr_path = run_dir / "stderr.txt"
-        _atomic_write_text(stdout_path, stdout)
-        _atomic_write_text(stderr_path, stderr)
-        stdout_sha256, _ = _hash_file(stdout_path)
-        stderr_sha256, _ = _hash_file(stderr_path)
-
-        out_dir = run_dir / "out"
-        output_files = self._scan_out_dir(out_dir)
-
-        manifest.update(
-            {
-                "finished_at": _now_iso(),
-                "exit_code": exit_code,
-                "status": "finished",
-                "stdout_sha256": stdout_sha256,
-                "stderr_sha256": stderr_sha256,
-                "output_files": [asdict(of) for of in output_files],
-            }
+        return self._close_run(
+            case_id,
+            run_id,
+            status="finished",
+            exit_code=exit_code,
+            stdout=stdout,
+            stderr=stderr,
+            error_type=None,
+            error_message=None,
         )
-        _atomic_write_json(manifest_path, manifest)
-        return self._manifest_to_run(case_id, manifest)
+
+    def fail_run(
+        self,
+        case_id: str,
+        run_id: str,
+        *,
+        error_type: str,
+        error_message: str,
+        stdout: str = "",
+        stderr: str = "",
+    ) -> ArtifactRun:
+        """Close a run whose runner did not return an exit code.
+
+        Partial streams and output files are still persisted and hashed. The
+        canonical manifest records the actionable exception type/message and keeps
+        ``exit_code`` as ``None``.
+        """
+        if not isinstance(error_type, str) or not error_type:
+            raise ValueError("error_type must be a non-empty string")
+        if not isinstance(error_message, str) or not error_message:
+            raise ValueError("error_message must be a non-empty string")
+        return self._close_run(
+            case_id,
+            run_id,
+            status="error",
+            exit_code=None,
+            stdout=stdout,
+            stderr=stderr,
+            error_type=error_type,
+            error_message=error_message,
+        )
 
     def get_run(self, case_id: str, run_id: str) -> ArtifactRun:
         """Read ``manifest.json`` for the given run. Raises ``KeyError`` if missing."""

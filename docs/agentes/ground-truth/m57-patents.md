@@ -137,10 +137,37 @@ tanda de semilla (`T1114/.001`, `T1074/.001`, `T1005`, `T1048`).
 Entrada de **disco** del día de incautación (**2009-12-11**, último día dentro de
 la ventana de la orden 13-nov→12-dic): aquí se resuelve lo que la corrida de
 memoria 11-24 remitió correctamente al disco («Alcance de la memoria vs el
-disco»): contenido de los correos, contacto externo, USB, `$MFT`. La imagen aún
-no tiene fila propia en el manifiesto ([corpus-windows.md](../corpus-windows.md)):
-fichero, SHA-256 baseline y tamaño quedan `<pendiente>` hasta descargar y hashear
-— no se inventan baselines (RULE 2).
+disco»): contenido de los correos, contacto externo, USB, `$MFT`.
+
+**Evidencia ingerida — M0 cerrado (2026-07-11).** Registrada en el manifiesto
+([corpus-windows.md](../corpus-windows.md): filas `m57-patents-jo-disk-20091211` y
+`m57-patents-jo-usb-20091211`). Set del día de incautación, de `drives-redacted/`
+(redactado; el instructor packet cifrado NO se usa):
+
+| fichero | rol | size (bytes) | SHA-256 baseline |
+|---|---|---|---|
+| `jo-2009-12-11-001.E01` | disco de Jo (img 1) | 5 945 571 099 | `8e5035…8238dded` |
+| `jo-2009-12-11-002.E01` | disco de Jo (img 2) | 5 939 239 364 | `6efd38…b53058b7` |
+| `jo-favorites-usb-2009-12-11.E01` | USB personal (`jo-favorites-usb`) | 227 073 046 | `1798e0…de6aec54` |
+| `jo-work-usb-2009-12-11.E01` | USB de trabajo | 118 233 120 | `d3751b…e17c3cc2` |
+
+Tamaños coincidentes al byte con el bucket S3 → descargas íntegras. Baselines
+completos y procedencia en el manifiesto.
+
+**Caracterización (mmls/fls vía `ewfmount`, 2026-07-11).** Ambas imágenes: una única
+partición **NTFS en el sector de offset 63** (~14.3 GiB). El listado raíz del `$MFT`
+es **idéntico** en las dos (mismos inodos: `Documents and Settings`=3657-144-6,
+`Jo`=23117-144-5, `WINDOWS`=28-144-6…) → `-001` y `-002` son la **misma imagen lógica**
+(adquisición redundante del mismo disco). **Disco de sistema para la corrida:
+`jo-2009-12-11-001.E01`** — Windows XP con perfil `Documents and Settings\Jo` presente
+(`WINDOWS/`, `Program Files/`, `boot.ini`, `ntldr`, `pagefile.sys`); `-002` queda como
+copia de verificación.
+
+> **Gap de maletín (para infra).** La TSK del `toolkit-unix` **no trae libewf**
+> (`mmls -i ewf` → «Unsupported image type: ewf»): hoy el `.E01` se abre con
+> `ewfmount` (FUSE, RO) y se corre `mmls`/`fls` sobre `/mnt/ewf1`. A cubrir:
+> recompilar sleuthkit con libewf, o que el dispatcher enrute EWF por `ewfmount`
+> transparentemente (RULE 1).
 
 Método común a las filas, sin montar el sistema de ficheros (FORENSIC INVARIANTS
 §3): `tsk_mmls` (layout de particiones) → `tsk_fls` (enumeración, incluidos

@@ -57,6 +57,8 @@ reproduce el mismo digest para poder anotarlo aquí.
 | `lonewolf-2018-disk` | LoneWolf (Windows 10) — disco | [2018 Lone Wolf Scenario](https://digitalcorpora.org/corpora/scenarios/2018-lone-wolf-scenario/) | uso educativo/investigación (ver *Lone Wolf Scenario Copyright.pdf*) | disk | `.E01` (multi-segmento) | Windows 10 | 13 545 502 470 B (~12.62 GiB, E01–E09) | variante (a) E01: **9 segmentos verificados** (tabla por segmento en «Detalle»); variante (b) imagen única `.raw`/ZIP: `<pendiente>` | `evidence-corpus/lonewolf-2018/` | [lonewolf-2018.md](ground-truth/lonewolf-2018.md) |
 | `lonewolf-2018-memory` | LoneWolf (Windows 10) — memoria RAM | [2018 Lone Wolf Scenario](https://digitalcorpora.org/corpora/scenarios/2018-lone-wolf-scenario/) | uso educativo/investigación (ver *Lone Wolf Scenario Copyright.pdf*) | memory | `.mem` (raw, Volatility3) | Windows 10 | ~17 GB | `<pendiente: computar tras descarga con scripts/hash-evidence.py>` | `evidence-corpus/lonewolf-2018/` | [lonewolf-2018.md](ground-truth/lonewolf-2018.md) |
 | `m57-patents-jo-mem-20091124` | M57-Patents (Jo, Windows XP) — memoria RAM 2009-11-24 | [2009 M57-Patents](https://digitalcorpora.org/corpora/scenarios/m57-patents-scenario/) | uso educativo/investigación (solución restringida a faculty) | memory | `.mddramimage` (raw mdd, dentro de ZIP) | Windows XP | 1 071 632 384 B (~1.02 GiB) | `5abe455dd05b0a8728e8e155212c49b4a78f3cf1b695c463938c0431eaf959ec` | `evidence-corpus/m57-patents/ram/jo-2009-11-24/` | [m57-patents.md](ground-truth/m57-patents.md) (derivado de fuentes públicas) |
+| `m57-patents-jo-disk-20091211` | M57-Patents (Jo, Windows XP) — disco de incautación 2009-12-11 (2 imágenes) | [2009 M57-Patents](https://digitalcorpora.org/corpora/scenarios/m57-patents-scenario/) | uso educativo/investigación (solución restringida a faculty) | disk | `.E01` redactado (EWF de segmento único; `drives-redacted/`) | Windows XP | 11 884 810 463 B (~11.07 GiB; -001 + -002) | por fichero (ver «Detalle: disco+USB 12-11») | `evidence-corpus/m57-patents/disk/jo-2009-12-11/` | [m57-patents.md](ground-truth/m57-patents.md) (sección disco 12-11) |
+| `m57-patents-jo-usb-20091211` | M57-Patents (Jo) — USB incautados 2009-12-11 (favorites + work) | [2009 M57-Patents](https://digitalcorpora.org/corpora/scenarios/m57-patents-scenario/) | uso educativo/investigación (solución restringida a faculty) | usb | `.E01` redactado (EWF; `drives-redacted/`) | FAT (USB) | 345 306 166 B (~329 MiB; favorites + work) | por fichero (ver «Detalle: disco+USB 12-11») | `evidence-corpus/m57-patents/disk/jo-2009-12-11/` | [m57-patents.md](ground-truth/m57-patents.md) (fila USB) |
 
 ### Hash de adquisición (FTK) — solo entrada de disco
 
@@ -170,3 +172,34 @@ Tamaño total verificado: 13545502470 bytes (~12.62 GiB).
   detective report, affidavit; NO del instructor packet cifrado). Hilo Jo /
   exfiltración de patentes vía Outlook Express + staging en `Pics\Hidden`; incluye
   el scoring de la corrida zero-shot 11-24 y las ampliaciones MITRE propuestas.
+
+### `m57-patents-jo-disk-20091211` + `…-usb-20091211` — disco+USB Windows XP (Jo, incautación 12-11)
+
+- **Escenario / origen**: [2009 M57-Patents](https://digitalcorpora.org/corpora/scenarios/m57-patents-scenario/),
+  carpeta `drives-redacted/` (imágenes **redactadas** → coherente con soundness/GDPR;
+  el instructor packet cifrado, la solución, NO se usa).
+- **Descarga** (bucket público, sin credenciales):
+  `aws s3 cp --no-sign-request s3://digitalcorpora/corpora/scenarios/2009-m57-patents/drives-redacted/<fichero> <destino>`
+  (o HTTPS directo `https://digitalcorpora.s3.amazonaws.com/corpora/scenarios/2009-m57-patents/drives-redacted/<fichero>`).
+- **Set del día de incautación (2009-12-11)**, último día de la ventana de la orden
+  (13-nov→12-dic). Los dos discos `-001`/`-002` son **imágenes EWF de segmento único
+  INDEPENDIENTES** (no segmentos de un mismo set: el bucket no publica `.E02` para
+  ellas). Cuál lleva el perfil/OS de Jo (Outlook Express, `$MFT`, `Pics\Hidden`,
+  hives) se determina con `tsk_mmls`/`tsk_fls` tras la ingesta — **no se asume** (RULE 2).
+- **Baselines SHA-256** (computados con `scripts/hash-evidence.py` sobre los ficheros
+  descargados, 2026-07-11):
+
+| fichero | rol | sha256 | size (bytes) |
+|---|---|---|---|
+| `jo-2009-12-11-001.E01` | disco de Jo (img 1) | `8e5035afa164d89d69c7d6316a4f0ac0e995e4b9a00e558000ffde2e8238dded` | 5945571099 |
+| `jo-2009-12-11-002.E01` | disco de Jo (img 2) | `6efd385e39f63c4e9e7b5e4306ec1336886df22eba983037075e1c78b53058b7` | 5939239364 |
+| `jo-favorites-usb-2009-12-11.E01` | USB personal (`jo-favorites-usb`) | `1798e0436f99f2490dbf92f09fdf7956b0f2a6cf6cafde6a426094c9de6aec54` | 227073046 |
+| `jo-work-usb-2009-12-11.E01` | USB de trabajo | `d3751b55c1b88e1a5fb1940a9a41cc87e750b61e4aa59f9c76bd2f17e17c3cc2` | 118233120 |
+
+> Los cuatro tamaños coinciden **al byte** con los publicados por el bucket S3
+> (listado `drives-redacted/`) → descargas íntegras (sin truncado). El `SHA-256` es el
+> ancla propia: DigitalCorpora no publica SHA-256 por fichero, y el ETag S3 de las
+> subidas multiparte no es un MD5 comparable. Se **re-verifica** al abrir/cerrar sesión
+> (FORENSIC INVARIANTS §2).
+- **Ground-truth**: [m57-patents.md](ground-truth/m57-patents.md), sección «Hallazgos
+  esperados (disco de Jo, 12-11)».

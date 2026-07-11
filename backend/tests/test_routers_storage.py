@@ -324,6 +324,59 @@ class TestArtifactsRoutes:
         assert r2.status_code == 200
         assert r2.json()["exit_code"] == 0
 
+    def test_http_exposes_finished_and_error_run_states(
+        self, client, auth, isolated_storage
+    ):
+        case_id = self._new_case(client, auth)
+        artifacts = isolated_storage["artifacts"]
+
+        finished_id, _ = artifacts.start_run(case_id, "tool_ok", argv=["ok"])
+        artifacts.finalize_run(
+            case_id,
+            finished_id,
+            exit_code=17,
+            stdout="normal stdout",
+            stderr="normal stderr",
+        )
+
+        error_id, _ = artifacts.start_run(case_id, "tool_error", argv=["error"])
+        artifacts.fail_run(
+            case_id,
+            error_id,
+            error_type="MaletinExecError",
+            error_message="exec-agent connection refused",
+            stdout="partial stdout",
+            stderr="partial stderr",
+        )
+
+        listed = client.get(f"/api/cases/{case_id}/artifacts", headers=auth)
+        assert listed.status_code == 200
+        by_id = {run["run_id"]: run for run in listed.json()}
+        assert by_id[finished_id]["status"] == "finished"
+        assert by_id[finished_id]["exit_code"] == 17
+        assert by_id[finished_id]["error_type"] is None
+        assert by_id[finished_id]["error_message"] is None
+        assert by_id[error_id]["status"] == "error"
+        assert by_id[error_id]["exit_code"] is None
+        assert by_id[error_id]["error_type"] == "MaletinExecError"
+        assert by_id[error_id]["error_message"] == "exec-agent connection refused"
+
+        finished = client.get(
+            f"/api/cases/{case_id}/artifacts/{finished_id}", headers=auth
+        )
+        assert finished.status_code == 200
+        assert finished.json()["status"] == "finished"
+        assert finished.json()["exit_code"] == 17
+
+        failed = client.get(
+            f"/api/cases/{case_id}/artifacts/{error_id}", headers=auth
+        )
+        assert failed.status_code == 200
+        assert failed.json()["status"] == "error"
+        assert failed.json()["exit_code"] is None
+        assert failed.json()["error_type"] == "MaletinExecError"
+        assert failed.json()["error_message"] == "exec-agent connection refused"
+
 
 # --------------------------------------------------------------------------- #
 # /api/cases/{case_id}/chats

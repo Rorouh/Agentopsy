@@ -1,6 +1,6 @@
 # Canal api→maletín: el exec-agent (§B)
 
-Cómo el servicio `api` consulta y (a futuro) ejecuta herramientas forenses que viven
+Cómo el servicio `api` consulta y ejecuta herramientas forenses que viven
 dentro de los maletines (`toolkit-unix` / `toolkit-windows`), **sin** el socket de Docker
 del host. Es el cableado elegido en `proximos-pasos.md` §B.bis.
 
@@ -50,6 +50,46 @@ resuelve el argv desde el allowlist, elige el maletín por el `os_profile` del c
 (`_select_maletin`, sin fallback entre maletines — RULE 2) y lanza `POST /exec` vía
 `forensia.toolkit.maletin.run_argv_in_maletin`. El mismo canal alimenta el sondeo de
 `capabilities` (`/health` + `/which`).
+
+Para una ejecución anclada a caso, el límite auditable está antes del transporte:
+
+1. el dispatcher valida la tool y sus params, abre el `ArtifactRun`, construye el argv
+   literal y resuelve una única ubicación de ejecución;
+2. persiste ese argv en el manifiesto y añade `tool_run_start` al `audit.jsonl`
+   hash-encadenado;
+3. solo después invoca `run_argv` local o `POST /exec` en el maletín seleccionado;
+4. cuando el runner devuelve —también con exit code distinto de cero— finaliza el
+   `ArtifactRun` e intenta añadir como máximo un `tool_run_finish` con el exit code
+   literal y hashes.
+
+Si el transporte, el timeout local o la invocación lanzan una excepción después del start,
+el `ArtifactRun` se cierra con `status: "error"`, `exit_code: null` y el
+tipo/mensaje de la excepción. El dispatcher intenta emitir como máximo un
+`tool_run_finish` de error con esos datos; no se inventa un exit code ni se reintenta
+en otro maletín. Un
+rechazo anterior a disponer de un argv ejecutable (tool desconocida, params inválidos o
+selección imposible) no genera un `tool_run_start` que afirme una ejecución inexistente.
+
+El pareado start/finish depende de que `ArtifactStore` y `AuditLog` sigan escribibles;
+no se promete frente a `kill -9`, caída de máquina, corrupción irrecuperable o fallo
+del append final. Cada cierre se intenta **una sola vez**, porque un error de
+flush/fsync deja incierto si la línea llegó a disco y un retry podría duplicarla. El
+dispatcher propaga ese fallo como `ToolExecutionError` accionable, conserva como causa
+la excepción primaria cuando existe y no reejecuta la herramienta. Si falla el append
+del `tool_run_start`, la tool se rechaza sin ejecutar, no se intenta un finish sin start
+y el `ArtifactRun` reservado se cierra como `error`.
+
+Hay dos timeouts con semántica actual distinta:
+
+- `subprocess.TimeoutExpired` del runner local cruza el dispatcher como excepción:
+  `ArtifactRun.status="error"` y `exit_code=null`, con streams parciales.
+- El timeout interno del exec-agent remoto se serializa hoy como
+  `{"timed_out": true, "exit": 124, ...}`. `maletin.py` devuelve ese `124` como un
+  resultado normal, por lo que el dispatcher registra `status="finished"` y
+  `exit_code=124`.
+
+Unificar o distinguir formalmente esa segunda semántica es un gap pendiente de una
+decisión separada; este cambio no modifica `maletin.py` ni el exec-agent.
 
 ## Seguridad
 

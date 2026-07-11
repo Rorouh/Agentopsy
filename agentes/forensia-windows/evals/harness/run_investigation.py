@@ -34,6 +34,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 try:
@@ -202,14 +203,8 @@ def main() -> None:
     else:
         argv = [exe] + argv[1:]
 
-    header = (
-        f"# Investigación FORENSIA-WIN\n"
-        f"- motor: {args.motor}\n- modelo: {args.model or motor.get('default_model','')}\n"
-        f"- evidencia: {args.evidence}\n- cwd: {workdir}\n- comando: {argv}\n- fecha: {ts}\n\n"
-        f"{'='*78}\n\n"
-    )
-
     print(f"Ejecutando {args.motor} en {workdir} ... (salida -> {out})")
+    _t0 = time.monotonic()
     try:
         proc = subprocess.run(
             argv, input=stdin_text, cwd=str(workdir), capture_output=True,
@@ -230,8 +225,24 @@ def main() -> None:
         if tmp and tmp.exists():
             tmp.unlink()
 
+    # Duración de pared del análisis del agente (para estimar tiempos por motor /
+    # tipo de evidencia y hacer cálculos de coste). Medida alrededor de la llamada
+    # al CLI, así que incluye el análisis completo del agente (no el arranque de este
+    # script). `duracion_s` es parseable; `duracion` es H:MM:SS legible.
+    elapsed_s = time.monotonic() - _t0
+    elapsed_h = str(_dt.timedelta(seconds=round(elapsed_s)))
+
+    header = (
+        f"# Investigación FORENSIA-WIN\n"
+        f"- motor: {args.motor}\n- modelo: {args.model or motor.get('default_model','')}\n"
+        f"- evidencia: {args.evidence}\n- tipo: {args.type or 'prompt-file'}\n"
+        f"- cwd: {workdir}\n- comando: {argv}\n- fecha: {ts}\n"
+        f"- duracion_s: {elapsed_s:.1f}\n- duracion: {elapsed_h}\n\n"
+        f"{'='*78}\n\n"
+    )
+
     out.write_text(header + body, encoding="utf-8")
-    print(f"OK: guardado en {out}")
+    print(f"OK: guardado en {out}  (duracion {elapsed_s:.1f}s / {elapsed_h})")
 
 
 if __name__ == "__main__":
