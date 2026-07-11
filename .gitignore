@@ -18,6 +18,12 @@
 *_findings.json
 /results/investigations/
 
+# --- Knowledge graph (tools/graph): the readable snapshot (graph.json,
+#     GRAPH_REPORT.md, graph.html, forensia-graph.json) IS committed so the project
+#     architecture is available on clone / at chat start. Only the machine-specific
+#     SHA256 cache is excluded (churny, not portable across machines).
+tools/graph/out/**/cache/
+
 # --- Evidence corpus (CTF images: too large / licensed; referenced by URL+SHA-256
 #     in docs/agentes/corpus-windows.md, NEVER stored in git). The folder ignore
 #     also covers companion artefacts with no dedicated extension rule above,

@@ -1,0 +1,612 @@
+{
+  "forensia/__init__.py": {
+    "mtime": 1783675713.6270554,
+    "ast_hash": "3ae496f0bb81db2428cec4ed02b8808e",
+    "semantic_hash": "3ae496f0bb81db2428cec4ed02b8808e"
+  },
+  "forensia/_version.py": {
+    "mtime": 1783675713.6278224,
+    "ast_hash": "031d2b105914bd41498040b838c6e3b1",
+    "semantic_hash": "031d2b105914bd41498040b838c6e3b1"
+  },
+  "forensia/agent/__init__.py": {
+    "mtime": 1783675713.6288295,
+    "ast_hash": "906cf9e95692d763880c8914a394e0e6",
+    "semantic_hash": "906cf9e95692d763880c8914a394e0e6"
+  },
+  "forensia/agent/agent.py": {
+    "mtime": 1783675419.0612552,
+    "ast_hash": "eac3ac2c2d953bfabc61b04d5ee56531",
+    "semantic_hash": "eac3ac2c2d953bfabc61b04d5ee56531"
+  },
+  "forensia/agent/context.py": {
+    "mtime": 1783675713.6308286,
+    "ast_hash": "360c1dac17e2ae616e4150e40aadd568",
+    "semantic_hash": "360c1dac17e2ae616e4150e40aadd568"
+  },
+  "forensia/agent/history.py": {
+    "mtime": 1783675713.6318343,
+    "ast_hash": "a6c7c0075edab3ad73e05bd0fa97b0fc",
+    "semantic_hash": "a6c7c0075edab3ad73e05bd0fa97b0fc"
+  },
+  "forensia/agent/loader.py": {
+    "mtime": 1783675713.6318343,
+    "ast_hash": "fff25bc607bea4c2bc8d4d2c3882da3e",
+    "semantic_hash": "fff25bc607bea4c2bc8d4d2c3882da3e"
+  },
+  "forensia/agent/package.py": {
+    "mtime": 1783675713.632834,
+    "ast_hash": "13e84cbd27751324749a2630917a85d7",
+    "semantic_hash": "13e84cbd27751324749a2630917a85d7"
+  },
+  "forensia/agent/redaction.py": {
+    "mtime": 1783675713.6338315,
+    "ast_hash": "d56077908e675000e65c822edfcf0a3b",
+    "semantic_hash": "d56077908e675000e65c822edfcf0a3b"
+  },
+  "forensia/agent/registry.py": {
+    "mtime": 1783675713.6353352,
+    "ast_hash": "005d13817359fe613019ea4d75430d8f",
+    "semantic_hash": "005d13817359fe613019ea4d75430d8f"
+  },
+  "forensia/agent/tool_schemas.py": {
+    "mtime": 1783675419.0622544,
+    "ast_hash": "efeb373716f6712f31d144ecbe905bab",
+    "semantic_hash": "efeb373716f6712f31d144ecbe905bab"
+  },
+  "forensia/artifacts/__init__.py": {
+    "mtime": 1783675713.6363428,
+    "ast_hash": "306601e074c8993d67996c053dd484bf",
+    "semantic_hash": "306601e074c8993d67996c053dd484bf"
+  },
+  "forensia/artifacts/store.py": {
+    "mtime": 1783675713.6373467,
+    "ast_hash": "6489c59ba6e36e48cc1d50e60e75494d",
+    "semantic_hash": "6489c59ba6e36e48cc1d50e60e75494d"
+  },
+  "forensia/audit/__init__.py": {
+    "mtime": 1783675713.6383462,
+    "ast_hash": "4803e52289a75dc6fd24f7a64b4c7503",
+    "semantic_hash": "4803e52289a75dc6fd24f7a64b4c7503"
+  },
+  "forensia/audit/log.py": {
+    "mtime": 1783675713.6383462,
+    "ast_hash": "6501afd89dfe1c1cc0a77b294024f045",
+    "semantic_hash": "6501afd89dfe1c1cc0a77b294024f045"
+  },
+  "forensia/capabilities.py": {
+    "mtime": 1783675713.6403472,
+    "ast_hash": "8b1c44297ada7275853c81475773dc7a",
+    "semantic_hash": "8b1c44297ada7275853c81475773dc7a"
+  },
+  "forensia/cases/__init__.py": {
+    "mtime": 1783675713.6403472,
+    "ast_hash": "2424e8085993f65cc0438555d5fb1eb7",
+    "semantic_hash": "2424e8085993f65cc0438555d5fb1eb7"
+  },
+  "forensia/cases/manager.py": {
+    "mtime": 1783675419.0632553,
+    "ast_hash": "4fe0e072c667335ab9648e9eb0655649",
+    "semantic_hash": "4fe0e072c667335ab9648e9eb0655649"
+  },
+  "forensia/chats/__init__.py": {
+    "mtime": 1783675713.6413434,
+    "ast_hash": "bf89fa053e537bdc0e8ca72548c8c863",
+    "semantic_hash": "bf89fa053e537bdc0e8ca72548c8c863"
+  },
+  "forensia/chats/store.py": {
+    "mtime": 1783675713.6423433,
+    "ast_hash": "2ed53448de44176022637269f0fefab8",
+    "semantic_hash": "2ed53448de44176022637269f0fefab8"
+  },
+  "forensia/config.py": {
+    "mtime": 1783675713.6433456,
+    "ast_hash": "4368a6ada5908164d6950f1f986d922e",
+    "semantic_hash": "4368a6ada5908164d6950f1f986d922e"
+  },
+  "forensia/consent.py": {
+    "mtime": 1783675713.6448581,
+    "ast_hash": "28bb02b08d8411f178fc7dbf571b46c4",
+    "semantic_hash": "28bb02b08d8411f178fc7dbf571b46c4"
+  },
+  "forensia/evidence.py": {
+    "mtime": 1783675419.0632553,
+    "ast_hash": "47f4d8e327284f4c8765a551c64ded61",
+    "semantic_hash": "47f4d8e327284f4c8765a551c64ded61"
+  },
+  "forensia/executors/__init__.py": {
+    "mtime": 1783675713.6453805,
+    "ast_hash": "a339f6bcf4dcf648563c764e245af549",
+    "semantic_hash": "a339f6bcf4dcf648563c764e245af549"
+  },
+  "forensia/executors/base.py": {
+    "mtime": 1783675713.6467326,
+    "ast_hash": "b8bf255b7c976bf969a038781a28c7de",
+    "semantic_hash": "b8bf255b7c976bf969a038781a28c7de"
+  },
+  "forensia/executors/claude_code.py": {
+    "mtime": 1783675713.648245,
+    "ast_hash": "e2352663df8abe04c09bf095488d8c5e",
+    "semantic_hash": "e2352663df8abe04c09bf095488d8c5e"
+  },
+  "forensia/executors/codex.py": {
+    "mtime": 1783675713.650253,
+    "ast_hash": "610fdc69c10fc6162f81cd146fecfe8f",
+    "semantic_hash": "610fdc69c10fc6162f81cd146fecfe8f"
+  },
+  "forensia/executors/gemini.py": {
+    "mtime": 1783675713.6512532,
+    "ast_hash": "53ca15777c30e74cbe468333e790568f",
+    "semantic_hash": "53ca15777c30e74cbe468333e790568f"
+  },
+  "forensia/executors/ollama.py": {
+    "mtime": 1783675713.6522532,
+    "ast_hash": "ce66a4b7f9dd7ec941402f7a0ee1b155",
+    "semantic_hash": "ce66a4b7f9dd7ec941402f7a0ee1b155"
+  },
+  "forensia/findings/__init__.py": {
+    "mtime": 1783675713.6532528,
+    "ast_hash": "2c9400847bf58989ebe0ad9bcd27e036",
+    "semantic_hash": "2c9400847bf58989ebe0ad9bcd27e036"
+  },
+  "forensia/findings/store.py": {
+    "mtime": 1783675713.6547587,
+    "ast_hash": "81bcebe9a65e561e87fc1bdd9ba02965",
+    "semantic_hash": "81bcebe9a65e561e87fc1bdd9ba02965"
+  },
+  "forensia/mcp/__init__.py": {
+    "mtime": 1783675713.6562865,
+    "ast_hash": "1ca28a7e9c6554a2230f587d39cd373e",
+    "semantic_hash": "1ca28a7e9c6554a2230f587d39cd373e"
+  },
+  "forensia/mcp/__main__.py": {
+    "mtime": 1783675713.6562865,
+    "ast_hash": "e18790c07b11d137ad755c22321fa473",
+    "semantic_hash": "e18790c07b11d137ad755c22321fa473"
+  },
+  "forensia/mcp/jira_tools.py": {
+    "mtime": 1783675713.6572926,
+    "ast_hash": "711471252ff065a727f21785c4d8e73b",
+    "semantic_hash": "711471252ff065a727f21785c4d8e73b"
+  },
+  "forensia/mcp/redaction.py": {
+    "mtime": 1783675713.6621337,
+    "ast_hash": "7451457020b08660c93d406a6fbe59c7",
+    "semantic_hash": "7451457020b08660c93d406a6fbe59c7"
+  },
+  "forensia/mcp/resources.py": {
+    "mtime": 1783675713.6626573,
+    "ast_hash": "55047e1a6a4bf8f20b30af76cc0e57c8",
+    "semantic_hash": "55047e1a6a4bf8f20b30af76cc0e57c8"
+  },
+  "forensia/mcp/schemas.py": {
+    "mtime": 1783675419.065279,
+    "ast_hash": "e277501baee27ae903950eb1b2e074e8",
+    "semantic_hash": "e277501baee27ae903950eb1b2e074e8"
+  },
+  "forensia/mcp/session.py": {
+    "mtime": 1783675713.6626573,
+    "ast_hash": "2c4edc25861e27f752b4e5de0ba069ba",
+    "semantic_hash": "2c4edc25861e27f752b4e5de0ba069ba"
+  },
+  "forensia/mcp/toolkit.py": {
+    "mtime": 1783675419.0662854,
+    "ast_hash": "3b0e07106b2c9eae02aa9513b1bd3a16",
+    "semantic_hash": "3b0e07106b2c9eae02aa9513b1bd3a16"
+  },
+  "forensia/models/__init__.py": {
+    "mtime": 1783675713.6647565,
+    "ast_hash": "3bb6460aa03b2cb4d44614ecd66431ef",
+    "semantic_hash": "3bb6460aa03b2cb4d44614ecd66431ef"
+  },
+  "forensia/models/base.py": {
+    "mtime": 1783675713.6662788,
+    "ast_hash": "aa079c148c088a991cc473fd4ddf24ce",
+    "semantic_hash": "aa079c148c088a991cc473fd4ddf24ce"
+  },
+  "forensia/routers/__init__.py": {
+    "mtime": 1783675713.6670306,
+    "ast_hash": "374cea2eacedce2029e85d039b3c58eb",
+    "semantic_hash": "374cea2eacedce2029e85d039b3c58eb"
+  },
+  "forensia/routers/agent.py": {
+    "mtime": 1783675713.6680386,
+    "ast_hash": "3c93ba1df6522514d86e25a7516f92a4",
+    "semantic_hash": "3c93ba1df6522514d86e25a7516f92a4"
+  },
+  "forensia/routers/artifacts.py": {
+    "mtime": 1783675713.669038,
+    "ast_hash": "82fce7cec5fc5eae429de40ddea999de",
+    "semantic_hash": "82fce7cec5fc5eae429de40ddea999de"
+  },
+  "forensia/routers/capabilities.py": {
+    "mtime": 1783675713.6700428,
+    "ast_hash": "14439c232f212ca8155ec435cd768175",
+    "semantic_hash": "14439c232f212ca8155ec435cd768175"
+  },
+  "forensia/routers/cases.py": {
+    "mtime": 1783675419.0672963,
+    "ast_hash": "8c32469e0d9a5e74a697e0462110448a",
+    "semantic_hash": "8c32469e0d9a5e74a697e0462110448a"
+  },
+  "forensia/routers/chats.py": {
+    "mtime": 1783675713.6710434,
+    "ast_hash": "0da7da680584c139a83c5b56327ceb0e",
+    "semantic_hash": "0da7da680584c139a83c5b56327ceb0e"
+  },
+  "forensia/routers/config.py": {
+    "mtime": 1783675713.6720417,
+    "ast_hash": "2adcef2f939b8a5163a63e7c345924b2",
+    "semantic_hash": "2adcef2f939b8a5163a63e7c345924b2"
+  },
+  "forensia/routers/evidence.py": {
+    "mtime": 1783675713.6720417,
+    "ast_hash": "1605d4a0bf42536db629319fc8b69550",
+    "semantic_hash": "1605d4a0bf42536db629319fc8b69550"
+  },
+  "forensia/routers/findings.py": {
+    "mtime": 1783675713.673043,
+    "ast_hash": "627726a55f01bb0371d437894e3271dd",
+    "semantic_hash": "627726a55f01bb0371d437894e3271dd"
+  },
+  "forensia/routers/health.py": {
+    "mtime": 1783675713.673043,
+    "ast_hash": "7e5dab40473ad86b830c5665ea90cc30",
+    "semantic_hash": "7e5dab40473ad86b830c5665ea90cc30"
+  },
+  "forensia/routers/session.py": {
+    "mtime": 1783675713.6745548,
+    "ast_hash": "0fdbd691c0b16d2fda39dd7be183b215",
+    "semantic_hash": "0fdbd691c0b16d2fda39dd7be183b215"
+  },
+  "forensia/security.py": {
+    "mtime": 1783675713.6755662,
+    "ast_hash": "6ca89fee7c96b3dc242f6fb98123d586",
+    "semantic_hash": "6ca89fee7c96b3dc242f6fb98123d586"
+  },
+  "forensia/server.py": {
+    "mtime": 1783675713.6755662,
+    "ast_hash": "7c51cb579c9cc74b6341281d5ccff346",
+    "semantic_hash": "7c51cb579c9cc74b6341281d5ccff346"
+  },
+  "forensia/toolkit/__init__.py": {
+    "mtime": 1783675713.67686,
+    "ast_hash": "17fec1ae1c15cd7903393741036cfeb6",
+    "semantic_hash": "17fec1ae1c15cd7903393741036cfeb6"
+  },
+  "forensia/toolkit/catalog.py": {
+    "mtime": 1783675419.0692995,
+    "ast_hash": "c7badce5c50352b8b72ac24843b6873e",
+    "semantic_hash": "c7badce5c50352b8b72ac24843b6873e"
+  },
+  "forensia/toolkit/container.py": {
+    "mtime": 1783675713.6778557,
+    "ast_hash": "91a4d4d6942ccdd1db76eab6cbc81b52",
+    "semantic_hash": "91a4d4d6942ccdd1db76eab6cbc81b52"
+  },
+  "forensia/toolkit/dispatcher.py": {
+    "mtime": 1783675713.678858,
+    "ast_hash": "7ad2456554c90fa100929cf969e50661",
+    "semantic_hash": "7ad2456554c90fa100929cf969e50661"
+  },
+  "forensia/toolkit/maletin.py": {
+    "mtime": 1783675713.6798577,
+    "ast_hash": "ab0c2d8fa6355a1c406a50fa39b19df6",
+    "semantic_hash": "ab0c2d8fa6355a1c406a50fa39b19df6"
+  },
+  "forensia/toolkit/resolver.py": {
+    "mtime": 1783675713.6798577,
+    "ast_hash": "4236f8c23df8859754c66bd66ec4e801",
+    "semantic_hash": "4236f8c23df8859754c66bd66ec4e801"
+  },
+  "forensia/toolkit/tool.py": {
+    "mtime": 1783675713.680856,
+    "ast_hash": "bda832a0c75b95b3650a0af2063a660a",
+    "semantic_hash": "bda832a0c75b95b3650a0af2063a660a"
+  },
+  "forensia/toolkit/usage.py": {
+    "mtime": 1783675713.681857,
+    "ast_hash": "5d20c1dbcb5234b232251c224c872fdf",
+    "semantic_hash": "5d20c1dbcb5234b232251c224c872fdf"
+  },
+  "forensia/toolkit/wrappers/__init__.py": {
+    "mtime": 1783675713.681857,
+    "ast_hash": "7a4592c80b4b910f94b76962267efb9a",
+    "semantic_hash": "7a4592c80b4b910f94b76962267efb9a"
+  },
+  "forensia/toolkit/wrappers/_ez_summary.py": {
+    "mtime": 1783675713.6828575,
+    "ast_hash": "e7b6053b7d57086faccdfbbf5c9610b4",
+    "semantic_hash": "e7b6053b7d57086faccdfbbf5c9610b4"
+  },
+  "forensia/toolkit/wrappers/amcacheparser.py": {
+    "mtime": 1783675713.6838596,
+    "ast_hash": "ef616c43aabef56e5fedace96d5214e0",
+    "semantic_hash": "ef616c43aabef56e5fedace96d5214e0"
+  },
+  "forensia/toolkit/wrappers/appcompatcacheparser.py": {
+    "mtime": 1783675713.6848571,
+    "ast_hash": "8a316477a9471bc064277bcd535a64a4",
+    "semantic_hash": "8a316477a9471bc064277bcd535a64a4"
+  },
+  "forensia/toolkit/wrappers/bulk_extractor.py": {
+    "mtime": 1783675713.6853623,
+    "ast_hash": "7d5db30f1734b20b4ed6248b79f28708",
+    "semantic_hash": "7d5db30f1734b20b4ed6248b79f28708"
+  },
+  "forensia/toolkit/wrappers/chainsaw.py": {
+    "mtime": 1783675713.6853623,
+    "ast_hash": "12c385d9ed69c91dea450474b09c6987",
+    "semantic_hash": "12c385d9ed69c91dea450474b09c6987"
+  },
+  "forensia/toolkit/wrappers/evtxecmd.py": {
+    "mtime": 1783675713.686374,
+    "ast_hash": "74e384d65ff4fea00cff8834fe9d4601",
+    "semantic_hash": "74e384d65ff4fea00cff8834fe9d4601"
+  },
+  "forensia/toolkit/wrappers/ewf_info.py": {
+    "mtime": 1783675713.6870327,
+    "ast_hash": "bdce3a0343ec2b70569b55a00b9b68af",
+    "semantic_hash": "bdce3a0343ec2b70569b55a00b9b68af"
+  },
+  "forensia/toolkit/wrappers/file_info.py": {
+    "mtime": 1783675713.6880417,
+    "ast_hash": "4165584c156761fc316d57e6d31e5490",
+    "semantic_hash": "4165584c156761fc316d57e6d31e5490"
+  },
+  "forensia/toolkit/wrappers/foremost.py": {
+    "mtime": 1783675713.6880417,
+    "ast_hash": "e461e86755fa813007332780b5e995b0",
+    "semantic_hash": "e461e86755fa813007332780b5e995b0"
+  },
+  "forensia/toolkit/wrappers/hashdeep.py": {
+    "mtime": 1783675713.689042,
+    "ast_hash": "577e8c3745ec92e9895f8b332fcb1341",
+    "semantic_hash": "577e8c3745ec92e9895f8b332fcb1341"
+  },
+  "forensia/toolkit/wrappers/hayabusa.py": {
+    "mtime": 1783675713.6900425,
+    "ast_hash": "ded995d7fc049c6a4a93c1b6e4c0533c",
+    "semantic_hash": "ded995d7fc049c6a4a93c1b6e4c0533c"
+  },
+  "forensia/toolkit/wrappers/jlecmd.py": {
+    "mtime": 1783675713.6910439,
+    "ast_hash": "5bdeacd221a303c2138e15f5000c1f99",
+    "semantic_hash": "5bdeacd221a303c2138e15f5000c1f99"
+  },
+  "forensia/toolkit/wrappers/jq.py": {
+    "mtime": 1783675713.6910439,
+    "ast_hash": "6db54ee3930f5421f1022300223fd186",
+    "semantic_hash": "6db54ee3930f5421f1022300223fd186"
+  },
+  "forensia/toolkit/wrappers/lecmd.py": {
+    "mtime": 1783675713.6920416,
+    "ast_hash": "aa5db001a5501a3f3e420ba7c64c5472",
+    "semantic_hash": "aa5db001a5501a3f3e420ba7c64c5472"
+  },
+  "forensia/toolkit/wrappers/mftecmd.py": {
+    "mtime": 1783675713.6930382,
+    "ast_hash": "0fcff425c12535e8b8bfe71ff42d2038",
+    "semantic_hash": "0fcff425c12535e8b8bfe71ff42d2038"
+  },
+  "forensia/toolkit/wrappers/plaso_log2timeline.py": {
+    "mtime": 1783675713.6930382,
+    "ast_hash": "76201c1b8de3b94786b3f223d91c1e89",
+    "semantic_hash": "76201c1b8de3b94786b3f223d91c1e89"
+  },
+  "forensia/toolkit/wrappers/plaso_psort.py": {
+    "mtime": 1783675713.6945462,
+    "ast_hash": "aaf892a6e5a2efb643a89f483336a2c2",
+    "semantic_hash": "aaf892a6e5a2efb643a89f483336a2c2"
+  },
+  "forensia/toolkit/wrappers/qemu_nbd.py": {
+    "mtime": 1783675713.6945462,
+    "ast_hash": "485b48a8ef32de8938cfee1f18891518",
+    "semantic_hash": "485b48a8ef32de8938cfee1f18891518"
+  },
+  "forensia/toolkit/wrappers/rbcmd.py": {
+    "mtime": 1783675713.6955569,
+    "ast_hash": "cf4869e090f7bdec5305328b780493e5",
+    "semantic_hash": "cf4869e090f7bdec5305328b780493e5"
+  },
+  "forensia/toolkit/wrappers/recmd.py": {
+    "mtime": 1783675713.69671,
+    "ast_hash": "1efb5679bfbb9bbb316f75d80c21aa90",
+    "semantic_hash": "1efb5679bfbb9bbb316f75d80c21aa90"
+  },
+  "forensia/toolkit/wrappers/regripper.py": {
+    "mtime": 1783675713.69671,
+    "ast_hash": "e34c3e8737a103655a74bd4bd9e5f11c",
+    "semantic_hash": "e34c3e8737a103655a74bd4bd9e5f11c"
+  },
+  "forensia/toolkit/wrappers/sbecmd.py": {
+    "mtime": 1783675713.69772,
+    "ast_hash": "445a5cbb552bd9a38d561ebefc876849",
+    "semantic_hash": "445a5cbb552bd9a38d561ebefc876849"
+  },
+  "forensia/toolkit/wrappers/strings_head.py": {
+    "mtime": 1783675713.6987197,
+    "ast_hash": "99180ea29439efef8b01bf9be5987665",
+    "semantic_hash": "99180ea29439efef8b01bf9be5987665"
+  },
+  "forensia/toolkit/wrappers/tsk_fls.py": {
+    "mtime": 1783675713.6987197,
+    "ast_hash": "9c7edcbf49b24c813bd284aa07974d86",
+    "semantic_hash": "9c7edcbf49b24c813bd284aa07974d86"
+  },
+  "forensia/toolkit/wrappers/tsk_icat.py": {
+    "mtime": 1783675713.6997185,
+    "ast_hash": "80837cb20518c1e51853f8ff00b14f4d",
+    "semantic_hash": "80837cb20518c1e51853f8ff00b14f4d"
+  },
+  "forensia/toolkit/wrappers/tsk_mactime.py": {
+    "mtime": 1783675713.7007184,
+    "ast_hash": "2256054de43810a32a9cb67838d698cf",
+    "semantic_hash": "2256054de43810a32a9cb67838d698cf"
+  },
+  "forensia/toolkit/wrappers/tsk_mmls.py": {
+    "mtime": 1783675713.7007184,
+    "ast_hash": "3dcbe10e78822fa7ad79dc138ce9d01b",
+    "semantic_hash": "3dcbe10e78822fa7ad79dc138ce9d01b"
+  },
+  "forensia/toolkit/wrappers/volatility3.py": {
+    "mtime": 1783675713.7017212,
+    "ast_hash": "604d7383445c5cc6ba5bf1ca4869ca38",
+    "semantic_hash": "604d7383445c5cc6ba5bf1ca4869ca38"
+  },
+  "forensia/toolkit/wrappers/wxtcmd.py": {
+    "mtime": 1783675713.7027187,
+    "ast_hash": "528beb98bfa358a31e07fe75f72ec357",
+    "semantic_hash": "528beb98bfa358a31e07fe75f72ec357"
+  },
+  "forensia/toolkit/wrappers/xxd_head.py": {
+    "mtime": 1783675713.7037213,
+    "ast_hash": "34f93539ad9c21986931e4501d985911",
+    "semantic_hash": "34f93539ad9c21986931e4501d985911"
+  },
+  "forensia/toolkit/wrappers/yara.py": {
+    "mtime": 1783675713.7037213,
+    "ast_hash": "267a38bad1b5e842b1a2dda2c93a79aa",
+    "semantic_hash": "267a38bad1b5e842b1a2dda2c93a79aa"
+  },
+  "forensia/triage.py": {
+    "mtime": 1783675713.705225,
+    "ast_hash": "7ca918f17aedc146392f20a620db76e5",
+    "semantic_hash": "7ca918f17aedc146392f20a620db76e5"
+  },
+  "pyproject.toml": {
+    "mtime": 1783675713.7062361,
+    "ast_hash": "3a579ea9cbe4859cc6cf4f7a7439cfd9",
+    "semantic_hash": "3a579ea9cbe4859cc6cf4f7a7439cfd9"
+  },
+  "tests/_symlink_support.py": {
+    "mtime": 1783675713.7068498,
+    "ast_hash": "8ffb86ed2de59d441d6e496ea32916a2",
+    "semantic_hash": "8ffb86ed2de59d441d6e496ea32916a2"
+  },
+  "tests/test_agent_context_budget.py": {
+    "mtime": 1783675713.7078078,
+    "ast_hash": "6cc4be2b3e3037ec735be494dcb1eab8",
+    "semantic_hash": "6cc4be2b3e3037ec735be494dcb1eab8"
+  },
+  "tests/test_agent_egress.py": {
+    "mtime": 1783675713.708816,
+    "ast_hash": "0f2b0974e5457debd148bdc5af1ae9ce",
+    "semantic_hash": "0f2b0974e5457debd148bdc5af1ae9ce"
+  },
+  "tests/test_agent_loop.py": {
+    "mtime": 1783675713.7098172,
+    "ast_hash": "ac044095884cf4c1bff99cb2d6cded7f",
+    "semantic_hash": "ac044095884cf4c1bff99cb2d6cded7f"
+  },
+  "tests/test_agent_registry.py": {
+    "mtime": 1783675713.710816,
+    "ast_hash": "d9cd22cb2f2c90887b8ce0e539942575",
+    "semantic_hash": "d9cd22cb2f2c90887b8ce0e539942575"
+  },
+  "tests/test_artifacts.py": {
+    "mtime": 1783675713.711814,
+    "ast_hash": "1a5cb9feb8d1deac0129bb636fdd01ac",
+    "semantic_hash": "1a5cb9feb8d1deac0129bb636fdd01ac"
+  },
+  "tests/test_audit_lock.py": {
+    "mtime": 1783675713.711814,
+    "ast_hash": "6a61a85a8d87168b02f0da04b5b7c5b2",
+    "semantic_hash": "6a61a85a8d87168b02f0da04b5b7c5b2"
+  },
+  "tests/test_cases.py": {
+    "mtime": 1783675419.076377,
+    "ast_hash": "355d4a0c233232081d23d5b08c45e733",
+    "semantic_hash": "355d4a0c233232081d23d5b08c45e733"
+  },
+  "tests/test_catalog_integrity.py": {
+    "mtime": 1783675713.7128155,
+    "ast_hash": "5641719eb185bce5de4e3dbfb58d032d",
+    "semantic_hash": "5641719eb185bce5de4e3dbfb58d032d"
+  },
+  "tests/test_chats.py": {
+    "mtime": 1783675713.7138138,
+    "ast_hash": "d824d49e4e19025751856bdbdff6f5e8",
+    "semantic_hash": "d824d49e4e19025751856bdbdff6f5e8"
+  },
+  "tests/test_cli_auth_seeding.py": {
+    "mtime": 1783675713.7138138,
+    "ast_hash": "6bf974750be133a19622b3c907e79ca1",
+    "semantic_hash": "6bf974750be133a19622b3c907e79ca1"
+  },
+  "tests/test_consent.py": {
+    "mtime": 1783675713.7153542,
+    "ast_hash": "67d6a5670e5d54ad42bc40391c68c670",
+    "semantic_hash": "67d6a5670e5d54ad42bc40391c68c670"
+  },
+  "tests/test_container.py": {
+    "mtime": 1783675713.7153542,
+    "ast_hash": "3de56375100d176f16fbded142abb26f",
+    "semantic_hash": "3de56375100d176f16fbded142abb26f"
+  },
+  "tests/test_dispatcher.py": {
+    "mtime": 1783675713.716362,
+    "ast_hash": "b8b554e9a59424e19111a3037b5f2da9",
+    "semantic_hash": "b8b554e9a59424e19111a3037b5f2da9"
+  },
+  "tests/test_dispatcher_case_anchored.py": {
+    "mtime": 1783675713.7173645,
+    "ast_hash": "7562df88cb6eac6cf68a36db3e248a9a",
+    "semantic_hash": "7562df88cb6eac6cf68a36db3e248a9a"
+  },
+  "tests/test_evidence_real.py": {
+    "mtime": 1783675419.0769753,
+    "ast_hash": "37748dd1696a6d68487864b75f472fab",
+    "semantic_hash": "37748dd1696a6d68487864b75f472fab"
+  },
+  "tests/test_executors.py": {
+    "mtime": 1783675713.7183611,
+    "ast_hash": "84a31d19749f9b0e19353bf574d07ab9",
+    "semantic_hash": "84a31d19749f9b0e19353bf574d07ab9"
+  },
+  "tests/test_maletin.py": {
+    "mtime": 1783675713.7183611,
+    "ast_hash": "4eda70da2d79ea507930fd8f0353753b",
+    "semantic_hash": "4eda70da2d79ea507930fd8f0353753b"
+  },
+  "tests/test_mcp_toolkit.py": {
+    "mtime": 1783675713.7193618,
+    "ast_hash": "55e475c4036940e4727fde832303292b",
+    "semantic_hash": "55e475c4036940e4727fde832303292b"
+  },
+  "tests/test_os_profile_routing.py": {
+    "mtime": 1783675713.7203872,
+    "ast_hash": "25706d61859805f644d90cbceab3b02b",
+    "semantic_hash": "25706d61859805f644d90cbceab3b02b"
+  },
+  "tests/test_redaction_windows.py": {
+    "mtime": 1783675713.721361,
+    "ast_hash": "1247968c19209d1eab08a02abbdc455c",
+    "semantic_hash": "1247968c19209d1eab08a02abbdc455c"
+  },
+  "tests/test_routers_storage.py": {
+    "mtime": 1783675419.0779831,
+    "ast_hash": "dc8765d81bed93c98618f80c238fa66d",
+    "semantic_hash": "dc8765d81bed93c98618f80c238fa66d"
+  },
+  "tests/test_security_gates.py": {
+    "mtime": 1783675713.722366,
+    "ast_hash": "1d064b98d5413cbedcec69a284d4c3b6",
+    "semantic_hash": "1d064b98d5413cbedcec69a284d4c3b6"
+  },
+  "tests/test_smoke.py": {
+    "mtime": 1783675713.722366,
+    "ast_hash": "29501c96e633f7b8e7bad0437393a909",
+    "semantic_hash": "29501c96e633f7b8e7bad0437393a909"
+  },
+  "tests/test_web_surface.py": {
+    "mtime": 1783675713.7233665,
+    "ast_hash": "6e9b7fe8beac380f74a2859cf60ad307",
+    "semantic_hash": "6e9b7fe8beac380f74a2859cf60ad307"
+  },
+  "tests/test_wrappers.py": {
+    "mtime": 1783675419.0789833,
+    "ast_hash": "017d14acb3d6b9cf855880a7565f9c6a",
+    "semantic_hash": "017d14acb3d6b9cf855880a7565f9c6a"
+  }
+}
