@@ -14,12 +14,26 @@ from typing import Any
 
 import pytest
 
-from forensia.agent.agent import ForensicAgent
+from forensia.agent.agent import ForensicAgent, _max_tool_attempts
 from forensia.agent.loader import load_package
 from forensia.models.base import ModelBackend, ModelCapabilities, ToolCall
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 AGENTES_DIR = REPO_ROOT / "agentes"
+
+
+def test_max_tool_attempts_defaults_to_3_when_env_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("FORENSIA_MAX_TOOL_ATTEMPTS", raising=False)
+    assert _max_tool_attempts() == 3
+
+
+@pytest.mark.parametrize("raw", ["0", "-1", "abc"])
+def test_max_tool_attempts_fails_loud_on_invalid_env(
+    monkeypatch: pytest.MonkeyPatch, raw: str
+) -> None:
+    monkeypatch.setenv("FORENSIA_MAX_TOOL_ATTEMPTS", raw)
+    with pytest.raises(RuntimeError, match="FORENSIA_MAX_TOOL_ATTEMPTS"):
+        _max_tool_attempts()
 
 
 class _AlwaysSameTool(ModelBackend):

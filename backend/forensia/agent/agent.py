@@ -68,11 +68,21 @@ def _max_tool_attempts() -> int:
     """Anti-loop guardrail (Bug 001): how many times a tool may FAIL (exit≠0 or an
     execution error) in one session before the loop refuses to run it again. Keeps the
     model from fixating on a tool that keeps failing instead of changing approach.
-    Default 3; per-deployment override via ``FORENSIA_MAX_TOOL_ATTEMPTS``."""
-    try:
-        return max(1, int(os.environ.get("FORENSIA_MAX_TOOL_ATTEMPTS", "3")))
-    except ValueError:
+    Default 3 when ``FORENSIA_MAX_TOOL_ATTEMPTS`` is unset (a designed default, not a
+    fallback). A value that IS set but invalid (non-integer or < 1) fails loud instead
+    of silently becoming 3 (RULE 2)."""
+    raw = os.environ.get("FORENSIA_MAX_TOOL_ATTEMPTS")
+    if raw is None:
         return 3
+    try:
+        value = int(raw)
+    except ValueError:
+        value = None
+    if value is None or value < 1:
+        raise RuntimeError(
+            f"FORENSIA_MAX_TOOL_ATTEMPTS={raw!r} no es válido: debe ser un entero >= 1."
+        )
+    return value
 
 
 def _reasoning_from(raw: object) -> str:
