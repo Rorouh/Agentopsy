@@ -9,8 +9,8 @@ ejecutar herramientas sin necesidad del socket de Docker del host:
   - POST /which  {"binaries": [...]}       -> subconjunto de binarios presentes en PATH
   - POST /exec   {"argv": [...],           -> ejecuta argv shell-free y devuelve
                   "timeout": N|null,          {exit, stdout, stderr, timed_out}
-                  "stdout_path": P|null}      con stdout_path: {exit, stdout_file,
-                                              stdout_sha256, stdout_size, stderr,
+                  "stdout_path": P|null,      con stdout_path: {exit, stdout_file,
+                  "ewf_image": E|null}        stdout_sha256, stdout_size, stderr,
                                               timed_out} — stdout va a fichero CRUDO
 
 Canal binario-seguro (`stdout_path`): herramientas como TSK `icat` emiten BYTES CRUDOS
@@ -19,6 +19,14 @@ por stdout (hives, EVTX, $MFT, ejecutables). Decodificarlos como texto los corro
 escribe su stdout DIRECTAMENTE a ese fichero (sin decodificar) en el volumen `/cases`
 compartido; el agente devuelve ruta+SHA-256+tamaño en vez del texto. stderr sigue como
 texto (es diagnóstico). El api re-hashea el artefacto (defensa en profundidad).
+
+Routing EWF (`ewf_image`): TSK no lee `.E01` nativo. Cuando el api pasa `ewf_image` (el
+token EXACTO del argv que porta la ruta `.E01`), el agente lo monta con `ewfmount` (FUSE,
+SOLO LECTURA — expone la imagen como bloque raw `ewf1`, NO monta el sistema de ficheros de
+la evidencia, FORENSIC INVARIANT 3), reescribe ese token del argv al raw `ewf1`, ejecuta la
+tool y **desmonta SIEMPRE** (incl. en error). El `.E01` no se modifica (montaje RO). Si
+`ewfmount`/FUSE no está disponible → respuesta no-200 nombrando la dependencia (RULE 2):
+jamás se trata el `.E01` como raw. Compone con `stdout_path` (icat sobre `.E01`).
 
 Por qué existe (docs/operacion/exec-agent.md, proximos-pasos.md §B):
 La alternativa §A (montar `/var/run/docker.sock` en el `api` + docker-cli) le daría al
@@ -49,6 +57,7 @@ import json
 import os
 import shutil
 import subprocess
+import tempfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 _PORT = int(os.environ.get("FORENSIA_EXEC_AGENT_PORT", "8666"))
@@ -60,6 +69,67 @@ _MAX_TIMEOUT_S = 1800
 # Lectura por bloques para hashear el stdout crudo sin cargar el fichero entero en RAM
 # (icat puede extraer artefactos grandes: $MFT, hives).
 _HASH_CHUNK = 1024 * 1024  # 1 MiB
+# Techo de tiempo para montar/desmontar el `.E01` con ewfmount (no debe colgar el run).
+_EWF_MOUNT_TIMEOUT_S = 120
+
+
+class _EwfMountError(RuntimeError):
+    """`ewfmount` no pudo exponer el `.E01` como raw (binario ausente, FUSE no disponible,
+    o el mount falló). El handler la traduce en una respuesta no-200 accionable; nunca se
+    trata el `.E01` como raw (RULE 2)."""
+
+
+def ewf_mount(ewf_image: str, mountpoint: str) -> str:
+    """Monta `ewf_image` (`.E01`) con `ewfmount` en `mountpoint` (FUSE, SOLO LECTURA) y
+    devuelve la ruta del bloque raw `ewf1`. `ewfmount` expone la imagen como dispositivo
+    de bloques raw — NO monta el sistema de ficheros de la evidencia (FORENSIC INVARIANT 3)
+    — y abre el `.E01` en solo lectura, así que no lo modifica. Lanza `_EwfMountError`
+    (accionable) si el binario no está, FUSE no está disponible o el mount falla."""
+    try:
+        proc = subprocess.run(  # noqa: S603 — argv list, shell=False
+            ["ewfmount", ewf_image, mountpoint],
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=_EWF_MOUNT_TIMEOUT_S,
+            shell=False,
+        )
+    except FileNotFoundError as exc:
+        raise _EwfMountError(
+            "ewfmount no está instalado en el maletín (paquete ewf-tools/libewf); sin él "
+            "TSK no puede leer el .E01 (no lo abre nativo). Instálalo en la imagen del "
+            "maletín (RULE 1) — no se trata el .E01 como raw (RULE 2)."
+        ) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise _EwfMountError(
+            f"ewfmount agotó {_EWF_MOUNT_TIMEOUT_S}s montando {ewf_image}"
+        ) from exc
+    if proc.returncode != 0:
+        raise _EwfMountError(
+            f"ewfmount falló (exit {proc.returncode}) montando {ewf_image}: "
+            f"{proc.stderr.strip()} — ¿/dev/fuse presente y CAP SYS_ADMIN? "
+            "(docker-compose: devices:[/dev/fuse], cap_add:[SYS_ADMIN])"
+        )
+    raw = os.path.join(mountpoint, "ewf1")
+    if not os.path.exists(raw):
+        raise _EwfMountError(
+            f"ewfmount no expuso el bloque raw esperado ({raw}) tras montar {ewf_image}"
+        )
+    return raw
+
+
+def ewf_unmount(mountpoint: str) -> None:
+    """Desmonta un mount FUSE de ewfmount. Best-effort pero SIEMPRE se intenta (soundness:
+    no dejar un mount colgado). Prueba `fusermount -u` y, si no, `umount`."""
+    for cmd in (["fusermount", "-u", mountpoint], ["umount", mountpoint]):
+        try:
+            proc = subprocess.run(  # noqa: S603 — argv list, shell=False
+                cmd, capture_output=True, text=True, timeout=_EWF_MOUNT_TIMEOUT_S, shell=False
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            continue
+        if proc.returncode == 0:
+            return
 
 
 def _sha256_size(path: str) -> tuple[str, int]:
@@ -146,7 +216,46 @@ class Handler(BaseHTTPRequestHandler):
             # elige el LLM). Guarda defensiva mínima: absoluta y sin traversal.
             if not os.path.isabs(stdout_path) or ".." in stdout_path.split("/"):
                 return self._send(400, {"error": "'stdout_path' must be an absolute path without '..'"})
-            return self._exec_to_file(argv, timeout, stdout_path)
+        ewf_image = payload.get("ewf_image")
+        if ewf_image is not None:
+            if not isinstance(ewf_image, str) or not ewf_image:
+                return self._send(400, {"error": "'ewf_image' must be a non-empty string or null"})
+            if not os.path.isabs(ewf_image) or ".." in ewf_image.split("/"):
+                return self._send(400, {"error": "'ewf_image' must be an absolute path without '..'"})
+            # El api nombra el token EXACTO del argv (tiene el allowlist); montar algo que no
+            # está en el comando sería adivinar. Exigimos que sea uno de los tokens.
+            if ewf_image not in argv:
+                return self._send(400, {"error": "'ewf_image' must be one of the argv tokens"})
+            try:
+                result = self._exec_with_ewf(argv, timeout, stdout_path, ewf_image)
+            except _EwfMountError as exc:
+                # 424 Failed Dependency: el mount previo a la ejecución falló. El api lo
+                # eleva a un error accionable; no hay exit code de tool que inventar.
+                return self._send(424, {"error": str(exc)})
+            return self._send(200, result)
+        return self._send(200, self._run_argv(argv, timeout, stdout_path))
+
+    def _exec_with_ewf(self, argv: list[str], timeout, stdout_path, ewf_image: str) -> dict:
+        """Monta el `.E01` (RO, FUSE), reescribe el token del argv al raw `ewf1`, ejecuta y
+        DESMONTA SIEMPRE (finally). El resto del contrato (stdout_path binario, shell-free)
+        no cambia: solo se sustituye el token de la imagen por su bloque raw."""
+        mountpoint = tempfile.mkdtemp(prefix="forensia-ewf-")
+        try:
+            raw = ewf_mount(ewf_image, mountpoint)
+            rewritten = [raw if token == ewf_image else token for token in argv]
+            return self._run_argv(rewritten, timeout, stdout_path)
+        finally:
+            ewf_unmount(mountpoint)
+            shutil.rmtree(mountpoint, ignore_errors=True)
+
+    def _run_argv(self, argv: list[str], timeout, stdout_path) -> dict:
+        """Ejecuta el argv ya resuelto y devuelve el dict de respuesta (sin enviarlo).
+        Sin `stdout_path`: stdout como texto. Con él: canal binario-seguro a fichero."""
+        if stdout_path is None:
+            return self._run_text(argv, timeout)
+        return self._run_to_file(argv, timeout, stdout_path)
+
+    def _run_text(self, argv: list[str], timeout) -> dict:
         try:
             # errors="replace": la salida forense (nombres de fichero, bytes crudos) a
             # menudo NO es UTF-8 válido; sin esto, text=True lanzaría UnicodeDecodeError y
@@ -155,25 +264,17 @@ class Handler(BaseHTTPRequestHandler):
                 argv, capture_output=True, text=True, errors="replace", timeout=timeout, shell=False
             )
         except FileNotFoundError:
-            return self._send(
-                200, {"exit": 127, "stdout": "", "stderr": f"{argv[0]}: not found", "timed_out": False}
-            )
+            return {"exit": 127, "stdout": "", "stderr": f"{argv[0]}: not found", "timed_out": False}
         except subprocess.TimeoutExpired as exc:
-            return self._send(
-                200,
-                {
-                    "exit": 124,
-                    "stdout": exc.stdout or "",
-                    "stderr": (exc.stderr or "") + "\n[exec-agent] timeout",
-                    "timed_out": True,
-                },
-            )
-        return self._send(
-            200,
-            {"exit": proc.returncode, "stdout": proc.stdout, "stderr": proc.stderr, "timed_out": False},
-        )
+            return {
+                "exit": 124,
+                "stdout": exc.stdout or "",
+                "stderr": (exc.stderr or "") + "\n[exec-agent] timeout",
+                "timed_out": True,
+            }
+        return {"exit": proc.returncode, "stdout": proc.stdout, "stderr": proc.stderr, "timed_out": False}
 
-    def _exec_to_file(self, argv: list[str], timeout, stdout_path: str) -> None:
+    def _run_to_file(self, argv: list[str], timeout, stdout_path: str) -> dict:
         """Canal binario-seguro: el stdout del hijo se escribe CRUDO a `stdout_path`
         (sin decodificar), y se devuelve su SHA-256 + tamaño en vez del texto. stderr
         sigue como texto (diagnóstico). Idéntico contrato shell-free (argv, shell=False)."""
@@ -199,17 +300,14 @@ class Handler(BaseHTTPRequestHandler):
             exit_code = 124
             stderr = (exc.stderr or "") + "\n[exec-agent] timeout"
         sha256, size = _sha256_size(stdout_path)
-        return self._send(
-            200,
-            {
-                "exit": exit_code,
-                "stdout_file": stdout_path,
-                "stdout_sha256": sha256,
-                "stdout_size": size,
-                "stderr": stderr,
-                "timed_out": timed_out,
-            },
-        )
+        return {
+            "exit": exit_code,
+            "stdout_file": stdout_path,
+            "stdout_sha256": sha256,
+            "stdout_size": size,
+            "stderr": stderr,
+            "timed_out": timed_out,
+        }
 
 
 def main() -> None:

@@ -119,6 +119,7 @@ def run_argv_in_maletin(
     *,
     timeout: float | None = None,
     stdout_path: str | None = None,
+    ewf_image: str | None = None,
 ) -> tuple[int, str, str]:
     """Run a fully-resolved argv inside a maletín via its exec-agent `POST /exec`.
 
@@ -133,6 +134,13 @@ def run_argv_in_maletin(
     shared `/cases` mount, so the api reads the exact same file — and answers with its
     SHA-256/size instead of a (lossy) text field. The returned stdout is then `""`; the
     payload lives on disk, where the api re-hashes it as an artifact (INVARIANT 4).
+
+    EWF mode (`ewf_image`): TSK cannot read a `.E01` natively. When `ewf_image` names the
+    exact argv token holding the EWF path, the exec-agent exposes it as a raw block device
+    via `ewfmount` (FUSE, read-only, no filesystem mount — INVARIANT 3) for the duration of
+    the run, rewrites that token to the raw `ewf1`, and unmounts always. If `ewfmount`/FUSE
+    is unavailable the exec-agent answers non-200 naming the dependency, surfaced here as a
+    `MaletinExecError` — never a silent raw treatment of the `.E01` (RULE 2).
     """
     base_url = service_url(service)
     if not base_url:
@@ -143,6 +151,8 @@ def run_argv_in_maletin(
     request_body: dict[str, Any] = {"argv": argv, "timeout": timeout}
     if stdout_path is not None:
         request_body["stdout_path"] = stdout_path
+    if ewf_image is not None:
+        request_body["ewf_image"] = ewf_image
     try:
         status, body = _request(
             "POST", f"{base_url}/exec", request_body, timeout=http_timeout
@@ -152,8 +162,12 @@ def run_argv_in_maletin(
             f"no se pudo ejecutar en el exec-agent {base_url} ({type(exc).__name__}): {exc}"
         ) from exc
     if status != 200 or not isinstance(body, dict) or "exit" not in body:
+        # The exec-agent names an actionable reason (e.g. ewfmount/FUSE missing) in `error`;
+        # carry it through so the operator sees the concrete dependency, not just a status.
+        detail = body.get("error") if isinstance(body, dict) else None
         raise MaletinExecError(
             f"el exec-agent {base_url} devolvió una respuesta inesperada (estado {status})"
+            + (f": {detail}" if detail else "")
         )
     if stdout_path is not None:
         # Binary-safe: stdout went to `stdout_path` on the shared mount, not over the wire.

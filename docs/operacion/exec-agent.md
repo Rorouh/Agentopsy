@@ -45,6 +45,7 @@ api  ──HTTP (red interna del compose)──▶  exec-agent  ──subprocess
 | `POST` | `/which`  | `{"binaries": ["fls","vol",…]}` | `{"present": ["fls",…]}` (subconjunto en PATH) |
 | `POST` | `/exec`   | `{"argv": ["fls","-r","/evidence/…"], "timeout": 300}` | `{"exit": int, "stdout": str, "stderr": str, "timed_out": bool}` |
 | `POST` | `/exec` (binario) | `{"argv": ["icat",…], "timeout": 300, "stdout_path": "/cases/…/out/stdout.bin"}` | `{"exit": int, "stdout_file": str, "stdout_sha256": str, "stdout_size": int, "stderr": str, "timed_out": bool}` |
+| `POST` | `/exec` (EWF)     | `{"argv": ["mmls",…,"/cases/…/original.E01"], "timeout": 300, "ewf_image": "/cases/…/original.E01"}` | igual que `/exec` (o el binario si además va `stdout_path`); en fallo de montaje: `424 {"error": "…ewfmount…"}` |
 
 **Canal binario-seguro (`stdout_path`).** Algunas tools (TSK `icat`) emiten **bytes crudos**
 por stdout (hives, EVTX, `$MFT`, ejecutables). Decodificarlos como texto los corrompe
@@ -55,6 +56,28 @@ sin decodificar) y responde con su `stdout_sha256`/`stdout_size` en vez del text
 sigue como texto (diagnóstico). El catálogo marca esas tools con `binary_stdout=True`; el
 dispatcher exige que corran ancladas a un caso (si no, error accionable) y el `ArtifactStore`
 re-hashea `out/stdout.bin` (defensa en profundidad, FORENSIC INVARIANT 4).
+
+**Routing EWF (`ewf_image`).** TSK no lee `.E01` nativo (`mmls -i ewf` → *"Unsupported
+image type"*). Cuando una tool declara `image_param` (TSK `mmls`/`fls`/`icat` → `"image_path"`)
+y ese path es un contenedor EWF (`.E01`/`.ExNN`), el **dispatcher** (que tiene el allowlist y
+el param) pasa `ewf_image` con el **token exacto** del argv. El exec-agent lo monta con
+`ewfmount` (FUSE, **solo lectura** — expone la imagen como bloque raw `ewf1`, **no** monta el
+sistema de ficheros de la evidencia, FORENSIC INVARIANT 3), reescribe ese token del argv al
+raw `ewf1`, ejecuta la tool y **desmonta siempre** (incl. en error). El `.E01` se abre RO, así
+que no se modifica (el hash baseline no cambia). Compone con `stdout_path` (icat sobre `.E01`).
+El maletín necesita `ewfmount` (paquete `ewf-tools`/libewf) y FUSE (`docker-compose.yml`:
+`devices:[/dev/fuse]`, `cap_add:[SYS_ADMIN]`); si falta, el agente responde `424` nombrando la
+dependencia y el dispatcher falla fuerte — **nunca** trata el `.E01` como raw (RULE 2). La
+decisión de si es EWF es del api; el mecanismo (mount/rewrite/unmount) vive en el maletín,
+donde corre la tool.
+
+El argv que se **audita** (paso 2 abajo) es el que construye el api, con la ruta **`.E01`** —
+la identidad estable y reproducible de la evidencia (ligada a su SHA-256 baseline), **no** el
+bloque raw `ewf1`. La reescritura al `ewf1` es un detalle de transporte RO **efímero**
+(mountpoint aleatorio, inexistente tras la corrida) y determinista, resuelto por el backend
+dentro del maletín; por eso el registro cita la evidencia y no el mount temporal — coherente
+con FORENSIC INVARIANT 4 (se audita el argv literal que fija el api, no la intención del LLM,
+que además nunca elige el mountpoint).
 
 El **dispatcher** (`toolkit/dispatcher.py`) ejecuta las tools sobre este canal:
 resuelve el argv desde el allowlist, elige el maletín por el `os_profile` del caso

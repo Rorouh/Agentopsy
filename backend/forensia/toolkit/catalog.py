@@ -161,6 +161,7 @@ CATALOG: tuple[Tool, ...] = (
         ("unix", "windows"),
         tier="core",
         toolkits=_BOTH,
+        image_param="image_path",
         allowed_flags=_tsk_mmls.ALLOWED_FLAGS,
         build_argv=_tsk_mmls.build_argv,
         parse=_tsk_mmls.parse,
@@ -172,6 +173,7 @@ CATALOG: tuple[Tool, ...] = (
         returns="artifact",
         tier="core",
         toolkits=_BOTH,
+        image_param="image_path",
         allowed_flags=_tsk_fls.ALLOWED_FLAGS,
         build_argv=_tsk_fls.build_argv,
         parse=_tsk_fls.parse,
@@ -323,6 +325,7 @@ CATALOG: tuple[Tool, ...] = (
         # icat streams a file's RAW BYTES to stdout; capture them to a hashed artifact
         # file, never decode as text (would corrupt hives/EVTX/$MFT/executables).
         binary_stdout=True,
+        image_param="image_path",
         toolkits=_BOTH,
         allowed_flags=_tsk_icat.ALLOWED_FLAGS,
         build_argv=_tsk_icat.build_argv,

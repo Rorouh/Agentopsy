@@ -296,3 +296,13 @@ medir la **decisión** (contrato `{tool_id, params}`, sin ejecutar). No salió l
 «Unsupported image type»): hoy el `.E01` se abre con `ewfmount` (FUSE, RO) antes de
 `mmls`/`fls`. A cubrir en infra: recompilar sleuthkit con libewf o que el dispatcher
 enrute EWF por `ewfmount`.
+
+**Cerrado (routing EWF por `ewfmount`).** Se eligió la segunda vía. Las tools TSK que
+consumen imagen (`mmls`/`fls`/`icat`) declaran `image_param="image_path"`; cuando el path es
+EWF (`.E01`/`.ExNN`), el dispatcher pasa `ewf_image` (el token exacto del argv) al exec-agent
+del maletín, que monta con `ewfmount` (FUSE, RO — bloque raw `ewf1`, sin montar el FS,
+INVARIANT 3), reescribe ese token del argv al raw, ejecuta y **desmonta siempre**. Si
+`ewfmount`/FUSE no está → `424` accionable nombrando la dependencia; nunca se trata el `.E01`
+como raw (RULE 2). El `.E01` se abre RO (hash baseline intacto). Compose: `cap_add:[SYS_ADMIN]`
++ `devices:[/dev/fuse]` ya presentes; comentario aclarado. Detalle en
+`docs/operacion/exec-agent.md` (§ Routing EWF).

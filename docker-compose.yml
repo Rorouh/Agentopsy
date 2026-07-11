@@ -58,9 +58,12 @@ x-toolkit-common: &toolkit-common
   volumes:
     - ${FORENSIA_EVIDENCE_DIR:-./evidence}:/evidence:ro   # evidencias en SOLO LECTURA (cadena de custodia)
     - ${FORENSIA_CASES_DIR:-./projects}:/cases            # proyectos, salidas e informes
-  # Capacidades necesarias SOLO para montar imágenes (.vmdk/.raw) en read-only
-  # con guestmount/qemu-nbd dentro del contenedor. Si no vas a montar dentro del
-  # contenedor, puedes comentar cap_add/devices/security_opt.
+  # Capacidades necesarias para exponer imágenes en SOLO LECTURA vía FUSE dentro
+  # del contenedor: `ewfmount` (abre el .E01 como bloque raw `ewf1` para que TSK lo
+  # lea SIN montar el sistema de ficheros — el camino producto para evidencia EWF,
+  # exec_agent.py) y, si se usa, guestmount/qemu-nbd. NO comentar cap_add/devices/
+  # security_opt: sin ellos `ewfmount` falla y el .E01 no se puede procesar (RULE 2:
+  # el exec-agent devuelve error accionable, nunca trata el .E01 como raw).
   cap_add:
     - SYS_ADMIN
   devices:

@@ -25,6 +25,7 @@ When ``case_id`` is ``None`` the behaviour is identical to the original signatur
 from __future__ import annotations
 
 import inspect
+import re
 import subprocess
 from dataclasses import asdict, dataclass
 from typing import Any
@@ -51,6 +52,18 @@ _PENDING_OUTPUT_DIR = "__forensia_pending_output_dir__"
 _BINARY_STDOUT_FILENAME = "stdout.bin"
 
 
+# EWF containers (Expert Witness Format): the first segment is ``.E01`` and EWF/EWFX
+# segmented sets use ``.E02…`` / ``.Ex01…``. TSK does not read these natively, so the
+# maletín exposes them as a raw block device via ``ewfmount`` around the run. Matched on
+# the copied evidence's suffix (``original.E01``). Case-insensitive.
+_EWF_SUFFIX_RE = re.compile(r"^\.ex?\d{2}$", re.IGNORECASE)
+
+
+def _is_ewf_path(path: str) -> bool:
+    dot = path.rfind(".")
+    return dot != -1 and bool(_EWF_SUFFIX_RE.match(path[dot:]))
+
+
 @dataclass(frozen=True)
 class _PreparedExecution:
     """Literal argv plus its single, already-resolved execution venue."""
@@ -60,6 +73,10 @@ class _PreparedExecution:
     # Set only for ``binary_stdout`` tools: the file (inside the run's ``out/``) the
     # runner must write the child's raw stdout to, instead of decoding it as text.
     stdout_path: str | None = None
+    # Set only when the tool reads an EWF disk image (``.E01``) inside a maletín: the exact
+    # argv token the exec-agent must expose as a raw block device via ``ewfmount`` (RO,
+    # no filesystem mount) for the duration of the run, then unmount. ``None`` otherwise.
+    ewf_image: str | None = None
 
 
 def execute(
@@ -101,6 +118,16 @@ def execute(
     effective_params: dict[str, Any] = dict(params)
     binary_stdout_path: str | None = None
 
+    # If this tool reads a disk image and that image is an EWF container (`.E01`), the
+    # maletín must expose it as a raw block device via `ewfmount` around the run. The api
+    # decides (it holds the allowlist and the param) and names the EXACT argv token; the
+    # exec-agent only mounts/rewrites/unmounts. A non-EWF image (raw/vmdk) → None, no change.
+    ewf_image: str | None = None
+    if tool.image_param is not None:
+        candidate = effective_params.get(tool.image_param)
+        if isinstance(candidate, str) and _is_ewf_path(candidate):
+            ewf_image = candidate
+
     if case_id is not None:
         _validate_params_before_artifact(tool, effective_params)
         case_dir = case_manager.case_dir(case_id)
@@ -114,7 +141,11 @@ def execute(
     try:
         argv_tail = _build_argv_tail(tool, effective_params)
         prepared = _prepare_execution(
-            tool, argv_tail, os_profile=os_profile, stdout_path=binary_stdout_path
+            tool,
+            argv_tail,
+            os_profile=os_profile,
+            stdout_path=binary_stdout_path,
+            ewf_image=ewf_image,
         )
         if case_id is not None and run_id is not None:
             artifact_store.set_run_argv(case_id, run_id, prepared.argv)
@@ -315,11 +346,19 @@ def _build_argv_tail(tool: Tool, params: dict[str, Any]) -> list[str]:
 
 
 def _prepare_execution(
-    tool: Tool, argv_tail: list[str], *, os_profile: str | None, stdout_path: str | None = None
+    tool: Tool,
+    argv_tail: list[str],
+    *,
+    os_profile: str | None,
+    stdout_path: str | None = None,
+    ewf_image: str | None = None,
 ) -> _PreparedExecution:
     """Resolve one venue and construct the exact argv without invoking a runner."""
     binary_path = resolve(tool.binary)
     if binary_path is not None:
+        # api-PATH venue (dev only): no exec-agent to run ewfmount in, so EWF is not
+        # rewritten here — TSK would fail loud on a `.E01` with its own "Unsupported image
+        # type" (RULE 2: no silent raw treatment). The product path is the maletín below.
         return _PreparedExecution(
             argv=[str(binary_path), *argv_tail],
             maletin_service=None,
@@ -331,6 +370,7 @@ def _prepare_execution(
         argv=[tool.binary, *argv_tail],
         maletin_service=service,
         stdout_path=stdout_path,
+        ewf_image=ewf_image,
     )
 
 
@@ -368,10 +408,13 @@ def _invoke_prepared(
     prepared: _PreparedExecution, *, timeout: int | None
 ) -> tuple[int, str, str]:
     """Cross the runner boundary for an already-fixed literal argv and venue."""
-    # `stdout_path` (binary_stdout tools only) is threaded conditionally so text tools —
-    # and every existing runner stub — keep their unchanged (service, argv, timeout) call.
+    # `stdout_path` (binary_stdout tools only) and `ewf_image` (EWF disk tools in a maletín
+    # only) are threaded conditionally so text tools — and every existing runner stub — keep
+    # their unchanged (service, argv, timeout) call.
     extra = {} if prepared.stdout_path is None else {"stdout_path": prepared.stdout_path}
     if prepared.maletin_service is not None:
+        if prepared.ewf_image is not None:
+            extra["ewf_image"] = prepared.ewf_image
         return maletin.run_argv_in_maletin(
             prepared.maletin_service,
             prepared.argv,

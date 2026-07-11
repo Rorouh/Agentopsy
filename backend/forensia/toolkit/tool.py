@@ -73,6 +73,13 @@ class Tool:
     # the run's ``out/`` directory (hashed there, FORENSIC INVARIANT 4) instead of carrying
     # it as a (lossy) string. Text tools keep the default and are unaffected.
     binary_stdout: bool = False
+    # Name of the param that carries the RAW DISK IMAGE path this tool reads (TSK
+    # `mmls`/`fls`/`icat` → ``"image_path"``). When that path is an EWF container
+    # (`.E01`/`.ExNN`), the dispatcher asks the maletín's exec-agent to expose it as a raw
+    # block device via ``ewfmount`` (FUSE, read-only, no filesystem mount — FORENSIC
+    # INVARIANT 3) for the duration of the run. ``None`` → the tool consumes no disk image,
+    # so no EWF handling (default, unchanged).
+    image_param: str | None = None
     build_argv: Callable[[dict[str, Any]], list[str]] = _not_built
     parse: Callable[[str], Any] = _not_built
     # Container-delivered tools set this so the executor knows what to mount.
