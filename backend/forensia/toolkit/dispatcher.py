@@ -18,21 +18,31 @@ When ``case_id`` is supplied, the run is anchored to that case:
     - the returned dict carries ``case_id``, ``run_id`` and the established successful
       ``artifact_run`` projection. The storage API exposes the full canonical manifest.
 
-When ``case_id`` is ``None`` the behaviour is identical to the original signature
-``execute(tool_id, params)`` — used by the dev toolkit-tester panel.
+When ``case_id`` is ``None``, any case-scoped input/output is rejected. Only tools with
+no case path, or an exact bundled/runtime identifier, can reach a runner unanchored.
 """
 
 from __future__ import annotations
 
+import hmac
 import inspect
 import re
 import subprocess
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any
 
+from forensia.artifact_ref import is_artifact_ref, validate_artifact_ref
 from forensia.artifacts.store import ArtifactIntegrityError, artifact_store
 from forensia.audit.log import AuditLog
 from forensia.cases.manager import case_manager
+from forensia.path_policy import (
+    PathPolicyError,
+    PathRole,
+    generated_run_output,
+    map_exact_identifier,
+    resolve_existing_confined_path,
+)
 from forensia.toolkit import maletin
 from forensia.toolkit.catalog import BY_ID
 from forensia.toolkit.resolver import resolve
@@ -110,16 +120,6 @@ def execute(
             "captura en texto para binario (RULE 2 / FORENSIC INVARIANT 4)."
         )
 
-    # A derived-artifact input ({run_id, relpath}) can only be resolved + re-hashed
-    # against a case's artifact tree; without a case there is nothing to resolve. Fail
-    # loud rather than pass the raw ref down to a wrapper as if it were a path (RULE 2).
-    if case_id is None and _has_artifact_ref(tool, params):
-        raise ToolExecutionError(
-            f"tool {tool_id!r}: se pasó una referencia de artefacto como input pero sin "
-            "case_id; resolver y re-hashear el derivado requiere el caso "
-            "(FORENSIC INVARIANTS 1-2 / RULE 2)."
-        )
-
     # Validate caller-controlled params before allocating an ArtifactRun. Wrappers that
     # require the dispatcher-owned output_dir receive a non-executable marker during
     # this pure validation pass; the literal argv is built once the real run dir exists.
@@ -128,7 +128,7 @@ def execute(
     effective_params: dict[str, Any] = dict(params)
     binary_stdout_path: str | None = None
     # Derivation links (source artifact → this run) to record in ``tool_run_start``.
-    derived_inputs: list[dict[str, Any]] = []
+    derived_inputs = _gate_path_parameters(tool, effective_params, case_id)
 
     # If this tool reads a disk image and that image is an EWF container (`.E01`), the
     # maletín must expose it as a raw block device via `ewfmount` around the run. The api
@@ -141,17 +141,11 @@ def execute(
             ewf_image = candidate
 
     if case_id is not None:
-        # Resolve any derived-artifact input to a re-verified on-disk path BEFORE the
-        # validation pass, so the wrapper's build_argv sees a normal string path. The
-        # re-hash against the producing run's manifest is the custody gate; the returned
-        # links are audited with tool_run_start (INVARIANT 4).
-        derived_inputs = _resolve_artifact_inputs(tool, effective_params, case_id)
         _validate_params_before_artifact(tool, effective_params)
         case_dir = case_manager.case_dir(case_id)
         audit = AuditLog(case_dir / "audit.jsonl")
         run_id, out_dir = artifact_store.start_run(case_id, tool_id, argv=[])
-        if "output_dir" not in effective_params:
-            effective_params["output_dir"] = str(out_dir)
+        _inject_run_outputs(tool, effective_params, out_dir)
         if tool.binary_stdout:
             binary_stdout_path = str(out_dir / _BINARY_STDOUT_FILENAME)
 
@@ -343,67 +337,147 @@ def execute(
     return result
 
 
-def _is_artifact_ref(value: Any) -> bool:
-    """A derived-artifact input value: ``{"run_id": str, "relpath": str}``.
-
-    A literal string path (the existing input contract) is NOT a ref and is passed to the
-    wrapper untouched — the two are unambiguous (str vs dict), so text tools are unaffected.
-    """
-    return (
-        isinstance(value, dict)
-        and isinstance(value.get("run_id"), str)
-        and isinstance(value.get("relpath"), str)
-    )
-
-
-def _has_artifact_ref(tool: Tool, params: dict[str, Any]) -> bool:
-    return any(_is_artifact_ref(params.get(name)) for name in tool.input_artifact_params)
-
-
-def _resolve_artifact_inputs(
-    tool: Tool, params: dict[str, Any], case_id: str
+def _gate_path_parameters(
+    tool: Tool, params: dict[str, Any], case_id: str | None
 ) -> list[dict[str, Any]]:
-    """Resolve each declared artifact-ref input to a re-verified on-disk path, in place.
-
-    For every ``input_artifact_params`` name whose value is an artifact ref, ask the
-    ArtifactStore to resolve it to the producing run's output file and RE-HASH it against
-    that run's manifest (custody of the derivative — FORENSIC INVARIANTS 1-2). On success
-    the ref is replaced by the resolved string path (so ``build_argv`` sees a normal path)
-    and a derivation link is returned for the audit. A hash mismatch, a missing/unknown
-    artifact, or a non-confined relpath fails loud — never use an unverified derivative
-    (RULE 2).
-    """
+    """Apply the Tool's declared path roles and canonicalize values in place."""
     links: list[dict[str, Any]] = []
-    for name in tool.input_artifact_params:
-        ref = params.get(name)
-        if not _is_artifact_ref(ref):
-            continue  # a literal path (or absent) — unchanged behaviour
-        try:
-            path, sha256, size = artifact_store.resolve_output_file(
-                case_id, ref["run_id"], ref["relpath"]
+    case_dir: Path | None = None
+    for spec in tool.path_parameters:
+        value = params.get(spec.name)
+        if PathRole.RUN_OUTPUT in spec.roles:
+            if spec.name in params:
+                raise ToolExecutionError(
+                    f"tool {tool.id!r}: {spec.name!r} is RUN_OUTPUT and is owned by "
+                    "the dispatcher/ArtifactStore; callers may not override it"
+                )
+            if case_id is None:
+                raise ToolExecutionError(
+                    f"tool {tool.id!r}: RUN_OUTPUT {spec.name!r} requires case_id"
+                )
+            continue
+        if value is None:
+            if spec.required:
+                raise ToolExecutionError(
+                    f"tool {tool.id!r}: required path parameter {spec.name!r} is missing"
+                )
+            continue
+        if is_artifact_ref(value):
+            if PathRole.DERIVED_INPUT not in spec.roles:
+                raise ToolExecutionError(
+                    f"tool {tool.id!r}: {spec.name!r} does not accept DERIVED_INPUT refs"
+                )
+            if case_id is None:
+                raise ToolExecutionError(
+                    f"tool {tool.id!r}: DERIVED_INPUT {spec.name!r} requires case_id"
+                )
+            ref = validate_artifact_ref(value)
+            links.append(_resolve_artifact_ref(spec.name, ref, case_id, params))
+            continue
+        if isinstance(value, dict):
+            raise ToolExecutionError(
+                f"tool {tool.id!r}: malformed artifact ref for {spec.name!r}; "
+                "expected {run_id, relpath} with optional sha256 and size, and no "
+                "unknown keys"
             )
-        except ArtifactIntegrityError as exc:
-            raise ToolExecutionError(
-                f"input derivado para {name!r}: {exc} — custodia del derivado rota, no se "
-                "ejecuta la tool (FORENSIC INVARIANTS 1-2 / RULE 2)."
-            ) from exc
-        except (KeyError, ValueError) as exc:
-            raise ToolExecutionError(
-                f"input derivado para {name!r}: no se pudo resolver la referencia de "
-                f"artefacto {ref!r} en el caso {case_id!r} ({type(exc).__name__}: {exc})."
-            ) from exc
-        params[name] = str(path)
-        links.append(
-            {
-                "param": name,
-                "source_run_id": ref["run_id"],
-                "relpath": ref["relpath"],
-                "sha256": sha256,
-                "size": size,
-                "resolved_path": str(path),
-            }
+        mapped = map_exact_identifier(spec, value)
+        if mapped is not None:
+            params[spec.name] = mapped
+            continue
+        mapped_only = all(
+            role in (PathRole.BUNDLED_RULESET, PathRole.RUNTIME_DEVICE)
+            for role in spec.roles
         )
+        if mapped_only:
+            allowed = [entry.id for entry in spec.bundled]
+            raise ToolExecutionError(
+                f"tool {tool.id!r}: invalid identifier for {spec.name!r}: {value!r}; "
+                f"allowed exact ids: {allowed}"
+            )
+        concrete_roles = [
+            role
+            for role in spec.roles
+            if role in (PathRole.EVIDENCE_INPUT, PathRole.CASE_INPUT)
+        ]
+        if len(concrete_roles) != 1:
+            raise ToolExecutionError(
+                f"tool {tool.id!r}: {spec.name!r} has no unambiguous string-path role"
+            )
+        if case_id is None:
+            raise ToolExecutionError(
+                f"tool {tool.id!r}: case-scoped path {spec.name!r} requires case_id"
+            )
+        if case_dir is None:
+            case_dir = case_manager.case_dir(case_id)
+        root = (
+            case_dir / "evidence"
+            if concrete_roles[0] is PathRole.EVIDENCE_INPUT
+            else case_dir
+        )
+        try:
+            resolved = resolve_existing_confined_path(
+                value, root=root, kind=spec.kind, parameter=spec.name
+            )
+            artifacts_root = (case_dir / "artifacts").resolve()
+            if (
+                concrete_roles[0] is PathRole.CASE_INPUT
+                and (resolved == artifacts_root or artifacts_root in resolved.parents)
+            ):
+                raise PathPolicyError(
+                    f"{spec.name}: paths under artifacts/ are DERIVED_INPUT and must "
+                    "be supplied as exactly {run_id, relpath} for re-hash"
+                )
+            params[spec.name] = str(resolved)
+        except PathPolicyError as exc:
+            raise ToolExecutionError(f"tool {tool.id!r}: {exc}") from exc
     return links
+
+
+def _resolve_artifact_ref(
+    name: str, ref: dict[str, Any], case_id: str, params: dict[str, Any]
+) -> dict[str, Any]:
+    try:
+        path, sha256, size = artifact_store.resolve_output_file(
+            case_id, ref["run_id"], ref["relpath"]
+        )
+    except ArtifactIntegrityError as exc:
+        raise ToolExecutionError(
+            f"input derivado para {name!r}: {exc} — custodia rota; no se ejecuta"
+        ) from exc
+    except (KeyError, ValueError) as exc:
+        raise ToolExecutionError(
+            f"input derivado para {name!r}: no se pudo resolver {ref!r} en el caso "
+            f"{case_id!r} ({type(exc).__name__}: {exc})"
+        ) from exc
+    advertised_sha256 = ref.get("sha256")
+    if advertised_sha256 is not None and not hmac.compare_digest(
+        advertised_sha256.casefold(), sha256.casefold()
+    ):
+        raise ToolExecutionError(
+            f"input derivado para {name!r}: ArtifactRef sha256 no coincide con el "
+            "SHA-256 autoritativo re-hasheado por ArtifactStore; no se ejecuta"
+        )
+    advertised_size = ref.get("size")
+    if advertised_size is not None and advertised_size != size:
+        raise ToolExecutionError(
+            f"input derivado para {name!r}: ArtifactRef size={advertised_size} no "
+            f"coincide con el tamaño autoritativo {size} de ArtifactStore; no se ejecuta"
+        )
+    params[name] = str(path)
+    return {
+        "param": name,
+        "source_run_id": ref["run_id"],
+        "relpath": ref["relpath"],
+        "sha256": sha256,
+        "size": size,
+        "resolved_path": str(path),
+    }
+
+
+def _inject_run_outputs(tool: Tool, params: dict[str, Any], out_dir: Path) -> None:
+    for spec in tool.path_parameters:
+        if PathRole.RUN_OUTPUT in spec.roles:
+            params[spec.name] = str(generated_run_output(spec, out_dir))
 
 
 def _binary_artifact_ref(artifact_run: Any | None) -> dict[str, Any]:
@@ -433,12 +507,13 @@ def _validate_params_before_artifact(tool: Tool, params: dict[str, Any]) -> None
     """Run wrapper validation before allocating an anchored ArtifactRun.
 
     ``build_argv`` is a pure validation/assembly contract and anchored runs call it
-    twice. Some wrappers require the dispatcher-owned ``output_dir``. A marker
-    satisfies that internal field for the first pass only; it is never resolved,
-    audited or run.
+    twice. Dispatcher-owned RUN_OUTPUT params receive a marker in this first pass;
+    it is never resolved, audited or run.
     """
     validation_params = dict(params)
-    validation_params.setdefault("output_dir", _PENDING_OUTPUT_DIR)
+    for spec in tool.path_parameters:
+        if PathRole.RUN_OUTPUT in spec.roles:
+            validation_params[spec.name] = _PENDING_OUTPUT_DIR
     _build_argv_tail(tool, validation_params)
 
 

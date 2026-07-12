@@ -58,7 +58,10 @@ def store(cases) -> ArtifactStore:
 
 @pytest.fixture
 def case(cases):
-    return cases.create(name="op", examiner="alice", os_profile="unix")
+    created = cases.create(name="op", examiner="alice", os_profile="unix")
+    evidence = cases.root / created.id / "evidence" / "original.raw"
+    evidence.write_bytes(b"disk")
+    return created
 
 
 @pytest.fixture
@@ -111,7 +114,10 @@ def test_dispatcher_binary_stdout_lands_exact_hashed_artifact(
 
     result = wired_dispatcher.execute(
         "tsk_icat",
-        {"image_path": "/cases/img.raw", "inode": 5},
+        {
+            "image_path": str(cases.root / case.id / "evidence" / "original.raw"),
+            "inode": 5,
+        },
         case_id=case.id,
         os_profile="unix",
     )

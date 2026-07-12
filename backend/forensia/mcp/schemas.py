@@ -5,17 +5,16 @@ schema that becomes its MCP ``inputSchema``. The schema enforces the L2 line:
 **no raw paths to evidence are accepted as parameters**. Path-bearing fields
 are:
 
-- Evidence paths (image_path / dump_path / evtx_path / mft_path / hive_path /
-  target_path / bodyfile_path / target_dir / evtx_dir): EXCLUDED from the
-  schema. The MCP server injects them from the session's selected evidence
-  via ``toolkit._inject_evidence_path``.
+- Evidence paths (image_path / dump_path / evtx_path / mft_path / target_path /
+  target_dir / evtx_dir): EXCLUDED from the schema. The MCP server injects them
+  from the session's selected evidence through the catalog-declared shared path
+  policy. A path role that also accepts DERIVED_INPUT may expose only the shared
+  ArtifactRef contract, never a free evidence path.
 - ``output_dir``: EXCLUDED — injected by the dispatcher from ArtifactStore.
-- Auxiliary paths that are NOT evidence (yara ``rules_path``, jq
-  ``input_path``, chainsaw ``sigma_dir`` / ``rules_dir``): present as
-  optional strings, but CONFINED to FORENSIA's case tree via
-  ``_validate_confined_path`` — see SEC-1 of the round-1 panel review. A
-  malicious LLM cannot exfiltrate ``/etc/passwd`` or ``~/.aws/credentials``
-  through these fields.
+- Auxiliary paths that are NOT evidence (YARA ``rules_path``, jq ``input_path``,
+  Chainsaw ``sigma_dir`` / ``rules_dir``) remain typed here, while the shared catalog
+  path policy confines them to the active case. The dispatcher repeats that gate for
+  every caller, including direct calls.
 
 We keep the schemas under ``forensia.mcp.schemas`` (a sibling of the
 catalog) so the catalog stays usable by the existing dispatcher tests that
@@ -24,48 +23,11 @@ never touched MCP.
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Annotated, Literal, Optional
+from typing import Literal, Optional
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field
 
-from forensia.cases.manager import case_manager
-
-
-def _validate_confined_path(value: str) -> str:
-    """SEC-1 — reject any auxiliary path that escapes the FORENSIA case tree.
-
-    Acceptable bases:
-    - ``case_manager.root`` (i.e. ``~/.forensia/cases``) — any case's
-      artifact/evidence subtree counts. The dispatcher itself owns the
-      finer-grained checks (artifact path-traversal guard lives in
-      ``forensia.mcp.resources``).
-
-    Anything else — absolute paths to system files, ``~/.ssh``, ``/tmp``
-    outside the FORENSIA tree — fails LOUD at schema validation. RULE 2.
-
-    The check is permissive in one way: it walks ``Path(value).resolve()``
-    so the symlink target is what gets checked, not the lexical string. A
-    symlink inside the case tree pointing at ``/etc/passwd`` is still
-    rejected because the resolved path is the system file.
-    """
-    if not value:
-        raise ValueError("path must be non-empty")
-    resolved = Path(value).resolve(strict=False)
-    root = case_manager.root.resolve()
-    if resolved != root and root not in resolved.parents:
-        raise ValueError(
-            f"path {value!r} (resolved {resolved}) is outside the FORENSIA "
-            f"case tree ({root}); only paths under that tree are accepted "
-            "for auxiliary tool inputs (RULE 2 — no exfiltration of arbitrary "
-            "host files via auxiliary path params)."
-        )
-    return value
-
-
-# Type alias used for every aux-path field. Pydantic v2 picks up the
-# AfterValidator and runs it at parse time.
-ConfinedPath = Annotated[str, AfterValidator(_validate_confined_path)]
+from forensia.artifact_ref import ArtifactRef
 
 
 class _StrictModel(BaseModel):
@@ -73,7 +35,7 @@ class _StrictModel(BaseModel):
 
     Without ``extra='forbid'`` a malicious or careless caller could pass
     ``{'image_path': '/etc/passwd', ...}`` and Pydantic would silently drop
-    it. The injection layer in ``toolkit._inject_evidence_path`` would still
+    it. The shared evidence-injection policy would still
     set the right path, but the request would not have failed loud — and
     RULE 2 demands fail-loud over fail-quiet. Forbid extras and we get an
     explicit ``ValidationError`` the moment someone tries it.
@@ -198,6 +160,7 @@ class TskFlsParams(_StrictModel):
 class TskMactimeParams(_StrictModel):
     """``mactime`` — turn a body file (from `tsk_fls -m`) into a timeline."""
 
+    bodyfile_path: ArtifactRef
     iso_dates: bool = Field(
         default=True,
         description="Use ISO-8601 dates instead of locale-dependent strings.",
@@ -256,9 +219,7 @@ class RECmdParams(_StrictModel):
     (RULE 2: closed contract; the wrapper anchors it to the shipped directory).
     """
 
-    batch: str = Field(
-        max_length=128,
-        pattern=r"^[A-Za-z0-9._-]+\.reb$",
+    batch: Literal["Kroll_Batch.reb"] = Field(
         description=(
             "RECmd batch file name from the maletín's BatchExamples/ "
             "(e.g. `Kroll_Batch.reb`). A bare name — never a path."
@@ -312,11 +273,15 @@ class RBCmdParams(_StrictModel):
 class RegRipperParams(_StrictModel):
     """``rip`` (RegRipper) — run a registry-analysis plugin against a hive file.
 
-    The hive path is the EVIDENCE — injected from the session. Either supply
-    a single ``plugin`` to run one, a ``profile`` to run a bundle, or set
-    ``list=true`` to query the available plugins.
+    The hive can be the selected EVIDENCE injected from the session, or an
+    ``ArtifactRef`` emitted by a prior producer such as ``tsk_icat``. Either supply a
+    single ``plugin`` to run one, a ``profile`` to run a bundle, or set ``list=true``.
     """
 
+    hive_path: Optional[ArtifactRef] = Field(
+        default=None,
+        description="ArtifactRef emitted by a prior producer such as tsk_icat.",
+    )
     list: bool = Field(
         default=False,
         description="If true, list available plugins instead of running.",
@@ -339,16 +304,16 @@ class YaraParams(_StrictModel):
     """``yara`` — match rules against the evidence (target_path injected).
 
     ``rules_path`` is a path to a YARA rules file or directory. **Confined**
-    to the FORENSIA case tree (SEC-1 — see ``_validate_confined_path``); the
+    to the active FORENSIA case by the shared dispatcher policy; the
     operator stages rule bundles under e.g. ``~/.forensia/cases/<case>/rules/``.
     """
 
-    rules_path: ConfinedPath = Field(
+    rules_path: str = Field(
         min_length=1,
         max_length=2048,
         description=(
             "Path to a YARA rules file or directory. Must live inside the "
-            "FORENSIA case tree (``~/.forensia/cases/...``)."
+            "active FORENSIA case directory."
         ),
     )
     recursive: bool = Field(
@@ -366,7 +331,7 @@ class YaraParams(_StrictModel):
 class JqParams(_StrictModel):
     """``jq`` — query a JSON artifact already on disk (typically a prior run's output).
 
-    ``input_path`` MUST live under the FORENSIA case tree (SEC-1). Typically
+    ``input_path`` MUST live under the active FORENSIA case directory (SEC-1). Typically
     an artifact at ``~/.forensia/cases/<case>/artifacts/<run>/stdout.txt``
     (or similar) emitted by an earlier tool call.
     """
@@ -376,12 +341,10 @@ class JqParams(_StrictModel):
         max_length=4096,
         description="The jq filter expression (e.g. `.[] | select(.severity==\"high\")`).",
     )
-    input_path: ConfinedPath = Field(
-        min_length=1,
-        max_length=2048,
+    input_path: str | ArtifactRef = Field(
         description=(
-            "Path to the JSON file to query. Confined to the FORENSIA case "
-            "tree (``~/.forensia/cases/...``); typically an artifact from a "
+            "Path to the JSON file to query. Confined to the active FORENSIA case "
+            "directory; typically an artifact from a "
             "previous run."
         ),
     )
@@ -525,11 +488,6 @@ class BulkExtractorParams(_StrictModel):
 class HayabusaParams(_StrictModel):
     """``hayabusa`` — Sigma-rule scan over EVTX dir (injected as evtx_dir)."""
 
-    output_csv: Optional[str] = Field(
-        default=None,
-        max_length=2048,
-        description="Override the output CSV path. If omitted, the dispatcher chooses one.",
-    )
     min_level: Optional[Literal["info", "low", "medium", "high", "critical"]] = Field(
         default=None,
         description="Minimum severity to report.",
@@ -539,37 +497,31 @@ class HayabusaParams(_StrictModel):
 class ChainsawParams(_StrictModel):
     """``chainsaw hunt`` — Sigma rules over EVTX dir (target injected).
 
-    ``sigma_dir`` and ``rules_dir`` MUST live under the FORENSIA case tree
+    ``sigma_dir`` and ``rules_dir`` MUST live under the active FORENSIA case directory
     (SEC-1). Bundled rule sets go under e.g. ``~/.forensia/cases/<case>/rules/``.
     """
 
-    sigma_dir: Optional[ConfinedPath] = Field(
+    sigma_dir: Optional[str] = Field(
         default=None,
         max_length=2048,
         description=(
-            "Path to a Sigma rules directory. Confined to the FORENSIA case "
-            "tree."
+            "Path to a Sigma rules directory. Confined to the active FORENSIA "
+            "case directory."
         ),
     )
-    rules_dir: Optional[ConfinedPath] = Field(
+    rules_dir: Optional[str] = Field(
         default=None,
         max_length=2048,
         description=(
             "Path to a Chainsaw rules directory (e.g. mappings). Confined to "
-            "the FORENSIA case tree."
+            "the active FORENSIA case directory."
         ),
     )
-    output_format: Optional[Literal["csv", "json"]] = Field(
+    ruleset: Optional[Literal["chainsaw-native"]] = Field(
         default=None,
-        description="Output format. If omitted, the wrapper picks one.",
+        description="Bundled ruleset id mapped to one exact maletin path.",
     )
-    output_path: Optional[ConfinedPath] = Field(
-        default=None,
-        max_length=2048,
-        description=(
-            "Override output file path. Confined to the FORENSIA case tree."
-        ),
-    )
+    output_format: Literal["csv", "json"]
 
 
 # ============================================================================

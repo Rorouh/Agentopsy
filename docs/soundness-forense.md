@@ -101,6 +101,37 @@ del MCP.
 - **Trabajo (outputs)**: volumen RW separado para artefactos, cachés de símbolos de
   Volatility, ficheros `.plaso`. Cada artefacto se hashea al producirse y se enlaza en el log.
 
+### 4.1 Política central de rutas de tools (P0.5-2)
+
+Cada `Tool` declara explícitamente sus parámetros filesystem; no se detectan por sufijos.
+`forensia.path_policy` define roles cerrados y el dispatcher los aplica **antes** de
+reservar `ArtifactRun`, escribir `tool_run_start` o cruzar el runner:
+
+- `EVIDENCE_INPUT`: path inyectado desde el handle, existente y confinado a
+  `case_dir/evidence` del caso activo.
+- `CASE_INPUT`: auxiliar RO existente y confinado al `case_dir` activo; otro caso,
+  traversal, escape por symlink y directorios sensibles se rechazan.
+- `DERIVED_INPUT`: solo el contrato compartido `ArtifactRef`: `run_id` y `relpath`
+  obligatorios, `sha256` y `size` opcionales, sin claves adicionales.
+  `ArtifactStore.resolve_output_file` confina y re-hashea siempre. Si los metadatos
+  opcionales no coinciden con ese valor autoritativo, falla antes del runner. Una ruta
+  literal bajo `artifacts/` se rechaza.
+- `RUN_OUTPUT`: el caller no lo puede suministrar. El dispatcher lo genera exclusivamente
+  bajo `artifacts/<run_actual>/out`; no puede apuntar a `case.json`, `baseline.json`,
+  `audit.jsonl`, manifests ni otro run. `bulk_extractor` recibe específicamente
+  `out/bulk_extractor`, todavía inexistente al cruzar el runner porque su CLI exige crear
+  el directorio; ArtifactStore descubre y hashea después todos sus ficheros.
+- `BUNDLED_RULESET` / `RUNTIME_DEVICE`: el modelo aporta un id de enum exacta y el backend
+  lo mapea a una única ruta allowlisted por tool. No existe una allowlist amplia de `/opt`
+  o `/dev`.
+
+Sin `case_id`, cualquier rol case-scoped o `RUN_OUTPUT` falla fuerte. MCP y el agente
+consumen el mismo contrato del catálogo; una llamada directa al dispatcher recibe el
+mismo gate.
+
+`qemu_nbd` conserva el identificador cerrado `nbd0` → `/dev/nbd0` y emite `-r`
+incondicionalmente. No publica ni acepta un modo escribible.
+
 ## 5. Frontera de egreso de datos (nube)
 
 La herramienta **no llama a APIs cloud por sí misma ni usa API keys**. El egreso solo puede
@@ -148,9 +179,9 @@ protecciones:
   declara `apply_in` con los modos en los que aplica.
 - Schemas Pydantic `extra='forbid'` rechazan que el cliente MCP envíe paths crudos a
   evidencia (`image_path`, `dump_path`, etc.); el dispatcher los inyecta desde
-  `EvidenceManager`. Los paths auxiliares (yara `rules_path`, jq `input_path`,
-  chainsaw `sigma_dir`/`rules_dir`) están confinados a `~/.forensia/cases/` por un
-  validador Pydantic.
+  `EvidenceManager`. Los paths auxiliares (YARA `rules_path`, jq `input_path`, Chainsaw
+  `sigma_dir`/`rules_dir`) pasan por la política compartida y quedan confinados al
+  **caso activo**, no al árbol global de casos.
 
 ## 6. Manifiesto del caso (reproducibilidad)
 

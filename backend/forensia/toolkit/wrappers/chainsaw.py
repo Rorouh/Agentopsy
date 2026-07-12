@@ -2,7 +2,8 @@
 
 Bundled cross-platform Rust binary. The wrapper composes a `hunt` invocation;
 the target directory holds the pre-extracted artifacts (no raw image access).
-At least one rule source — `sigma_dir` or `rules_dir` — must be provided.
+At least one rule source — `sigma_dir`, `rules_dir` or dispatcher-mapped `ruleset` —
+must be provided.
 """
 
 from __future__ import annotations
@@ -33,12 +34,17 @@ def build_argv(params: dict[str, Any]) -> list[str]:
 
     sigma_dir = params.get("sigma_dir")
     rules_dir = params.get("rules_dir")
+    ruleset = params.get("ruleset")
     if sigma_dir is not None and not isinstance(sigma_dir, str):
         raise ValueError("chainsaw sigma_dir must be a str")
     if rules_dir is not None and not isinstance(rules_dir, str):
         raise ValueError("chainsaw rules_dir must be a str")
-    if not sigma_dir and not rules_dir:
-        raise ValueError("chainsaw requires at least one of sigma_dir / rules_dir")
+    if ruleset is not None and not isinstance(ruleset, str):
+        raise ValueError("chainsaw ruleset must be a dispatcher-mapped str")
+    if rules_dir and ruleset:
+        raise ValueError("chainsaw accepts rules_dir or ruleset, not both")
+    if not sigma_dir and not rules_dir and not ruleset:
+        raise ValueError("chainsaw requires sigma_dir, rules_dir or ruleset")
 
     output_format = params.get("output_format")
     if not output_format or not isinstance(output_format, str):
@@ -54,6 +60,8 @@ def build_argv(params: dict[str, Any]) -> list[str]:
         argv += ["-s", sigma_dir]
     if rules_dir:
         argv += ["-r", rules_dir]
+    if ruleset:
+        argv += ["-r", ruleset]
     argv += [f"--{output_format}", "--output", output_path]
     return argv
 

@@ -41,8 +41,9 @@ class _AlwaysSameTool(ModelBackend):
 
     name = "fake"
 
-    def __init__(self, tool_id: str) -> None:
+    def __init__(self, tool_id: str, params: dict[str, Any] | None = None) -> None:
         self.tool_id = tool_id
+        self.params = params or {}
 
     def capabilities(self) -> ModelCapabilities:
         return ModelCapabilities(supports_native_tools=False, json_mode=True, max_context=0, is_local=True)
@@ -50,7 +51,7 @@ class _AlwaysSameTool(ModelBackend):
     def next_action(self, state: dict[str, Any], tools: list[dict[str, Any]]) -> ToolCall:
         return ToolCall(
             tool_id=self.tool_id,
-            params={},
+            params=dict(self.params),
             call_id="x",
             assistant_message={"role": "assistant", "content": "{}"},
         )
@@ -67,6 +68,36 @@ class _FakeEvidence:
             # EvidenceHandle always carries it, so the fake must too.
             sha256="0" * 64,
         )
+
+
+def test_agent_rejects_model_chosen_evidence_path_before_dispatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = {"n": 0}
+
+    def forbidden_execute(*args, **kwargs):
+        del args, kwargs
+        calls["n"] += 1
+        raise AssertionError("dispatcher must not be reached")
+
+    monkeypatch.setattr("forensia.toolkit.dispatcher.execute", forbidden_execute)
+    pkg = load_package(AGENTES_DIR / "forensia-unix")
+    agent = ForensicAgent(
+        pkg,
+        _AlwaysSameTool(
+            "yara",
+            {"target_path": "/etc/passwd", "rules_path": "rules.yar"},
+        ),
+        _FakeEvidence(),
+    )
+
+    result = agent.run("analiza", case_id="c", evidence_id="e")
+
+    assert calls["n"] == 0
+    assert any(
+        "may not choose an EVIDENCE_INPUT" in call.get("error", "")
+        for call in result["tool_calls"]
+    )
 
 
 def test_failing_tool_blocked_after_max_attempts(monkeypatch: pytest.MonkeyPatch) -> None:

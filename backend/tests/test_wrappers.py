@@ -647,7 +647,7 @@ class TestChainsaw:
             )
 
     def test_build_argv_no_rule_source_raises(self):
-        with pytest.raises(ValueError, match="sigma_dir / rules_dir"):
+        with pytest.raises(ValueError, match="sigma_dir, rules_dir or ruleset"):
             chainsaw.build_argv(
                 {"target_dir": "/in", "output_format": "csv", "output_path": "/o"}
             )
@@ -955,7 +955,7 @@ class TestRECmd:
             {
                 "hive_path": "/evidence/config/SOFTWARE",
                 "output_dir": "/tmp/out",
-                "batch": "Kroll_Batch.reb",
+                "batch": "/opt/eztools/RECmd/RECmd/BatchExamples/Kroll_Batch.reb",
             }
         )
         assert "--bn" in argv
@@ -968,7 +968,7 @@ class TestRECmd:
             {
                 "hive_path": "/evidence/config",
                 "output_dir": "/tmp/out",
-                "batch": "Kroll_Batch.reb",
+                "batch": "/opt/eztools/RECmd/RECmd/BatchExamples/Kroll_Batch.reb",
                 "is_directory": True,
             }
         )
@@ -978,20 +978,12 @@ class TestRECmd:
         with pytest.raises(ValueError, match="batch"):
             recmd.build_argv({"hive_path": "/x", "output_dir": "/o"})
 
-    def test_build_argv_batch_with_path_separator_raises(self):
-        # RULE 2 / closed contract: el batch es un NOMBRE, nunca una ruta.
-        with pytest.raises(ValueError, match="batch"):
-            recmd.build_argv(
-                {"hive_path": "/x", "output_dir": "/o", "batch": "../../etc/passwd.reb"}
-            )
-
-    def test_build_argv_batch_without_reb_extension_raises(self):
-        with pytest.raises(ValueError, match="batch"):
-            recmd.build_argv({"hive_path": "/x", "output_dir": "/o", "batch": "Kroll_Batch"})
-
     def test_build_argv_missing_hive_path_raises(self):
         with pytest.raises(ValueError, match="hive_path"):
-            recmd.build_argv({"output_dir": "/o", "batch": "Kroll_Batch.reb"})
+            recmd.build_argv({
+                "output_dir": "/o",
+                "batch": "/opt/eztools/RECmd/RECmd/BatchExamples/Kroll_Batch.reb",
+            })
 
     def test_build_argv_non_bool_is_directory_raises(self):
         with pytest.raises(ValueError, match="is_directory"):
@@ -1441,16 +1433,32 @@ class TestPlasoPsort:
 # --------------------------------------------------------------------------- #
 class TestQemuNbd:
     def test_build_argv_minimum_valid(self):
-        argv = qemu_nbd.build_argv({"image_path": "/ev/img.raw"})
+        argv = qemu_nbd.build_argv(
+            {"image_path": "/ev/img.raw", "nbd_device": "/dev/nbd0"}
+        )
         # read-only por defecto (soundness), formato raw, device /dev/nbd0
         assert argv == ["-r", "-f", "raw", "-c", "/dev/nbd0", "/ev/img.raw"]
 
-    def test_build_argv_qcow2_writable_custom_device(self):
+    def test_build_argv_qcow2_is_always_read_only(self):
         argv = qemu_nbd.build_argv(
-            {"image_path": "/x.qcow2", "image_format": "qcow2", "nbd_device": "/dev/nbd3", "read_only": False}
+            {
+                "image_path": "/x.qcow2",
+                "image_format": "qcow2",
+                "nbd_device": "/dev/nbd0",
+            }
         )
-        assert "-r" not in argv
-        assert "qcow2" in argv and "/dev/nbd3" in argv
+        assert "-r" in argv
+        assert "qcow2" in argv and "/dev/nbd0" in argv
+
+    def test_writable_mode_is_not_part_of_contract(self):
+        with pytest.raises(ValueError, match="always read-only"):
+            qemu_nbd.build_argv(
+                {
+                    "image_path": "/x",
+                    "nbd_device": "/dev/nbd0",
+                    "read_only": False,
+                }
+            )
 
     def test_build_argv_missing_image_path_raises(self):
         with pytest.raises(ValueError, match="image_path"):
@@ -1462,7 +1470,9 @@ class TestQemuNbd:
 
     def test_build_argv_bad_format_raises(self):
         with pytest.raises(ValueError, match="image_format"):
-            qemu_nbd.build_argv({"image_path": "/x", "image_format": "iso"})
+            qemu_nbd.build_argv({
+                "image_path": "/x", "image_format": "iso", "nbd_device": "/dev/nbd0"
+            })
 
     def test_parse_returns_note(self):
         out = qemu_nbd.parse("")

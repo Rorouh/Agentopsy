@@ -8,7 +8,8 @@ Two properties pin the chain ``icat → artefacto → RegRipper``:
     artifact file must REMIT TO THE ARTIFACT ({run_id, relpath, sha256, size}) in its
     result — never ``content_length: 0``, which reads as "the tool returned nothing".
   * DERIVED HANDOFF (2): a consumer (RegRipper) may take, for a declared input param, an
-    artifact ref ({run_id, relpath}) the dispatcher resolves to the producing run's
+    ArtifactRef ({run_id, relpath, sha256?, size?}) the dispatcher resolves to the
+    producing run's
     on-disk file, RE-VERIFYING its SHA-256 against the manifest BEFORE running (custody of
     the derivative — FORENSIC INVARIANTS 1-2) and recording the derivation LINK in the
     audit (INVARIANT 4). A hash mismatch fails loud (RULE 2), never runs on a tampered file.
@@ -49,7 +50,9 @@ def store(cases) -> ArtifactStore:
 
 @pytest.fixture
 def case(cases):
-    return cases.create(name="op", examiner="alice", os_profile="windows")
+    created = cases.create(name="op", examiner="alice", os_profile="windows")
+    (cases.root / created.id / "evidence" / "original.raw").write_bytes(b"disk")
+    return created
 
 
 @pytest.fixture
@@ -88,7 +91,15 @@ def _run_icat(wired_dispatcher, monkeypatch, case, captured) -> dict:
     )
     return wired_dispatcher.execute(
         "tsk_icat",
-        {"image_path": "/cases/img.raw", "inode": 5},
+        {
+            "image_path": str(
+                wired_dispatcher.case_manager.root
+                / case.id
+                / "evidence"
+                / "original.raw"
+            ),
+            "inode": 5,
+        },
         case_id=case.id,
         os_profile="windows",
     )
@@ -127,7 +138,7 @@ def test_icat_to_regripper_handoff_rehash_ok_and_audit_link(
     # invented by the agent. The dispatcher resolves + re-hashes it before running.
     regripper = wired_dispatcher.execute(
         "regripper",
-        {"hive_path": {"run_id": ref["run_id"], "relpath": ref["relpath"]}, "plugin": "compname"},
+        {"hive_path": ref, "plugin": "compname"},
         case_id=case.id,
         os_profile="windows",
     )
@@ -171,7 +182,7 @@ def test_icat_to_regripper_handoff_hash_mismatch_fails_loud(
     with pytest.raises(wired_dispatcher.ToolExecutionError, match="custodia|SHA-256|match"):
         wired_dispatcher.execute(
             "regripper",
-            {"hive_path": {"run_id": ref["run_id"], "relpath": ref["relpath"]}, "plugin": "compname"},
+            {"hive_path": ref, "plugin": "compname"},
             case_id=case.id,
             os_profile="windows",
         )
@@ -179,6 +190,61 @@ def test_icat_to_regripper_handoff_hash_mismatch_fails_loud(
     # A tampered derivative never reaches the runner (RULE 2): no start for a 2nd run.
     starts = [e for e in _audit_entries(cases, case.id) if e.get("action") == "tool_run_start"]
     assert len(starts) == 1  # only the icat run started
+
+
+def test_minimal_artifact_ref_remains_compatible(
+    wired_dispatcher, monkeypatch, case
+) -> None:
+    captured: dict = {}
+    icat = _run_icat(wired_dispatcher, monkeypatch, case, captured)
+    ref = icat["parsed"]["artifact"]
+    result = wired_dispatcher.execute(
+        "regripper",
+        {
+            "hive_path": {"run_id": ref["run_id"], "relpath": ref["relpath"]},
+            "plugin": "compname",
+        },
+        case_id=case.id,
+        os_profile="windows",
+    )
+    assert result["exit_code"] == 0
+
+
+@pytest.mark.parametrize(
+    "mutated",
+    [
+        {"extra": "forbidden"},
+        {"sha256": "0" * 64},
+        {"size": len(_HIVE_BYTES) + 1},
+    ],
+)
+def test_artifact_ref_unknown_or_false_metadata_fails_before_runner_and_start(
+    wired_dispatcher, monkeypatch, case, cases, mutated
+) -> None:
+    captured: dict = {}
+    icat = _run_icat(wired_dispatcher, monkeypatch, case, captured)
+    ref = {**icat["parsed"]["artifact"], **mutated}
+    calls_before = len(captured["calls"])
+    starts_before = len(
+        [e for e in _audit_entries(cases, case.id) if e.get("action") == "tool_run_start"]
+    )
+
+    with pytest.raises(
+        wired_dispatcher.ToolExecutionError,
+        match="ArtifactRef|sha256|size|unknown",
+    ):
+        wired_dispatcher.execute(
+            "regripper",
+            {"hive_path": ref, "plugin": "compname"},
+            case_id=case.id,
+            os_profile="windows",
+        )
+
+    assert len(captured["calls"]) == calls_before
+    starts_after = len(
+        [e for e in _audit_entries(cases, case.id) if e.get("action") == "tool_run_start"]
+    )
+    assert starts_after == starts_before
 
 
 def test_artifact_ref_without_case_id_fails_loud(wired_dispatcher) -> None:

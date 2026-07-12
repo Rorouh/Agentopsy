@@ -28,7 +28,13 @@ def store(cases) -> ArtifactStore:
 
 @pytest.fixture
 def case(cases):
-    return cases.create(name="op", examiner="alice", os_profile="unix")
+    created = cases.create(name="op", examiner="alice", os_profile="unix")
+    (cases.root / created.id / "evidence" / "original.raw").write_bytes(b"disk")
+    return created
+
+
+def _evidence_path(cases: CaseManager, case) -> str:
+    return str(cases.root / case.id / "evidence" / "original.raw")
 
 
 @pytest.fixture
@@ -53,16 +59,12 @@ def _audit_entries(cases: CaseManager, case_id: str) -> list[dict]:
 # --------------------------------------------------------------------------- #
 class TestLegacyShape:
     def test_no_case_id_returns_legacy_dict_shape(self, wired_dispatcher, tmp_path):
-        _require_jq()
         inp = tmp_path / "in.json"
         inp.write_text('{"name": "x"}')
-        result = wired_dispatcher.execute(
-            "jq", {"filter": ".name", "input_path": str(inp)}
-        )
-        assert "case_id" not in result
-        assert "run_id" not in result
-        assert "artifact_run" not in result
-        assert result["exit_code"] == 0
+        with pytest.raises(wired_dispatcher.ToolExecutionError, match="case_id"):
+            wired_dispatcher.execute(
+                "jq", {"filter": ".name", "input_path": str(inp)}
+            )
 
 
 # --------------------------------------------------------------------------- #
@@ -111,7 +113,7 @@ class TestAuditableRunnerBoundary:
         ) as raised:
             wired_dispatcher.execute(
                 "tsk_mmls",
-                {"image_path": "/cases/image.raw"},
+                {"image_path": _evidence_path(cases, case)},
                 case_id=case.id,
                 os_profile="unix",
             )
@@ -152,13 +154,13 @@ class TestAuditableRunnerBoundary:
             assert start["case_id"] == case.id
             assert start["run_id"]
             assert start["tool_id"] == "tsk_mmls"
-            assert start["params"]["image_path"] == "/cases/image.raw"
+            assert start["params"]["image_path"] == _evidence_path(cases, case)
             return subprocess.CompletedProcess(argv, 0, "DOS Partition Table\n", "")
 
         monkeypatch.setattr(wired_dispatcher, "run_argv", fake_run_argv)
         result = wired_dispatcher.execute(
             "tsk_mmls",
-            {"image_path": "/cases/image.raw"},
+            {"image_path": _evidence_path(cases, case)},
             case_id=case.id,
             os_profile="unix",
         )
@@ -194,7 +196,7 @@ class TestAuditableRunnerBoundary:
         )
         result = wired_dispatcher.execute(
             "tsk_fls",
-            {"image_path": "/cases/image.raw"},
+            {"image_path": _evidence_path(cases, case)},
             case_id=case.id,
             os_profile="windows",
         )
@@ -234,7 +236,7 @@ class TestAuditableRunnerBoundary:
         ) as raised:
             wired_dispatcher.execute(
                 "tsk_mmls",
-                {"image_path": "/cases/image.raw"},
+                {"image_path": _evidence_path(cases, case)},
                 case_id=case.id,
                 os_profile="unix",
             )
@@ -293,7 +295,7 @@ class TestAuditableRunnerBoundary:
         with pytest.raises(wired_dispatcher.ToolExecutionError) as raised:
             wired_dispatcher.execute(
                 "tsk_mmls",
-                {"image_path": "/cases/image.raw"},
+                {"image_path": _evidence_path(cases, case)},
                 case_id=case.id,
                 os_profile="unix",
             )
@@ -343,7 +345,7 @@ class TestAuditableRunnerBoundary:
         with pytest.raises(wired_dispatcher.ToolExecutionError) as raised:
             wired_dispatcher.execute(
                 "tsk_mmls",
-                {"image_path": "/cases/image.raw"},
+                {"image_path": _evidence_path(cases, case)},
                 case_id=case.id,
                 os_profile="unix",
             )
@@ -404,7 +406,7 @@ class TestAuditableRunnerBoundary:
         with pytest.raises(wired_dispatcher.ToolExecutionError) as raised:
             wired_dispatcher.execute(
                 "tsk_mmls",
-                {"image_path": "/cases/image.raw"},
+                {"image_path": _evidence_path(cases, case)},
                 case_id=case.id,
                 os_profile="unix",
             )
@@ -463,7 +465,7 @@ class TestAuditableRunnerBoundary:
         ) as raised:
             wired_dispatcher.execute(
                 "tsk_mmls",
-                {"image_path": "/cases/image.raw"},
+                {"image_path": _evidence_path(cases, case)},
                 case_id=case.id,
                 os_profile="unix",
                 timeout=9,
@@ -517,7 +519,7 @@ class TestAuditableRunnerBoundary:
         monkeypatch.setattr(wired_dispatcher, "run_argv", nonzero_run)
         result = wired_dispatcher.execute(
             "tsk_mmls",
-            {"image_path": "/cases/image.raw"},
+            {"image_path": _evidence_path(cases, case)},
             case_id=case.id,
             os_profile="unix",
         )
@@ -542,7 +544,7 @@ class TestAuditableRunnerBoundary:
     def test_invalid_params_create_neither_start_nor_artifact_run(
         self, wired_dispatcher, case, cases, store
     ):
-        with pytest.raises(ValueError, match="image_path"):
+        with pytest.raises(wired_dispatcher.ToolExecutionError, match="image_path"):
             wired_dispatcher.execute(
                 "tsk_mmls",
                 {"image_path": 123},
@@ -562,7 +564,7 @@ class TestCaseAnchored:
         self, wired_dispatcher, case, tmp_path, cases
     ):
         _require_jq()
-        inp = tmp_path / "in.json"
+        inp = cases.root / case.id / "input.json"
         inp.write_text('{"name": "x"}')
         result = wired_dispatcher.execute(
             "jq", {"filter": ".name", "input_path": str(inp)}, case_id=case.id
@@ -587,7 +589,7 @@ class TestCaseAnchored:
         self, wired_dispatcher, case, tmp_path, cases
     ):
         _require_jq()
-        inp = tmp_path / "in.json"
+        inp = cases.root / case.id / "input.json"
         inp.write_text('{"name": "x"}')
         result = wired_dispatcher.execute(
             "jq", {"filter": ".name", "input_path": str(inp)}, case_id=case.id
@@ -617,7 +619,7 @@ class TestCaseAnchored:
 
     def test_audit_log_chain_is_intact(self, wired_dispatcher, case, tmp_path, cases):
         _require_jq()
-        inp = tmp_path / "in.json"
+        inp = cases.root / case.id / "input.json"
         inp.write_text('{"name": "x"}')
         wired_dispatcher.execute(
             "jq", {"filter": ".name", "input_path": str(inp)}, case_id=case.id
@@ -629,7 +631,7 @@ class TestCaseAnchored:
         self, wired_dispatcher, case, tmp_path, cases
     ):
         _require_jq()
-        inp = tmp_path / "in.json"
+        inp = cases.root / case.id / "input.json"
         inp.write_text('{"name": "x"}')
         # The dispatcher creates a new AuditLog instance per call; verify the second
         # call still chains onto the first.
@@ -660,7 +662,7 @@ class TestOutputDirInjection:
         end up in the executed argv. We assert on the recorded argv.
         """
         _require_jq()
-        inp = tmp_path / "in.json"
+        inp = cases.root / case.id / "input.json"
         inp.write_text('{"name": "x"}')
         result = wired_dispatcher.execute(
             "jq", {"filter": ".name", "input_path": str(inp)}, case_id=case.id
@@ -672,13 +674,10 @@ class TestOutputDirInjection:
         )
         assert run_artifact_dir not in argv
 
-    def test_output_dir_pre_filled_param_is_preserved(
-        self, wired_dispatcher, monkeypatch, case, tmp_path
+    def test_output_dir_pre_filled_param_is_rejected_before_runner(
+        self, wired_dispatcher, monkeypatch, case, cases, tmp_path
     ):
-        """If the caller supplied output_dir explicitly the dispatcher must not overwrite it.
-        Use bulk_extractor's wrapper-only build_argv (no need to actually run the binary):
-        the fake local runner captures the argv without invoking the real binary.
-        """
+        """RUN_OUTPUT belongs to ArtifactStore even when the caller picks an in-case path."""
         captured = {}
 
         def fake_run_argv(argv, *, timeout=None):
@@ -696,16 +695,16 @@ class TestOutputDirInjection:
             lambda _binary: Path("/fake/bin/bulk_extractor"),
         )
         user_out = str(tmp_path / "preferred_out")
-        (tmp_path / "image.raw").write_bytes(b"x")
-        wired_dispatcher.execute(
-            "bulk_extractor",
-            {
-                "image_path": str(tmp_path / "image.raw"),
-                "output_dir": user_out,
-            },
-            case_id=case.id,
-        )
-        assert user_out in captured["argv"]
+        with pytest.raises(wired_dispatcher.ToolExecutionError, match="RUN_OUTPUT"):
+            wired_dispatcher.execute(
+                "bulk_extractor",
+                {
+                    "image_path": _evidence_path(cases, case),
+                    "output_dir": user_out,
+                },
+                case_id=case.id,
+            )
+        assert captured == {}
 
 
 class TestInvalidCaseId:

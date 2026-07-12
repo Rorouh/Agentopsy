@@ -50,7 +50,6 @@ from forensia.agent.context import select_playbook_section, window_messages
 from forensia.agent.package import AgentPackage
 from forensia.agent.redaction import redact_messages
 from forensia.agent.tool_schemas import (
-    AUTO_INJECTED,
     internal_tool_specs,
     tool_specs,
 )
@@ -58,6 +57,7 @@ from forensia.audit import AuditLog
 from forensia.evidence import EvidenceManager
 from forensia.findings.store import finding_store
 from forensia.models.base import FinalAnswer, ModelBackend, ToolCall
+from forensia.path_policy import inject_evidence_path
 from forensia.toolkit.catalog import BY_ID as TOOL_BY_ID
 from forensia.toolkit.tool import Tool
 
@@ -125,42 +125,6 @@ def _result_summary(result: dict[str, Any]) -> str:
             if key != "raw" and isinstance(value, (int, str)):
                 return f"{key}={str(value)[:60]}"
     return f"exit {result.get('exit_code')}"
-
-
-# Map tool_id → which auto-injected key receives the resolved evidence path.
-# Tools not in this map don't take the evidence directly (e.g. jq accepts an
-# operator-supplied input_path that points to another artifact).
-_EVIDENCE_INJECTION: dict[str, str] = {
-    "file_info": "image_path",
-    "xxd_head": "image_path",
-    "strings_head": "image_path",
-    "tsk_mmls": "image_path",
-    "tsk_fls": "image_path",
-    "tsk_icat": "image_path",
-    "tsk_mactime": "bodyfile_path",
-    "ewf_info": "image_path",
-    "bulk_extractor": "image_path",
-    "hashdeep": "image_path",
-    "foremost": "image_path",
-    "plaso_log2timeline": "image_path",
-    "plaso_psort": "plaso_path",
-    "qemu_nbd": "image_path",
-    "yara": "target_path",
-    "volatility3": "dump_path",
-    "hayabusa": "evtx_dir",
-    "chainsaw": "target_dir",
-    "regripper": "hive_path",
-    "evtxecmd": "evtx_path",
-    "mftecmd": "mft_path",
-    "lecmd": "target_path",
-    "jlecmd": "target_path",
-    "recmd": "hive_path",
-    "amcacheparser": "hive_path",
-    "appcompatcacheparser": "hive_path",
-    "sbecmd": "target_path",
-    "wxtcmd": "target_path",
-    "rbcmd": "target_path",
-}
 
 
 # Hard cap on the chars of ONE tool-result message that reach the executor's
@@ -469,17 +433,16 @@ class ForensicAgent:
                     })
                     continue
 
-                params = self._inject_runtime_paths(
-                    action.tool_id, dict(action.params), evidence_path
-                )
-                emit({
-                    "type": "tool_call",
-                    "iteration": iteration + 1,
-                    "tool_id": action.tool_id,
-                    "params": _preview_params(params),
-                })
-
                 try:
+                    params = self._inject_runtime_paths(
+                        action.tool_id, dict(action.params), evidence_path
+                    )
+                    emit({
+                        "type": "tool_call",
+                        "iteration": iteration + 1,
+                        "tool_id": action.tool_id,
+                        "params": _preview_params(params),
+                    })
                     result = dispatch_tool(
                         action.tool_id, params, case_id=case_id, os_profile=self.os_profile
                     )
@@ -706,15 +669,8 @@ class ForensicAgent:
     def _inject_runtime_paths(
         tool_id: str, params: dict[str, Any], evidence_path: str
     ) -> dict[str, Any]:
-        target_key = _EVIDENCE_INJECTION.get(tool_id)
-        if target_key:
-            params[target_key] = evidence_path
-        for k in list(params.keys()):
-            if k in AUTO_INJECTED and k != target_key:
-                # Strip other auto-injected keys the model tried to set; the
-                # dispatcher will fill output_dir itself when needed.
-                params.pop(k, None)
-        return params
+        tool = TOOL_BY_ID[tool_id]
+        return inject_evidence_path(tool.path_parameters, params, evidence_path)
 
     @staticmethod
     def _tool_result_msg(call: ToolCall, body: dict[str, Any]) -> dict[str, Any]:

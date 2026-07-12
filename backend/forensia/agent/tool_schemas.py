@@ -13,22 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
-# Params que se inyectan automáticamente desde el contexto (NO los pide el LLM):
-#   - image_path / dump_path / mft_path / hive_path / evtx_path : resolved evidence handle
-#   - output_dir : asignado por el ArtifactStore.start_run del dispatcher
-AUTO_INJECTED = frozenset(
-    {
-        "image_path",
-        "dump_path",
-        "mft_path",
-        "hive_path",
-        "evtx_path",
-        "output_dir",
-        "target_path",
-        "input_path",
-        "bodyfile_path",
-    }
-)
+from forensia.artifact_ref import artifact_ref_json_schema
 
 # Schemas de parámetros por tool_id. Solo los params QUE EL LLM PUEDE ELEGIR.
 # Los auto-inyectados se omiten del schema (el LLM no debería decidirlos).
@@ -128,12 +113,17 @@ TOOL_PARAM_SCHEMAS: dict[str, dict[str, Any]] = {
     "tsk_mactime": {
         "type": "object",
         "properties": {
+            "bodyfile_path": {
+                **artifact_ref_json_schema(),
+                "description": "ArtifactStore reference to a body file under a prior run out/.",
+            },
             "date_range": {
                 "type": "string",
                 "description": "Optional date range like 2024-01-01..2024-12-31.",
             },
             "timezone": {"type": "string", "description": "Timezone label, e.g. UTC."},
         },
+        "required": ["bodyfile_path"],
         "additionalProperties": False,
     },
     "ewf_info": {
@@ -192,37 +182,31 @@ TOOL_PARAM_SCHEMAS: dict[str, dict[str, Any]] = {
     "hayabusa": {
         "type": "object",
         "properties": {
-            "evtx_dir": {
-                "type": "string",
-                "description": "Directory containing pre-extracted .evtx files.",
-            },
-            "output_csv": {
-                "type": "string",
-                "description": "Output CSV path.",
-            },
             "min_level": {
                 "type": "string",
                 "enum": ["info", "low", "medium", "high", "critical"],
             },
         },
-        "required": ["evtx_dir", "output_csv"],
         "additionalProperties": False,
     },
     "chainsaw": {
         "type": "object",
         "properties": {
-            "target_dir": {"type": "string"},
             "sigma_dir": {"type": "string"},
             "rules_dir": {"type": "string"},
+            "ruleset": {"type": "string", "enum": ["chainsaw-native"]},
             "output_format": {"type": "string", "enum": ["csv", "json"]},
-            "output_path": {"type": "string"},
         },
-        "required": ["target_dir", "output_format", "output_path"],
+        "required": ["output_format"],
         "additionalProperties": False,
     },
     "regripper": {
         "type": "object",
         "properties": {
+            "hive_path": {
+                **artifact_ref_json_schema(),
+                "description": "ArtifactRef emitted by a prior producer such as tsk_icat.",
+            },
             "plugin": {
                 "type": "string",
                 "description": "RegRipper plugin name (e.g. samparse, run, services).",
@@ -257,7 +241,7 @@ TOOL_PARAM_SCHEMAS: dict[str, dict[str, Any]] = {
         "properties": {
             "batch": {
                 "type": "string",
-                "pattern": r"^[A-Za-z0-9._-]+\.reb$",
+                "enum": ["Kroll_Batch.reb"],
                 "description": (
                     "RECmd batch file NAME from the BatchExamples/ shipped in the "
                     "maletín (e.g. Kroll_Batch.reb). A bare name — never a path."
@@ -313,7 +297,15 @@ TOOL_PARAM_SCHEMAS: dict[str, dict[str, Any]] = {
         "type": "object",
         "properties": {
             "filter": {"type": "string", "description": "jq filter expression."},
-            "input_path": {"type": "string", "description": "Path to the input JSON file."},
+            "input_path": {
+                "oneOf": [
+                    {"type": "string"},
+                    {
+                        **artifact_ref_json_schema(),
+                    },
+                ],
+                "description": "Same-case file path or ArtifactStore {run_id, relpath} reference.",
+            },
             "raw_output": {"type": "boolean", "default": False},
             "compact": {"type": "boolean", "default": False},
         },

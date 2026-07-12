@@ -54,7 +54,7 @@ def test_execute_unresolved_routes_to_maletin_and_reports_when_unreachable(monke
     # configured the dispatcher surfaces an actionable ToolExecutionError (no guessing).
     monkeypatch.setattr(dispatcher_mod, "resolve", lambda _binary: None)
     monkeypatch.setattr(maletin_mod, "service_url", lambda _svc: None)
-    with pytest.raises(ToolExecutionError, match="exec-agent"):
+    with pytest.raises(ToolExecutionError, match="case_id"):
         execute("tsk_mmls", {"image_path": "/cases/img.raw"}, os_profile="unix")
 
 
@@ -101,7 +101,7 @@ def test_select_maletin_picks_matching_profile() -> None:
 # --------------------------------------------------------------------------- #
 # execute() happy path — bundled tool (binary on the api PATH)
 # --------------------------------------------------------------------------- #
-def test_execute_bundled_runs_and_returns_result(monkeypatch) -> None:
+def test_execute_path_tool_without_case_is_rejected_before_runner(monkeypatch) -> None:
     monkeypatch.setattr(dispatcher_mod, "resolve", lambda _b: Path("/usr/bin/mmls"))
 
     captured = {}
@@ -112,20 +112,15 @@ def test_execute_bundled_runs_and_returns_result(monkeypatch) -> None:
 
     monkeypatch.setattr(dispatcher_mod, "run_argv", fake_run_argv)
 
-    result = execute("tsk_mmls", {"image_path": "/tmp/img.raw"})
-    assert result["tool_id"] == "tsk_mmls"
-    # On Windows the mocked Path serialises with backslashes; means "argv[0] is the
-    # resolved bundled binary path", independent of OS separator.
-    assert Path(result["argv"][0]).as_posix() == "/usr/bin/mmls"
-    assert result["argv"][-1] == "/tmp/img.raw"
-    assert result["exit_code"] == 0
-    assert "partitions" in result["parsed"]
+    with pytest.raises(ToolExecutionError, match="case_id"):
+        execute("tsk_mmls", {"image_path": "/tmp/img.raw"})
+    assert captured == {}
 
 
 # --------------------------------------------------------------------------- #
 # execute() happy path — maletín tool (binary not on the api PATH → exec-agent)
 # --------------------------------------------------------------------------- #
-def test_execute_routes_to_maletin_when_binary_not_on_api(monkeypatch) -> None:
+def test_execute_maletin_path_tool_without_case_is_rejected(monkeypatch) -> None:
     monkeypatch.setattr(dispatcher_mod, "resolve", lambda _b: None)
 
     captured = {}
@@ -137,16 +132,9 @@ def test_execute_routes_to_maletin_when_binary_not_on_api(monkeypatch) -> None:
 
     monkeypatch.setattr(maletin_mod, "run_argv_in_maletin", fake_exec)
 
-    result = execute("tsk_fls", {"image_path": "/cases/original.raw"}, os_profile="unix")
-    # Cross tool + unix profile → routed to the unix maletín, no cross-maletín fallback.
-    assert captured["service"] == "toolkit-unix"
-    # The argv is [binary, *args] as it runs INSIDE the maletín (paths unchanged).
-    assert captured["argv"][0] == "fls"
-    assert captured["argv"][-1] == "/cases/original.raw"
-    assert result["tool_id"] == "tsk_fls"
-    assert result["exit_code"] == 0
-    # The recorded argv (for the audit log) is the in-maletín argv.
-    assert result["argv"] == captured["argv"]
+    with pytest.raises(ToolExecutionError, match="case_id"):
+        execute("tsk_fls", {"image_path": "/cases/original.raw"}, os_profile="unix")
+    assert captured == {}
 
 
 # --------------------------------------------------------------------------- #

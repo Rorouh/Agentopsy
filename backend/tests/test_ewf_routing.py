@@ -32,6 +32,8 @@ from pathlib import Path
 
 import pytest
 
+from forensia.artifacts.store import ArtifactStore
+from forensia.cases.manager import CaseManager
 from forensia.toolkit import dispatcher, maletin
 from forensia.toolkit.dispatcher import _is_ewf_path
 
@@ -41,6 +43,16 @@ EXEC_AGENT_PY = REPO_ROOT / "docker" / "docker" / "forensic-toolkit" / "exec_age
 # A tiny child that copies the raw bytes of argv[1] to its stdout buffer. After the
 # exec-agent rewrites the argv, argv[1] is the raw `ewf1` path the (fake) mount produced.
 _EMIT_STDOUT = "import sys; sys.stdout.buffer.write(open(sys.argv[1], 'rb').read())"
+
+
+@pytest.fixture
+def dispatch_case(monkeypatch, tmp_path):
+    cases = CaseManager(root=tmp_path / "cases")
+    case = cases.create("ewf", "alice", os_profile="unix")
+    store = ArtifactStore(cases)
+    monkeypatch.setattr(dispatcher, "case_manager", cases)
+    monkeypatch.setattr(dispatcher, "artifact_store", store)
+    return cases, case
 
 
 # --------------------------------------------------------------------------- #
@@ -74,10 +86,15 @@ def _force_maletin_and_capture(monkeypatch) -> dict:
     return seen
 
 
-def test_dispatcher_forwards_ewf_image_for_e01(monkeypatch) -> None:
+def test_dispatcher_forwards_ewf_image_for_e01(monkeypatch, dispatch_case) -> None:
     seen = _force_maletin_and_capture(monkeypatch)
-    image = "/cases/c/evidence/e/original.E01"
-    dispatcher.execute("tsk_mmls", {"image_path": image}, os_profile="unix")
+    cases, case = dispatch_case
+    path = cases.root / case.id / "evidence" / "original.E01"
+    path.write_bytes(b"ewf")
+    image = str(path.resolve())
+    dispatcher.execute(
+        "tsk_mmls", {"image_path": image}, case_id=case.id, os_profile="unix"
+    )
 
     assert seen["service"] == "toolkit-unix"
     # The token named to the exec-agent is the EXACT path present in the argv it will run.
@@ -85,10 +102,16 @@ def test_dispatcher_forwards_ewf_image_for_e01(monkeypatch) -> None:
     assert seen["ewf_image"] in seen["argv"]
 
 
-def test_dispatcher_no_ewf_image_for_raw(monkeypatch) -> None:
+def test_dispatcher_no_ewf_image_for_raw(monkeypatch, dispatch_case) -> None:
     seen = _force_maletin_and_capture(monkeypatch)
+    cases, case = dispatch_case
+    image = cases.root / case.id / "evidence" / "original.raw"
+    image.write_bytes(b"raw")
     dispatcher.execute(
-        "tsk_mmls", {"image_path": "/cases/c/evidence/e/original.raw"}, os_profile="unix"
+        "tsk_mmls",
+        {"image_path": str(image)},
+        case_id=case.id,
+        os_profile="unix",
     )
     # A non-EWF image is untouched: default behaviour, no mount asked for.
     assert seen["ewf_image"] is None

@@ -51,6 +51,7 @@ from forensia.mcp.resources import (
 )
 from forensia.mcp.schemas import SCHEMA_BY_TOOL
 from forensia.mcp.session import McpSession
+from forensia.path_policy import PathPolicyError, inject_evidence_path
 from forensia.toolkit.catalog import BY_ID
 
 logger = logging.getLogger("forensia.mcp")
@@ -291,13 +292,17 @@ async def _dispatch_forensic(
             "no evidence selected — call `select_evidence` first. RULE 2 (no fallbacks): "
             "the server does not auto-pick evidence even if the case has only one."
         )
-    # The actual evidence path injection happens in dispatcher via _EVIDENCE_INJECTION
-    # of ForensicAgent — but the MCP server is a different caller. Read the handle
-    # ourselves and stuff the path into the appropriate param key.
+    # Read the selected handle and use the catalog's shared path contract. No MCP-local
+    # injection map exists: agent, MCP and dispatcher consume the same declaration.
     from forensia.evidence import evidence_manager
 
     handle = evidence_manager.get(case_id, evidence_id)
-    validated = _inject_evidence_path(name, validated, str(handle.original_path))
+    try:
+        validated = inject_evidence_path(
+            tool.path_parameters, validated, str(handle.original_path)
+        )
+    except PathPolicyError as exc:
+        return _error(f"invalid path params for tool {name!r}: {exc}")
 
     try:
         # os_profile of the active package routes the tool to its maletín (§B): the same
@@ -323,44 +328,6 @@ async def _dispatch_forensic(
     if run_id:
         content.extend(build_resource_links_for_run(case_id, run_id, artifact_run))
     return content
-
-
-def _inject_evidence_path(tool_id: str, params: dict[str, Any], path: str) -> dict[str, Any]:
-    """Mirror of ``ForensicAgent._EVIDENCE_INJECTION`` — the dispatcher expects
-    the path under a specific key per tool. We don't have access to that map
-    from the agent module (would create a circular import), so we keep a copy
-    here. Tools that don't take an evidence path (e.g. ``jq``) are absent.
-    """
-    injection_map = {
-        "file_info": "image_path",
-        "xxd_head": "image_path",
-        "strings_head": "image_path",
-        "tsk_mmls": "image_path",
-        "tsk_fls": "image_path",
-        "tsk_mactime": "bodyfile_path",
-        "tsk_icat": "image_path",
-        "ewf_info": "image_path",
-        "bulk_extractor": "image_path",
-        "yara": "target_path",
-        "volatility3": "dump_path",
-        "hayabusa": "evtx_dir",
-        "chainsaw": "target_dir",
-        "regripper": "hive_path",
-        "evtxecmd": "evtx_path",
-        "mftecmd": "mft_path",
-        "lecmd": "target_path",
-        "jlecmd": "target_path",
-        "recmd": "hive_path",
-        "amcacheparser": "hive_path",
-        "appcompatcacheparser": "hive_path",
-        "sbecmd": "target_path",
-        "wxtcmd": "target_path",
-        "rbcmd": "target_path",
-    }
-    key = injection_map.get(tool_id)
-    if key is not None and params.get(key) in (None, ""):
-        params[key] = path
-    return params
 
 
 # ---- response helpers -----------------------------------------------------

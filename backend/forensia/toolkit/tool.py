@@ -23,6 +23,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from forensia.path_policy import PathParameter, PathRole
+
 ReturnKind = Literal["inline", "artifact"]
 OsProfile = Literal["unix", "windows"]
 HostOs = Literal["linux", "mac", "windows"]
@@ -86,9 +88,12 @@ class Tool:
     # ``("hive_path",)``). The dispatcher resolves such a ref to the artifact's on-disk
     # path inside the case and RE-HASHES it against the producing run's manifest before
     # ``build_argv`` (custody of derivatives, FORENSIC INVARIANTS 1-2), recording the
-    # derivation link in the audit (INVARIANT 4). A plain string value stays a literal
-    # path (unchanged contract); empty tuple → the tool takes no artifact-ref inputs.
+    # derivation link in the audit (INVARIANT 4). Literal strings are accepted only when
+    # the corresponding path role also declares EVIDENCE_INPUT or CASE_INPUT.
     input_artifact_params: tuple[str, ...] = ()
+    # Closed declaration of every filesystem path carried in params. The dispatcher
+    # enforces it before crossing the runner boundary; schemas and wrappers consume it.
+    path_parameters: tuple[PathParameter, ...] = ()
     build_argv: Callable[[dict[str, Any]], list[str]] = _not_built
     parse: Callable[[str], Any] = _not_built
     # Container-delivered tools set this so the executor knows what to mount.
@@ -100,6 +105,25 @@ class Tool:
             if h == host:
                 return mode
         return None
+
+    def __post_init__(self) -> None:
+        names = [spec.name for spec in self.path_parameters]
+        if len(names) != len(set(names)):
+            raise ValueError(f"tool {self.id!r} declares duplicate path parameters")
+        declared_derived = {
+            spec.name
+            for spec in self.path_parameters
+            if PathRole.DERIVED_INPUT in spec.roles
+        }
+        if set(self.input_artifact_params) != declared_derived:
+            raise ValueError(
+                f"tool {self.id!r}: input_artifact_params must match DERIVED_INPUT "
+                f"declarations ({sorted(declared_derived)})"
+            )
+        if self.image_param is not None and self.image_param not in names:
+            raise ValueError(
+                f"tool {self.id!r}: image_param {self.image_param!r} lacks a path declaration"
+            )
 
 
 def run_argv(

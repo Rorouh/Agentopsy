@@ -31,8 +31,10 @@ sistema:
 4. **`ForensicAgent`** — el **bucle del agente**, parametrizado por un `AgentPackage`;
    decide qué tool pedir y consolida resultados vía el ejecutor. Nunca ve el
    ground-truth.
-5. **`Tool`** — contrato de tool de **enum cerrada**; la ÚNICA vía sancionada de
-   ejecución (`run_argv`, shell-free). (SECURITY INVARIANTS 4-5)
+5. **`Tool`** — contrato de tool de **enum cerrada**; declara además cada parámetro
+   filesystem con `PathParameter` (rol, fichero/directorio y allowlist exacta cuando
+   aplica). Es la ÚNICA vía sancionada de ejecución (`run_argv`, shell-free).
+   (SECURITY INVARIANTS 4-6)
 6. **`ArtifactStore` / `ArtifactRun`** — manifiesto por corrida con argv literal
    fijado antes del runner, estados `running | finished | error` y ficheros de salida
    hasheados.
@@ -75,8 +77,13 @@ replay de chat `build_replay_messages()`.
 `executor_models`. **Selección explícita del operador, sin default** (RULE 2); sin
 API keys en el repo (RULE 7).
 
-**Toolkit** — `catalog` (`by_tier` / `for_profile`, `Tool` de enum cerrada);
-`dispatcher.execute()` (`tool + params → ArtifactRun → argv fijado → tool_run_start
+**Toolkit** — `catalog` (`by_tier` / `for_profile`, `Tool` de enum cerrada y contrato
+central `PathParameter`); `forensia.path_policy` (roles `EVIDENCE_INPUT`, `CASE_INPUT`,
+`DERIVED_INPUT`, `RUN_OUTPUT`, `BUNDLED_RULESET`, `RUNTIME_DEVICE`, canonicalización y
+confinamiento same-case); `forensia.artifact_ref` (contrato único
+`{run_id, relpath, sha256?, size?}`, sin extras; el store re-hashea y valida metadatos);
+`dispatcher.execute()` (`tool + params → gate de rutas antes
+del run → ArtifactRun → argv fijado → tool_run_start
 durable → runner → intento único de finish o error accionable`); `maletin`
 (allowlist ∩ catalog, `select_maletin` por `os_profile` sin fallback, sonda de
 disponibilidad para `capabilities`); `resolver` (binario / runtime OCI);
@@ -88,6 +95,8 @@ catálogo es uniforme):
 - **Cross / disco-memoria:** TSK `fls` / `icat` / `mmls` / `mactime`, `volatility3`,
   plaso `log2timeline` / `psort`, `bulk_extractor`, `foremost`, `hashdeep`,
   `ewfinfo`, `file_info`, `xxd`, `strings`, `yara`, `jq`, `qemu_nbd`.
+  `bulk_extractor` crea `out/bulk_extractor` desde inexistente; `qemu_nbd` siempre
+  incorpora `-r` y solo acepta el device-id cerrado `nbd0`.
 - **Windows (registro / eventos / EZ Tools):** `RegRipper`, `AmcacheParser`,
   `AppCompatCacheParser`, `MFTECmd`, `EvtxECmd`, `Hayabusa`, `Chainsaw`, `LECmd`,
   `JLECmd`, `SBECmd`, `RBCmd`, `RECmd`, `WxTCmd`.

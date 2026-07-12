@@ -73,8 +73,15 @@ agente / panel toolkit-tester
    ▼
 dispatcher.execute(tool_id, params, case_id="…")
    │
+   ├─ gate central Tool.path_parameters (ANTES de reservar run o auditar start)
+   │     · EVIDENCE_INPUT → case_dir/evidence del caso activo
+   │     · CASE_INPUT → case_dir del caso activo; nunca otro caso
+   │     · DERIVED_INPUT → ArtifactRef {run_id, relpath, sha256?, size?}, sin extras;
+   │                       resolve_output_file + re-hash autoritativo
+   │     · RUN_OUTPUT del caller → rechazo; bundled/runtime → id exacto allowlisted
+   │
    ├─ resolver inputs derivados (tools con input_artifact_params): cada param cuyo valor
-   │  sea una ref de artefacto {run_id, relpath} → artifact_store.resolve_output_file(…)
+   │  sea un ArtifactRef → artifact_store.resolve_output_file(…)
    │     · re-hashea el fichero contra el manifiesto de la corrida productora (custodia
    │       del derivado, INVARIANTS 1-2); mismatch/ausente → ToolExecutionError (RULE 2)
    │     · sustituye la ref por la ruta RO resuelta (el wrapper ve una ruta normal)
@@ -84,8 +91,10 @@ dispatcher.execute(tool_id, params, case_id="…")
    │     · crea cases/<id>/artifacts/<run_id>/{manifest.json, out/}
    │     · manifest.json en estado "running"
    │
-   ├─ params.setdefault("output_dir", str(out_dir))
-   │     · los wrappers que no declaran ese campo lo ignoran y no lo llevan al argv
+   ├─ generar todos los RUN_OUTPUT declarados bajo out_dir
+   │     · normalmente `output_dir` = out/; bulk_extractor recibe el subdirectorio
+   │       todavía inexistente out/bulk_extractor; ficheros concretos quedan debajo
+   │     · nunca se preserva un output_path/output_dir aportado por el caller
    │
    ├─ build_argv(params) → argv_tail
    ├─ resolve binario local o seleccionar un único maletín por os_profile
@@ -113,10 +122,9 @@ dispatcher.execute(tool_id, params, case_id="…")
                  case_id, run_id, artifact_run }
 ```
 
-Si `case_id is None`, el dispatcher salta toda la rama de persistencia: no se reserva
-`ArtifactRun`, no se toca `audit.jsonl`, y el resultado no incluye `case_id`/`run_id`.
-Eso es el modo "legacy" / "panel dev" — útil para probar wrappers sin un caso abierto,
-pero **inaceptable** para uso forense real.
+Si `case_id is None`, un parámetro case-scoped (`EVIDENCE_INPUT`, `CASE_INPUT`,
+`DERIVED_INPUT`) o cualquier `RUN_OUTPUT` se rechaza antes del runner. Solo una tool sin
+rutas de caso, o un identificador bundled/runtime exacto, podría usar el modo no anclado.
 
 ## Relevo derivado: encadenar herramientas con custodia
 
@@ -130,14 +138,18 @@ invente rutas** ni se salte la verificación. Dos piezas simétricas lo hacen:
   como "no devolvió nada") sino una **referencia al artefacto**:
   `{"artifact": {run_id, relpath: "stdout.bin", sha256, size}}` — solo en exit 0.
 - **La entrada acepta esa referencia.** Una tool que declara `input_artifact_params`
-  (RegRipper → `("hive_path",)`) puede recibir, en ese param, la ref `{run_id, relpath}`
-  en lugar de una ruta literal. Antes de `build_argv`, el dispatcher la resuelve con
+  (RegRipper → `("hive_path",)`) puede recibir, en ese param, el `ArtifactRef`
+  compartido. `run_id` y `relpath` son obligatorios; `sha256` y `size` son
+  opcionales porque el productor los emite; cualquier otra clave se rechaza. Antes de
+  `build_argv`, el dispatcher la resuelve con
   `artifact_store.resolve_output_file`, que **confina** la ruta bajo `out/` y **re-hashea**
   el fichero contra el SHA-256 del manifiesto de la corrida productora (custodia del
-  derivado — INVARIANTS 1-2). Coincide → sustituye la ref por la ruta RO resuelta y sigue.
+  derivado — INVARIANTS 1-2). Nunca confía en el hash/tamaño aportado: si están presentes
+  también deben coincidir con el valor re-hasheado/autoritativo del store. Coincide →
+  sustituye la ref por la ruta RO resuelta y sigue.
   No coincide, falta o la ref es inválida → `ToolExecutionError` accionable y la tool **no
   se ejecuta** (RULE 2: nunca sobre un derivado sin verificar). Una ruta literal (`str`)
-  sigue siendo una ruta literal — el contrato de las tools de texto no cambia.
+  bajo `artifacts/` no sustituye la referencia: se rechaza para impedir saltarse el re-hash.
 
 La ref que produce icat es exactamente la que consume RegRipper, así que el agente encadena
 `icat → RegRipper` pasando `result["parsed"]["artifact"]` como `hive_path`. El **enlace de

@@ -18,6 +18,7 @@ ALLOWED_FLAGS = frozenset({"-f", "-r", "-o", "--quiet", "--plugin-dirs"})
 
 _PLUGIN_RE = re.compile(r"^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+$")
 _ARG_KEY_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_\-]*$")
+_PLUGIN_ARG_KEYS = frozenset({"pid", "physical-offset", "kernel", "layer-name"})
 
 
 def build_argv(params: dict[str, Any]) -> list[str]:
@@ -49,6 +50,11 @@ def build_argv(params: dict[str, Any]) -> list[str]:
         for key, value in plugin_args.items():
             if not isinstance(key, str) or not _ARG_KEY_RE.match(key):
                 raise ValueError(f"invalid volatility3 plugin_arg key: {key!r}")
+            if key not in _PLUGIN_ARG_KEYS:
+                raise ValueError(
+                    f"unsupported volatility3 plugin_arg key: {key!r}; "
+                    f"allowed non-path keys: {sorted(_PLUGIN_ARG_KEYS)}"
+                )
             if not isinstance(value, str):
                 raise ValueError(
                     f"invalid volatility3 plugin_arg value for {key!r}: must be str"

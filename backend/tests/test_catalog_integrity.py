@@ -163,3 +163,42 @@ def test_tool_types_are_consistent() -> None:
         assert tool.returns in {"inline", "artifact"}, f"{tool.id}: bad returns"
         assert tool.tier in {"core", "extended"}, f"{tool.id}: bad tier"
         assert isinstance(tool.side_effecting, bool)
+
+
+def test_path_parameter_inventory_is_exhaustive_and_explicit() -> None:
+    """Tripwire for every wrapper parameter that represents a filesystem path."""
+    expected = {
+        "file_info": {"image_path"},
+        "xxd_head": {"image_path"},
+        "strings_head": {"image_path"},
+        "tsk_mmls": {"image_path"},
+        "tsk_fls": {"image_path"},
+        "tsk_mactime": {"bodyfile_path"},
+        "ewf_info": {"image_path"},
+        "bulk_extractor": {"image_path", "output_dir"},
+        "yara": {"rules_path", "target_path"},
+        "volatility3": {"dump_path"},
+        "hayabusa": {"evtx_dir", "output_csv"},
+        "chainsaw": {"target_dir", "sigma_dir", "rules_dir", "ruleset", "output_path"},
+        "evtxecmd": {"evtx_path", "output_dir"},
+        "mftecmd": {"mft_path", "output_dir"},
+        "regripper": {"hive_path"},
+        "jq": {"input_path"},
+        "tsk_icat": {"image_path"},
+        "plaso_log2timeline": {"image_path", "output_dir"},
+        "plaso_psort": {"plaso_path", "output_dir"},
+        "hashdeep": {"image_path"},
+        "foremost": {"image_path", "output_dir"},
+        "qemu_nbd": {"image_path", "nbd_device"},
+        "lecmd": {"target_path", "output_dir"},
+        "jlecmd": {"target_path", "output_dir"},
+        "recmd": {"hive_path", "output_dir", "batch"},
+        "amcacheparser": {"hive_path", "output_dir"},
+        "appcompatcacheparser": {"hive_path", "output_dir"},
+        "sbecmd": {"target_path", "output_dir"},
+        "wxtcmd": {"target_path", "output_dir"},
+        "rbcmd": {"target_path", "output_dir"},
+    }
+    assert set(expected) == set(BY_ID)
+    for tool_id, names in expected.items():
+        assert {spec.name for spec in BY_ID[tool_id].path_parameters} == names

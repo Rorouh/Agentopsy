@@ -20,6 +20,7 @@ tracked in `docs/operacion/proximos-pasos.md` §A/§B.
 
 from __future__ import annotations
 
+from forensia.path_policy import BundledPath, PathKind, PathParameter, PathRole
 from forensia.toolkit.maletin import MALETINES, TOOLKIT_WINDOWS
 from forensia.toolkit.tool import Tool
 from forensia.toolkit.wrappers import (
@@ -119,6 +120,57 @@ from forensia.toolkit.wrappers import (
 _BOTH = MALETINES
 _WINDOWS = (TOOLKIT_WINDOWS,)
 
+_E = (PathRole.EVIDENCE_INPUT,)
+_C = (PathRole.CASE_INPUT,)
+_D = (PathRole.DERIVED_INPUT,)
+_ED = (PathRole.EVIDENCE_INPUT, PathRole.DERIVED_INPUT)
+_CD = (PathRole.CASE_INPUT, PathRole.DERIVED_INPUT)
+_O = (PathRole.RUN_OUTPUT,)
+
+
+def _path(
+    name: str,
+    roles: tuple[PathRole, ...],
+    kind: PathKind,
+    *,
+    required: bool = True,
+) -> PathParameter:
+    return PathParameter(name, roles, kind, required=required)
+
+
+def _output(name: str, relpath: str, kind: PathKind) -> PathParameter:
+    return PathParameter(name, _O, kind, output_relpath=relpath)
+
+
+_OUTPUT_DIR = _output("output_dir", ".", PathKind.DIRECTORY)
+_BULK_EXTRACTOR_OUTPUT = _output(
+    "output_dir", "bulk_extractor", PathKind.DIRECTORY
+)
+_CHAINSAW_RULESET = PathParameter(
+    "ruleset",
+    (PathRole.BUNDLED_RULESET,),
+    PathKind.DIRECTORY,
+    required=False,
+    bundled=(BundledPath("chainsaw-native", "/opt/chainsaw-src/rules"),),
+)
+_RECMD_BATCH = PathParameter(
+    "batch",
+    (PathRole.BUNDLED_RULESET,),
+    PathKind.FILE,
+    bundled=(
+        BundledPath(
+            "Kroll_Batch.reb",
+            "/opt/eztools/RECmd/RECmd/BatchExamples/Kroll_Batch.reb",
+        ),
+    ),
+)
+_NBD_DEVICE = PathParameter(
+    "nbd_device",
+    (PathRole.RUNTIME_DEVICE,),
+    PathKind.FILE,
+    bundled=(BundledPath("nbd0", "/dev/nbd0"),),
+)
+
 CATALOG: tuple[Tool, ...] = (
     # ====== CORE TIER — kit "primeros 30 minutos" ======
 
@@ -129,6 +181,7 @@ CATALOG: tuple[Tool, ...] = (
         ("unix", "windows"),
         tier="core",
         toolkits=_BOTH,
+        path_parameters=(_path("image_path", _E, PathKind.FILE),),
         allowed_flags=_file_info.ALLOWED_FLAGS,
         build_argv=_file_info.build_argv,
         parse=_file_info.parse,
@@ -139,6 +192,7 @@ CATALOG: tuple[Tool, ...] = (
         ("unix", "windows"),
         tier="core",
         toolkits=_BOTH,
+        path_parameters=(_path("image_path", _E, PathKind.FILE),),
         allowed_flags=_xxd_head.ALLOWED_FLAGS,
         build_argv=_xxd_head.build_argv,
         parse=_xxd_head.parse,
@@ -149,6 +203,7 @@ CATALOG: tuple[Tool, ...] = (
         ("unix", "windows"),
         tier="core",
         toolkits=_BOTH,
+        path_parameters=(_path("image_path", _E, PathKind.FILE),),
         allowed_flags=_strings_head.ALLOWED_FLAGS,
         build_argv=_strings_head.build_argv,
         parse=_strings_head.parse,
@@ -162,6 +217,7 @@ CATALOG: tuple[Tool, ...] = (
         tier="core",
         toolkits=_BOTH,
         image_param="image_path",
+        path_parameters=(_path("image_path", _E, PathKind.FILE),),
         allowed_flags=_tsk_mmls.ALLOWED_FLAGS,
         build_argv=_tsk_mmls.build_argv,
         parse=_tsk_mmls.parse,
@@ -174,6 +230,7 @@ CATALOG: tuple[Tool, ...] = (
         tier="core",
         toolkits=_BOTH,
         image_param="image_path",
+        path_parameters=(_path("image_path", _E, PathKind.FILE),),
         allowed_flags=_tsk_fls.ALLOWED_FLAGS,
         build_argv=_tsk_fls.build_argv,
         parse=_tsk_fls.parse,
@@ -185,6 +242,8 @@ CATALOG: tuple[Tool, ...] = (
         returns="artifact",
         tier="core",
         toolkits=_BOTH,
+        input_artifact_params=("bodyfile_path",),
+        path_parameters=(_path("bodyfile_path", _D, PathKind.FILE),),
         allowed_flags=_tsk_mactime.ALLOWED_FLAGS,
         build_argv=_tsk_mactime.build_argv,
         parse=_tsk_mactime.parse,
@@ -197,6 +256,7 @@ CATALOG: tuple[Tool, ...] = (
         ("unix", "windows"),
         tier="core",
         toolkits=_BOTH,
+        path_parameters=(_path("image_path", _E, PathKind.FILE),),
         allowed_flags=_ewf_info.ALLOWED_FLAGS,
         build_argv=_ewf_info.build_argv,
         parse=_ewf_info.parse,
@@ -210,6 +270,10 @@ CATALOG: tuple[Tool, ...] = (
         returns="artifact",
         tier="core",
         toolkits=_BOTH,
+        path_parameters=(
+            _path("image_path", _E, PathKind.FILE),
+            _BULK_EXTRACTOR_OUTPUT,
+        ),
         allowed_flags=_bulk_extractor.ALLOWED_FLAGS,
         build_argv=_bulk_extractor.build_argv,
         parse=_bulk_extractor.parse,
@@ -221,6 +285,10 @@ CATALOG: tuple[Tool, ...] = (
         returns="artifact",
         tier="core",
         toolkits=_BOTH,
+        path_parameters=(
+            _path("rules_path", _C, PathKind.FILE_OR_DIRECTORY),
+            _path("target_path", _E, PathKind.FILE_OR_DIRECTORY),
+        ),
         allowed_flags=_yara.ALLOWED_FLAGS,
         build_argv=_yara.build_argv,
         parse=_yara.parse,
@@ -234,6 +302,7 @@ CATALOG: tuple[Tool, ...] = (
         returns="artifact",
         tier="core",
         toolkits=_BOTH,
+        path_parameters=(_path("dump_path", _E, PathKind.FILE),),
         allowed_flags=_volatility3.ALLOWED_FLAGS,
         build_argv=_volatility3.build_argv,
         parse=_volatility3.parse,
@@ -247,6 +316,10 @@ CATALOG: tuple[Tool, ...] = (
         returns="artifact",
         tier="core",
         toolkits=_WINDOWS,
+        path_parameters=(
+            _path("evtx_dir", _E, PathKind.DIRECTORY),
+            _output("output_csv", "hayabusa.csv", PathKind.FILE),
+        ),
         allowed_flags=_hayabusa.ALLOWED_FLAGS,
         build_argv=_hayabusa.build_argv,
         parse=_hayabusa.parse,
@@ -258,6 +331,13 @@ CATALOG: tuple[Tool, ...] = (
         returns="artifact",
         tier="core",
         toolkits=_WINDOWS,
+        path_parameters=(
+            _path("target_dir", _E, PathKind.DIRECTORY),
+            _path("sigma_dir", _C, PathKind.DIRECTORY, required=False),
+            _path("rules_dir", _C, PathKind.DIRECTORY, required=False),
+            _CHAINSAW_RULESET,
+            _output("output_path", "chainsaw", PathKind.DIRECTORY),
+        ),
         allowed_flags=_chainsaw.ALLOWED_FLAGS,
         build_argv=_chainsaw.build_argv,
         parse=_chainsaw.parse,
@@ -273,6 +353,10 @@ CATALOG: tuple[Tool, ...] = (
         returns="artifact",
         tier="core",
         toolkits=_WINDOWS,
+        path_parameters=(
+            _path("evtx_path", _E, PathKind.FILE_OR_DIRECTORY),
+            _OUTPUT_DIR,
+        ),
         allowed_flags=_evtxecmd.ALLOWED_FLAGS,
         build_argv=_evtxecmd.build_argv,
         parse=_evtxecmd.parse,
@@ -284,6 +368,10 @@ CATALOG: tuple[Tool, ...] = (
         returns="artifact",
         tier="core",
         toolkits=_WINDOWS,
+        path_parameters=(
+            _path("mft_path", _E, PathKind.FILE),
+            _OUTPUT_DIR,
+        ),
         allowed_flags=_mftecmd.ALLOWED_FLAGS,
         build_argv=_mftecmd.build_argv,
         parse=_mftecmd.parse,
@@ -302,6 +390,9 @@ CATALOG: tuple[Tool, ...] = (
         # relpath}) the dispatcher resolves + re-hashes before running (custody of the
         # derivative). A literal path still works for a hive already under /evidence.
         input_artifact_params=("hive_path",),
+        path_parameters=(
+            _path("hive_path", _ED, PathKind.FILE, required=False),
+        ),
         allowed_flags=_regripper.ALLOWED_FLAGS,
         build_argv=_regripper.build_argv,
         parse=_regripper.parse,
@@ -314,6 +405,8 @@ CATALOG: tuple[Tool, ...] = (
         ("unix", "windows"),
         tier="core",
         toolkits=_BOTH,
+        input_artifact_params=("input_path",),
+        path_parameters=(_path("input_path", _CD, PathKind.FILE),),
         allowed_flags=_jq.ALLOWED_FLAGS,
         build_argv=_jq.build_argv,
         parse=_jq.parse,
@@ -332,6 +425,7 @@ CATALOG: tuple[Tool, ...] = (
         binary_stdout=True,
         image_param="image_path",
         toolkits=_BOTH,
+        path_parameters=(_path("image_path", _E, PathKind.FILE),),
         allowed_flags=_tsk_icat.ALLOWED_FLAGS,
         build_argv=_tsk_icat.build_argv,
         parse=_tsk_icat.parse,
@@ -344,6 +438,10 @@ CATALOG: tuple[Tool, ...] = (
         ("unix", "windows"),
         returns="artifact",
         toolkits=_BOTH,
+        path_parameters=(
+            _path("image_path", _E, PathKind.FILE_OR_DIRECTORY),
+            _OUTPUT_DIR,
+        ),
         allowed_flags=_plaso_log2timeline.ALLOWED_FLAGS,
         build_argv=_plaso_log2timeline.build_argv,
         parse=_plaso_log2timeline.parse,
@@ -354,6 +452,11 @@ CATALOG: tuple[Tool, ...] = (
         ("unix", "windows"),
         returns="artifact",
         toolkits=_BOTH,
+        input_artifact_params=("plaso_path",),
+        path_parameters=(
+            _path("plaso_path", _D, PathKind.FILE),
+            _OUTPUT_DIR,
+        ),
         allowed_flags=_plaso_psort.ALLOWED_FLAGS,
         build_argv=_plaso_psort.build_argv,
         parse=_plaso_psort.parse,
@@ -366,6 +469,7 @@ CATALOG: tuple[Tool, ...] = (
         ("unix", "windows"),
         returns="artifact",
         toolkits=_BOTH,
+        path_parameters=(_path("image_path", _E, PathKind.FILE_OR_DIRECTORY),),
         allowed_flags=_hashdeep.ALLOWED_FLAGS,
         build_argv=_hashdeep.build_argv,
         parse=_hashdeep.parse,
@@ -376,6 +480,10 @@ CATALOG: tuple[Tool, ...] = (
         ("unix",),
         returns="artifact",
         toolkits=_BOTH,
+        path_parameters=(
+            _path("image_path", _E, PathKind.FILE),
+            _OUTPUT_DIR,
+        ),
         allowed_flags=_foremost.ALLOWED_FLAGS,
         build_argv=_foremost.build_argv,
         parse=_foremost.parse,
@@ -388,6 +496,10 @@ CATALOG: tuple[Tool, ...] = (
         ("unix",),
         side_effecting=True,
         toolkits=_BOTH,
+        path_parameters=(
+            _path("image_path", _E, PathKind.FILE),
+            _NBD_DEVICE,
+        ),
         allowed_flags=_qemu_nbd.ALLOWED_FLAGS,
         build_argv=_qemu_nbd.build_argv,
         parse=_qemu_nbd.parse,
@@ -406,6 +518,10 @@ CATALOG: tuple[Tool, ...] = (
         ("windows",),
         returns="artifact",
         toolkits=_WINDOWS,
+        path_parameters=(
+            _path("target_path", _E, PathKind.FILE_OR_DIRECTORY),
+            _OUTPUT_DIR,
+        ),
         allowed_flags=_lecmd.ALLOWED_FLAGS,
         build_argv=_lecmd.build_argv,
         parse=_lecmd.parse,
@@ -416,6 +532,10 @@ CATALOG: tuple[Tool, ...] = (
         ("windows",),
         returns="artifact",
         toolkits=_WINDOWS,
+        path_parameters=(
+            _path("target_path", _E, PathKind.FILE_OR_DIRECTORY),
+            _OUTPUT_DIR,
+        ),
         allowed_flags=_jlecmd.ALLOWED_FLAGS,
         build_argv=_jlecmd.build_argv,
         parse=_jlecmd.parse,
@@ -426,6 +546,11 @@ CATALOG: tuple[Tool, ...] = (
         ("windows",),
         returns="artifact",
         toolkits=_WINDOWS,
+        path_parameters=(
+            _path("hive_path", _E, PathKind.FILE_OR_DIRECTORY),
+            _OUTPUT_DIR,
+            _RECMD_BATCH,
+        ),
         allowed_flags=_recmd.ALLOWED_FLAGS,
         build_argv=_recmd.build_argv,
         parse=_recmd.parse,
@@ -436,6 +561,10 @@ CATALOG: tuple[Tool, ...] = (
         ("windows",),
         returns="artifact",
         toolkits=_WINDOWS,
+        path_parameters=(
+            _path("hive_path", _E, PathKind.FILE),
+            _OUTPUT_DIR,
+        ),
         allowed_flags=_amcacheparser.ALLOWED_FLAGS,
         build_argv=_amcacheparser.build_argv,
         parse=_amcacheparser.parse,
@@ -446,6 +575,10 @@ CATALOG: tuple[Tool, ...] = (
         ("windows",),
         returns="artifact",
         toolkits=_WINDOWS,
+        path_parameters=(
+            _path("hive_path", _E, PathKind.FILE),
+            _OUTPUT_DIR,
+        ),
         allowed_flags=_appcompatcacheparser.ALLOWED_FLAGS,
         build_argv=_appcompatcacheparser.build_argv,
         parse=_appcompatcacheparser.parse,
@@ -456,6 +589,10 @@ CATALOG: tuple[Tool, ...] = (
         ("windows",),
         returns="artifact",
         toolkits=_WINDOWS,
+        path_parameters=(
+            _path("target_path", _E, PathKind.DIRECTORY),
+            _OUTPUT_DIR,
+        ),
         allowed_flags=_sbecmd.ALLOWED_FLAGS,
         build_argv=_sbecmd.build_argv,
         parse=_sbecmd.parse,
@@ -466,6 +603,10 @@ CATALOG: tuple[Tool, ...] = (
         ("windows",),
         returns="artifact",
         toolkits=_WINDOWS,
+        path_parameters=(
+            _path("target_path", _E, PathKind.FILE),
+            _OUTPUT_DIR,
+        ),
         allowed_flags=_wxtcmd.ALLOWED_FLAGS,
         build_argv=_wxtcmd.build_argv,
         parse=_wxtcmd.parse,
@@ -476,6 +617,10 @@ CATALOG: tuple[Tool, ...] = (
         ("windows",),
         returns="artifact",
         toolkits=_WINDOWS,
+        path_parameters=(
+            _path("target_path", _E, PathKind.FILE_OR_DIRECTORY),
+            _OUTPUT_DIR,
+        ),
         allowed_flags=_rbcmd.ALLOWED_FLAGS,
         build_argv=_rbcmd.build_argv,
         parse=_rbcmd.parse,

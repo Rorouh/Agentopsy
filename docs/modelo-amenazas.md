@@ -88,11 +88,18 @@ token y lo mandan fuera), fuga por logs, exposición accidental por la API. Miti
   Exclusión explícita de secretos del operador aunque caigan dentro de la raíz — incluidas
   las sesiones de los ejecutores (el volumen `forensia-cli-auth` montado como HOME y el
   staging read-only `/host-creds/`).
-- En el servidor MCP (sección F), los **paths auxiliares** que algunas tools aceptan
-  (yara `rules_path`, jq `input_path`, chainsaw `sigma_dir`/`rules_dir`) están
-  **confinados** al árbol de FORENSIA (`~/.forensia/cases/`) por un validador Pydantic
-  (`_validate_confined_path`). Bloquea el ataque `jq '.' /etc/passwd` por cliente MCP
-  malicioso. RULE 2 — no fallback.
+- La política vive en `forensia.path_policy`, no en MCP. Cada parámetro se declara en
+  `Tool.path_parameters` con rol cerrado; el dispatcher canonicaliza y confina antes del
+  runner para agente, MCP y llamadas directas. `CASE_INPUT` usa el `case_dir` activo (no
+  `case_manager.root`), `DERIVED_INPUT` exige el `ArtifactRef` compartido
+  (`run_id`/`relpath` obligatorios; `sha256`/`size` opcionales; sin claves extra)
+  y siempre re-hashea. Los metadatos aportados nunca sustituyen al valor autoritativo del
+  store. `RUN_OUTPUT` es propiedad de ArtifactStore bajo el `out/` del run actual;
+  `bulk_extractor` recibe el subdirectorio fresco `out/bulk_extractor`.
+- Reglas incluidas en un maletín no abren `/opt`: Chainsaw acepta `chainsaw-native` y
+  RECmd `Kroll_Batch.reb`; el backend mapea cada id a una ruta exacta. Paths/id libres
+  fallan. Lo mismo aplica al device runtime `nbd0` de qemu-nbd, cuyo argv siempre
+  contiene `-r`: no existe un modo NBD escribible en el contrato.
 
 ### F. Servidor MCP (segunda superficie pública del backend)
 Desde la rama `mcp`, FORENSIA expone un servidor MCP standalone (`python -m
@@ -153,7 +160,7 @@ de panel de expertos en 2026-06-29.
 | 14 | MCP server exige `FORENSIA_CLOUD_CONSENT` al arrancar | test: sin env → exit 2 |
 | 15 | MCP redaction (`policy/redaction.yaml`) aplicada antes de wire MCP | test |
 | 16 | MCP schemas Pydantic `extra='forbid'`: no aceptan paths crudos a evidencia | test |
-| 17 | MCP aux paths (yara rules, jq input, chainsaw sigma/rules) confinados a `~/.forensia/cases/` | test |
+| 17 | Gate central de roles de ruta: same-case, derived re-hash, outputs del run actual y bundled exacto; protege agente, MCP y dispatcher directo | tests de traversal, absoluta externa, secretos, symlink, cross-case, outputs y runner no invocado |
 | 18 | `AuditLog.append` con `filelock` (POSIX `fcntl` / Windows `msvcrt`): chain sobrevive a concurrencia api↔MCP | test concurrente con `multiprocessing` |
 | 19 | Credenciales CLI (`~/.claude`, `~/.codex`, `~/.gemini`) montadas **ro**, excluidas de `evidenceRoot`, jamás en logs ni respuestas de API | grep del compose + test |
 

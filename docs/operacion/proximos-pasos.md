@@ -135,6 +135,18 @@ en los cuerpos de commit (`git log --oneline main`).
 
 Ratio impacto / esfuerzo más alto. Si solo se atacan estos 4, hay demo:
 
+### P0.5 — hardening previo
+
+- [x] **P0.5-2 (2026-07-12):** contrato central de roles de ruta por `Tool` y gate
+  obligatorio en dispatcher antes del runner/audit start. Same-case estricto, derivados
+  por referencia re-hasheada, outputs propiedad del run actual e ids bundled exactos;
+  agente y MCP consumen el mismo contrato. La referencia emitida completa
+  `{run_id, relpath, sha256, size}` es consumible directamente (la forma mínima sigue
+  válida), `bulk_extractor` usa `out/bulk_extractor` fresco y `qemu_nbd` es
+  incondicionalmente read-only.
+
+Este cambio cierra **únicamente P0.5-2**; no implica el cierre del resto de P0.5.
+
 ### A. ~~Construir las 3 imágenes OCI~~ **[SUPERSEDIDO por el pivote 2026-07-02]**
 
 El mecanismo de imágenes OCI sueltas (`scripts/build-images.sh` →

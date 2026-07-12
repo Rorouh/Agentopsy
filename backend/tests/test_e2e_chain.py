@@ -199,7 +199,7 @@ def test_full_chain_product_path_custody(chain, cases, store, case, tmp_path) ->
     # (2) the consumer takes icat's artifact ref as its hive_path input — no path invented
     regripper = _run(
         "regripper",
-        {"hive_path": {"run_id": icat["run_id"], "relpath": "stdout.bin"}, "plugin": "compname"},
+        {"hive_path": ref, "plugin": "compname"},
         case.id,
     )
     assert regripper["exit_code"] == 0
@@ -254,7 +254,7 @@ def test_tamper_between_icat_and_regripper_blocks_run(chain, cases, store, case,
     with pytest.raises(dispatcher.ToolExecutionError, match="custodia|SHA-256|match"):
         _run(
             "regripper",
-            {"hive_path": {"run_id": icat["run_id"], "relpath": "stdout.bin"}, "plugin": "compname"},
+            {"hive_path": icat["parsed"]["artifact"], "plugin": "compname"},
             case.id,
         )
     starts_after = sum(

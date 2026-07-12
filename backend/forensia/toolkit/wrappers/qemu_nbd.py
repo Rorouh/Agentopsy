@@ -27,27 +27,29 @@ def build_argv(params: dict[str, Any]) -> list[str]:
 
     params:
         image_path (str, required): image to expose. Injected by FORENSIA.
-        nbd_device (str, optional): target NBD device, `/dev/nbd0` default.
+        nbd_device (str, required): exact `/dev/nbd0` path mapped from id `nbd0`.
         image_format (str, optional): raw (default) / qcow2 / vmdk / vdi / vhdx / vpc.
-        read_only (bool, optional): block-level read-only (`-r`). Default True (soundness).
+        There is no writable mode: `-r` is unconditional and caller-controlled
+        `read_only` is not part of the product contract.
     """
     image_path = params.get("image_path")
     if not image_path or not isinstance(image_path, str):
         raise ValueError("qemu_nbd requires params.image_path: str")
 
-    nbd_device = params.get("nbd_device", "/dev/nbd0")
-    if not isinstance(nbd_device, str) or not _NBD_DEVICE_RE.match(nbd_device):
-        raise ValueError("qemu_nbd nbd_device must be like /dev/nbd0")
+    nbd_device = params.get("nbd_device")
+    if nbd_device != "/dev/nbd0" or not _NBD_DEVICE_RE.match(nbd_device):
+        raise ValueError("qemu_nbd requires dispatcher-mapped nbd_device id 'nbd0'")
 
     image_format = params.get("image_format", "raw")
     if image_format not in _FORMATS:
         raise ValueError(f"qemu_nbd image_format must be one of {sorted(_FORMATS)}")
 
-    argv: list[str] = []
-    if params.get("read_only", True):
-        argv.append("-r")
-    argv += ["-f", image_format, "-c", nbd_device, image_path]
-    return argv
+    if "read_only" in params:
+        raise ValueError(
+            "qemu_nbd read_only is not caller-configurable; the tool is always read-only"
+        )
+
+    return ["-r", "-f", image_format, "-c", nbd_device, image_path]
 
 
 def parse(stdout: str) -> dict[str, Any]:
