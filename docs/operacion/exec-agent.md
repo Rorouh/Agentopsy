@@ -47,6 +47,11 @@ api  ──HTTP (red interna del compose)──▶  exec-agent  ──subprocess
 | `POST` | `/exec` (binario) | `{"argv": ["icat",…], "timeout": 300, "stdout_path": "/cases/…/out/stdout.bin"}` | `{"exit": int, "stdout_file": str, "stdout_sha256": str, "stdout_size": int, "stderr": str, "timed_out": bool}` |
 | `POST` | `/exec` (EWF)     | `{"argv": ["mmls",…,"/cases/…/original.E01"], "timeout": 300, "ewf_image": "/cases/…/original.E01"}` | igual que `/exec` (o el binario si además va `stdout_path`); en fallo de montaje: `424 {"error": "…ewfmount…"}` |
 
+El campo `timeout` acepta `null` (el api no impone timeout): entonces el exec-agent aplica
+su techo duro `_MAX_TIMEOUT_S` como timeout efectivo — **nunca** corre sin límite (ver
+*Semántica del cierre* → timeouts). Un número se acota a `min(t, techo)`; un no-positivo es
+`400`.
+
 **Canal binario-seguro (`stdout_path`).** Algunas tools (TSK `icat`) emiten **bytes crudos**
 por stdout (hives, EVTX, `$MFT`, ejecutables). Decodificarlos como texto los corrompe
 irreversiblemente (cada byte no-UTF-8 → `U+FFFD`). Cuando el api pasa `stdout_path` —una
@@ -113,17 +118,30 @@ la excepción primaria cuando existe y no reejecuta la herramienta. Si falla el 
 del `tool_run_start`, la tool se rechaza sin ejecutar, no se intenta un finish sin start
 y el `ArtifactRun` reservado se cierra como `error`.
 
-Hay dos timeouts con semántica actual distinta:
+Hay dos timeouts con semántica distinta:
 
 - `subprocess.TimeoutExpired` del runner local cruza el dispatcher como excepción:
   `ArtifactRun.status="error"` y `exit_code=null`, con streams parciales.
-- El timeout interno del exec-agent remoto se serializa hoy como
+- El timeout interno del exec-agent remoto se serializa como
   `{"timed_out": true, "exit": 124, ...}`. `maletin.py` devuelve ese `124` como un
   resultado normal, por lo que el dispatcher registra `status="finished"` y
   `exit_code=124`.
 
-Unificar o distinguir formalmente esa segunda semántica es un gap pendiente de una
-decisión separada; este cambio no modifica `maletin.py` ni el exec-agent.
+**Toda corrida está SIEMPRE acotada (custodia del hash, INVARIANT 4).** El agente/MCP
+llaman al dispatcher sin timeout, así que baja `timeout=null` hasta el exec-agent. El
+exec-agent **nunca** ejecuta con timeout efectivo `None`: si llega `null`, aplica el
+techo duro `_MAX_TIMEOUT_S` (1800 s) como timeout efectivo; un número se acota a
+`min(t, techo)` y un no-positivo es un `400` accionable (RULE 2). `subprocess.run` **mata
+y recolecta** el hijo al expirar, así que cuando el exec-agent hashea `out/stdout.bin` el
+proceso ya está muerto y el fichero no cambia. En el lado del `api`, `maletin.py`
+dimensiona el timeout de lectura HTTP **estrictamente por encima** del techo efectivo del
+exec-agent (`_EXEC_AGENT_MAX_TIMEOUT`, espejo del techo del exec-agent, `+
+_HTTP_TIMEOUT_MARGIN`), de modo que el exec-agent **siempre** termina (mata + hashea +
+responde) antes de que el transporte se rinda: el dispatcher jamás cierra ni hashea un run
+con el proceso del maletín aún vivo escribiendo (evita el SHA-256 sobre bytes que mutan).
+
+Unificar o distinguir formalmente la semántica del `124` remoto vs. la excepción local
+sigue siendo un gap pendiente de una decisión separada.
 
 ## Seguridad
 

@@ -63,9 +63,17 @@ _URL_ENV = {
 # unreachable rather than blocking the capabilities snapshot.
 _PROBE_TIMEOUT = 5
 
-# Default wall-clock for a tool run when the caller does not pass one. The HTTP read
-# timeout is set above the tool timeout so the transport never trips before the tool.
-_EXEC_DEFAULT_TIMEOUT = 600
+# Hard ceiling the exec-agent applies to a single tool run — MUST mirror `_MAX_TIMEOUT_S`
+# in docker/docker/forensic-toolkit/exec_agent.py. A `timeout=None` from the api runs
+# bounded by THIS ceiling inside the maletín (never unbounded), so a run can never exceed
+# it. A test pins the mirror so drift in either file is caught.
+_EXEC_AGENT_MAX_TIMEOUT = 1800
+# Extra wall-clock the HTTP client waits ON TOP of the exec-agent's effective ceiling, so
+# the exec-agent ALWAYS kills the child, hashes its stdout and replies BEFORE the transport
+# gives up. Without this margin the client could disconnect while the maletín process is
+# still writing, and the dispatcher would hash a still-mutating artifact (INVARIANT 4).
+# Explicit constant, no silent default (RULE 2).
+_HTTP_TIMEOUT_MARGIN = 60
 
 
 class MaletinExecError(RuntimeError):
@@ -147,7 +155,18 @@ def run_argv_in_maletin(
         raise MaletinExecError(_no_url_reason(service))
     if not isinstance(argv, list) or not argv or not all(isinstance(a, str) for a in argv):
         raise MaletinExecError("argv debe ser una list[str] no vacía (shell-free)")
-    http_timeout = (float(timeout) if timeout else _EXEC_DEFAULT_TIMEOUT) + 30
+    # The exec-agent caps this run at `min(timeout, ceiling)` (or the ceiling itself when
+    # the api passes no timeout — see `_EXEC_AGENT_MAX_TIMEOUT`). Wait strictly longer so
+    # the exec-agent ALWAYS finishes first: it kills the child, hashes stdout and replies
+    # before the transport gives up. This is what keeps the dispatcher from ever hashing an
+    # artifact while the maletín process is still writing to it (INVARIANT 4). RULE 2: the
+    # bound is an explicit constant, never an implicit "trip early and retry".
+    effective_ceiling = (
+        _EXEC_AGENT_MAX_TIMEOUT
+        if timeout is None
+        else min(float(timeout), _EXEC_AGENT_MAX_TIMEOUT)
+    )
+    http_timeout = effective_ceiling + _HTTP_TIMEOUT_MARGIN
     request_body: dict[str, Any] = {"argv": argv, "timeout": timeout}
     if stdout_path is not None:
         request_body["stdout_path"] = stdout_path

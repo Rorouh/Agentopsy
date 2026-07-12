@@ -64,7 +64,11 @@ _PORT = int(os.environ.get("FORENSIA_EXEC_AGENT_PORT", "8666"))
 _STAGE = os.environ.get("FORENSIA_STAGE", "base")
 _TOKEN = os.environ.get("FORENSIA_EXEC_AGENT_TOKEN") or None
 # Tope duro de tiempo por ejecución: una tool que no termina no bloquea al agente para
-# siempre. El api pide su propio timeout; este es el techo defensivo.
+# siempre. El api pide su propio timeout (acotado a este techo); si pide `null`, este techo
+# ES el timeout efectivo — NUNCA se ejecuta con timeout None (sería `subprocess.run` sin
+# límite y el api podría hashear un artefacto que aún muta si su cliente HTTP se rinde
+# antes, INVARIANT 4). `subprocess.run` mata y recolecta el hijo al expirar, así que al
+# retornar el proceso está MUERTO y su fichero de stdout ya no cambia.
 _MAX_TIMEOUT_S = 1800
 # Lectura por bloques para hashear el stdout crudo sin cargar el fichero entero en RAM
 # (icat puede extraer artefactos grandes: $MFT, hives).
@@ -203,11 +207,20 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(argv, list) or not argv or not all(isinstance(a, str) for a in argv):
             return self._send(400, {"error": "'argv' must be a non-empty list[str]"})
         timeout = payload.get("timeout")
-        if timeout is not None:
+        if timeout is None:
+            # `null` del api → aplica el techo duro como timeout EFECTIVO. Nunca se corre con
+            # timeout None (sin límite): el techo garantiza que `subprocess.run` mata y
+            # recolecta el hijo, así que al hashear el stdout el proceso ya está muerto y el
+            # fichero no cambia (INVARIANT 4). Siempre acotado y positivo.
+            timeout = _MAX_TIMEOUT_S
+        else:
             try:
-                timeout = min(float(timeout), _MAX_TIMEOUT_S)
+                timeout = float(timeout)
             except (TypeError, ValueError):
                 return self._send(400, {"error": "'timeout' must be a number or null"})
+            if timeout <= 0:
+                return self._send(400, {"error": "'timeout' must be a positive number or null"})
+            timeout = min(timeout, _MAX_TIMEOUT_S)
         stdout_path = payload.get("stdout_path")
         if stdout_path is not None:
             if not isinstance(stdout_path, str) or not stdout_path:
