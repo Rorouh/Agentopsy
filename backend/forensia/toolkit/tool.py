@@ -80,6 +80,15 @@ class Tool:
     # INVARIANT 3) for the duration of the run. ``None`` → the tool consumes no disk image,
     # so no EWF handling (default, unchanged).
     image_param: str | None = None
+    # Params that MAY be given as a DERIVED-ARTIFACT reference (`{"run_id", "relpath"}`)
+    # instead of a literal path — the "derived handoff": a downstream tool consuming a
+    # file a previous run produced (RegRipper over a hive TSK ``icat`` extracted →
+    # ``("hive_path",)``). The dispatcher resolves such a ref to the artifact's on-disk
+    # path inside the case and RE-HASHES it against the producing run's manifest before
+    # ``build_argv`` (custody of derivatives, FORENSIC INVARIANTS 1-2), recording the
+    # derivation link in the audit (INVARIANT 4). A plain string value stays a literal
+    # path (unchanged contract); empty tuple → the tool takes no artifact-ref inputs.
+    input_artifact_params: tuple[str, ...] = ()
     build_argv: Callable[[dict[str, Any]], list[str]] = _not_built
     parse: Callable[[str], Any] = _not_built
     # Container-delivered tools set this so the executor knows what to mount.

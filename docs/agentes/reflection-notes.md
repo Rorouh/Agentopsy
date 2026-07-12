@@ -306,3 +306,17 @@ INVARIANT 3), reescribe ese token del argv al raw, ejecuta y **desmonta siempre*
 como raw (RULE 2). El `.E01` se abre RO (hash baseline intacto). Compose: `cap_add:[SYS_ADMIN]`
 + `devices:[/dev/fuse]` ya presentes; comentario aclarado. Detalle en
 `docs/operacion/exec-agent.md` (§ Routing EWF).
+
+**Cerrado (relevo derivado con custodia — cadena multi-tool real).** Faltaban dos piezas
+para encadenar herramientas con cadena de custodia. (1) **Superficie:** una tool
+`binary_stdout` (TSK `icat`) devolvía `parsed = parse("")` → `content_length: 0`, que se
+lee como «no devolvió nada» aunque los bytes estén en `out/stdout.bin`. Ahora el `parsed`
+de una tool binaria **remite al artefacto**: `{"artifact": {run_id, relpath, sha256, size}}`
+(solo en exit 0). (2) **Relevo:** una tool aguas abajo (RegRipper) declara
+`input_artifact_params=("hive_path",)` y puede recibir esa ref `{run_id, relpath}` en vez de
+una ruta; el dispatcher la resuelve con `artifact_store.resolve_output_file` (confina bajo
+`out/` + **re-hashea** contra el manifiesto de la corrida productora — custodia del derivado,
+INVARIANTS 1-2), sustituye por la ruta RO y registra el enlace en `tool_run_start.derived_inputs`
+(INVARIANT 4). Mismatch/ausente/ref sin caso → `ToolExecutionError` accionable, la tool no
+corre (RULE 2). La ref que produce `icat` es la que consume RegRipper (simetría). Sin ampliar
+allowlist. Detalle en `docs/storage.md` (§ Relevo derivado).

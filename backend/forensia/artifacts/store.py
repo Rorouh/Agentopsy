@@ -22,10 +22,16 @@ import re
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Literal
 
 from forensia.cases.manager import CaseManager, case_manager
+
+
+class ArtifactIntegrityError(RuntimeError):
+    """A derived artifact's on-disk bytes no longer match the SHA-256 its producing run
+    recorded in the manifest — the custody of the derivative is broken and it MUST NOT be
+    used as an input (FORENSIC INVARIANTS 1-2). Raised by ``resolve_output_file``."""
 
 _UUID4_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
@@ -319,6 +325,51 @@ class ArtifactStore:
             raise KeyError(f"unknown run_id for case {case_id}: {run_id}")
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         return self._manifest_to_run(case_id, manifest)
+
+    def resolve_output_file(
+        self, case_id: str, run_id: str, relpath: str
+    ) -> tuple[Path, str, int]:
+        """Resolve one output file of a run to its on-disk path, RE-HASHED against the
+        manifest — the custody gate for a derived-artifact input (FORENSIC INVARIANTS 1-2).
+
+        Confines the path under the run's ``out/`` (rejects absolute / ``..`` / symlink
+        escape), then re-computes its chunked SHA-256 and compares it to the digest the
+        producing run recorded when it closed. Returns ``(resolved_path, sha256, size)``.
+
+        Raises ``ValueError`` if ``relpath`` is not a confined relative path, ``KeyError``
+        if the run or the named output file is unknown (or the file is gone from disk),
+        and ``ArtifactIntegrityError`` if the bytes no longer match the manifest.
+        """
+        if not isinstance(relpath, str) or not relpath:
+            raise ValueError("relpath must be a non-empty string")
+        rel = PurePosixPath(relpath)
+        if rel.is_absolute() or ".." in rel.parts:
+            raise ValueError(
+                f"relpath must be relative and must not escape out/: {relpath!r}"
+            )
+        run = self.get_run(case_id, run_id)  # KeyError if unknown; validates the UUID
+        match = next((of for of in run.output_files if of.relpath == relpath), None)
+        if match is None:
+            raise KeyError(
+                f"run {run_id} for case {case_id} produced no output file {relpath!r} "
+                f"(outputs: {[of.relpath for of in run.output_files]})"
+            )
+        out_dir = (self._run_dir(case_id, run_id) / "out").resolve()
+        target = (out_dir / rel).resolve()
+        # Defence in depth: the real path must live under out/ (no symlink escape).
+        if target != out_dir and out_dir not in target.parents:
+            raise ValueError(f"resolved artifact path escapes out/: {relpath!r}")
+        if not target.is_file():
+            raise KeyError(
+                f"artifact file {relpath!r} of run {run_id} is missing on disk"
+            )
+        sha256, size = _hash_file(target)
+        if sha256 != match.sha256:
+            raise ArtifactIntegrityError(
+                f"derived artifact {relpath!r} of run {run_id} no longer matches its "
+                f"manifest SHA-256 (expected {match.sha256}, got {sha256})"
+            )
+        return target, sha256, size
 
     def list_runs(self, case_id: str) -> list[ArtifactRun]:
         """Return every run with a manifest, sorted by ``started_at`` descending."""

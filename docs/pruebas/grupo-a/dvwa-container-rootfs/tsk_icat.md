@@ -26,6 +26,12 @@ execute("tsk_icat", {"image_path": <img>, "inode": 13552}, case_id=…, os_profi
 > Nota: `parse` decodifica stdout como texto; para artefactos **binarios** puede venir con
 > caracteres de reemplazo (limitación del exec-agent, que devuelve texto) — para binarios,
 > usa el fichero del `ArtifactRun`, no el `preview`.
+>
+> **Actualización (posterior a esta corrida).** `icat` es ya `binary_stdout=True`: sus bytes
+> van íntegros a `out/stdout.bin` (hasheado) y el `parsed` **no** es `content_length:…` sino
+> una referencia al artefacto `{artifact:{run_id, relpath:"stdout.bin", sha256, size}}` —
+> lista para pasarse como input derivado a la tool aguas abajo (ver `docs/storage.md`
+> § Relevo derivado). El `content_length:1812` de arriba es del canal de texto antiguo.
 
 ## Qué extraje (y resultado)
 

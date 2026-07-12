@@ -56,7 +56,7 @@ auxiliares.
 |---|---|---|
 | `cases/<case-id>/case.json` | `forensia.cases.manager` (`CaseManager`) | Crear / listar / cargar / cerrar casos. UUID4 obligatorio; `os_profile` opcional/nullable — derivado del contenido de la evidencia (triage) o anclado por el operador; validado `in {unix, windows}` solo cuando está presente (+ `os_profile_source ∈ {derived, operator, conflict}`); subdirectorios (`evidence/`, `artifacts/`, `chats/`, `reports/`) materializados al crear. |
 | `cases/<case-id>/evidence/<id>/` | `forensia.evidence` (`EvidenceManager`) | Hash gate estricto: stream SHA-256 de la fuente → `shutil.copy2` → re-hash de la copia (abort + cleanup si mismatch) → `chmod 0o444` → `baseline.json`. La fuente nunca se modifica; el handle devuelto apunta SIEMPRE a la copia inmutable. |
-| `cases/<case-id>/artifacts/<run>/` | `forensia.artifacts.store` (`ArtifactStore`) | `start_run` reserva `run_id` (UUID4) y abre `manifest.json` en estado `running`; `set_run_argv` fija después el argv literal ya resuelto. `finalize_run` cierra una ejecución que devolvió código como `finished`; `fail_run` cierra una invocación sin código como `error`. Ambos escriben y hashean `stdout.txt`/`stderr.txt` (también si son parciales), hashean recursivamente `out/` en chunks de 1 MiB y reemplazan el manifest atómicamente. |
+| `cases/<case-id>/artifacts/<run>/` | `forensia.artifacts.store` (`ArtifactStore`) | `start_run` reserva `run_id` (UUID4) y abre `manifest.json` en estado `running`; `set_run_argv` fija después el argv literal ya resuelto. `finalize_run` cierra una ejecución que devolvió código como `finished`; `fail_run` cierra una invocación sin código como `error`. Ambos escriben y hashean `stdout.txt`/`stderr.txt` (también si son parciales), hashean recursivamente `out/` en chunks de 1 MiB y reemplazan el manifest atómicamente. `resolve_output_file` resuelve un fichero de `out/` de una corrida a su ruta on-disk **confinada** (rechaza absoluta / `..` / escape por symlink) y lo **re-hashea** contra el SHA-256 del manifiesto — la puerta de custodia de un input derivado (`ArtifactIntegrityError` si los bytes ya no coinciden). |
 | `cases/<case-id>/chats/<session>.jsonl` | `forensia.chats.store` (`ChatStore`) | Append-only line-buffered JSONL. `session_id` UUID4 o slug `^[a-zA-Z0-9_-]{1,64}$`. Roles validados contra `{user, assistant, system, tool}`. Lectura tolera última línea truncada (warning). |
 | `cases/<case-id>/audit.jsonl` | `forensia.audit.log` (`AuditLog`) | Append-only encadenado por hash. Una instancia por caso: el dispatcher la crea con `AuditLog(case_dir / "audit.jsonl")` por cada ejecución. La cadena `prev_hash → entry_hash` se verifica con `audit_log.verify()`. |
 | `cases/<case-id>/reports/<id>.{md,pdf}` | (pendiente — `forensia.reports`) | Pendiente para el slice de generación de informes. El layout está reservado. |
@@ -73,6 +73,13 @@ agente / panel toolkit-tester
    ▼
 dispatcher.execute(tool_id, params, case_id="…")
    │
+   ├─ resolver inputs derivados (tools con input_artifact_params): cada param cuyo valor
+   │  sea una ref de artefacto {run_id, relpath} → artifact_store.resolve_output_file(…)
+   │     · re-hashea el fichero contra el manifiesto de la corrida productora (custodia
+   │       del derivado, INVARIANTS 1-2); mismatch/ausente → ToolExecutionError (RULE 2)
+   │     · sustituye la ref por la ruta RO resuelta (el wrapper ve una ruta normal)
+   │     · acumula el enlace de derivación para el audit
+   │
    ├─ artifact_store.start_run(case_id, tool_id, argv=[])      → (run_id, out_dir)
    │     · crea cases/<id>/artifacts/<run_id>/{manifest.json, out/}
    │     · manifest.json en estado "running"
@@ -84,7 +91,9 @@ dispatcher.execute(tool_id, params, case_id="…")
    ├─ resolve binario local o seleccionar un único maletín por os_profile
    ├─ artifact_store.set_run_argv(…)         → persiste el argv literal
    │
-   ├─ audit.append({ action: "tool_run_start", argv literal, run_id, case_id, params })
+   ├─ audit.append({ action: "tool_run_start", argv literal, run_id, case_id, params,
+   │                 derived_inputs? })   · derived_inputs lista {param, source_run_id,
+   │                                        relpath, sha256, size} — el enlace de derivación
    │
    ├─ run_argv(argv, shell=False) o POST /exec al maletín seleccionado
    │
@@ -108,6 +117,33 @@ Si `case_id is None`, el dispatcher salta toda la rama de persistencia: no se re
 `ArtifactRun`, no se toca `audit.jsonl`, y el resultado no incluye `case_id`/`run_id`.
 Eso es el modo "legacy" / "panel dev" — útil para probar wrappers sin un caso abierto,
 pero **inaceptable** para uso forense real.
+
+## Relevo derivado: encadenar herramientas con custodia
+
+Una cadena multi-tool real (extraer un hive con TSK `icat`, y parsearlo con RegRipper)
+necesita que la salida de una corrida sea el input de la siguiente **sin que el agente
+invente rutas** ni se salte la verificación. Dos piezas simétricas lo hacen:
+
+- **La salida remite al artefacto.** Una tool `binary_stdout` (icat) escribe sus bytes
+  crudos a `out/stdout.bin` (hasheado, INVARIANT 4); su stdout de texto es `""`. El
+  `parsed` del resultado **no** es `parse("")` (que diría `content_length: 0` y se leería
+  como "no devolvió nada") sino una **referencia al artefacto**:
+  `{"artifact": {run_id, relpath: "stdout.bin", sha256, size}}` — solo en exit 0.
+- **La entrada acepta esa referencia.** Una tool que declara `input_artifact_params`
+  (RegRipper → `("hive_path",)`) puede recibir, en ese param, la ref `{run_id, relpath}`
+  en lugar de una ruta literal. Antes de `build_argv`, el dispatcher la resuelve con
+  `artifact_store.resolve_output_file`, que **confina** la ruta bajo `out/` y **re-hashea**
+  el fichero contra el SHA-256 del manifiesto de la corrida productora (custodia del
+  derivado — INVARIANTS 1-2). Coincide → sustituye la ref por la ruta RO resuelta y sigue.
+  No coincide, falta o la ref es inválida → `ToolExecutionError` accionable y la tool **no
+  se ejecuta** (RULE 2: nunca sobre un derivado sin verificar). Una ruta literal (`str`)
+  sigue siendo una ruta literal — el contrato de las tools de texto no cambia.
+
+La ref que produce icat es exactamente la que consume RegRipper, así que el agente encadena
+`icat → RegRipper` pasando `result["parsed"]["artifact"]` como `hive_path`. El **enlace de
+derivación** (qué artefacto de la corrida A alimentó la corrida B, con el hash re-verificado)
+queda en `tool_run_start.derived_inputs` del `audit.jsonl` — INVARIANT 4. Sin `case_id` no
+hay árbol de artefactos que resolver: una ref sin caso falla fuerte.
 
 ## API HTTP que materializa el storage
 

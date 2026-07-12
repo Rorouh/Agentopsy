@@ -30,7 +30,7 @@ import subprocess
 from dataclasses import asdict, dataclass
 from typing import Any
 
-from forensia.artifacts.store import artifact_store
+from forensia.artifacts.store import ArtifactIntegrityError, artifact_store
 from forensia.audit.log import AuditLog
 from forensia.cases.manager import case_manager
 from forensia.toolkit import maletin
@@ -110,6 +110,16 @@ def execute(
             "captura en texto para binario (RULE 2 / FORENSIC INVARIANT 4)."
         )
 
+    # A derived-artifact input ({run_id, relpath}) can only be resolved + re-hashed
+    # against a case's artifact tree; without a case there is nothing to resolve. Fail
+    # loud rather than pass the raw ref down to a wrapper as if it were a path (RULE 2).
+    if case_id is None and _has_artifact_ref(tool, params):
+        raise ToolExecutionError(
+            f"tool {tool_id!r}: se pasó una referencia de artefacto como input pero sin "
+            "case_id; resolver y re-hashear el derivado requiere el caso "
+            "(FORENSIC INVARIANTS 1-2 / RULE 2)."
+        )
+
     # Validate caller-controlled params before allocating an ArtifactRun. Wrappers that
     # require the dispatcher-owned output_dir receive a non-executable marker during
     # this pure validation pass; the literal argv is built once the real run dir exists.
@@ -117,6 +127,8 @@ def execute(
     audit: AuditLog | None = None
     effective_params: dict[str, Any] = dict(params)
     binary_stdout_path: str | None = None
+    # Derivation links (source artifact → this run) to record in ``tool_run_start``.
+    derived_inputs: list[dict[str, Any]] = []
 
     # If this tool reads a disk image and that image is an EWF container (`.E01`), the
     # maletín must expose it as a raw block device via `ewfmount` around the run. The api
@@ -129,6 +141,11 @@ def execute(
             ewf_image = candidate
 
     if case_id is not None:
+        # Resolve any derived-artifact input to a re-verified on-disk path BEFORE the
+        # validation pass, so the wrapper's build_argv sees a normal string path. The
+        # re-hash against the producing run's manifest is the custody gate; the returned
+        # links are audited with tool_run_start (INVARIANT 4).
+        derived_inputs = _resolve_artifact_inputs(tool, effective_params, case_id)
         _validate_params_before_artifact(tool, effective_params)
         case_dir = case_manager.case_dir(case_id)
         audit = AuditLog(case_dir / "audit.jsonl")
@@ -177,17 +194,19 @@ def execute(
 
     # The literal command and its venue are fixed. Persist the start before crossing
     # the runner boundary so transport/exec-agent/process failures remain auditable.
+    start_entry: dict[str, Any] = {
+        "action": "tool_run_start",
+        "case_id": case_id,
+        "run_id": run_id,
+        "tool_id": tool_id,
+        "argv": prepared.argv,
+        "params": _scrub_for_audit(effective_params),
+    }
+    # INVARIANT 4: record which prior artifact(s) fed this run (id, relpath, verified hash).
+    if derived_inputs:
+        start_entry["derived_inputs"] = derived_inputs
     try:
-        audit.append(
-            {
-                "action": "tool_run_start",
-                "case_id": case_id,
-                "run_id": run_id,
-                "tool_id": tool_id,
-                "argv": prepared.argv,
-                "params": _scrub_for_audit(effective_params),
-            }
-        )
+        audit.append(start_entry)
     except Exception as exc:  # noqa: BLE001 — execution is forbidden without durable start
         artifact_close_error: Exception | None = None
         try:
@@ -310,7 +329,9 @@ def execute(
         ),
     )
 
-    result = _build_result(tool, prepared.argv, exit_code, stdout, stderr)
+    result = _build_result(
+        tool, prepared.argv, exit_code, stdout, stderr, artifact_run=artifact_run
+    )
     result["case_id"] = case_id
     result["run_id"] = run_id
     artifact_result = asdict(artifact_run)
@@ -320,6 +341,92 @@ def execute(
         artifact_result.pop(internal_field)
     result["artifact_run"] = artifact_result
     return result
+
+
+def _is_artifact_ref(value: Any) -> bool:
+    """A derived-artifact input value: ``{"run_id": str, "relpath": str}``.
+
+    A literal string path (the existing input contract) is NOT a ref and is passed to the
+    wrapper untouched — the two are unambiguous (str vs dict), so text tools are unaffected.
+    """
+    return (
+        isinstance(value, dict)
+        and isinstance(value.get("run_id"), str)
+        and isinstance(value.get("relpath"), str)
+    )
+
+
+def _has_artifact_ref(tool: Tool, params: dict[str, Any]) -> bool:
+    return any(_is_artifact_ref(params.get(name)) for name in tool.input_artifact_params)
+
+
+def _resolve_artifact_inputs(
+    tool: Tool, params: dict[str, Any], case_id: str
+) -> list[dict[str, Any]]:
+    """Resolve each declared artifact-ref input to a re-verified on-disk path, in place.
+
+    For every ``input_artifact_params`` name whose value is an artifact ref, ask the
+    ArtifactStore to resolve it to the producing run's output file and RE-HASH it against
+    that run's manifest (custody of the derivative — FORENSIC INVARIANTS 1-2). On success
+    the ref is replaced by the resolved string path (so ``build_argv`` sees a normal path)
+    and a derivation link is returned for the audit. A hash mismatch, a missing/unknown
+    artifact, or a non-confined relpath fails loud — never use an unverified derivative
+    (RULE 2).
+    """
+    links: list[dict[str, Any]] = []
+    for name in tool.input_artifact_params:
+        ref = params.get(name)
+        if not _is_artifact_ref(ref):
+            continue  # a literal path (or absent) — unchanged behaviour
+        try:
+            path, sha256, size = artifact_store.resolve_output_file(
+                case_id, ref["run_id"], ref["relpath"]
+            )
+        except ArtifactIntegrityError as exc:
+            raise ToolExecutionError(
+                f"input derivado para {name!r}: {exc} — custodia del derivado rota, no se "
+                "ejecuta la tool (FORENSIC INVARIANTS 1-2 / RULE 2)."
+            ) from exc
+        except (KeyError, ValueError) as exc:
+            raise ToolExecutionError(
+                f"input derivado para {name!r}: no se pudo resolver la referencia de "
+                f"artefacto {ref!r} en el caso {case_id!r} ({type(exc).__name__}: {exc})."
+            ) from exc
+        params[name] = str(path)
+        links.append(
+            {
+                "param": name,
+                "source_run_id": ref["run_id"],
+                "relpath": ref["relpath"],
+                "sha256": sha256,
+                "size": size,
+                "resolved_path": str(path),
+            }
+        )
+    return links
+
+
+def _binary_artifact_ref(artifact_run: Any | None) -> dict[str, Any]:
+    """Reference to the hashed stdout artifact a ``binary_stdout`` tool produced.
+
+    Shaped EXACTLY like the artifact-ref a downstream tool consumes as input
+    (``{run_id, relpath}``) plus its verified ``sha256``/``size``, so the agent can hand
+    ``icat``'s output straight to a consumer (RegRipper) without inventing a path.
+    """
+    if artifact_run is None:
+        return {"artifact": None}
+    match = next(
+        (of for of in artifact_run.output_files if of.relpath == _BINARY_STDOUT_FILENAME),
+        None,
+    )
+    return {
+        "artifact": {
+            "run_id": artifact_run.run_id,
+            "relpath": _BINARY_STDOUT_FILENAME,
+            "sha256": match.sha256 if match else None,
+            "size": match.size if match else None,
+        }
+    }
 
 
 def _validate_params_before_artifact(tool: Tool, params: dict[str, Any]) -> None:
@@ -523,9 +630,18 @@ def _build_result(
     exit_code: int,
     stdout: str,
     stderr: str,
+    *,
+    artifact_run: Any | None = None,
 ) -> dict[str, Any]:
     parsed: Any | None = None
-    if exit_code == 0:
+    if tool.binary_stdout:
+        # A binary_stdout tool streamed its RAW bytes to a hashed artifact file, so
+        # ``stdout`` is "" here. Surface the artifact REFERENCE — never ``parse("")``,
+        # which (e.g. icat) reports ``content_length: 0`` and misreads as "the tool
+        # returned nothing". Only on success: a non-zero exit is a real failure.
+        if exit_code == 0:
+            parsed = _binary_artifact_ref(artifact_run)
+    elif exit_code == 0:
         try:
             # Bug 007: algunas tools (chainsaw) emiten su resumen por STDERR, no stdout.
             # Los wrappers que necesitan stderr declaran `parse(stdout, stderr)`; el resto

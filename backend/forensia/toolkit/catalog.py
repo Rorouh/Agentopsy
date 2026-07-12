@@ -297,6 +297,11 @@ CATALOG: tuple[Tool, ...] = (
         returns="artifact",
         tier="core",
         toolkits=_WINDOWS,
+        # Derived handoff: the hive it parses is normally the byte-exact file a prior
+        # TSK `icat` run extracted, so `hive_path` accepts an artifact ref ({run_id,
+        # relpath}) the dispatcher resolves + re-hashes before running (custody of the
+        # derivative). A literal path still works for a hive already under /evidence.
+        input_artifact_params=("hive_path",),
         allowed_flags=_regripper.ALLOWED_FLAGS,
         build_argv=_regripper.build_argv,
         parse=_regripper.parse,
