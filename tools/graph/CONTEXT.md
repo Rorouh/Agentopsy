@@ -46,10 +46,13 @@ sistema:
 ## Mapa por capas (backend `forensia/*`)
 
 **Evidencia y custodia** — `EvidenceManager`, `EvidenceHandle` (ingesta, puerta de
-hash, handle RO); **triage** `fingerprint_evidence()` / `fingerprint_os()` →
-`DetectedEvidence` / `routable_profile()`; **resolución de perfil**
-`resolve_os_profile()` / `OsProfileUnresolved` (el único punto que decide el
-`os_profile`, o falla fuerte — RULE 2).
+hash, handle RO); `forensia.evidence_context.EvidenceContext` (contexto verificado
+inmutable `evidence_id` + `baseline_sha256`, construido **solo** desde un
+`EvidenceHandle` y hilado hasta cada tool run — INVARIANT 4); **triage**
+`fingerprint_evidence()` / `fingerprint_os()` → `DetectedEvidence` /
+`routable_profile()`; **resolución de perfil** `resolve_os_profile()` /
+`OsProfileUnresolved` (el único punto que decide el `os_profile`, o falla fuerte —
+RULE 2).
 
 **Auditoría** — `AuditLog` hash-encadenado + gates de integridad (hash-chain,
 tamper).
@@ -82,9 +85,10 @@ central `PathParameter`); `forensia.path_policy` (roles `EVIDENCE_INPUT`, `CASE_
 `DERIVED_INPUT`, `RUN_OUTPUT`, `BUNDLED_RULESET`, `RUNTIME_DEVICE`, canonicalización y
 confinamiento same-case); `forensia.artifact_ref` (contrato único
 `{run_id, relpath, sha256?, size?}`, sin extras; el store re-hashea y valida metadatos);
-`dispatcher.execute()` (`tool + params → gate de rutas antes
-del run → ArtifactRun → argv fijado → tool_run_start
-durable → runner → intento único de finish o error accionable`); `maletin`
+`dispatcher.execute()` (`tool + params (+ evidence_context verificado) → gate de rutas
+antes del run → exige contexto si la tool lee evidencia → ArtifactRun → argv fijado →
+tool_run_start durable (con evidence_id + baseline_sha256) → runner → intento único de
+finish o error accionable, conservando el contexto en todo cierre`); `maletin`
 (allowlist ∩ catalog, `select_maletin` por `os_profile` sin fallback, sonda de
 disponibilidad para `capabilities`); `resolver` (binario / runtime OCI);
 `run_in_container`; `Tool.run_argv()` shell-free.

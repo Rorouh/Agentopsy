@@ -55,6 +55,7 @@ from forensia.agent.tool_schemas import (
 )
 from forensia.audit import AuditLog
 from forensia.evidence import EvidenceManager
+from forensia.evidence_context import EvidenceContext
 from forensia.findings.store import finding_store
 from forensia.models.base import FinalAnswer, ModelBackend, ToolCall
 from forensia.path_policy import inject_evidence_path
@@ -246,6 +247,11 @@ class ForensicAgent:
         evidence_filename = handle.original_path.name
         detected_os = handle.detected_os
         detected_kind = handle.detected_kind
+        # Verified evidence context threaded to EVERY tool run so the dispatcher can
+        # bind each action to this evidence (id + baseline hash) in the audit log
+        # (FORENSIC INVARIANT 4). Built from the handle EvidenceManager returned — never
+        # from an LLM/path value.
+        evidence_context = EvidenceContext.from_handle(handle)
 
         allowed = self.available_tool_ids()
         if not allowed:
@@ -444,7 +450,11 @@ class ForensicAgent:
                         "params": _preview_params(params),
                     })
                     result = dispatch_tool(
-                        action.tool_id, params, case_id=case_id, os_profile=self.os_profile
+                        action.tool_id,
+                        params,
+                        case_id=case_id,
+                        os_profile=self.os_profile,
+                        evidence_context=evidence_context,
                     )
                 except ToolExecutionError as exc:
                     tool_failures[action.tool_id] = tool_failures.get(action.tool_id, 0) + 1

@@ -36,7 +36,13 @@ import pytest
 from forensia.artifacts.store import ArtifactStore
 from forensia.audit.log import AuditLog
 from forensia.cases.manager import CaseManager
+from forensia.evidence_context import EvidenceContext
 from forensia.toolkit import dispatcher
+
+# The verified evidence context EvidenceManager threads for every anchored run.
+_CTX = EvidenceContext(
+    evidence_id="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", baseline_sha256="1" * 64
+)
 
 pytestmark = pytest.mark.skipif(
     os.name != "posix",
@@ -156,7 +162,9 @@ def chain(monkeypatch, bindir, cases, store):
 
 
 def _run(tool_id: str, params: dict, case_id: str) -> dict:
-    return dispatcher.execute(tool_id, params, case_id=case_id, os_profile="windows")
+    return dispatcher.execute(
+        tool_id, params, case_id=case_id, os_profile="windows", evidence_context=_CTX
+    )
 
 
 def _entries(cases: CaseManager, case_id: str) -> list[dict]:
@@ -173,7 +181,9 @@ def _one(entries: list[dict], action: str, run_id: str) -> dict:
 # 1) the whole chain, end to end, with custody at every hop
 # --------------------------------------------------------------------------- #
 def test_full_chain_product_path_custody(chain, cases, store, case, tmp_path) -> None:
-    image = str(tmp_path / "disk.raw")
+    # The image lives UNDER the case's evidence dir — the EVIDENCE_INPUT path policy gate
+    # (P0.5-2) confines it there, exactly as EvidenceManager would place a registered copy.
+    image = str(cases.root / case.id / "evidence" / "disk.raw")
     Path(image).write_bytes(b"\x00" * 4096)
 
     mmls = _run("tsk_mmls", {"image_path": image}, case.id)
@@ -215,6 +225,12 @@ def test_full_chain_product_path_custody(chain, cases, store, case, tmp_path) ->
         assert finish["status"] == "finished"
         assert finish["exit_code"] == 0
         assert finish["stdout_sha256"]  # the captured stream was hashed (INVARIANT 4)
+        # B5: the verified evidence context reaches BOTH start and finish (INVARIANT 4),
+        # with identical id + baseline hash on the paired entries.
+        assert start["evidence_id"] == finish["evidence_id"] == _CTX.evidence_id
+        assert (
+            start["baseline_sha256"] == finish["baseline_sha256"] == _CTX.baseline_sha256
+        )
     # icat's finish records the hashed out/stdout.bin as an output file
     assert _one(entries, "tool_run_finish", icat["run_id"])["output_files_count"] >= 1
 
@@ -240,7 +256,9 @@ def test_full_chain_product_path_custody(chain, cases, store, case, tmp_path) ->
 # 2) a tamper of the derived artifact between icat and RegRipper is fatal (RULE 2)
 # --------------------------------------------------------------------------- #
 def test_tamper_between_icat_and_regripper_blocks_run(chain, cases, store, case, tmp_path) -> None:
-    image = str(tmp_path / "disk.raw")
+    # The image lives UNDER the case's evidence dir — the EVIDENCE_INPUT path policy gate
+    # (P0.5-2) confines it there, exactly as EvidenceManager would place a registered copy.
+    image = str(cases.root / case.id / "evidence" / "disk.raw")
     Path(image).write_bytes(b"\x00" * 4096)
 
     icat = _run("tsk_icat", {"image_path": image, "inode": 13552}, case.id)
@@ -270,7 +288,9 @@ def test_tamper_between_icat_and_regripper_blocks_run(chain, cases, store, case,
 # 3) the audit is genuinely tamper-evident (flip a field → verify() fails)
 # --------------------------------------------------------------------------- #
 def test_audit_chain_is_tamper_evident(chain, cases, case, tmp_path) -> None:
-    image = str(tmp_path / "disk.raw")
+    # The image lives UNDER the case's evidence dir — the EVIDENCE_INPUT path policy gate
+    # (P0.5-2) confines it there, exactly as EvidenceManager would place a registered copy.
+    image = str(cases.root / case.id / "evidence" / "disk.raw")
     Path(image).write_bytes(b"\x00" * 4096)
     _run("tsk_mmls", {"image_path": image}, case.id)
 

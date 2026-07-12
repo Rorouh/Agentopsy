@@ -13,7 +13,14 @@ import pytest
 from forensia.artifacts.store import ArtifactStore
 from forensia.audit.log import AuditLog
 from forensia.cases.manager import CaseManager
+from forensia.evidence_context import EvidenceContext
 from forensia.toolkit import dispatcher
+
+# The verified context EvidenceManager would thread for an evidence-reading, anchored run
+# (evidence_id + baseline SHA-256). Required by the dispatcher for tools that read evidence.
+_CTX = EvidenceContext(
+    evidence_id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", baseline_sha256="0" * 64
+)
 
 
 @pytest.fixture
@@ -116,6 +123,7 @@ class TestAuditableRunnerBoundary:
                 {"image_path": _evidence_path(cases, case)},
                 case_id=case.id,
                 os_profile="unix",
+                evidence_context=_CTX,
             )
 
         assert "the tool was not executed" in str(raised.value)
@@ -163,6 +171,7 @@ class TestAuditableRunnerBoundary:
             {"image_path": _evidence_path(cases, case)},
             case_id=case.id,
             os_profile="unix",
+            evidence_context=_CTX,
         )
 
         entries = _audit_entries(cases, case.id)
@@ -199,6 +208,7 @@ class TestAuditableRunnerBoundary:
             {"image_path": _evidence_path(cases, case)},
             case_id=case.id,
             os_profile="windows",
+            evidence_context=_CTX,
         )
 
         assert calls == [("toolkit-windows", result["argv"])]
@@ -239,6 +249,7 @@ class TestAuditableRunnerBoundary:
                 {"image_path": _evidence_path(cases, case)},
                 case_id=case.id,
                 os_profile="unix",
+                evidence_context=_CTX,
             )
 
         assert isinstance(raised.value.__cause__, wired_dispatcher.maletin.MaletinExecError)
@@ -298,6 +309,7 @@ class TestAuditableRunnerBoundary:
                 {"image_path": _evidence_path(cases, case)},
                 case_id=case.id,
                 os_profile="unix",
+                evidence_context=_CTX,
             )
 
         assert raised.value.__cause__ is runner_error
@@ -348,6 +360,7 @@ class TestAuditableRunnerBoundary:
                 {"image_path": _evidence_path(cases, case)},
                 case_id=case.id,
                 os_profile="unix",
+                evidence_context=_CTX,
             )
 
         assert raised.value.__cause__ is finish_error
@@ -409,6 +422,7 @@ class TestAuditableRunnerBoundary:
                 {"image_path": _evidence_path(cases, case)},
                 case_id=case.id,
                 os_profile="unix",
+                evidence_context=_CTX,
             )
 
         assert raised.value.__cause__ is finalize_error
@@ -469,6 +483,7 @@ class TestAuditableRunnerBoundary:
                 case_id=case.id,
                 os_profile="unix",
                 timeout=9,
+                evidence_context=_CTX,
             )
 
         assert raised.value.__cause__ is timeout_error
@@ -522,6 +537,7 @@ class TestAuditableRunnerBoundary:
             {"image_path": _evidence_path(cases, case)},
             case_id=case.id,
             os_profile="unix",
+            evidence_context=_CTX,
         )
 
         assert result["exit_code"] == 23

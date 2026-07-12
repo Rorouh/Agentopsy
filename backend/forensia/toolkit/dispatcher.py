@@ -36,6 +36,7 @@ from forensia.artifact_ref import is_artifact_ref, validate_artifact_ref
 from forensia.artifacts.store import ArtifactIntegrityError, artifact_store
 from forensia.audit.log import AuditLog
 from forensia.cases.manager import case_manager
+from forensia.evidence_context import EvidenceContext
 from forensia.path_policy import (
     PathPolicyError,
     PathRole,
@@ -96,6 +97,7 @@ def execute(
     case_id: str | None = None,
     os_profile: str | None = None,
     timeout: int | None = None,
+    evidence_context: EvidenceContext | None = None,
 ) -> dict[str, Any]:
     """Resolve, run, and parse a tool by id. Returns a result dict.
 
@@ -105,6 +107,13 @@ def execute(
 
     If ``case_id`` is provided, the dispatcher also opens an ``ArtifactRun`` and
     appends audit-log entries before/after execution; see module docstring.
+
+    ``evidence_context`` is the verified ``(evidence_id, baseline_sha256)`` the caller
+    (agent / MCP) obtained from ``EvidenceManager`` and threads in explicitly. It is
+    recorded in ``tool_run_start`` / ``tool_run_finish`` (FORENSIC INVARIANT 4) and
+    NEVER re-derived here from params or a path (RULE 2). A tool that READS evidence in
+    an anchored run REQUIRES it: absent or invalid, the run fails loud before the runner
+    and before ``tool_run_start``.
     """
     tool = BY_ID.get(tool_id)
     if tool is None:
@@ -139,6 +148,29 @@ def execute(
         candidate = effective_params.get(tool.image_param)
         if isinstance(candidate, str) and _is_ewf_path(candidate):
             ewf_image = candidate
+
+    # Verified evidence context (evidence_id + baseline SHA-256), threaded from
+    # EvidenceManager by the surface — never re-derived here from a path/param (RULE 2).
+    # It is recorded in tool_run_start/finish (INVARIANT 4). A tool that READS evidence
+    # in an anchored run MUST carry it: fail loud before the runner and before start.
+    if evidence_context is not None and not isinstance(evidence_context, EvidenceContext):
+        raise ToolExecutionError(
+            f"tool {tool_id!r}: evidence_context must be an EvidenceContext or None, "
+            f"got {type(evidence_context).__name__}"
+        )
+    tool_reads_evidence = any(
+        PathRole.EVIDENCE_INPUT in spec.roles for spec in tool.path_parameters
+    )
+    if case_id is not None and tool_reads_evidence and evidence_context is None:
+        raise ToolExecutionError(
+            f"tool {tool_id!r} lee evidencia en una ejecución anclada al caso "
+            f"{case_id!r} pero falta el contexto de evidencia verificado (evidence_id "
+            "+ baseline SHA-256 desde EvidenceManager). Sin él la acción no puede "
+            "anclarse a la evidencia (FORENSIC INVARIANT 4); no se ejecuta (RULE 2)."
+        )
+    evidence_fields = (
+        evidence_context.audit_fields() if evidence_context is not None else {}
+    )
 
     if case_id is not None:
         _validate_params_before_artifact(tool, effective_params)
@@ -195,6 +227,8 @@ def execute(
         "tool_id": tool_id,
         "argv": prepared.argv,
         "params": _scrub_for_audit(effective_params),
+        # INVARIANT 4: bind the action to the evidence it acts on (id + baseline hash).
+        **evidence_fields,
     }
     # INVARIANT 4: record which prior artifact(s) fed this run (id, relpath, verified hash).
     if derived_inputs:
@@ -257,6 +291,8 @@ def execute(
             "stdout_sha256": artifact_run.stdout_sha256 if artifact_run else None,
             "stderr_sha256": artifact_run.stderr_sha256 if artifact_run else None,
             "output_files_count": len(artifact_run.output_files) if artifact_run else None,
+            # Every closure path preserves the forensic context (INVARIANT 4).
+            **evidence_fields,
         }
         if artifact_close_error is not None:
             finish["artifact_error_type"] = type(artifact_close_error).__name__
@@ -297,6 +333,8 @@ def execute(
                 "stdout_sha256": None,
                 "stderr_sha256": None,
                 "output_files_count": None,
+                # Preserve the forensic context even when finalize failed (INVARIANT 4).
+                **evidence_fields,
             },
             tool_id=tool_id,
             failure_context=failure_context,
@@ -315,6 +353,8 @@ def execute(
             "stdout_sha256": artifact_run.stdout_sha256,
             "stderr_sha256": artifact_run.stderr_sha256,
             "output_files_count": len(artifact_run.output_files),
+            # Same evidence context as the paired start (INVARIANT 4).
+            **evidence_fields,
         },
         tool_id=tool_id,
         failure_context=(

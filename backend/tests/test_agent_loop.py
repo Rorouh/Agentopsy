@@ -60,12 +60,14 @@ class _AlwaysSameTool(ModelBackend):
 class _FakeEvidence:
     def get(self, case_id: str, evidence_id: str) -> SimpleNamespace:
         return SimpleNamespace(
+            evidence_id=evidence_id,
             original_path=Path("/cases/x/original.raw"),
             detected_os="unix",
             detected_kind="disk",
             # The merged agent loop anchors each run in the audit chain with the
-            # evidence hash (agent_run_start → evidence_sha256); a real
-            # EvidenceHandle always carries it, so the fake must too.
+            # evidence hash (agent_run_start → evidence_sha256; and the verified
+            # EvidenceContext threaded to the dispatcher); a real EvidenceHandle
+            # always carries both id and hash, so the fake must too.
             sha256="0" * 64,
         )
 
@@ -105,7 +107,9 @@ def test_failing_tool_blocked_after_max_attempts(monkeypatch: pytest.MonkeyPatch
 
     calls = {"n": 0}
 
-    def fake_execute(tool_id, params, *, case_id=None, os_profile=None, timeout=None):
+    def fake_execute(
+        tool_id, params, *, case_id=None, os_profile=None, timeout=None, evidence_context=None
+    ):
         calls["n"] += 1
         return {
             "tool_id": tool_id,
@@ -144,7 +148,9 @@ def test_successful_tool_is_not_capped(monkeypatch: pytest.MonkeyPatch) -> None:
 
     calls = {"n": 0}
 
-    def fake_execute(tool_id, params, *, case_id=None, os_profile=None, timeout=None):
+    def fake_execute(
+        tool_id, params, *, case_id=None, os_profile=None, timeout=None, evidence_context=None
+    ):
         calls["n"] += 1
         return {
             "tool_id": tool_id,

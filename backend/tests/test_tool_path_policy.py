@@ -17,10 +17,16 @@ from forensia.artifacts.store import ArtifactStore
 from forensia.audit.log import AuditLog
 from forensia.cases.manager import CaseManager
 from forensia.evidence import evidence_manager
+from forensia.evidence_context import EvidenceContext
 from forensia.mcp.toolkit import _dispatch_forensic
 from forensia.mcp.schemas import RegRipperParams
 from forensia.toolkit import dispatcher
 from _symlink_support import requires_symlinks
+
+# Verified evidence context an anchored, evidence-reading run carries (INVARIANT 4).
+_CTX = EvidenceContext(
+    evidence_id="a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1", baseline_sha256="6" * 64
+)
 
 
 @pytest.fixture
@@ -161,6 +167,7 @@ def test_existing_same_case_evidence_is_canonicalized_and_accepted(
         {"image_path": str(evidence_file)},
         case_id=case.id,
         os_profile="windows",
+        evidence_context=_CTX,
     )
     assert result["exit_code"] == 0
     assert wired[0][-1] == str(evidence_file.resolve())
@@ -175,6 +182,7 @@ def test_case_input_is_same_case_only_for_yara(wired, cases, active_case, other_
         {"rules_path": str(rules), "target_path": str(evidence_file)},
         case_id=case.id,
         os_profile="windows",
+        evidence_context=_CTX,
     )
     assert result["exit_code"] == 0
 
@@ -266,6 +274,7 @@ def test_bulk_extractor_gets_fresh_run_subdir_and_manifest_hashes_outputs(
         {"image_path": str(evidence_file)},
         case_id=case.id,
         os_profile="windows",
+        evidence_context=_CTX,
     )
     out_dir = (
         cases.root / case.id / "artifacts" / result["run_id"] / "out"
@@ -293,6 +302,7 @@ def test_bundled_ruleset_maps_exact_id_and_rejects_free_paths(
         },
         case_id=case.id,
         os_profile="windows",
+        evidence_context=_CTX,
     )
     assert result["exit_code"] == 0
     assert "/opt/chainsaw-src/rules" in wired[0]
@@ -325,6 +335,7 @@ def test_qemu_nbd_writable_request_rejected_before_runner_and_start(
             },
             case_id=case.id,
             os_profile="unix",
+            evidence_context=_CTX,
         )
     assert wired == []
     assert _audit(cases, case.id) == []
@@ -354,7 +365,13 @@ async def test_mcp_path_flows_to_shared_dispatcher_gate(
     monkeypatch.setattr(
         evidence_manager,
         "get",
-        lambda case_id, evidence_id: SimpleNamespace(original_path=evidence_file),
+        # A real EvidenceHandle carries evidence_id + baseline sha256; the MCP path builds
+        # the verified EvidenceContext from it before dispatching (INVARIANT 4).
+        lambda case_id, evidence_id: SimpleNamespace(
+            evidence_id=evidence_id,
+            original_path=evidence_file,
+            sha256="7" * 64,
+        ),
     )
     outside_rules = cases.root.parent / "outside.yar"
     outside_rules.write_text("rule outside { condition: true }", encoding="utf-8")

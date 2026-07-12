@@ -36,6 +36,7 @@ from mcp.server import Server
 
 from forensia.audit.log import AuditLog
 from forensia.cases.manager import case_manager
+from forensia.evidence_context import EvidenceContext
 from forensia.mcp.jira_tools import (
     JIRA_TOOL_DEFINITIONS,
     JIRA_TOOL_NAMES,
@@ -304,11 +305,20 @@ async def _dispatch_forensic(
     except PathPolicyError as exc:
         return _error(f"invalid path params for tool {name!r}: {exc}")
 
+    # Verified evidence context (id + baseline hash) from the same handle we injected the
+    # path from — threaded to the dispatcher so each MCP tool run is bound to its evidence
+    # in the audit log (FORENSIC INVARIANT 4). Not re-derived downstream (RULE 2).
+    evidence_context = EvidenceContext.from_handle(handle)
+
     try:
         # os_profile of the active package routes the tool to its maletín (§B): the same
         # profile that gated the allowlist above, so no cross-maletín fallback (RULE 2).
         result = dispatch_tool(
-            name, validated, case_id=case_id, os_profile=session.agent_package.os_profile
+            name,
+            validated,
+            case_id=case_id,
+            os_profile=session.agent_package.os_profile,
+            evidence_context=evidence_context,
         )
     except ToolExecutionError as exc:
         return _error(f"tool {name!r} failed to execute: {exc}")

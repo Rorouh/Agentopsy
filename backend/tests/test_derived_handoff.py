@@ -27,7 +27,13 @@ import pytest
 from forensia.artifacts.store import ArtifactIntegrityError, ArtifactStore
 from forensia.audit.log import AuditLog
 from forensia.cases.manager import CaseManager
+from forensia.evidence_context import EvidenceContext
 from forensia.toolkit import dispatcher
+
+# The verified evidence context an anchored, evidence-reading run carries (INVARIANT 4).
+_CTX = EvidenceContext(
+    evidence_id="cccccccc-cccc-4ccc-8ccc-cccccccccccc", baseline_sha256="2" * 64
+)
 
 # A byte-exact "hive" the (fake) icat extracts; deliberately not valid UTF-8 so a text
 # round-trip would change it. Its identity downstream is its SHA-256.
@@ -102,6 +108,7 @@ def _run_icat(wired_dispatcher, monkeypatch, case, captured) -> dict:
         },
         case_id=case.id,
         os_profile="windows",
+        evidence_context=_CTX,
     )
 
 
@@ -141,6 +148,7 @@ def test_icat_to_regripper_handoff_rehash_ok_and_audit_link(
         {"hive_path": ref, "plugin": "compname"},
         case_id=case.id,
         os_profile="windows",
+        evidence_context=_CTX,
     )
     assert regripper["exit_code"] == 0
 
@@ -206,6 +214,7 @@ def test_minimal_artifact_ref_remains_compatible(
         },
         case_id=case.id,
         os_profile="windows",
+        evidence_context=_CTX,
     )
     assert result["exit_code"] == 0
 

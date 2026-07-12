@@ -85,12 +85,15 @@ class ScriptedBackend(ModelBackend):
         return FinalAnswer(text="listo")
 
 
-def _fake_execute(tool_id, params, *, case_id=None, os_profile=None, timeout=None):
+def _fake_execute(
+    tool_id, params, *, case_id=None, os_profile=None, timeout=None, evidence_context=None
+):
     """Stand-in for the dispatcher: a tool run whose stdout carries PII.
 
     Mirrors ``forensia.toolkit.dispatcher.execute`` — keyword-only ``case_id`` /
-    ``os_profile`` / ``timeout`` — so it stays in step with the merged agent loop
-    (which now passes ``os_profile=self.os_profile`` per the compose branch)."""
+    ``os_profile`` / ``timeout`` / ``evidence_context`` — so it stays in step with the
+    merged agent loop (which passes ``os_profile=self.os_profile`` and the verified
+    ``evidence_context`` built from the handle)."""
     return {
         "tool_id": tool_id,
         "exit_code": 0,

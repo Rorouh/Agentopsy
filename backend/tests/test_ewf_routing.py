@@ -34,8 +34,14 @@ import pytest
 
 from forensia.artifacts.store import ArtifactStore
 from forensia.cases.manager import CaseManager
+from forensia.evidence_context import EvidenceContext
 from forensia.toolkit import dispatcher, maletin
 from forensia.toolkit.dispatcher import _is_ewf_path
+
+# Verified evidence context an anchored, evidence-reading run carries (INVARIANT 4).
+_CTX = EvidenceContext(
+    evidence_id="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", baseline_sha256="4" * 64
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXEC_AGENT_PY = REPO_ROOT / "docker" / "docker" / "forensic-toolkit" / "exec_agent.py"
@@ -93,7 +99,11 @@ def test_dispatcher_forwards_ewf_image_for_e01(monkeypatch, dispatch_case) -> No
     path.write_bytes(b"ewf")
     image = str(path.resolve())
     dispatcher.execute(
-        "tsk_mmls", {"image_path": image}, case_id=case.id, os_profile="unix"
+        "tsk_mmls",
+        {"image_path": image},
+        case_id=case.id,
+        os_profile="unix",
+        evidence_context=_CTX,
     )
 
     assert seen["service"] == "toolkit-unix"
@@ -112,6 +122,7 @@ def test_dispatcher_no_ewf_image_for_raw(monkeypatch, dispatch_case) -> None:
         {"image_path": str(image)},
         case_id=case.id,
         os_profile="unix",
+        evidence_context=_CTX,
     )
     # A non-EWF image is untouched: default behaviour, no mount asked for.
     assert seen["ewf_image"] is None

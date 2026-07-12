@@ -101,7 +101,14 @@ dispatcher.execute(tool_id, params, case_id="…")
    ├─ artifact_store.set_run_argv(…)         → persiste el argv literal
    │
    ├─ audit.append({ action: "tool_run_start", argv literal, run_id, case_id, params,
-   │                 derived_inputs? })   · derived_inputs lista {param, source_run_id,
+   │                 evidence_id, baseline_sha256, derived_inputs? })
+   │                                      · evidence_id + baseline_sha256 = el EvidenceContext
+   │                                        verificado que la superficie (agente/MCP) hila desde
+   │                                        EvidenceManager; ancla la acción a la evidencia
+   │                                        (INVARIANT 4). El dispatcher NO lo re-deriva de una
+   │                                        ruta/param (RULE 2); una tool que LEE evidencia en un
+   │                                        run anclado sin contexto falla fuerte antes del start.
+   │                                      · derived_inputs lista {param, source_run_id,
    │                                        relpath, sha256, size} — el enlace de derivación
    │
    ├─ run_argv(argv, shell=False) o POST /exec al maletín seleccionado
@@ -115,7 +122,10 @@ dispatcher.execute(tool_id, params, case_id="…")
    │     · conserva stdout/stderr parciales cuando la excepción los aporta
    │
    ├─ audit.append({ action: "tool_run_finish", run_id, status, exit_code,
-   │                 hashes, error_type?, error_message? })
+   │                 hashes, evidence_id, baseline_sha256, error_type?, error_message? })
+   │     · TODOS los caminos de cierre (exit 0, exit != 0, excepción del runner, fallo de
+   │       finalize) conservan el MISMO evidence_id + baseline_sha256 que el start pareado
+   │       (INVARIANT 4): ningún finish de error pierde el contexto forense
    │     · se intenta una sola vez; un fallo se propaga sin retry ni reejecución
    │
    └─ devuelve { tool_id, argv, exit_code, stdout_sample, stderr_sample, parsed,

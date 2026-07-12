@@ -47,6 +47,30 @@ Esquema por entrada:
   stdout_sha256, stderr_sha256, artifact_sha256, consent_ref?, entry_hash }
 ```
 
+**Contexto de evidencia por tool run (P0.5-3).** `tool_run_start` y `tool_run_finish`
+llevan `evidence_id` + `baseline_sha256`: el **EvidenceContext** verificado
+(`forensia.evidence_context.EvidenceContext`, inmutable) que la superficie (`ForensicAgent`
+/ MCP) construye **desde el `EvidenceHandle`** de `EvidenceManager` y **hila explícitamente**
+hasta `dispatcher.execute(..., evidence_context=…)`. El dispatcher lo registra pero **no lo
+re-deriva** de una ruta, un param ni una lectura oportunista de `baseline.json` (RULE 2). Una
+tool que **lee evidencia** (declara `EVIDENCE_INPUT`) en un run anclado **exige** el contexto:
+sin él, o con un contexto inválido (hash que no es SHA-256), falla fuerte **antes** del runner
+y **antes** de `tool_run_start`. Todos los caminos de cierre —exit 0, exit != 0, excepción del
+runner, fallo de finalize— conservan el mismo `evidence_id` + `baseline_sha256` que el start
+pareado; ningún finish de error pierde el contexto.
+
+**`tool_version` — BLOQUEANTE cross-lane (pendiente).** El esquema reserva `tool_version`,
+pero **hoy no existe una fuente autoritativa reutilizable desde el `api`** sin tocar
+`docker/`: las versiones se fijan al build en el `Dockerfile` del maletín (ARGs
+`VOLATILITY3_VERSION`/`HAYABUSA_VERSION`/`CHAINSAW_VERSION`, apt del PPA GIFT, y
+`/opt/eztools/VERSIONS.txt` para las EZ Tools), pero el **exec-agent no expone ningún canal
+de versión** (`/health` → `{ok, stage}`; `/which` → presencia; `/exec` → salida del argv).
+Inventar una versión (`"unknown"`, `--version` con fallback por-tool, el nombre del binario)
+está prohibido (RULE 2). El cierre requiere un **cambio cross-lane mínimo en el exec-agent**
+(p. ej. un `/versions` que sirva un manifiesto `versions.json` horneado en la imagen, o
+extender `/which` a `{binario: versión}`), fuera del alcance de P0.5-3. Ver
+`docs/operacion/proximos-pasos.md` §B5.
+
 El límite del runner distingue dos resultados que no son intercambiables. Si el
 proceso devuelve un código —cero o distinto de cero— la ejecución terminó y se
 registra ese `exit_code` literal con `status: "finished"`. Si el transporte,

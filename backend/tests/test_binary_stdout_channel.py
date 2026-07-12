@@ -27,8 +27,14 @@ import pytest
 
 from forensia.artifacts.store import ArtifactStore
 from forensia.cases.manager import CaseManager
+from forensia.evidence_context import EvidenceContext
 from forensia.toolkit import dispatcher
 from forensia.toolkit.tool import run_argv
+
+# Verified evidence context an anchored, evidence-reading run carries (INVARIANT 4).
+_CTX = EvidenceContext(
+    evidence_id="dddddddd-dddd-4ddd-8ddd-dddddddddddd", baseline_sha256="3" * 64
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXEC_AGENT_PY = REPO_ROOT / "docker" / "docker" / "forensic-toolkit" / "exec_agent.py"
@@ -120,6 +126,7 @@ def test_dispatcher_binary_stdout_lands_exact_hashed_artifact(
         },
         case_id=case.id,
         os_profile="unix",
+        evidence_context=_CTX,
     )
 
     # Routed to the unix maletín with a stdout.bin target inside the run's out/ dir.
