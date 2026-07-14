@@ -196,6 +196,14 @@ def test_exec_agent_ewf_rewrites_argv_and_unmounts(monkeypatch, tmp_path) -> Non
     assert body["stdout"] == raw_bytes.decode()
     # And the mount was released — exactly once, in the finally.
     assert len(unmounted) == 1
+    # P0.5-4: the response carries the argv ACTUALLY executed — identical to the
+    # requested one except the EWF token, rewritten to the raw ewf1 block.
+    executed = body["executed_argv"]
+    assert len(executed) == len(argv)
+    assert executed[:-1] == argv[:-1]
+    assert executed[-1] != ewf_image
+    # Separator-agnostic: the fake mount produces an OS-native tmp path on Windows.
+    assert executed[-1].replace("\\", "/").rsplit("/", 1)[-1] == "ewf1"
 
 
 def test_exec_agent_ewf_unmounts_even_when_tool_fails(monkeypatch, tmp_path) -> None:
@@ -252,7 +260,155 @@ def test_exec_agent_ewf_image_must_be_argv_token(monkeypatch) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# 4) the maletín client surfaces the 424 as an actionable MaletinExecError
+# 4) P0.5-4 — executed_argv: the maletín proves it ran EXACTLY the audited argv
+# --------------------------------------------------------------------------- #
+def _exec_fake(monkeypatch, body_for_payload):
+    """Wire run_argv_in_maletin's transport to a fake /exec responder."""
+    monkeypatch.setenv("FORENSIA_TOOLKIT_UNIX_URL", "http://toolkit-unix:8666")
+    monkeypatch.delenv("FORENSIA_EXEC_AGENT_TOKEN", raising=False)
+
+    def fake_request(method, url, payload=None, *, timeout=maletin._PROBE_TIMEOUT):
+        assert url.endswith("/exec")
+        return 200, body_for_payload(payload)
+
+    monkeypatch.setattr(maletin, "_request", fake_request)
+
+
+def test_maletin_accepts_exact_executed_argv(monkeypatch) -> None:
+    _exec_fake(
+        monkeypatch,
+        lambda p: {"exit": 0, "stdout": "ok", "stderr": "",
+                   "executed_argv": list(p["argv"])},
+    )
+    exit_code, stdout, _ = maletin.run_argv_in_maletin("toolkit-unix", ["mmls", "/cases/x.raw"])
+    assert (exit_code, stdout) == (0, "ok")
+
+
+def test_maletin_rejects_missing_executed_argv_as_pre_contract_image(monkeypatch) -> None:
+    """An exec-agent that does not report what it executed cannot be verified — the
+    actionable error names the rebuild, never a silent acceptance (RULE 2)."""
+    _exec_fake(monkeypatch, lambda p: {"exit": 0, "stdout": "", "stderr": ""})
+    with pytest.raises(maletin.MaletinExecError, match="executed_argv"):
+        maletin.run_argv_in_maletin("toolkit-unix", ["mmls", "/cases/x.raw"])
+
+
+def test_maletin_rejects_altered_token(monkeypatch) -> None:
+    """A maletín that ran a DIFFERENT command than the audited one is a custody break."""
+    def lie(p):
+        executed = list(p["argv"])
+        executed[-1] = "/cases/OTHER.raw"  # not what the audit log says
+        return {"exit": 0, "stdout": "", "stderr": "", "executed_argv": executed}
+
+    _exec_fake(monkeypatch, lie)
+    with pytest.raises(maletin.MaletinExecError, match="custodia rota"):
+        maletin.run_argv_in_maletin("toolkit-unix", ["mmls", "/cases/x.raw"])
+
+
+def test_maletin_rejects_length_drift(monkeypatch) -> None:
+    _exec_fake(
+        monkeypatch,
+        lambda p: {"exit": 0, "stdout": "", "stderr": "",
+                   "executed_argv": [*p["argv"], "--extra-flag"]},
+    )
+    with pytest.raises(maletin.MaletinExecError, match="custodia rota"):
+        maletin.run_argv_in_maletin("toolkit-unix", ["mmls", "/cases/x.raw"])
+
+
+def test_maletin_rejects_unrewritten_ewf_token(monkeypatch) -> None:
+    """EWF requested but the token came back untouched: the tool would have read the
+    raw .E01 — the silent degradation RULE 2 forbids."""
+    image = "/cases/x/original.E01"
+    _exec_fake(
+        monkeypatch,
+        lambda p: {"exit": 0, "stdout": "", "stderr": "",
+                   "executed_argv": list(p["argv"])},
+    )
+    with pytest.raises(maletin.MaletinExecError, match="no reescribió"):
+        maletin.run_argv_in_maletin("toolkit-unix", ["mmls", image], ewf_image=image)
+
+
+def test_maletin_rejects_ewf_rewrite_that_is_not_raw_ewf1(monkeypatch) -> None:
+    image = "/cases/x/original.E01"
+
+    def lie(p):
+        executed = ["/etc/passwd" if t == image else t for t in p["argv"]]
+        return {"exit": 0, "stdout": "", "stderr": "", "executed_argv": executed}
+
+    _exec_fake(monkeypatch, lie)
+    with pytest.raises(maletin.MaletinExecError, match="ewf1"):
+        maletin.run_argv_in_maletin("toolkit-unix", ["mmls", image], ewf_image=image)
+
+
+def test_maletin_rejects_inconsistent_ewf_rewrites(monkeypatch) -> None:
+    image = "/cases/x/original.E01"
+
+    def lie(p):
+        raws = iter(["/tmp/a/ewf1", "/tmp/b/ewf1"])
+        executed = [next(raws) if t == image else t for t in p["argv"]]
+        return {"exit": 0, "stdout": "", "stderr": "", "executed_argv": executed}
+
+    _exec_fake(monkeypatch, lie)
+    with pytest.raises(maletin.MaletinExecError, match="inconsistente"):
+        maletin.run_argv_in_maletin(
+            "toolkit-unix", ["ewfinfo", image, image], ewf_image=image
+        )
+
+
+def test_maletin_accepts_correct_ewf_rewrite(monkeypatch) -> None:
+    image = "/cases/x/original.E01"
+
+    def truthful(p):
+        executed = ["/tmp/forensia-ewf-abc/ewf1" if t == image else t for t in p["argv"]]
+        return {"exit": 0, "stdout": "DOS\n", "stderr": "", "executed_argv": executed}
+
+    _exec_fake(monkeypatch, truthful)
+    exit_code, stdout, _ = maletin.run_argv_in_maletin(
+        "toolkit-unix", ["mmls", image], ewf_image=image
+    )
+    assert (exit_code, stdout) == (0, "DOS\n")
+
+
+def test_dispatcher_closes_run_as_error_when_maletin_lies(
+    monkeypatch, dispatch_case, tmp_path
+) -> None:
+    """End to end: a lying exec-agent (tampered executed_argv) crosses the runner
+    boundary AFTER tool_run_start — the dispatcher closes the run as an error with the
+    full custody context, and the result is never accepted (INVARIANT 4)."""
+    cases, case = dispatch_case
+    handle = register_evidence(cases, case.id, tmp_path, payload=b"raw", name="disk.raw")
+    monkeypatch.setattr(dispatcher, "resolve", lambda _binary: None)
+    monkeypatch.setenv("FORENSIA_TOOLKIT_UNIX_URL", "http://toolkit-unix:8666")
+    monkeypatch.delenv("FORENSIA_EXEC_AGENT_TOKEN", raising=False)
+
+    def lie(method, url, payload=None, *, timeout=maletin._PROBE_TIMEOUT):
+        executed = list(payload["argv"])
+        executed[-1] = "/evidence/OTRA.raw"  # ran against a DIFFERENT image
+        return 200, {"exit": 0, "stdout": "DOS\n", "stderr": "",
+                     "executed_argv": executed}
+
+    monkeypatch.setattr(maletin, "_request", lie)
+
+    with pytest.raises(dispatcher.ToolExecutionError, match="custodia rota"):
+        dispatcher.execute(
+            "tsk_mmls",
+            {"image_path": str(handle.original_path)},
+            case_id=case.id,
+            os_profile="unix",
+            evidence_context=context_for(handle),
+        )
+    entries = AuditLog(cases.root / case.id / "audit.jsonl").entries()
+    start = next(e for e in entries if e.get("action") == "tool_run_start")
+    finish = next(e for e in entries if e.get("action") == "tool_run_finish")
+    assert finish["status"] == "error"
+    assert finish["exit_code"] is None  # no exit code is invented for a rejected result
+    # Every closure keeps the forensic context + version (P0.5-3 machinery).
+    assert finish["evidence_id"] == start["evidence_id"] == handle.evidence_id
+    assert finish["tool_version"] == start["tool_version"]
+    assert AuditLog(cases.root / case.id / "audit.jsonl").verify() is True
+
+
+# --------------------------------------------------------------------------- #
+# 5) the maletín client surfaces the 424 as an actionable MaletinExecError
 # --------------------------------------------------------------------------- #
 def test_maletin_surfaces_ewf_dependency_error(monkeypatch) -> None:
     monkeypatch.setenv("FORENSIA_TOOLKIT_UNIX_URL", "http://toolkit-unix:8666")

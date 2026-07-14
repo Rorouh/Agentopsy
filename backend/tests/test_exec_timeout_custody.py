@@ -159,7 +159,13 @@ def test_http_timeout_exceeds_exec_agent_ceiling(monkeypatch) -> None:
 
     def fake_request(method, url, payload=None, *, timeout):
         captured["timeout"] = timeout
-        return 200, {"exit": 0, "stdout": "", "stderr": ""}
+        # Truthful transport fake: echoes the requested argv as executed (P0.5-4).
+        return 200, {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "",
+            "executed_argv": list(payload["argv"]),
+        }
 
     monkeypatch.setattr(maletin, "service_url", lambda _svc: "http://toolkit-unix:8666")
     monkeypatch.setattr(maletin, "_request", fake_request)

@@ -583,24 +583,44 @@ def _resolve_artifact_ref(
     params: dict[str, Any],
     evidence_context: EvidenceContext | None,
 ) -> dict[str, Any]:
+    # MANIFEST-LEVEL GATES FIRST (deterministic by run_id), before touching any bytes.
     try:
-        path, sha256, size = artifact_store.resolve_output_file(
-            case_id, ref["run_id"], ref["relpath"]
-        )
-    except ArtifactIntegrityError as exc:
-        raise ToolExecutionError(
-            f"input derivado para {name!r}: {exc} — custodia rota; no se ejecuta"
-        ) from exc
+        producer = artifact_store.get_run(case_id, ref["run_id"])
     except (KeyError, ValueError) as exc:
         raise ToolExecutionError(
-            f"input derivado para {name!r}: no se pudo resolver {ref!r} en el caso "
-            f"{case_id!r} ({type(exc).__name__}: {exc})"
+            f"input derivado para {name!r}: no se pudo resolver el run productor de "
+            f"{ref!r} en el caso {case_id!r} ({type(exc).__name__}: {exc})"
         ) from exc
+    # COMPLETION (P0.5-5): only a producer that ran to a SUCCESSFUL completion can feed
+    # a consumer. A run still "running" may have artifacts mid-write (hashing them would
+    # bind custody to mutating bytes); a run closed as "error" (timeout/transport) or
+    # with exit != 0 left output that is partial or failed by the tool's own account.
+    # Consuming any of those silently would launder an unsound artifact into a new run's
+    # provenance (RULE 2 / FORENSIC INVARIANT 4) — re-run the producer instead.
+    if producer.status == "running":
+        raise ToolExecutionError(
+            f"input derivado para {name!r}: el run productor {ref['run_id']!r} sigue "
+            "en ejecución — sus artefactos pueden estar mutando y no hay custodia que "
+            "verificar todavía. Espera a que cierre (o re-ejecuta el productor); no se "
+            "ejecuta (FORENSIC INVARIANT 4)."
+        )
+    if producer.status != "finished" or producer.exit_code != 0:
+        raise ToolExecutionError(
+            f"input derivado para {name!r}: el run productor {ref['run_id']!r} no "
+            f"completó con éxito (status={producer.status!r}, "
+            f"exit_code={producer.exit_code!r}"
+            + (
+                f", error={producer.error_type}: {producer.error_message}"
+                if producer.status == "error"
+                else ""
+            )
+            + ") — su salida puede ser parcial o fallida y no puede alimentar otra "
+            "corrida; re-ejecuta el productor (RULE 2 / FORENSIC INVARIANT 4)."
+        )
     # PROVENANCE (Bloqueante D): a derived artifact carries the evidence identity of the
     # run that PRODUCED it (its manifest, keyed deterministically by run_id). The
     # consumer's verified context must match: same case is NOT same evidence, and a
     # derivative of evidence B must never run under an audit claiming evidence A.
-    producer = artifact_store.get_run(case_id, ref["run_id"])
     if producer.evidence_id is None or producer.evidence_baseline_sha256 is None:
         raise ToolExecutionError(
             f"input derivado para {name!r}: el manifiesto del run productor "
@@ -626,6 +646,21 @@ def _resolve_artifact_ref(
             f"{evidence_context.evidence_id!r}. Un derivado de otra evidencia no puede "
             "auditarse bajo este contexto (FORENSIC INVARIANT 4); no se ejecuta."
         )
+    # Only now touch the bytes: confine under the producer's out/ and RE-HASH against
+    # the digest its (successfully closed) manifest recorded (INVARIANTS 1-2).
+    try:
+        path, sha256, size = artifact_store.resolve_output_file(
+            case_id, ref["run_id"], ref["relpath"]
+        )
+    except ArtifactIntegrityError as exc:
+        raise ToolExecutionError(
+            f"input derivado para {name!r}: {exc} — custodia rota; no se ejecuta"
+        ) from exc
+    except (KeyError, ValueError) as exc:
+        raise ToolExecutionError(
+            f"input derivado para {name!r}: no se pudo resolver {ref!r} en el caso "
+            f"{case_id!r} ({type(exc).__name__}: {exc})"
+        ) from exc
     advertised_sha256 = ref.get("sha256")
     if advertised_sha256 is not None and not hmac.compare_digest(
         advertised_sha256.casefold(), sha256.casefold()

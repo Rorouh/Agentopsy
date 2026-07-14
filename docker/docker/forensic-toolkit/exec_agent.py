@@ -14,10 +14,17 @@ ejecutar herramientas sin necesidad del socket de Docker del host:
                                              si falta/corrupto -> 500 accionable (RULE 2).
   - POST /which  {"binaries": [...]}       -> subconjunto de binarios presentes en PATH
   - POST /exec   {"argv": [...],           -> ejecuta argv shell-free y devuelve
-                  "timeout": N|null,          {exit, stdout, stderr, timed_out}
-                  "stdout_path": P|null,      con stdout_path: {exit, stdout_file,
-                  "ewf_image": E|null}        stdout_sha256, stdout_size, stderr,
-                                              timed_out} — stdout va a fichero CRUDO
+                  "timeout": N|null,          {exit, stdout, stderr, timed_out,
+                  "stdout_path": P|null,      executed_argv} — con stdout_path: {exit,
+                  "ewf_image": E|null}        stdout_file, stdout_sha256, stdout_size,
+                                              stderr, timed_out, executed_argv} —
+                                              stdout va a fichero CRUDO
+
+Toda respuesta 200 de /exec incluye `executed_argv`: el argv EXACTO que se pasó a
+`subprocess.run` (P0.5-4). Sin EWF es idéntico al solicitado; con EWF difiere SOLO en
+el token `.E01` reescrito al bloque raw `ewf1`. El cliente (`forensia.toolkit.maletin`)
+lo verifica token a token — un maletín que ejecutara un argv distinto del auditado
+rompería FORENSIC INVARIANT 4 y se detecta ahí, no se confía a ciegas.
 
 Canal binario-seguro (`stdout_path`): herramientas como TSK `icat` emiten BYTES CRUDOS
 por stdout (hives, EVTX, $MFT, ejecutables). Decodificarlos como texto los corrompe
@@ -325,6 +332,10 @@ class Handler(BaseHTTPRequestHandler):
         return self._run_to_file(argv, timeout, stdout_path)
 
     def _run_text(self, argv: list[str], timeout) -> dict:
+        # `executed_argv` en TODA respuesta: el argv literal que este proceso lanzó (o
+        # intentó lanzar — exit 127). El api lo compara contra el argv que auditó
+        # (P0.5-4, INVARIANT 4): nunca se confía en que el maletín "hizo lo correcto".
+        executed = list(argv)
         try:
             # errors="replace": la salida forense (nombres de fichero, bytes crudos) a
             # menudo NO es UTF-8 válido; sin esto, text=True lanzaría UnicodeDecodeError y
@@ -333,15 +344,28 @@ class Handler(BaseHTTPRequestHandler):
                 argv, capture_output=True, text=True, errors="replace", timeout=timeout, shell=False
             )
         except FileNotFoundError:
-            return {"exit": 127, "stdout": "", "stderr": f"{argv[0]}: not found", "timed_out": False}
+            return {
+                "exit": 127,
+                "stdout": "",
+                "stderr": f"{argv[0]}: not found",
+                "timed_out": False,
+                "executed_argv": executed,
+            }
         except subprocess.TimeoutExpired as exc:
             return {
                 "exit": 124,
                 "stdout": exc.stdout or "",
                 "stderr": (exc.stderr or "") + "\n[exec-agent] timeout",
                 "timed_out": True,
+                "executed_argv": executed,
             }
-        return {"exit": proc.returncode, "stdout": proc.stdout, "stderr": proc.stderr, "timed_out": False}
+        return {
+            "exit": proc.returncode,
+            "stdout": proc.stdout,
+            "stderr": proc.stderr,
+            "timed_out": False,
+            "executed_argv": executed,
+        }
 
     def _run_to_file(self, argv: list[str], timeout, stdout_path: str) -> dict:
         """Canal binario-seguro: el stdout del hijo se escribe CRUDO a `stdout_path`
@@ -376,6 +400,8 @@ class Handler(BaseHTTPRequestHandler):
             "stdout_size": size,
             "stderr": stderr,
             "timed_out": timed_out,
+            # El argv literal lanzado (P0.5-4) — mismo contrato que el canal de texto.
+            "executed_argv": list(argv),
         }
 
 

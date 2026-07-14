@@ -185,9 +185,34 @@ Este cambio cierra **únicamente P0.5-2**; no implica el cierre del resto de P0.
 
   Tests: `test_evidence_context.py`, `test_evidence_context_e2e.py`,
   `test_derived_handoff.py`, `test_tool_path_policy.py`, `test_dispatcher_case_anchored.py`,
-  `test_tool_version.py`, `test_e2e_chain.py`. **Quedan fuera de P0.5-3** (tareas
-  posteriores, no mezcladas): **P0.5-4** (verificar que el argv EWF ejecutado coincide con
-  el solicitado) y **P0.5-5** (contrato del canal `stdout.bin`).
+  `test_tool_version.py`, `test_e2e_chain.py`.
+
+- [x] **P0.5-4 (2026-07-14):** el argv EJECUTADO en el maletín se verifica contra el
+  auditado. Toda respuesta 200 de `POST /exec` incluye `executed_argv` (la lista literal
+  que el exec-agent pasó a `subprocess.run` — también en exit 127/timeout);
+  `maletin.run_argv_in_maletin` la compara token a token: sin `ewf_image` deben ser
+  idénticos; con `ewf_image`, cada aparición del token `.E01` debe estar reescrita —
+  todas al MISMO bloque raw absoluto `…/ewf1` — y el resto intacto. Campo ausente
+  (imagen anterior al contrato → reconstruir), longitud distinta, token alterado, token
+  EWF sin reescribir o reescrito a otra cosa → `MaletinExecError` "custodia rota": el
+  dispatcher cierra el run como error con su contexto y el resultado no se acepta
+  (FORENSIC INVARIANT 4, RULE 2). El audit sigue citando la `.E01` (identidad estable);
+  la verificación garantiza que lo ejecutado solo difirió en ese token. Tests:
+  `test_ewf_routing.py` §4 (verificación del cliente + E2E con exec-agent mentiroso),
+  `test_binary_stdout_channel.py` / `test_exec_timeout_custody.py` (contrato del campo).
+
+- [x] **P0.5-5 (2026-07-14):** contrato del canal `stdout.bin` cerrado. (a) **Gate de
+  completitud del productor**: un `ArtifactRef` solo se resuelve si el run productor
+  cerró `finished` con `exit_code == 0` — `running` (bytes aún mutando; cierra además un
+  TOCTOU real), `error` (salida parcial: icat matado por timeout con `stdout.bin`
+  truncado hasheado por `fail_run`) y exit != 0 se rechazan con error accionable ANTES
+  del `tool_run_start` del consumidor; orden de gates: completitud → procedencia →
+  re-hash (manifiesto antes que bytes). (b) **Streaming verificado**: el canal es
+  fd-directo (el stdout del hijo ES el fichero, sin buffering en RAM) y el hash es
+  chunked (1 MiB) en ambos lados (`exec_agent._sha256_size`, `store._hash_file`); sin
+  tope de tamaño por diseño (el volumen `/cases` es disco del operador) — round-trip
+  byte-exacto de 8 MiB fijado por test. Tests: `test_derived_handoff.py` (sección
+  P0.5-5), `test_binary_stdout_channel.py::test_exec_agent_streams_large_binary_stdout_exactly`.
 
 ### A. ~~Construir las 3 imágenes OCI~~ **[SUPERSEDIDO por el pivote 2026-07-02]**
 
