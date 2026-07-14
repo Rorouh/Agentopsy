@@ -11,6 +11,17 @@ from _symlink_support import requires_symlinks
 from forensia.artifacts.store import ArtifactStore, OutputFile
 from forensia.cases.manager import CaseManager
 
+# Evidence provenance every manifest must carry (P0.5-3, FORENSIC INVARIANT 4): the
+# dispatcher passes the verified context's id + baseline hash; direct store users
+# (these tests) supply the same shape.
+_EVID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+_EVSHA = "a" * 64
+_PROV = {
+    "evidence_id": _EVID,
+    "evidence_baseline_sha256": _EVSHA,
+    "tool_version": "tool_x 1.2.3 (dpkg)",
+}
+
 
 @pytest.fixture
 def cases(tmp_path) -> CaseManager:
@@ -32,7 +43,7 @@ def case(cases):
 # --------------------------------------------------------------------------- #
 class TestStartRun:
     def test_start_run_creates_out_and_manifest(self, store, cases, case):
-        run_id, out_dir = store.start_run(case.id, "tool_x", argv=["x", "--flag"])
+        run_id, out_dir = store.start_run(case.id, "tool_x", argv=["x", "--flag"], **_PROV)
         run_dir = cases.root / case.id / "artifacts" / run_id
         assert out_dir == run_dir / "out"
         assert out_dir.is_dir()
@@ -45,25 +56,52 @@ class TestStartRun:
         assert manifest["argv"] == ["x", "--flag"]
         assert manifest["tool_id"] == "tool_x"
         assert manifest["run_id"] == run_id
+        # P0.5-3: every new manifest records its evidence provenance + tool version.
+        assert manifest["evidence_id"] == _EVID
+        assert manifest["evidence_baseline_sha256"] == _EVSHA
+        assert manifest["tool_version"] == _PROV["tool_version"]
+
+    def test_start_run_rejects_missing_or_invalid_provenance(self, store, case):
+        with pytest.raises(TypeError):
+            store.start_run(case.id, "tool_x", argv=[])  # type: ignore[call-arg]
+        with pytest.raises(ValueError, match="evidence_id"):
+            store.start_run(
+                case.id, "tool_x", argv=[],
+                evidence_id="", evidence_baseline_sha256=_EVSHA,
+                tool_version=_PROV["tool_version"],
+            )
+        with pytest.raises(ValueError, match="evidence_baseline_sha256"):
+            store.start_run(
+                case.id, "tool_x", argv=[],
+                evidence_id=_EVID, evidence_baseline_sha256="not-a-sha",
+                tool_version=_PROV["tool_version"],
+            )
+        for bad_version in ("", "unknown", "latest", "  Unknown ", "hayabusa latest"):
+            with pytest.raises(ValueError, match="tool_version"):
+                store.start_run(
+                    case.id, "tool_x", argv=[],
+                    evidence_id=_EVID, evidence_baseline_sha256=_EVSHA,
+                    tool_version=bad_version,
+                )
 
     def test_start_run_unknown_case_raises(self, store):
         with pytest.raises(KeyError):
             store.start_run(
-                "11111111-1111-4111-8111-111111111111", "tool_x", argv=[]
+                "11111111-1111-4111-8111-111111111111", "tool_x", argv=[], **_PROV
             )
 
     def test_start_run_rejects_non_string_tool_id(self, store, case):
         with pytest.raises(ValueError, match="tool_id"):
-            store.start_run(case.id, "", argv=[])
+            store.start_run(case.id, "", argv=[], **_PROV)
 
     def test_start_run_rejects_non_list_argv(self, store, case):
         with pytest.raises(ValueError, match="argv"):
-            store.start_run(case.id, "tool_x", argv="not-a-list")  # type: ignore[arg-type]
+            store.start_run(case.id, "tool_x", argv="not-a-list", **_PROV)  # type: ignore[arg-type]
 
     def test_set_run_argv_persists_literal_command_while_running(
         self, store, cases, case
     ):
-        run_id, _ = store.start_run(case.id, "tool_x", argv=[])
+        run_id, _ = store.start_run(case.id, "tool_x", argv=[], **_PROV)
         run = store.set_run_argv(case.id, run_id, ["resolved-x", "--literal"])
         assert run.status == "running"
         assert run.argv == ["resolved-x", "--literal"]
@@ -80,7 +118,7 @@ class TestStartRun:
 # --------------------------------------------------------------------------- #
 class TestFinalizeRun:
     def test_finalize_run_enumerates_and_hashes_outputs(self, store, case):
-        run_id, out_dir = store.start_run(case.id, "tool_x", argv=["x"])
+        run_id, out_dir = store.start_run(case.id, "tool_x", argv=["x"], **_PROV)
         # Write two files we know the hash of.
         a = out_dir / "a.csv"
         b = out_dir / "b.txt"
@@ -97,7 +135,7 @@ class TestFinalizeRun:
         assert by_name["b.txt"].sha256 == hashlib.sha256(b"hello\n").hexdigest()
 
     def test_finalize_run_hashes_stdout_and_stderr(self, store, case):
-        run_id, _ = store.start_run(case.id, "tool_x", argv=["x"])
+        run_id, _ = store.start_run(case.id, "tool_x", argv=["x"], **_PROV)
         run = store.finalize_run(
             case.id, run_id, exit_code=0, stdout="OUT", stderr="ERR"
         )
@@ -105,14 +143,14 @@ class TestFinalizeRun:
         assert run.stderr_sha256 == hashlib.sha256(b"ERR").hexdigest()
 
     def test_finalize_run_empty_streams_use_empty_hash(self, store, case):
-        run_id, _ = store.start_run(case.id, "tool_x", argv=["x"])
+        run_id, _ = store.start_run(case.id, "tool_x", argv=["x"], **_PROV)
         run = store.finalize_run(case.id, run_id, exit_code=0, stdout="", stderr="")
         empty = hashlib.sha256(b"").hexdigest()
         assert run.stdout_sha256 == empty
         assert run.stderr_sha256 == empty
 
     def test_finalize_run_persists_finished_manifest(self, store, cases, case):
-        run_id, out_dir = store.start_run(case.id, "tool_x", argv=["x"])
+        run_id, out_dir = store.start_run(case.id, "tool_x", argv=["x"], **_PROV)
         (out_dir / "f.bin").write_bytes(b"BINARY")
         store.finalize_run(
             case.id, run_id, exit_code=42, stdout="o", stderr="e"
@@ -130,21 +168,21 @@ class TestFinalizeRun:
         assert rel_to_sha == {"f.bin": hashlib.sha256(b"BINARY").hexdigest()}
 
     def test_finalize_run_atomic_write_no_tmp_left(self, store, cases, case):
-        run_id, _ = store.start_run(case.id, "tool_x", argv=["x"])
+        run_id, _ = store.start_run(case.id, "tool_x", argv=["x"], **_PROV)
         store.finalize_run(case.id, run_id, exit_code=0, stdout="", stderr="")
         run_dir = cases.root / case.id / "artifacts" / run_id
         leftovers = list(run_dir.glob("*.tmp"))
         assert leftovers == []
 
     def test_finalize_run_empty_out_dir_is_valid(self, store, case):
-        run_id, _ = store.start_run(case.id, "tool_x", argv=["x"])
+        run_id, _ = store.start_run(case.id, "tool_x", argv=["x"], **_PROV)
         run = store.finalize_run(
             case.id, run_id, exit_code=0, stdout="", stderr=""
         )
         assert run.output_files == []
 
     def test_finalize_run_handles_nested_files(self, store, case):
-        run_id, out_dir = store.start_run(case.id, "tool_x", argv=["x"])
+        run_id, out_dir = store.start_run(case.id, "tool_x", argv=["x"], **_PROV)
         nested = out_dir / "a" / "b"
         nested.mkdir(parents=True)
         (nested / "c.csv").write_bytes(b"nested-payload")
@@ -157,7 +195,7 @@ class TestFinalizeRun:
 
     @requires_symlinks
     def test_finalize_run_skips_symlinks_in_out(self, store, case, tmp_path):
-        run_id, out_dir = store.start_run(case.id, "tool_x", argv=["x"])
+        run_id, out_dir = store.start_run(case.id, "tool_x", argv=["x"], **_PROV)
         real = out_dir / "real.csv"
         real.write_bytes(b"real")
         target = tmp_path / "external.csv"
@@ -180,7 +218,7 @@ class TestFinalizeRun:
 
     def test_finalize_run_already_finalized_raises(self, store, case):
         # RULE 2: a silent re-finalize would erode the chain of custody.
-        run_id, _ = store.start_run(case.id, "tool_x", argv=["x"])
+        run_id, _ = store.start_run(case.id, "tool_x", argv=["x"], **_PROV)
         store.finalize_run(case.id, run_id, exit_code=0, stdout="", stderr="")
         with pytest.raises(KeyError, match="already finalized"):
             store.finalize_run(case.id, run_id, exit_code=0, stdout="", stderr="")
@@ -199,7 +237,7 @@ class TestFinalizeRun:
         triage. This documents the v1 behaviour: ``_atomic_write_text`` does not
         catch + cleanup on failure (TODO: add cleanup in v2 — see issue tracker).
         """
-        run_id, _ = store.start_run(case.id, "tool_x", argv=["x"])
+        run_id, _ = store.start_run(case.id, "tool_x", argv=["x"], **_PROV)
 
         import forensia.artifacts.store as store_mod
 
@@ -223,7 +261,7 @@ class TestFailRun:
     def test_fail_run_closes_with_error_and_null_exit_code(
         self, store, cases, case
     ):
-        run_id, out_dir = store.start_run(case.id, "tool_x", argv=["x"])
+        run_id, out_dir = store.start_run(case.id, "tool_x", argv=["x"], **_PROV)
         (out_dir / "partial.bin").write_bytes(b"partial")
         run = store.fail_run(
             case.id,
@@ -266,7 +304,7 @@ class TestListAndGet:
     def test_list_runs_sorted_desc_by_started_at(self, store, case):
         ids = []
         for _ in range(3):
-            run_id, _ = store.start_run(case.id, "tool_x", argv=["x"])
+            run_id, _ = store.start_run(case.id, "tool_x", argv=["x"], **_PROV)
             store.finalize_run(case.id, run_id, exit_code=0, stdout="", stderr="")
             ids.append(run_id)
         runs = store.list_runs(case.id)
@@ -279,7 +317,7 @@ class TestListAndGet:
         assert stamps == sorted(stamps, reverse=True)
 
     def test_list_runs_skips_dir_without_manifest(self, store, cases, case):
-        run_id, _ = store.start_run(case.id, "tool_x", argv=["x"])
+        run_id, _ = store.start_run(case.id, "tool_x", argv=["x"], **_PROV)
         store.finalize_run(case.id, run_id, exit_code=0, stdout="", stderr="")
         # Manually drop a sibling dir with no manifest.
         orphan = cases.root / case.id / "artifacts" / "22222222-2222-4222-8222-222222222222"
@@ -295,7 +333,7 @@ class TestListAndGet:
             store.get_run(case.id, "11111111-1111-4111-8111-111111111111")
 
     def test_get_run_returns_full_artifact_run(self, store, case):
-        run_id, out_dir = store.start_run(case.id, "tool_x", argv=["x"])
+        run_id, out_dir = store.start_run(case.id, "tool_x", argv=["x"], **_PROV)
         (out_dir / "f.csv").write_bytes(b"x")
         store.finalize_run(case.id, run_id, exit_code=0, stdout="", stderr="")
         run = store.get_run(case.id, run_id)

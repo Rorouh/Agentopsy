@@ -36,6 +36,7 @@ from forensia.artifact_ref import is_artifact_ref, validate_artifact_ref
 from forensia.artifacts.store import ArtifactIntegrityError, artifact_store
 from forensia.audit.log import AuditLog
 from forensia.cases.manager import case_manager
+from forensia.evidence import evidence_manager
 from forensia.evidence_context import EvidenceContext
 from forensia.path_policy import (
     PathPolicyError,
@@ -129,6 +130,54 @@ def execute(
             "captura en texto para binario (RULE 2 / FORENSIC INVARIANT 4)."
         )
 
+    # ---- Verified evidence context: REQUIRED for every anchored run ------------------
+    # The surface (agent / MCP) builds it from the EvidenceHandle it obtained from
+    # EvidenceManager and threads it here explicitly. The dispatcher NEVER re-derives it
+    # from a path/param — but it DOES validate it against EvidenceManager (the single
+    # owner of evidence, FORENSIC INVARIANT 1) before anything else: a syntactically
+    # valid but forged context (wrong id, wrong hash, another case's evidence) fails
+    # loud BEFORE the path gate, the ArtifactRun, tool_run_start and the runner.
+    if evidence_context is not None and not isinstance(evidence_context, EvidenceContext):
+        raise ToolExecutionError(
+            f"tool {tool_id!r}: evidence_context must be an EvidenceContext or None, "
+            f"got {type(evidence_context).__name__}"
+        )
+    evidence_dir: Path | None = None
+    if case_id is not None:
+        if evidence_context is None:
+            raise ToolExecutionError(
+                f"tool {tool_id!r}: toda ejecución anclada al caso {case_id!r} requiere "
+                "el contexto de evidencia verificado (evidence_id + baseline SHA-256 "
+                "desde EvidenceManager) — también las tools de solo input derivado. Sin "
+                "él la acción no puede anclarse a la evidencia (FORENSIC INVARIANT 4); "
+                "no se ejecuta (RULE 2)."
+            )
+        try:
+            handle = evidence_manager.get(case_id, evidence_context.evidence_id)
+        except (KeyError, ValueError) as exc:
+            raise ToolExecutionError(
+                f"tool {tool_id!r}: el contexto de evidencia no corresponde a una "
+                f"evidencia del caso {case_id!r} "
+                f"(evidence_id={evidence_context.evidence_id!r}: "
+                f"{type(exc).__name__}: {exc}) — contexto no verificable; no se ejecuta."
+            ) from exc
+        if not evidence_context.matches_handle(handle):
+            raise ToolExecutionError(
+                f"tool {tool_id!r}: el contexto de evidencia no coincide con el handle "
+                f"autoritativo de EvidenceManager para "
+                f"{evidence_context.evidence_id!r} (baseline SHA-256 divergente) — "
+                "contexto falsificado o desactualizado; no se ejecuta (RULE 2)."
+            )
+        evidence_dir = handle.original_path.parent
+    elif evidence_context is not None:
+        raise ToolExecutionError(
+            f"tool {tool_id!r}: evidence_context sin case_id no es verificable "
+            "(el contexto ancla la ejecución a una evidencia de un caso); no se ejecuta."
+        )
+    evidence_fields = (
+        evidence_context.audit_fields() if evidence_context is not None else {}
+    )
+
     # Validate caller-controlled params before allocating an ArtifactRun. Wrappers that
     # require the dispatcher-owned output_dir receive a non-executable marker during
     # this pure validation pass; the literal argv is built once the real run dir exists.
@@ -137,7 +186,13 @@ def execute(
     effective_params: dict[str, Any] = dict(params)
     binary_stdout_path: str | None = None
     # Derivation links (source artifact → this run) to record in ``tool_run_start``.
-    derived_inputs = _gate_path_parameters(tool, effective_params, case_id)
+    derived_inputs = _gate_path_parameters(
+        tool,
+        effective_params,
+        case_id,
+        evidence_dir=evidence_dir,
+        evidence_context=evidence_context,
+    )
 
     # If this tool reads a disk image and that image is an EWF container (`.E01`), the
     # maletín must expose it as a raw block device via `ewfmount` around the run. The api
@@ -149,34 +204,36 @@ def execute(
         if isinstance(candidate, str) and _is_ewf_path(candidate):
             ewf_image = candidate
 
-    # Verified evidence context (evidence_id + baseline SHA-256), threaded from
-    # EvidenceManager by the surface — never re-derived here from a path/param (RULE 2).
-    # It is recorded in tool_run_start/finish (INVARIANT 4). A tool that READS evidence
-    # in an anchored run MUST carry it: fail loud before the runner and before start.
-    if evidence_context is not None and not isinstance(evidence_context, EvidenceContext):
-        raise ToolExecutionError(
-            f"tool {tool_id!r}: evidence_context must be an EvidenceContext or None, "
-            f"got {type(evidence_context).__name__}"
-        )
-    tool_reads_evidence = any(
-        PathRole.EVIDENCE_INPUT in spec.roles for spec in tool.path_parameters
-    )
-    if case_id is not None and tool_reads_evidence and evidence_context is None:
-        raise ToolExecutionError(
-            f"tool {tool_id!r} lee evidencia en una ejecución anclada al caso "
-            f"{case_id!r} pero falta el contexto de evidencia verificado (evidence_id "
-            "+ baseline SHA-256 desde EvidenceManager). Sin él la acción no puede "
-            "anclarse a la evidencia (FORENSIC INVARIANT 4); no se ejecuta (RULE 2)."
-        )
-    evidence_fields = (
-        evidence_context.audit_fields() if evidence_context is not None else {}
-    )
-
+    # ---- Venue + AUTHORITATIVE tool version, resolved BEFORE reserving the run -------
+    # The venue (api-PATH binary vs. maletín) depends only on the tool + os_profile, so
+    # it is fixed here, before any ArtifactRun exists. For an ANCHORED run the effective
+    # tool version must be known before ``tool_run_start`` is persisted (INVARIANT 4):
+    # it comes from the selected maletín's immutable build manifest (exec-agent
+    # ``GET /versions``), never from "unknown"/"latest"/the binary name, never probed
+    # per-run with a fallback, and never from the LLM. If it cannot be resolved, the
+    # tool creates no start and never crosses the runner (RULE 2).
+    binary_path, maletin_service = _resolve_venue(tool, os_profile)
+    tool_version: str | None = None
     if case_id is not None:
+        tool_version = _resolve_tool_version(tool, maletin_service)
+    custody_fields: dict[str, Any] = dict(evidence_fields)
+    if tool_version is not None:
+        custody_fields["tool_version"] = tool_version
+
+    if case_id is not None and evidence_context is not None and tool_version is not None:
         _validate_params_before_artifact(tool, effective_params)
         case_dir = case_manager.case_dir(case_id)
         audit = AuditLog(case_dir / "audit.jsonl")
-        run_id, out_dir = artifact_store.start_run(case_id, tool_id, argv=[])
+        run_id, out_dir = artifact_store.start_run(
+            case_id,
+            tool_id,
+            argv=[],
+            # Evidence provenance of the run: what downstream consumers of this run's
+            # artifacts verify against (Bloqueante D, INVARIANT 4).
+            evidence_id=evidence_context.evidence_id,
+            evidence_baseline_sha256=evidence_context.baseline_sha256,
+            tool_version=tool_version,
+        )
         _inject_run_outputs(tool, effective_params, out_dir)
         if tool.binary_stdout:
             binary_stdout_path = str(out_dir / _BINARY_STDOUT_FILENAME)
@@ -186,7 +243,8 @@ def execute(
         prepared = _prepare_execution(
             tool,
             argv_tail,
-            os_profile=os_profile,
+            binary_path=binary_path,
+            maletin_service=maletin_service,
             stdout_path=binary_stdout_path,
             ewf_image=ewf_image,
         )
@@ -227,8 +285,9 @@ def execute(
         "tool_id": tool_id,
         "argv": prepared.argv,
         "params": _scrub_for_audit(effective_params),
-        # INVARIANT 4: bind the action to the evidence it acts on (id + baseline hash).
-        **evidence_fields,
+        # INVARIANT 4: bind the action to the evidence it acts on (id + baseline hash)
+        # and to the authoritative version of the tool that will execute.
+        **custody_fields,
     }
     # INVARIANT 4: record which prior artifact(s) fed this run (id, relpath, verified hash).
     if derived_inputs:
@@ -291,8 +350,8 @@ def execute(
             "stdout_sha256": artifact_run.stdout_sha256 if artifact_run else None,
             "stderr_sha256": artifact_run.stderr_sha256 if artifact_run else None,
             "output_files_count": len(artifact_run.output_files) if artifact_run else None,
-            # Every closure path preserves the forensic context (INVARIANT 4).
-            **evidence_fields,
+            # Every closure path preserves the forensic context + version (INVARIANT 4).
+            **custody_fields,
         }
         if artifact_close_error is not None:
             finish["artifact_error_type"] = type(artifact_close_error).__name__
@@ -333,8 +392,8 @@ def execute(
                 "stdout_sha256": None,
                 "stderr_sha256": None,
                 "output_files_count": None,
-                # Preserve the forensic context even when finalize failed (INVARIANT 4).
-                **evidence_fields,
+                # Preserve context + version even when finalize failed (INVARIANT 4).
+                **custody_fields,
             },
             tool_id=tool_id,
             failure_context=failure_context,
@@ -353,8 +412,8 @@ def execute(
             "stdout_sha256": artifact_run.stdout_sha256,
             "stderr_sha256": artifact_run.stderr_sha256,
             "output_files_count": len(artifact_run.output_files),
-            # Same evidence context as the paired start (INVARIANT 4).
-            **evidence_fields,
+            # Same evidence context + tool version as the paired start (INVARIANT 4).
+            **custody_fields,
         },
         tool_id=tool_id,
         failure_context=(
@@ -378,9 +437,21 @@ def execute(
 
 
 def _gate_path_parameters(
-    tool: Tool, params: dict[str, Any], case_id: str | None
+    tool: Tool,
+    params: dict[str, Any],
+    case_id: str | None,
+    *,
+    evidence_dir: Path | None = None,
+    evidence_context: EvidenceContext | None = None,
 ) -> list[dict[str, Any]]:
-    """Apply the Tool's declared path roles and canonicalize values in place."""
+    """Apply the Tool's declared path roles and canonicalize values in place.
+
+    ``evidence_dir`` is the directory of the VERIFIED context evidence
+    (``case_dir/evidence/<evidence_id>/``): an ``EVIDENCE_INPUT`` path is confined to
+    it, so a path pointing at ANOTHER evidence of the same case cannot run under this
+    context's identity (same-case is not same-evidence). ``evidence_context`` is the
+    consumer's verified context, used to check the PROVENANCE of derived inputs.
+    """
     links: list[dict[str, Any]] = []
     case_dir: Path | None = None
     for spec in tool.path_parameters:
@@ -412,7 +483,9 @@ def _gate_path_parameters(
                     f"tool {tool.id!r}: DERIVED_INPUT {spec.name!r} requires case_id"
                 )
             ref = validate_artifact_ref(value)
-            links.append(_resolve_artifact_ref(spec.name, ref, case_id, params))
+            links.append(
+                _resolve_artifact_ref(spec.name, ref, case_id, params, evidence_context)
+            )
             continue
         if isinstance(value, dict):
             raise ToolExecutionError(
@@ -449,24 +522,54 @@ def _gate_path_parameters(
             )
         if case_dir is None:
             case_dir = case_manager.case_dir(case_id)
-        root = (
-            case_dir / "evidence"
-            if concrete_roles[0] is PathRole.EVIDENCE_INPUT
-            else case_dir
-        )
+        if concrete_roles[0] is PathRole.EVIDENCE_INPUT:
+            if evidence_dir is None:
+                # Unreachable for anchored runs (execute() resolved the verified
+                # handle before this gate); guard against a future caller skipping it.
+                raise ToolExecutionError(
+                    f"tool {tool.id!r}: {spec.name!r} es EVIDENCE_INPUT pero no hay "
+                    "directorio de evidencia verificado que lo confine"
+                )
+            # Same-case is NOT same-evidence: confine to THIS context's evidence dir,
+            # so a path to another evidence of the case cannot run under this identity.
+            root = evidence_dir
+        else:
+            root = case_dir
         try:
             resolved = resolve_existing_confined_path(
                 value, root=root, kind=spec.kind, parameter=spec.name
             )
-            artifacts_root = (case_dir / "artifacts").resolve()
-            if (
-                concrete_roles[0] is PathRole.CASE_INPUT
-                and (resolved == artifacts_root or artifacts_root in resolved.parents)
-            ):
-                raise PathPolicyError(
-                    f"{spec.name}: paths under artifacts/ are DERIVED_INPUT and must "
-                    "be supplied as exactly {run_id, relpath} for re-hash"
-                )
+            # A CASE_INPUT must never reach the case's reserved subtrees — neither
+            # INSIDE them nor as an ANCESTOR directory that subsumes them (a
+            # DIRECTORY input equal to case_dir would let the tool walk into
+            # evidence/ and artifacts/ anyway):
+            #   artifacts/ — derived outputs enter ONLY as a re-hashed ArtifactRef;
+            #   evidence/  — same-case is NOT same-evidence: evidence bytes enter
+            #                ONLY through the context-confined EVIDENCE_INPUT or an
+            #                ArtifactRef, or a run anchored to evidence A could read
+            #                evidence B while its audit claims A (INVARIANT 4).
+            if concrete_roles[0] is PathRole.CASE_INPUT:
+                reserved = {
+                    "artifacts": (
+                        f"{spec.name}: paths under artifacts/ are DERIVED_INPUT and "
+                        "must be supplied as exactly {run_id, relpath} for re-hash"
+                    ),
+                    "evidence": (
+                        f"{spec.name}: la evidencia no es un input auxiliar "
+                        "(CASE_INPUT) — entra por el parámetro EVIDENCE_INPUT del "
+                        "contexto verificado o como ArtifactRef derivado; un "
+                        "auxiliar no puede leer (ni subsumir) evidencia del caso "
+                        "(mismo caso no es misma evidencia)"
+                    ),
+                }
+                for subdir, message in reserved.items():
+                    root_dir = (case_dir / subdir).resolve()
+                    if (
+                        resolved == root_dir
+                        or root_dir in resolved.parents
+                        or resolved in root_dir.parents
+                    ):
+                        raise PathPolicyError(message)
             params[spec.name] = str(resolved)
         except PathPolicyError as exc:
             raise ToolExecutionError(f"tool {tool.id!r}: {exc}") from exc
@@ -474,7 +577,11 @@ def _gate_path_parameters(
 
 
 def _resolve_artifact_ref(
-    name: str, ref: dict[str, Any], case_id: str, params: dict[str, Any]
+    name: str,
+    ref: dict[str, Any],
+    case_id: str,
+    params: dict[str, Any],
+    evidence_context: EvidenceContext | None,
 ) -> dict[str, Any]:
     try:
         path, sha256, size = artifact_store.resolve_output_file(
@@ -489,6 +596,36 @@ def _resolve_artifact_ref(
             f"input derivado para {name!r}: no se pudo resolver {ref!r} en el caso "
             f"{case_id!r} ({type(exc).__name__}: {exc})"
         ) from exc
+    # PROVENANCE (Bloqueante D): a derived artifact carries the evidence identity of the
+    # run that PRODUCED it (its manifest, keyed deterministically by run_id). The
+    # consumer's verified context must match: same case is NOT same evidence, and a
+    # derivative of evidence B must never run under an audit claiming evidence A.
+    producer = artifact_store.get_run(case_id, ref["run_id"])
+    if producer.evidence_id is None or producer.evidence_baseline_sha256 is None:
+        raise ToolExecutionError(
+            f"input derivado para {name!r}: el manifiesto del run productor "
+            f"{ref['run_id']!r} no registra procedencia de evidencia (manifiesto "
+            "anterior a P0.5-3) — no se asume compatibilidad; re-ejecuta el productor "
+            "para obtener un artefacto con procedencia (RULE 2)."
+        )
+    if evidence_context is None:
+        # Unreachable for anchored runs (execute() requires the context before this
+        # gate); kept as a hard guard so a future caller cannot skip provenance.
+        raise ToolExecutionError(
+            f"input derivado para {name!r}: no hay contexto de evidencia verificado "
+            "con el que verificar la procedencia del artefacto; no se ejecuta."
+        )
+    if producer.evidence_id != evidence_context.evidence_id or not hmac.compare_digest(
+        producer.evidence_baseline_sha256.casefold(),
+        evidence_context.baseline_sha256.casefold(),
+    ):
+        raise ToolExecutionError(
+            f"input derivado para {name!r}: procedencia cruzada — el artefacto "
+            f"{ref['relpath']!r} lo produjo el run {ref['run_id']!r} sobre la evidencia "
+            f"{producer.evidence_id!r}, pero esta ejecución está anclada a "
+            f"{evidence_context.evidence_id!r}. Un derivado de otra evidencia no puede "
+            "auditarse bajo este contexto (FORENSIC INVARIANT 4); no se ejecuta."
+        )
     advertised_sha256 = ref.get("sha256")
     if advertised_sha256 is not None and not hmac.compare_digest(
         advertised_sha256.casefold(), sha256.casefold()
@@ -507,6 +644,9 @@ def _resolve_artifact_ref(
     return {
         "param": name,
         "source_run_id": ref["run_id"],
+        # Verified provenance of the producing run (INVARIANT 4): which evidence the
+        # consumed artifact originally came from.
+        "source_evidence_id": producer.evidence_id,
         "relpath": ref["relpath"],
         "sha256": sha256,
         "size": size,
@@ -567,16 +707,59 @@ def _build_argv_tail(tool: Tool, params: dict[str, Any]) -> list[str]:
     return argv_tail
 
 
+def _resolve_venue(tool: Tool, os_profile: str | None) -> tuple[Path | None, str | None]:
+    """Fix the single execution venue for this run (RULE 1 order, RULE 2 no fallback).
+
+    Returns ``(binary_path, maletin_service)`` — exactly one of the two is non-None:
+    an env-override / api-PATH binary wins outright (dev); otherwise the tool runs in
+    the ONE maletín its catalog entry + ``os_profile`` select. Resolved BEFORE any
+    ArtifactRun exists so the authoritative tool version can be looked up first.
+    """
+    binary_path = resolve(tool.binary)
+    if binary_path is not None:
+        return binary_path, None
+    return None, _select_maletin(tool, os_profile)
+
+
+def _resolve_tool_version(tool: Tool, maletin_service: str | None) -> str:
+    """Authoritative version of the tool that is about to execute (anchored runs).
+
+    The ONLY source is the selected maletín's immutable build manifest, served by its
+    exec-agent (``GET /versions`` → ``versions.json`` baked at image build). There is no
+    fallback: no probing ``--version`` at run time, no local version, no placeholder
+    ("unknown"/"latest" are rejected by the client). The api-PATH venue has no build
+    manifest, so an anchored run there cannot satisfy FORENSIC INVARIANT 4 and is
+    refused with the actionable alternative.
+    """
+    if maletin_service is None:
+        raise ToolExecutionError(
+            f"tool {tool.id!r}: una ejecución anclada exige la versión AUTORITATIVA de "
+            "la herramienta (FORENSIC INVARIANT 4) y esa versión solo existe en el "
+            "manifiesto de build del maletín. El binario se resolvió en el PATH del "
+            "api (vía dev/env-override), que no tiene manifiesto — ejecuta por el "
+            "maletín (compose) o retira el override (RULE 2: sin versión local ni "
+            "placeholder)."
+        )
+    try:
+        return maletin.tool_version(maletin_service, tool.binary)
+    except maletin.MaletinExecError as exc:
+        raise ToolExecutionError(
+            f"tool {tool.id!r}: no se pudo resolver la versión autoritativa en "
+            f"{maletin_service!r} — la tool no se ejecuta sin versión (INVARIANT 4 / "
+            f"RULE 2). Causa: {exc}"
+        ) from exc
+
+
 def _prepare_execution(
     tool: Tool,
     argv_tail: list[str],
     *,
-    os_profile: str | None,
+    binary_path: Path | None,
+    maletin_service: str | None,
     stdout_path: str | None = None,
     ewf_image: str | None = None,
 ) -> _PreparedExecution:
-    """Resolve one venue and construct the exact argv without invoking a runner."""
-    binary_path = resolve(tool.binary)
+    """Construct the exact argv for the already-fixed venue, without invoking a runner."""
     if binary_path is not None:
         # api-PATH venue (dev only): no exec-agent to run ewfmount in, so EWF is not
         # rewritten here — TSK would fail loud on a `.E01` with its own "Unsupported image
@@ -586,11 +769,14 @@ def _prepare_execution(
             maletin_service=None,
             stdout_path=stdout_path,
         )
-
-    service = _select_maletin(tool, os_profile)
+    if maletin_service is None:
+        raise ToolExecutionError(
+            f"tool {tool.id!r}: sin venue de ejecución resuelto (ni binario en el PATH "
+            "del api ni maletín seleccionado) — bug del llamador"
+        )
     return _PreparedExecution(
         argv=[tool.binary, *argv_tail],
-        maletin_service=service,
+        maletin_service=maletin_service,
         stdout_path=stdout_path,
         ewf_image=ewf_image,
     )

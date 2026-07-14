@@ -1,39 +1,38 @@
 """Derived handoff: a binary tool's output refers to its artifact, and a downstream
-tool consumes that artifact as input — resolved + RE-HASHED by the backend (bloqueante
-del audit: la cadena multi-tool con custodia).
+tool consumes that artifact as input — resolved + RE-HASHED by the backend, and with
+its evidence PROVENANCE verified (P0.5-3 Bloqueante D).
 
-Two properties pin the chain ``icat → artefacto → RegRipper``:
+Properties pinned for the chain ``icat → artefacto → RegRipper``:
 
   * SURFACE (1): a ``binary_stdout`` tool (TSK ``icat``) whose raw bytes went to a hashed
     artifact file must REMIT TO THE ARTIFACT ({run_id, relpath, sha256, size}) in its
-    result — never ``content_length: 0``, which reads as "the tool returned nothing".
-  * DERIVED HANDOFF (2): a consumer (RegRipper) may take, for a declared input param, an
-    ArtifactRef ({run_id, relpath, sha256?, size?}) the dispatcher resolves to the
-    producing run's
-    on-disk file, RE-VERIFYING its SHA-256 against the manifest BEFORE running (custody of
-    the derivative — FORENSIC INVARIANTS 1-2) and recording the derivation LINK in the
-    audit (INVARIANT 4). A hash mismatch fails loud (RULE 2), never runs on a tampered file.
+    result — never ``content_length: 0``.
+  * DERIVED HANDOFF (2): the consumer's ArtifactRef is resolved to the producing run's
+    on-disk file, RE-VERIFYING its SHA-256 against the manifest BEFORE running and
+    recording the derivation LINK in the audit. A hash mismatch fails loud (RULE 2).
+  * PROVENANCE (3): the producing run's manifest records WHICH evidence it acted on
+    (deterministic, keyed by run_id); the consumer's verified context must match.
+    Same-case is NOT same-evidence: a derivative of evidence B never runs under A's
+    context; a legacy manifest without provenance is rejected loudly; a tampered
+    provenance is rejected.
 
-No docker / no maletín: the maletín runner is faked, storage lives in ``tmp_path``.
+No docker / no maletín: the maletín runner + version transport are faked at the
+transport level; evidence is registered for REAL through EvidenceManager's hash gate.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 
 import pytest
 
+from _custody import context_for, register_evidence, wire_dispatcher_custody
 from forensia.artifacts.store import ArtifactIntegrityError, ArtifactStore
 from forensia.audit.log import AuditLog
 from forensia.cases.manager import CaseManager
-from forensia.evidence_context import EvidenceContext
 from forensia.toolkit import dispatcher
-
-# The verified evidence context an anchored, evidence-reading run carries (INVARIANT 4).
-_CTX = EvidenceContext(
-    evidence_id="cccccccc-cccc-4ccc-8ccc-cccccccccccc", baseline_sha256="2" * 64
-)
 
 # A byte-exact "hive" the (fake) icat extracts; deliberately not valid UTF-8 so a text
 # round-trip would change it. Its identity downstream is its SHA-256.
@@ -55,23 +54,26 @@ def store(cases) -> ArtifactStore:
 
 
 @pytest.fixture
-def case(cases):
-    created = cases.create(name="op", examiner="alice", os_profile="windows")
-    (cases.root / created.id / "evidence" / "original.raw").write_bytes(b"disk")
-    return created
+def anchored(cases, tmp_path):
+    case = cases.create(name="op", examiner="alice", os_profile="windows")
+    handle = register_evidence(cases, case.id, tmp_path, payload=b"disk")
+    return {"case": case, "handle": handle, "ctx": context_for(handle)}
 
 
 @pytest.fixture
 def wired_dispatcher(monkeypatch, cases, store):
-    monkeypatch.setattr(dispatcher, "case_manager", cases)
-    monkeypatch.setattr(dispatcher, "artifact_store", store)
+    wire_dispatcher_custody(monkeypatch, dispatcher, cases, store)
     # Force the maletín venue for every tool (no api-PATH binary in the test env).
     monkeypatch.setattr(dispatcher, "resolve", lambda _binary: None)
     return dispatcher
 
 
-def _audit_entries(cases: CaseManager, case_id: str) -> list[dict]:
-    return AuditLog(cases.root / case_id / "audit.jsonl").entries()
+def _tool_audit(cases: CaseManager, case_id: str) -> list[dict]:
+    return [
+        e
+        for e in AuditLog(cases.root / case_id / "audit.jsonl").entries()
+        if str(e.get("action", "")).startswith("tool_run_")
+    ]
 
 
 def _fake_maletin(captured: dict):
@@ -91,24 +93,16 @@ def _fake_maletin(captured: dict):
     return run
 
 
-def _run_icat(wired_dispatcher, monkeypatch, case, captured) -> dict:
+def _run_icat(wired_dispatcher, monkeypatch, anchored, captured) -> dict:
     monkeypatch.setattr(
         wired_dispatcher.maletin, "run_argv_in_maletin", _fake_maletin(captured)
     )
     return wired_dispatcher.execute(
         "tsk_icat",
-        {
-            "image_path": str(
-                wired_dispatcher.case_manager.root
-                / case.id
-                / "evidence"
-                / "original.raw"
-            ),
-            "inode": 5,
-        },
-        case_id=case.id,
+        {"image_path": str(anchored["handle"].original_path), "inode": 5},
+        case_id=anchored["case"].id,
         os_profile="windows",
-        evidence_context=_CTX,
+        evidence_context=anchored["ctx"],
     )
 
 
@@ -116,10 +110,10 @@ def _run_icat(wired_dispatcher, monkeypatch, case, captured) -> dict:
 # (1) a binary tool's result refers to the artifact, not content_length:0
 # --------------------------------------------------------------------------- #
 def test_binary_result_refers_to_artifact_not_content_length_zero(
-    wired_dispatcher, monkeypatch, case
+    wired_dispatcher, monkeypatch, anchored
 ) -> None:
     captured: dict = {}
-    result = _run_icat(wired_dispatcher, monkeypatch, case, captured)
+    result = _run_icat(wired_dispatcher, monkeypatch, anchored, captured)
 
     parsed = result["parsed"]
     # The misleading empty-payload summary is gone; the parsed output is an artifact ref.
@@ -135,10 +129,11 @@ def test_binary_result_refers_to_artifact_not_content_length_zero(
 # (2) relevo icat → RegRipper: resolved + re-hashed OK, derivation link audited
 # --------------------------------------------------------------------------- #
 def test_icat_to_regripper_handoff_rehash_ok_and_audit_link(
-    wired_dispatcher, monkeypatch, case, cases
+    wired_dispatcher, monkeypatch, anchored, cases
 ) -> None:
     captured: dict = {}
-    icat = _run_icat(wired_dispatcher, monkeypatch, case, captured)
+    case, ctx = anchored["case"], anchored["ctx"]
+    icat = _run_icat(wired_dispatcher, monkeypatch, anchored, captured)
     ref = icat["parsed"]["artifact"]  # {run_id, relpath, sha256, size}
 
     # The consumer takes the icat artifact ref where it expects `hive_path` — no path
@@ -148,7 +143,7 @@ def test_icat_to_regripper_handoff_rehash_ok_and_audit_link(
         {"hive_path": ref, "plugin": "compname"},
         case_id=case.id,
         os_profile="windows",
-        evidence_context=_CTX,
+        evidence_context=ctx,
     )
     assert regripper["exit_code"] == 0
 
@@ -160,10 +155,11 @@ def test_icat_to_regripper_handoff_rehash_ok_and_audit_link(
     assert str(resolved) in regripper_call["argv"]
     assert Path(str(resolved)).read_bytes() == _HIVE_BYTES  # untouched, RO in spirit
 
-    # INVARIANT 4: the audit records the derivation (artifact of run A → input of run B).
+    # INVARIANT 4: the audit records the derivation (artifact of run A → input of run B)
+    # INCLUDING the producer's verified evidence provenance.
     starts = [
         e
-        for e in _audit_entries(cases, case.id)
+        for e in _tool_audit(cases, case.id)
         if e.get("action") == "tool_run_start" and e.get("run_id") == regripper["run_id"]
     ]
     assert len(starts) == 1
@@ -172,39 +168,47 @@ def test_icat_to_regripper_handoff_rehash_ok_and_audit_link(
     link = links[0]
     assert link["param"] == "hive_path"
     assert link["source_run_id"] == ref["run_id"]
+    assert link["source_evidence_id"] == ctx.evidence_id
     assert link["relpath"] == "stdout.bin"
     assert link["sha256"] == _HIVE_SHA  # the digest actually re-verified before running
 
 
 def test_icat_to_regripper_handoff_hash_mismatch_fails_loud(
-    wired_dispatcher, monkeypatch, case, cases
+    wired_dispatcher, monkeypatch, anchored, cases
 ) -> None:
     captured: dict = {}
-    icat = _run_icat(wired_dispatcher, monkeypatch, case, captured)
+    case, ctx = anchored["case"], anchored["ctx"]
+    icat = _run_icat(wired_dispatcher, monkeypatch, anchored, captured)
     ref = icat["parsed"]["artifact"]
 
     # Custody break: the derived file's bytes change after its run recorded their SHA-256.
     on_disk = cases.root / case.id / "artifacts" / ref["run_id"] / "out" / "stdout.bin"
     on_disk.write_bytes(_HIVE_BYTES + b"TAMPERED")
 
+    starts_before = len(
+        [e for e in _tool_audit(cases, case.id) if e.get("action") == "tool_run_start"]
+    )
     with pytest.raises(wired_dispatcher.ToolExecutionError, match="custodia|SHA-256|match"):
         wired_dispatcher.execute(
             "regripper",
             {"hive_path": ref, "plugin": "compname"},
             case_id=case.id,
             os_profile="windows",
+            evidence_context=ctx,
         )
 
     # A tampered derivative never reaches the runner (RULE 2): no start for a 2nd run.
-    starts = [e for e in _audit_entries(cases, case.id) if e.get("action") == "tool_run_start"]
-    assert len(starts) == 1  # only the icat run started
+    starts_after = len(
+        [e for e in _tool_audit(cases, case.id) if e.get("action") == "tool_run_start"]
+    )
+    assert starts_after == starts_before
 
 
 def test_minimal_artifact_ref_remains_compatible(
-    wired_dispatcher, monkeypatch, case
+    wired_dispatcher, monkeypatch, anchored
 ) -> None:
     captured: dict = {}
-    icat = _run_icat(wired_dispatcher, monkeypatch, case, captured)
+    icat = _run_icat(wired_dispatcher, monkeypatch, anchored, captured)
     ref = icat["parsed"]["artifact"]
     result = wired_dispatcher.execute(
         "regripper",
@@ -212,9 +216,9 @@ def test_minimal_artifact_ref_remains_compatible(
             "hive_path": {"run_id": ref["run_id"], "relpath": ref["relpath"]},
             "plugin": "compname",
         },
-        case_id=case.id,
+        case_id=anchored["case"].id,
         os_profile="windows",
-        evidence_context=_CTX,
+        evidence_context=anchored["ctx"],
     )
     assert result["exit_code"] == 0
 
@@ -228,14 +232,15 @@ def test_minimal_artifact_ref_remains_compatible(
     ],
 )
 def test_artifact_ref_unknown_or_false_metadata_fails_before_runner_and_start(
-    wired_dispatcher, monkeypatch, case, cases, mutated
+    wired_dispatcher, monkeypatch, anchored, cases, mutated
 ) -> None:
     captured: dict = {}
-    icat = _run_icat(wired_dispatcher, monkeypatch, case, captured)
+    case, ctx = anchored["case"], anchored["ctx"]
+    icat = _run_icat(wired_dispatcher, monkeypatch, anchored, captured)
     ref = {**icat["parsed"]["artifact"], **mutated}
     calls_before = len(captured["calls"])
     starts_before = len(
-        [e for e in _audit_entries(cases, case.id) if e.get("action") == "tool_run_start"]
+        [e for e in _tool_audit(cases, case.id) if e.get("action") == "tool_run_start"]
     )
 
     with pytest.raises(
@@ -247,11 +252,12 @@ def test_artifact_ref_unknown_or_false_metadata_fails_before_runner_and_start(
             {"hive_path": ref, "plugin": "compname"},
             case_id=case.id,
             os_profile="windows",
+            evidence_context=ctx,
         )
 
     assert len(captured["calls"]) == calls_before
     starts_after = len(
-        [e for e in _audit_entries(cases, case.id) if e.get("action") == "tool_run_start"]
+        [e for e in _tool_audit(cases, case.id) if e.get("action") == "tool_run_start"]
     )
     assert starts_after == starts_before
 
@@ -259,7 +265,7 @@ def test_artifact_ref_unknown_or_false_metadata_fails_before_runner_and_start(
 def test_artifact_ref_without_case_id_fails_loud(wired_dispatcher) -> None:
     # Resolving + re-hashing a derivative needs the case; a ref without case_id is refused
     # rather than passed to the wrapper as if it were a literal path.
-    with pytest.raises(wired_dispatcher.ToolExecutionError, match="case_id|artefacto"):
+    with pytest.raises(wired_dispatcher.ToolExecutionError, match="case_id|anclada|contexto"):
         wired_dispatcher.execute(
             "regripper",
             {"hive_path": {"run_id": "x", "relpath": "stdout.bin"}, "plugin": "compname"},
@@ -267,10 +273,131 @@ def test_artifact_ref_without_case_id_fails_loud(wired_dispatcher) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# (3) the store's custody gate in isolation: confinement + re-hash
+# (3) PROVENANCE — Bloqueante D: same-case is not same-evidence
 # --------------------------------------------------------------------------- #
+def test_cross_evidence_derived_input_rejected_before_runner_and_start(
+    wired_dispatcher, monkeypatch, anchored, cases, tmp_path
+) -> None:
+    """A derivative produced from evidence B must never run under evidence A's
+    verified context — rejected before the consumer's start (INVARIANT 4)."""
+    captured: dict = {}
+    case = anchored["case"]
+    # Evidence B in the SAME case, and an icat run anchored to B.
+    handle_b = register_evidence(
+        cases, case.id, tmp_path, payload=b"disk-B", name="b.raw"
+    )
+    ctx_b = context_for(handle_b)
+    monkeypatch.setattr(
+        wired_dispatcher.maletin, "run_argv_in_maletin", _fake_maletin(captured)
+    )
+    icat_b = wired_dispatcher.execute(
+        "tsk_icat",
+        {"image_path": str(handle_b.original_path), "inode": 5},
+        case_id=case.id,
+        os_profile="windows",
+        evidence_context=ctx_b,
+    )
+    ref_b = icat_b["parsed"]["artifact"]
+
+    starts_before = len(
+        [e for e in _tool_audit(cases, case.id) if e.get("action") == "tool_run_start"]
+    )
+    # Consumer anchored to evidence A tries to eat B's artifact → cross-provenance.
+    with pytest.raises(
+        wired_dispatcher.ToolExecutionError, match="procedencia cruzada"
+    ):
+        wired_dispatcher.execute(
+            "regripper",
+            {"hive_path": ref_b, "plugin": "compname"},
+            case_id=case.id,
+            os_profile="windows",
+            evidence_context=anchored["ctx"],
+        )
+    starts_after = len(
+        [e for e in _tool_audit(cases, case.id) if e.get("action") == "tool_run_start"]
+    )
+    assert starts_after == starts_before
+    # …while the SAME artifact under B's own context is allowed (A→A equivalent).
+    ok = wired_dispatcher.execute(
+        "regripper",
+        {"hive_path": ref_b, "plugin": "compname"},
+        case_id=case.id,
+        os_profile="windows",
+        evidence_context=ctx_b,
+    )
+    assert ok["exit_code"] == 0
+    assert AuditLog(cases.root / case.id / "audit.jsonl").verify() is True
+
+
+def test_producer_manifest_without_provenance_is_rejected(
+    wired_dispatcher, monkeypatch, anchored, cases
+) -> None:
+    captured: dict = {}
+    case, ctx = anchored["case"], anchored["ctx"]
+    icat = _run_icat(wired_dispatcher, monkeypatch, anchored, captured)
+    ref = icat["parsed"]["artifact"]
+    # Simulate a legacy (pre-P0.5-3) producer manifest: strip its provenance.
+    manifest_path = cases.root / case.id / "artifacts" / ref["run_id"] / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest.pop("evidence_id", None)
+    manifest.pop("evidence_baseline_sha256", None)
+    manifest_path.write_text(json.dumps(manifest, sort_keys=True), encoding="utf-8")
+
+    with pytest.raises(
+        wired_dispatcher.ToolExecutionError, match="no registra procedencia"
+    ):
+        wired_dispatcher.execute(
+            "regripper",
+            {"hive_path": ref, "plugin": "compname"},
+            case_id=case.id,
+            os_profile="windows",
+            evidence_context=ctx,
+        )
+
+
+def test_tampered_producer_provenance_is_rejected(
+    wired_dispatcher, monkeypatch, anchored, cases
+) -> None:
+    captured: dict = {}
+    case, ctx = anchored["case"], anchored["ctx"]
+    icat = _run_icat(wired_dispatcher, monkeypatch, anchored, captured)
+    ref = icat["parsed"]["artifact"]
+    manifest_path = cases.root / case.id / "artifacts" / ref["run_id"] / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["evidence_id"] = "ffffffff-ffff-4fff-8fff-ffffffffffff"  # forged
+    manifest_path.write_text(json.dumps(manifest, sort_keys=True), encoding="utf-8")
+
+    with pytest.raises(
+        wired_dispatcher.ToolExecutionError, match="procedencia cruzada"
+    ):
+        wired_dispatcher.execute(
+            "regripper",
+            {"hive_path": ref, "plugin": "compname"},
+            case_id=case.id,
+            os_profile="windows",
+            evidence_context=ctx,
+        )
+    # The audit hash-chain of REAL entries is untouched by the attempted consumption.
+    assert AuditLog(cases.root / case.id / "audit.jsonl").verify() is True
+
+
+# --------------------------------------------------------------------------- #
+# (4) the store's custody gate in isolation: confinement + re-hash
+# --------------------------------------------------------------------------- #
+_PROV = {
+    "evidence_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "evidence_baseline_sha256": "a" * 64,
+    "tool_version": "sleuthkit 4.12 (dpkg)",
+}
+
+
+@pytest.fixture
+def case(cases):
+    return cases.create(name="op", examiner="alice", os_profile="windows")
+
+
 def _finished_run_with_output(store: ArtifactStore, case_id: str, payload: bytes) -> str:
-    run_id, out_dir = store.start_run(case_id, "tsk_icat", argv=["icat"])
+    run_id, out_dir = store.start_run(case_id, "tsk_icat", argv=["icat"], **_PROV)
     (out_dir / "stdout.bin").write_bytes(payload)
     store.finalize_run(case_id, run_id, exit_code=0, stdout="", stderr="")
     return run_id

@@ -147,34 +147,47 @@ Ratio impacto / esfuerzo más alto. Si solo se atacan estos 4, hay demo:
 
 Este cambio cierra **únicamente P0.5-2**; no implica el cierre del resto de P0.5.
 
-- [~] **P0.5-3 (parcial):** relevo derivado por el camino producto (B1) + contexto forense
-  verificado hasta cada tool run (B5). **Cerrado:**
-    - **B1** — el relevo `ArtifactRef` API→agente→dispatcher ya funcionaba desde P0.5-2 (el
-      contrato único `forensia.artifact_ref`, el gate del dispatcher, `resolve_output_file`
-      con re-hash, e `inject_evidence_path` que no pisa una ref válida). P0.5-3 lo **demuestra
-      end-to-end** por el camino producto (router→`ForensicAgent`→modelo falso→dispatcher→
-      exec-agent loopback→`tsk_icat`→`ArtifactRef`→RegRipper) en
-      `backend/tests/test_evidence_context_e2e.py` (POSIX/CI).
-    - **B5 (contexto de evidencia)** — nuevo `forensia.evidence_context.EvidenceContext`
-      (inmutable, `evidence_id` + `baseline_sha256`, construido **solo** desde un
-      `EvidenceHandle`); hilado explícito `ForensicAgent`/`mcp.toolkit` →
-      `dispatcher.execute(evidence_context=…)` → `tool_run_start`/`tool_run_finish`. Una tool
-      que lee evidencia en un run anclado **exige** el contexto (falla fuerte antes del start,
-      RULE 2); todos los caminos de cierre lo conservan (INVARIANT 4). Tests:
-      `test_evidence_context.py` + `test_evidence_context_e2e.py`.
-  **BLOQUEADO (no cerrar P0.5-3 hasta resolverlo):**
-    - **B5 (`tool_version`)** — no hay fuente autoritativa reutilizable desde el `api` sin
-      cambiar `docker/`. Las versiones se fijan al build (Dockerfile ARGs + apt GIFT +
-      `/opt/eztools/VERSIONS.txt`) pero el **exec-agent no expone canal de versión**
-      (`/health`→`{ok,stage}`, `/which`→presencia, `/exec`→salida del argv). Inventarla
-      (`unknown`/`--version` con fallback/nombre del binario) viola RULE 2. **Cambio
-      cross-lane mínimo requerido** (NO implementado en esta tarea): un endpoint del exec-agent
-      que sirva un manifiesto de versiones horneado en la imagen (p. ej. `/versions` sobre un
-      `versions.json`, o `/which` extendido a `{binario: versión}`), + la fontanería en
-      `forensia.toolkit.maletin` para consultarlo antes de `tool_run_start` y cablearlo en el
-      dispatcher. Ver `docs/soundness-forense.md` §3.
+- [x] **P0.5-3 (2026-07-13):** contexto forense verificado + procedencia + versión
+  autoritativa en cada tool run anclado. **Cerrado:**
+    - **A (E2E por la superficie real)** — `backend/tests/test_evidence_context_e2e.py`
+      ejercita el camino PRODUCTO completo: `TestClient → POST /api/agent/query → router
+      fino → ForensicAgent real → ejecutor scriptado determinista (única pieza falsa: el
+      texto del LLM) → ExecutorBackend real → dispatcher real → exec-agent loopback real
+      (con `GET /versions` real) → tsk_icat → ArtifactRef → RegRipper` (POSIX/CI). No se
+      mockea ForensicAgent, dispatcher, EvidenceManager, ArtifactStore ni AuditLog.
+    - **B (contexto en TODA ejecución anclada)** — `case_id` sin `EvidenceContext` se
+      rechaza antes del `ArtifactRun`/start/runner, **también** para tools de solo input
+      derivado (`tsk_mactime`, `plaso_psort`, `jq` sobre ref). No hay contexto por defecto.
+    - **C (gate autoritativo anti-falsificación)** — el dispatcher valida el contexto
+      contra `EvidenceManager` (`get(case_id, evidence_id)` + `matches_handle`): id
+      inexistente, evidencia de otro caso o hash falsificado fallan fuerte antes del gate
+      de rutas. El `EVIDENCE_INPUT` se confina al directorio de ESA evidencia verificada
+      (mismo caso ≠ misma evidencia).
+    - **D (procedencia de derivados)** — `ArtifactStore.start_run` exige y persiste
+      `evidence_id` + `evidence_baseline_sha256` + `tool_version` en el manifiesto; al
+      consumir un `ArtifactRef` el dispatcher carga el manifiesto del productor por
+      `run_id` y verifica que su procedencia coincide con el contexto del consumidor
+      (procedencia cruzada → rechazo; manifiesto pre-P0.5-3 sin procedencia → rechazo
+      accionable). El enlace `derived_inputs` registra `source_evidence_id`.
+    - **`tool_version` (cross-lane, autorizado)** — manifiesto **inmutable de build**:
+      `docker/docker/forensic-toolkit/gen_versions.py` corre en ambos stages del
+      Dockerfile y hornea `/opt/forensia/versions.json` (una fuente designada por binario:
+      dpkg / pip / ARG / git SHA / versions.tsv de EZ Tools + SHA del zip); **el build
+      falla** si una tool declarada en `tool-binaries.json` no tiene versión determinista.
+      El exec-agent lo sirve por el endpoint cerrado `GET /versions`;
+      `forensia.toolkit.maletin.tool_version()` lo consulta (rechazando
+      `unknown`/`latest`/vacío) y el dispatcher lo resuelve **antes** de `tool_run_start`
+      (orden: versión → start → runner → finish; irresoluble → no se ejecuta; el venue
+      api-PATH de dev no tiene manifiesto → rechazo, sin fallback local). `capabilities`
+      reporta la identidad de versión por tool (o la razón concreta de su ausencia).
+      Consistencia catálogo↔`tool-binaries.json` verificada por
+      `backend/tests/test_tool_version.py`.
 
-  **P0.5-3 queda PARCIAL/BLOQUEADO** por `tool_version`; no se declara cerrado.
+  Tests: `test_evidence_context.py`, `test_evidence_context_e2e.py`,
+  `test_derived_handoff.py`, `test_tool_path_policy.py`, `test_dispatcher_case_anchored.py`,
+  `test_tool_version.py`, `test_e2e_chain.py`. **Quedan fuera de P0.5-3** (tareas
+  posteriores, no mezcladas): **P0.5-4** (verificar que el argv EWF ejecutado coincide con
+  el solicitado) y **P0.5-5** (contrato del canal `stdout.bin`).
 
 ### A. ~~Construir las 3 imágenes OCI~~ **[SUPERSEDIDO por el pivote 2026-07-02]**
 

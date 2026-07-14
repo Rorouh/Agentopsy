@@ -132,6 +132,16 @@ El maletín queda **habilitado para que el `api` lo consulte** así:
   `capabilities` — y ejecuta las tools del agente por el mismo canal (`POST /exec`):
   el dispatcher resuelve el argv desde el allowlist y lo lanza en el maletín del
   `os_profile` del caso (`proximos-pasos.md` §B.bis, HECHO).
+- **Versiones autoritativas (P0.5-3):** durante el build de cada stage,
+  `gen_versions.py` hornea el manifiesto **inmutable** `/opt/forensia/versions.json`
+  (una fuente designada por binario: paquete dpkg, `importlib.metadata` para
+  volatility3, el ARG pinneado para hayabusa/chainsaw, el commit git del clone de
+  RegRipper, y la versión auto-reportada + SHA-256 del zip para las EZ Tools). La lista
+  de binarios declarados vive en `docker/forensic-toolkit/tool-binaries.json` (espejo
+  del catálogo del backend, verificado por test); **si una tool declarada no tiene
+  versión determinista, el build falla** — nunca existe un "unknown". El exec-agent lo
+  sirve por `GET /versions` y el dispatcher lo consulta ANTES de cada `tool_run_start`
+  (FORENSIC INVARIANT 4).
 - A mano, para depurar, también puedes ejecutar directamente dentro del contenedor:
 
   ```bash

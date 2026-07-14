@@ -38,9 +38,9 @@ from pathlib import Path
 
 import pytest
 
+from _custody import context_for, register_evidence, wire_dispatcher_custody
 from forensia.artifacts.store import ArtifactStore
 from forensia.cases.manager import CaseManager
-from forensia.evidence_context import EvidenceContext
 from forensia.toolkit import dispatcher, maletin
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -198,13 +198,17 @@ def test_dispatcher_hashes_final_bytes_after_process_death(monkeypatch, tmp_path
     cases = CaseManager(root=tmp_path / "cases")
     store = ArtifactStore(cases)
     case = cases.create(name="op", examiner="alice", os_profile="unix")
-    # The image must exist under the case's evidence dir — the EVIDENCE_INPUT path policy
-    # gate (P0.5-2) confines it there (the stand-in `icat` ignores the content anyway).
-    evidence_image = cases.root / case.id / "evidence" / "original.raw"
-    evidence_image.write_bytes(b"\x00" * 512)
+    # Evidence through the REAL hash gate → verified context the dispatcher validates.
+    handle = register_evidence(cases, case.id, tmp_path, payload=b"\x00" * 512)
+    # Real loopback exec-agent → serve a REAL versions manifest for `icat`.
+    manifest = tmp_path / "versions.json"
+    manifest.write_text(
+        json.dumps({"schema": 1, "stage": "unix", "versions": {"icat": "sleuthkit 4.12 (dpkg)"}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FORENSIA_VERSIONS_MANIFEST", str(manifest))
 
-    monkeypatch.setattr(dispatcher, "case_manager", cases)
-    monkeypatch.setattr(dispatcher, "artifact_store", store)
+    wire_dispatcher_custody(monkeypatch, dispatcher, cases, store, fake_version=None)
     monkeypatch.setattr(dispatcher, "resolve", lambda _b: None)  # force the maletín venue
     monkeypatch.setenv("PATH", str(bindir) + os.pathsep + os.environ.get("PATH", ""))
     monkeypatch.delenv("FORENSIA_EXEC_AGENT_TOKEN", raising=False)
@@ -223,13 +227,10 @@ def test_dispatcher_hashes_final_bytes_after_process_death(monkeypatch, tmp_path
     try:
         result = dispatcher.execute(
             "tsk_icat",
-            {"image_path": str(evidence_image), "inode": 5},
+            {"image_path": str(handle.original_path), "inode": 5},
             case_id=case.id,
             os_profile="unix",
-            evidence_context=EvidenceContext(
-                evidence_id="ffffffff-ffff-4fff-8fff-ffffffffffff",
-                baseline_sha256="5" * 64,
-            ),
+            evidence_context=context_for(handle),
         )
     finally:
         server.shutdown()

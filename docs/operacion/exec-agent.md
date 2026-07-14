@@ -42,6 +42,7 @@ api  ──HTTP (red interna del compose)──▶  exec-agent  ──subprocess
 | Método | Ruta | Cuerpo | Respuesta |
 |--------|------|--------|-----------|
 | `GET`  | `/health` | — | `{"ok": true, "stage": "unix"\|"windows"}` |
+| `GET`  | `/versions` | — | `{"stage": …, "versions": {binario: versión}}` — el manifiesto **inmutable** horneado en el build (`/opt/forensia/versions.json`); ausente/corrupto → `500` accionable |
 | `POST` | `/which`  | `{"binaries": ["fls","vol",…]}` | `{"present": ["fls",…]}` (subconjunto en PATH) |
 | `POST` | `/exec`   | `{"argv": ["fls","-r","/evidence/…"], "timeout": 300}` | `{"exit": int, "stdout": str, "stderr": str, "timed_out": bool}` |
 | `POST` | `/exec` (binario) | `{"argv": ["icat",…], "timeout": 300, "stdout_path": "/cases/…/out/stdout.bin"}` | `{"exit": int, "stdout_file": str, "stdout_sha256": str, "stdout_size": int, "stderr": str, "timed_out": bool}` |
@@ -92,14 +93,18 @@ resuelve el argv desde el allowlist, elige el maletín por el `os_profile` del c
 
 Para una ejecución anclada a caso, el límite auditable está antes del transporte:
 
-1. el dispatcher valida la tool y sus params, abre el `ArtifactRun`, construye el argv
-   literal y resuelve una única ubicación de ejecución;
-2. persiste ese argv en el manifiesto y añade `tool_run_start` al `audit.jsonl`
-   hash-encadenado;
+1. el dispatcher valida el **`EvidenceContext`** contra `EvidenceManager` (contexto
+   obligatorio en toda ejecución anclada; falsificado/de otro caso → rechazo), aplica el
+   gate de rutas (incl. la procedencia de los `ArtifactRef` derivados), resuelve la única
+   ubicación de ejecución y la **versión autoritativa** de la tool en ese maletín
+   (`GET /versions`; irresoluble → la tool no se ejecuta, sin fallback);
+2. abre el `ArtifactRun` (el manifiesto persiste `evidence_id` + baseline +
+   `tool_version`), construye el argv literal, lo persiste y añade `tool_run_start`
+   (con contexto + versión) al `audit.jsonl` hash-encadenado;
 3. solo después invoca `run_argv` local o `POST /exec` en el maletín seleccionado;
 4. cuando el runner devuelve —también con exit code distinto de cero— finaliza el
    `ArtifactRun` e intenta añadir como máximo un `tool_run_finish` con el exit code
-   literal y hashes.
+   literal, hashes y el mismo contexto + versión del start.
 
 Si el transporte, el timeout local o la invocación lanzan una excepción después del start,
 el `ArtifactRun` se cierra con `status: "error"`, `exit_code: null` y el
@@ -147,6 +152,13 @@ sigue siendo un gap pendiente de una decisión separada.
 
 - **Shell-free**: `subprocess.run(argv, shell=False)`; `argv` debe ser `list[str]` no vacía
   (SECURITY INVARIANT 4). El agente rechaza cualquier otra cosa.
+- **`/versions` es un endpoint cerrado**: sin parámetros, sin paths del caller, sin
+  ejecutar comandos — solo lee el `versions.json` inmutable de la imagen (horneado por
+  `gen_versions.py`; el build falla si una tool declarada no tiene versión determinista).
+  Nunca sirve un placeholder (RULE 2). La ruta del manifiesto admite el override
+  `FORENSIA_VERSIONS_MANIFEST` — existe **solo** para que los tests loopback sirvan un
+  manifiesto real desde `tmp`; el compose no lo define y fijarlo en despliegue rompería
+  la identidad de build (no lo hagas).
 - **Allowlist en el `api`, no aquí**: el LLM emite un id de tool + params tipados y el
   backend resuelve el argv real desde el allowlist (SECURITY INVARIANT 5). El exec-agent
   solo ejecuta el argv ya resuelto — no interpreta, no expande, no usa shell.

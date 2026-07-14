@@ -5,15 +5,19 @@ build_argv → ArtifactRun → hash-chained audit → exec-agent) with NO Docker
 ``exec_agent.py`` is loaded in-process and served over loopback HTTP (as in
 ``test_binary_stdout_channel.py`` / ``test_ewf_routing.py``), and the forensic binaries are
 replaced by tiny POSIX stand-ins on ``PATH`` that the exec-agent's shell-free subprocess
-resolves and runs. Everything else is the real thing: the binary_stdout channel writes
-``icat``'s raw bytes to ``out/stdout.bin`` (hashed), and RegRipper consumes that artifact as
-a derived input the dispatcher re-verifies before running.
+resolves and runs. Everything else is the real thing: the evidence goes through
+``EvidenceManager``'s hash gate (the context the dispatcher re-validates), the exec-agent
+serves the REAL build-manifest ``GET /versions`` the dispatcher consults BEFORE each start,
+the binary_stdout channel writes ``icat``'s raw bytes to ``out/stdout.bin`` (hashed), and
+RegRipper consumes that artifact as a derived input the dispatcher re-verifies (bytes AND
+evidence provenance) before running.
 
 Custody asserted end to end: every run leaves a literal ``tool_run_start`` + a
-``tool_run_finish`` (exit + artifact SHA-256) in ``audit.jsonl``; the log is hash-chained and
-``verify()`` passes (and detects tampering); ``derived_inputs`` links icat's artifact to
-RegRipper's run with the re-verified hash; and a tamper of ``stdout.bin`` between the two
-raises and stops RegRipper (RULE 2).
+``tool_run_finish`` (exit + artifact SHA-256 + evidence_id + baseline hash + authoritative
+``tool_version``) in ``audit.jsonl``; the log is hash-chained and ``verify()`` passes (and
+detects tampering); ``derived_inputs`` links icat's artifact to RegRipper's run with the
+re-verified hash and source evidence; and a tamper of ``stdout.bin`` between the two raises
+and stops RegRipper (RULE 2).
 
 POSIX only: launching a script stand-in shell-free needs POSIX exec semantics, so this runs
 in CI (Linux). On Windows the operator drives the real chain over docker compose with a
@@ -33,16 +37,11 @@ from pathlib import Path
 
 import pytest
 
+from _custody import context_for, register_evidence, wire_dispatcher_custody
 from forensia.artifacts.store import ArtifactStore
 from forensia.audit.log import AuditLog
 from forensia.cases.manager import CaseManager
-from forensia.evidence_context import EvidenceContext
 from forensia.toolkit import dispatcher
-
-# The verified evidence context EvidenceManager threads for every anchored run.
-_CTX = EvidenceContext(
-    evidence_id="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", baseline_sha256="1" * 64
-)
 
 pytestmark = pytest.mark.skipif(
     os.name != "posix",
@@ -55,6 +54,19 @@ pytestmark = pytest.mark.skipif(
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXEC_AGENT_PY = REPO_ROOT / "docker" / "docker" / "forensic-toolkit" / "exec_agent.py"
+
+# The versions the REAL build manifest serves at GET /versions — the shapes
+# gen_versions.py bakes at image build (dpkg owner package / git clone SHA).
+_TSK_VERSION = "sleuthkit 4.12.1+dfsg-1ppa1 (dpkg)"
+_RIP_VERSION = "RegRipper3.0 git:0123456789ab"
+_VERSIONS = {"mmls": _TSK_VERSION, "fls": _TSK_VERSION, "icat": _TSK_VERSION,
+             "rip.pl": _RIP_VERSION}
+_EXPECTED_TOOL_VERSION = {
+    "tsk_mmls": _TSK_VERSION,
+    "tsk_fls": _TSK_VERSION,
+    "tsk_icat": _TSK_VERSION,
+    "regripper": _RIP_VERSION,
+}
 
 # The hive `icat` "extracts": deliberately not valid UTF-8 (a text round-trip would change
 # it). Its identity downstream is its SHA-256.
@@ -131,21 +143,32 @@ def store(cases) -> ArtifactStore:
 
 
 @pytest.fixture
-def case(cases):
-    return cases.create(name="op", examiner="alice", os_profile="windows")
+def anchored(cases, tmp_path):
+    """Real case + evidence through EvidenceManager's hash gate → verified context."""
+    case = cases.create(name="op", examiner="alice", os_profile="windows")
+    handle = register_evidence(cases, case.id, tmp_path, payload=b"\x00" * 4096)
+    return {"case": case, "handle": handle, "ctx": context_for(handle)}
 
 
 @pytest.fixture
-def chain(monkeypatch, bindir, cases, store):
+def chain(monkeypatch, bindir, cases, store, tmp_path):
     """Wire the product path: tmp-backed storage, maletín venue, and a real loopback
-    exec-agent whose subprocess resolves the stand-in tools from PATH."""
-    monkeypatch.setattr(dispatcher, "case_manager", cases)
-    monkeypatch.setattr(dispatcher, "artifact_store", store)
+    exec-agent whose subprocess resolves the stand-in tools from PATH and whose
+    GET /versions serves a REAL build manifest (no faked version transport)."""
+    wire_dispatcher_custody(monkeypatch, dispatcher, cases, store, fake_version=None)
     # Force the maletín venue (RULE 1 product path), never the api-PATH local runner —
     # even though the stand-ins are on PATH for the exec-agent's own subprocess.
     monkeypatch.setattr(dispatcher, "resolve", lambda _binary: None)
     monkeypatch.setenv("PATH", str(bindir) + os.pathsep + os.environ.get("PATH", ""))
     monkeypatch.delenv("FORENSIA_EXEC_AGENT_TOKEN", raising=False)  # read at import → no auth
+
+    # The build manifest the exec-agent serves — set BEFORE loading (read at import).
+    manifest = tmp_path / "versions.json"
+    manifest.write_text(
+        json.dumps({"schema": 1, "stage": "windows", "versions": _VERSIONS}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FORENSIA_VERSIONS_MANIFEST", str(manifest))
 
     module = _load_exec_agent()
     server = ThreadingHTTPServer(("127.0.0.1", 0), module.Handler)
@@ -161,9 +184,9 @@ def chain(monkeypatch, bindir, cases, store):
         thread.join(timeout=5)
 
 
-def _run(tool_id: str, params: dict, case_id: str) -> dict:
+def _run(tool_id: str, params: dict, case_id: str, ctx) -> dict:
     return dispatcher.execute(
-        tool_id, params, case_id=case_id, os_profile="windows", evidence_context=_CTX
+        tool_id, params, case_id=case_id, os_profile="windows", evidence_context=ctx
     )
 
 
@@ -180,21 +203,20 @@ def _one(entries: list[dict], action: str, run_id: str) -> dict:
 # --------------------------------------------------------------------------- #
 # 1) the whole chain, end to end, with custody at every hop
 # --------------------------------------------------------------------------- #
-def test_full_chain_product_path_custody(chain, cases, store, case, tmp_path) -> None:
-    # The image lives UNDER the case's evidence dir — the EVIDENCE_INPUT path policy gate
-    # (P0.5-2) confines it there, exactly as EvidenceManager would place a registered copy.
-    image = str(cases.root / case.id / "evidence" / "disk.raw")
-    Path(image).write_bytes(b"\x00" * 4096)
+def test_full_chain_product_path_custody(chain, cases, store, anchored) -> None:
+    case, handle, ctx = anchored["case"], anchored["handle"], anchored["ctx"]
+    # The image is the REGISTERED evidence copy — exactly what the path policy confines to.
+    image = str(handle.original_path)
 
-    mmls = _run("tsk_mmls", {"image_path": image}, case.id)
+    mmls = _run("tsk_mmls", {"image_path": image}, case.id, ctx)
     assert mmls["exit_code"] == 0
     assert mmls["parsed"]["count"] >= 1  # the real mmls wrapper parsed a partition
 
-    fls = _run("tsk_fls", {"image_path": image}, case.id)
+    fls = _run("tsk_fls", {"image_path": image}, case.id, ctx)
     assert fls["exit_code"] == 0
     assert fls["parsed"]["entries_count"] >= 1  # a hive entry with inode 13552
 
-    icat = _run("tsk_icat", {"image_path": image, "inode": 13552}, case.id)
+    icat = _run("tsk_icat", {"image_path": image, "inode": 13552}, case.id, ctx)
     assert icat["exit_code"] == 0
     # (1) the binary result REMITS TO THE ARTIFACT, never content_length:0
     ref = icat["parsed"]["artifact"]
@@ -211,13 +233,16 @@ def test_full_chain_product_path_custody(chain, cases, store, case, tmp_path) ->
         "regripper",
         {"hive_path": ref, "plugin": "compname"},
         case.id,
+        ctx,
     )
     assert regripper["exit_code"] == 0
 
     entries = _entries(cases, case.id)
 
     # every run left a LITERAL start (argv + params) and a finish (exit + artifact hashes)
-    for res in (mmls, fls, icat, regripper):
+    for res, tool_id in (
+        (mmls, "tsk_mmls"), (fls, "tsk_fls"), (icat, "tsk_icat"), (regripper, "regripper")
+    ):
         start = _one(entries, "tool_run_start", res["run_id"])
         finish = _one(entries, "tool_run_finish", res["run_id"])
         assert isinstance(start["argv"], list) and start["argv"]
@@ -226,11 +251,20 @@ def test_full_chain_product_path_custody(chain, cases, store, case, tmp_path) ->
         assert finish["exit_code"] == 0
         assert finish["stdout_sha256"]  # the captured stream was hashed (INVARIANT 4)
         # B5: the verified evidence context reaches BOTH start and finish (INVARIANT 4),
-        # with identical id + baseline hash on the paired entries.
-        assert start["evidence_id"] == finish["evidence_id"] == _CTX.evidence_id
+        # with identical id + baseline hash on the paired entries — and the authoritative
+        # tool_version resolved from the maletín's REAL build manifest before the start.
+        assert start["evidence_id"] == finish["evidence_id"] == handle.evidence_id
+        assert start["baseline_sha256"] == finish["baseline_sha256"] == handle.sha256
         assert (
-            start["baseline_sha256"] == finish["baseline_sha256"] == _CTX.baseline_sha256
+            start["tool_version"]
+            == finish["tool_version"]
+            == _EXPECTED_TOOL_VERSION[tool_id]
         )
+        # the run manifest persists the same provenance + version (Bloqueante D)
+        run = store.get_run(case.id, res["run_id"])
+        assert run.evidence_id == handle.evidence_id
+        assert run.evidence_baseline_sha256 == handle.sha256
+        assert run.tool_version == _EXPECTED_TOOL_VERSION[tool_id]
     # icat's finish records the hashed out/stdout.bin as an output file
     assert _one(entries, "tool_run_finish", icat["run_id"])["output_files_count"] >= 1
 
@@ -243,6 +277,7 @@ def test_full_chain_product_path_custody(chain, cases, store, case, tmp_path) ->
     assert len(links) == 1
     assert links[0]["param"] == "hive_path"
     assert links[0]["source_run_id"] == icat["run_id"]
+    assert links[0]["source_evidence_id"] == handle.evidence_id  # same-evidence provenance
     assert links[0]["relpath"] == "stdout.bin"
     # …and the hash RegRipper re-verified == the one icat's result advertised == sha(hive)
     assert links[0]["sha256"] == ref["sha256"] == _HIVE_SHA
@@ -255,13 +290,11 @@ def test_full_chain_product_path_custody(chain, cases, store, case, tmp_path) ->
 # --------------------------------------------------------------------------- #
 # 2) a tamper of the derived artifact between icat and RegRipper is fatal (RULE 2)
 # --------------------------------------------------------------------------- #
-def test_tamper_between_icat_and_regripper_blocks_run(chain, cases, store, case, tmp_path) -> None:
-    # The image lives UNDER the case's evidence dir — the EVIDENCE_INPUT path policy gate
-    # (P0.5-2) confines it there, exactly as EvidenceManager would place a registered copy.
-    image = str(cases.root / case.id / "evidence" / "disk.raw")
-    Path(image).write_bytes(b"\x00" * 4096)
+def test_tamper_between_icat_and_regripper_blocks_run(chain, cases, store, anchored) -> None:
+    case, handle, ctx = anchored["case"], anchored["handle"], anchored["ctx"]
+    image = str(handle.original_path)
 
-    icat = _run("tsk_icat", {"image_path": image, "inode": 13552}, case.id)
+    icat = _run("tsk_icat", {"image_path": image, "inode": 13552}, case.id, ctx)
     on_disk = cases.root / case.id / "artifacts" / icat["run_id"] / "out" / "stdout.bin"
     # Custody break: the bytes change after icat's run recorded their SHA-256.
     on_disk.write_bytes(_HIVE_BYTES + b"TAMPERED")
@@ -274,6 +307,7 @@ def test_tamper_between_icat_and_regripper_blocks_run(chain, cases, store, case,
             "regripper",
             {"hive_path": icat["parsed"]["artifact"], "plugin": "compname"},
             case.id,
+            ctx,
         )
     starts_after = sum(
         1 for e in _entries(cases, case.id) if e.get("action") == "tool_run_start"
@@ -287,12 +321,9 @@ def test_tamper_between_icat_and_regripper_blocks_run(chain, cases, store, case,
 # --------------------------------------------------------------------------- #
 # 3) the audit is genuinely tamper-evident (flip a field → verify() fails)
 # --------------------------------------------------------------------------- #
-def test_audit_chain_is_tamper_evident(chain, cases, case, tmp_path) -> None:
-    # The image lives UNDER the case's evidence dir — the EVIDENCE_INPUT path policy gate
-    # (P0.5-2) confines it there, exactly as EvidenceManager would place a registered copy.
-    image = str(cases.root / case.id / "evidence" / "disk.raw")
-    Path(image).write_bytes(b"\x00" * 4096)
-    _run("tsk_mmls", {"image_path": image}, case.id)
+def test_audit_chain_is_tamper_evident(chain, cases, anchored) -> None:
+    case, handle, ctx = anchored["case"], anchored["handle"], anchored["ctx"]
+    _run("tsk_mmls", {"image_path": str(handle.original_path)}, case.id, ctx)
 
     audit_path = cases.root / case.id / "audit.jsonl"
     assert AuditLog(audit_path).verify() is True

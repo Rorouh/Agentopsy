@@ -1,0 +1,43 @@
+{
+  "_comment": [
+    "Binarios del catálogo (backend/forensia/toolkit/catalog.py) que cada stage del",
+    "maletín DEBE llevar con una versión determinista en /opt/forensia/versions.json.",
+    "gen_versions.py lo consume durante el build y FALLA el build si falta un binario",
+    "o su versión. backend/tests/test_tool_version.py verifica que esta lista y el",
+    "catálogo no divergen (gate de consistencia — nunca dos listas en silencio)."
+  ],
+  "base": [
+    "file",
+    "xxd",
+    "strings",
+    "mmls",
+    "fls",
+    "icat",
+    "mactime",
+    "ewfinfo",
+    "bulk_extractor",
+    "yara",
+    "vol",
+    "log2timeline.py",
+    "psort.py",
+    "hashdeep",
+    "foremost",
+    "qemu-nbd",
+    "jq"
+  ],
+  "windows": [
+    "rip.pl",
+    "hayabusa",
+    "chainsaw",
+    "EvtxECmd",
+    "MFTECmd",
+    "lecmd",
+    "jlecmd",
+    "recmd",
+    "amcacheparser",
+    "appcompatcacheparser",
+    "sbecmd",
+    "wxtcmd",
+    "rbcmd"
+  ]
+}

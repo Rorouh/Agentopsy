@@ -2,3 +2,5 @@
 !Dockerfile
 !requirements-windows.txt
 !exec_agent.py
+!tool-binaries.json
+!gen_versions.py

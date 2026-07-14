@@ -150,9 +150,12 @@ def _cross_tool() -> Tool:
 def test_env_override_wins_over_maletin(monkeypatch: pytest.MonkeyPatch) -> None:
     # RULE 1 order: a binary resolvable where the api runs is available outright.
     monkeypatch.setattr(maletin, "resolve", lambda binary: "/opt/bin/hayabusa")
-    out = maletin._tool_status(_win_tool(), services={}, present={})
+    out = maletin._tool_status(_win_tool(), services={}, present={}, versions={})
     assert out["available"] is True
     assert out["via"] == "env-override-or-api-path"
+    # …but it has NO build-manifest version identity: anchored runs need the maletín.
+    assert out["version"] is None
+    assert "manifiesto" in out["version_reason"]
 
 
 def test_rule2_no_fallback_between_maletines(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -165,7 +168,7 @@ def test_rule2_no_fallback_between_maletines(monkeypatch: pytest.MonkeyPatch) ->
         TOOLKIT_UNIX: {"service": TOOLKIT_UNIX, "container": "c-unix", "running": True, "reason": None},
     }
     present = {TOOLKIT_UNIX: {"hayabusa"}}  # present in the WRONG maletín
-    out = maletin._tool_status(_win_tool(), services=services, present=present)
+    out = maletin._tool_status(_win_tool(), services=services, present=present, versions={})
     assert out["available"] is False
     assert TOOLKIT_UNIX not in out["detail"]  # unix maletín never inspected for it
     assert set(out["detail"]) == {TOOLKIT_WINDOWS}
@@ -179,9 +182,15 @@ def test_cross_tool_available_if_present_in_any_declared_maletin(monkeypatch: py
                           "reason": "down"},
     }
     present = {TOOLKIT_UNIX: {"fls"}}
-    out = maletin._tool_status(_cross_tool(), services=services, present=present)
+    versions = {TOOLKIT_UNIX: {"fls": "sleuthkit 4.12.1 (dpkg)"}}
+    out = maletin._tool_status(
+        _cross_tool(), services=services, present=present, versions=versions
+    )
     assert out["available"] is True
     assert out["detail"][TOOLKIT_UNIX]["binary_present"] is True
+    # single consistent manifest identity → reported as THE version
+    assert out["version"] == "sleuthkit 4.12.1 (dpkg)"
+    assert out["version_reason"] is None
 
 
 def test_binary_absent_in_running_maletin_reports_reason(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -190,7 +199,7 @@ def test_binary_absent_in_running_maletin_reports_reason(monkeypatch: pytest.Mon
         TOOLKIT_WINDOWS: {"service": TOOLKIT_WINDOWS, "container": "c-win", "running": True, "reason": None},
     }
     present = {TOOLKIT_WINDOWS: set()}  # running, but binary not installed
-    out = maletin._tool_status(_win_tool(), services=services, present=present)
+    out = maletin._tool_status(_win_tool(), services=services, present=present, versions={})
     assert out["available"] is False
     assert "ausente" in out["reason"]
 
@@ -198,7 +207,7 @@ def test_binary_absent_in_running_maletin_reports_reason(monkeypatch: pytest.Mon
 def test_tool_without_declared_toolkit_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(maletin, "resolve", lambda binary: None)
     orphan = Tool("orphan", "orphan", ("unix",), toolkits=())
-    out = maletin._tool_status(orphan, services={}, present={})
+    out = maletin._tool_status(orphan, services={}, present={}, versions={})
     assert out["available"] is False
     assert "no declara maletín" in out["reason"]
 
@@ -229,13 +238,16 @@ def test_snapshot_reports_real_presence_when_maletines_up(monkeypatch: pytest.Mo
     monkeypatch.setattr(maletin, "resolve", lambda binary: None)
 
     installed = {"fls", "vol", "hayabusa"}
+    manifest = {"fls": "sleuthkit 4.12.1 (dpkg)", "hayabusa": "hayabusa 2.15.0 (release)"}
 
-    def fake_request(method: str, url: str, payload=None):
+    def fake_request(method: str, url: str, payload=None, *, timeout=None):
         if url.endswith("/health"):
             return 200, {"ok": True, "stage": "x"}
         if url.endswith("/which"):
             wanted = payload["binaries"]
             return 200, {"present": [b for b in wanted if b in installed]}
+        if url.endswith("/versions"):
+            return 200, {"stage": "x", "versions": manifest}
         raise AssertionError(f"unexpected call: {method} {url}")
 
     monkeypatch.setattr(maletin, "_request", fake_request)
@@ -247,3 +259,6 @@ def test_snapshot_reports_real_presence_when_maletines_up(monkeypatch: pytest.Mo
     assert snap["tools"]["hayabusa"]["available"] is True
     assert snap["tools"]["hayabusa"]["via"] == "maletin"
     assert snap["tools"]["fls"]["available"] is True
+    # the snapshot surfaces the build-manifest version identity per tool
+    assert snap["tools"]["hayabusa"]["version"] == "hayabusa 2.15.0 (release)"
+    assert snap["tools"]["fls"]["version"] == "sleuthkit 4.12.1 (dpkg)"

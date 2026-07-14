@@ -32,16 +32,12 @@ from pathlib import Path
 
 import pytest
 
+from _custody import FAKE_TOOL_VERSION, context_for, register_evidence, wire_dispatcher_custody
 from forensia.artifacts.store import ArtifactStore
+from forensia.audit.log import AuditLog
 from forensia.cases.manager import CaseManager
-from forensia.evidence_context import EvidenceContext
 from forensia.toolkit import dispatcher, maletin
 from forensia.toolkit.dispatcher import _is_ewf_path
-
-# Verified evidence context an anchored, evidence-reading run carries (INVARIANT 4).
-_CTX = EvidenceContext(
-    evidence_id="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", baseline_sha256="4" * 64
-)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXEC_AGENT_PY = REPO_ROOT / "docker" / "docker" / "forensic-toolkit" / "exec_agent.py"
@@ -56,8 +52,7 @@ def dispatch_case(monkeypatch, tmp_path):
     cases = CaseManager(root=tmp_path / "cases")
     case = cases.create("ewf", "alice", os_profile="unix")
     store = ArtifactStore(cases)
-    monkeypatch.setattr(dispatcher, "case_manager", cases)
-    monkeypatch.setattr(dispatcher, "artifact_store", store)
+    wire_dispatcher_custody(monkeypatch, dispatcher, cases, store)
     return cases, case
 
 
@@ -92,40 +87,49 @@ def _force_maletin_and_capture(monkeypatch) -> dict:
     return seen
 
 
-def test_dispatcher_forwards_ewf_image_for_e01(monkeypatch, dispatch_case) -> None:
+def test_dispatcher_forwards_ewf_image_for_e01(monkeypatch, dispatch_case, tmp_path) -> None:
     seen = _force_maletin_and_capture(monkeypatch)
     cases, case = dispatch_case
-    path = cases.root / case.id / "evidence" / "original.E01"
-    path.write_bytes(b"ewf")
-    image = str(path.resolve())
+    # Registered through the real hash gate; the .E01 suffix is preserved by register().
+    handle = register_evidence(cases, case.id, tmp_path, payload=b"ewf", name="disk.E01")
+    image = str(handle.original_path)
     dispatcher.execute(
         "tsk_mmls",
         {"image_path": image},
         case_id=case.id,
         os_profile="unix",
-        evidence_context=_CTX,
+        evidence_context=context_for(handle),
     )
 
     assert seen["service"] == "toolkit-unix"
     # The token named to the exec-agent is the EXACT path present in the argv it will run.
     assert seen["ewf_image"] == image
     assert seen["ewf_image"] in seen["argv"]
+    # An EWF run keeps the resolved authoritative tool_version on start AND finish.
+    entries = AuditLog(cases.root / case.id / "audit.jsonl").entries()
+    for entry in entries:
+        if entry.get("action") in ("tool_run_start", "tool_run_finish"):
+            assert entry["tool_version"] == FAKE_TOOL_VERSION
 
 
-def test_dispatcher_no_ewf_image_for_raw(monkeypatch, dispatch_case) -> None:
+def test_dispatcher_no_ewf_image_for_raw(monkeypatch, dispatch_case, tmp_path) -> None:
     seen = _force_maletin_and_capture(monkeypatch)
     cases, case = dispatch_case
-    image = cases.root / case.id / "evidence" / "original.raw"
-    image.write_bytes(b"raw")
+    handle = register_evidence(cases, case.id, tmp_path, payload=b"raw", name="disk.raw")
     dispatcher.execute(
         "tsk_mmls",
-        {"image_path": str(image)},
+        {"image_path": str(handle.original_path)},
         case_id=case.id,
         os_profile="unix",
-        evidence_context=_CTX,
+        evidence_context=context_for(handle),
     )
     # A non-EWF image is untouched: default behaviour, no mount asked for.
     assert seen["ewf_image"] is None
+    # A non-EWF run carries the same version custody as an EWF one.
+    entries = AuditLog(cases.root / case.id / "audit.jsonl").entries()
+    for entry in entries:
+        if entry.get("action") in ("tool_run_start", "tool_run_finish"):
+            assert entry["tool_version"] == FAKE_TOOL_VERSION
 
 
 # --------------------------------------------------------------------------- #

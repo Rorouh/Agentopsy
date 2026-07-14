@@ -71,25 +71,44 @@ raíz alternativa pasando `FORENSIA_HOME` al entorno.
 agente / panel toolkit-tester
    │
    ▼
-dispatcher.execute(tool_id, params, case_id="…")
+dispatcher.execute(tool_id, params, case_id="…", evidence_context=EvidenceContext(…))
+   │
+   ├─ VALIDACIÓN AUTORITATIVA del contexto (ANTES de todo lo demás)
+   │     · case_id sin evidence_context → rechazo: TODA ejecución anclada exige el
+   │       contexto verificado (también tsk_mactime / plaso_psort / jq sobre ref)
+   │     · handle = evidence_manager.get(case_id, ctx.evidence_id): id inexistente o de
+   │       otro caso → rechazo; ctx.matches_handle(handle) falso (hash divergente) →
+   │       contexto falsificado/desactualizado → rechazo. Nunca se re-deriva de una
+   │       ruta/param ni de una lectura directa de baseline.json (RULE 2)
+   │     · evidence_dir = directorio de ESTA evidencia verificada (confina EVIDENCE_INPUT)
    │
    ├─ gate central Tool.path_parameters (ANTES de reservar run o auditar start)
-   │     · EVIDENCE_INPUT → case_dir/evidence del caso activo
-   │     · CASE_INPUT → case_dir del caso activo; nunca otro caso
+   │     · EVIDENCE_INPUT → el directorio de la evidencia del CONTEXTO verificado
+   │       (mismo caso NO es misma evidencia: otra evidencia del caso → rechazo)
+   │     · CASE_INPUT → case_dir del caso activo; nunca otro caso, nunca artifacts/
+   │       ni evidence/ (un auxiliar no puede leer bytes de evidencia: entra por
+   │       EVIDENCE_INPUT del contexto o como ArtifactRef)
    │     · DERIVED_INPUT → ArtifactRef {run_id, relpath, sha256?, size?}, sin extras;
-   │                       resolve_output_file + re-hash autoritativo
+   │                       resolve_output_file + re-hash autoritativo + PROCEDENCIA:
+   │                       el manifiesto del run productor (cargado por run_id) debe
+   │                       registrar evidence_id + baseline y COINCIDIR con el contexto
+   │                       del consumidor; manifiesto sin procedencia (pre-P0.5-3) o
+   │                       procedencia cruzada → rechazo antes del start
    │     · RUN_OUTPUT del caller → rechazo; bundled/runtime → id exacto allowlisted
    │
-   ├─ resolver inputs derivados (tools con input_artifact_params): cada param cuyo valor
-   │  sea un ArtifactRef → artifact_store.resolve_output_file(…)
-   │     · re-hashea el fichero contra el manifiesto de la corrida productora (custodia
-   │       del derivado, INVARIANTS 1-2); mismatch/ausente → ToolExecutionError (RULE 2)
-   │     · sustituye la ref por la ruta RO resuelta (el wrapper ve una ruta normal)
-   │     · acumula el enlace de derivación para el audit
+   ├─ resolver venue (ANTES de reservar run): binario en PATH del api (dev) o el ÚNICO
+   │  maletín por os_profile (RULE 2: sin fallback entre maletines)
+   ├─ resolver tool_version AUTORITATIVA (solo runs anclados): maletin.tool_version(
+   │  servicio, binario) → GET /versions del exec-agent → versions.json horneado en el
+   │  build. Irresoluble (transporte caído, manifiesto ausente/corrupto, binario sin
+   │  entrada, o venue api-PATH sin manifiesto) → la tool NO se ejecuta: no hay
+   │  ArtifactRun, no hay start (orden: versión → start → runner → finish)
    │
-   ├─ artifact_store.start_run(case_id, tool_id, argv=[])      → (run_id, out_dir)
-   │     · crea cases/<id>/artifacts/<run_id>/{manifest.json, out/}
-   │     · manifest.json en estado "running"
+   ├─ artifact_store.start_run(case_id, tool_id, argv=[],
+   │                           evidence_id=…, evidence_baseline_sha256=…, tool_version=…)
+   │     · crea cases/<id>/artifacts/<run_id>/{manifest.json, out/}   → (run_id, out_dir)
+   │     · manifest.json en estado "running" y con la PROCEDENCIA del run persistida
+   │       (validada: sha 64-hex; versión no vacía y nunca "unknown"/"latest"/null)
    │
    ├─ generar todos los RUN_OUTPUT declarados bajo out_dir
    │     · normalmente `output_dir` = out/; bulk_extractor recibe el subdirectorio
@@ -97,19 +116,19 @@ dispatcher.execute(tool_id, params, case_id="…")
    │     · nunca se preserva un output_path/output_dir aportado por el caller
    │
    ├─ build_argv(params) → argv_tail
-   ├─ resolve binario local o seleccionar un único maletín por os_profile
    ├─ artifact_store.set_run_argv(…)         → persiste el argv literal
    │
    ├─ audit.append({ action: "tool_run_start", argv literal, run_id, case_id, params,
-   │                 evidence_id, baseline_sha256, derived_inputs? })
+   │                 evidence_id, baseline_sha256, tool_version, derived_inputs? })
    │                                      · evidence_id + baseline_sha256 = el EvidenceContext
    │                                        verificado que la superficie (agente/MCP) hila desde
-   │                                        EvidenceManager; ancla la acción a la evidencia
-   │                                        (INVARIANT 4). El dispatcher NO lo re-deriva de una
-   │                                        ruta/param (RULE 2); una tool que LEE evidencia en un
-   │                                        run anclado sin contexto falla fuerte antes del start.
+   │                                        EvidenceManager y que el dispatcher VALIDÓ arriba;
+   │                                        ancla la acción a la evidencia (INVARIANT 4)
+   │                                      · tool_version = la versión del manifiesto de build
+   │                                        del maletín, resuelta ANTES de este start
    │                                      · derived_inputs lista {param, source_run_id,
-   │                                        relpath, sha256, size} — el enlace de derivación
+   │                                        source_evidence_id, relpath, sha256, size} — el
+   │                                        enlace de derivación con procedencia verificada
    │
    ├─ run_argv(argv, shell=False) o POST /exec al maletín seleccionado
    │
@@ -121,11 +140,12 @@ dispatcher.execute(tool_id, params, case_id="…")
    │                                           error_type + error_message
    │     · conserva stdout/stderr parciales cuando la excepción los aporta
    │
-   ├─ audit.append({ action: "tool_run_finish", run_id, status, exit_code,
-   │                 hashes, evidence_id, baseline_sha256, error_type?, error_message? })
+   ├─ audit.append({ action: "tool_run_finish", run_id, status, exit_code, hashes,
+   │                 evidence_id, baseline_sha256, tool_version,
+   │                 error_type?, error_message? })
    │     · TODOS los caminos de cierre (exit 0, exit != 0, excepción del runner, fallo de
-   │       finalize) conservan el MISMO evidence_id + baseline_sha256 que el start pareado
-   │       (INVARIANT 4): ningún finish de error pierde el contexto forense
+   │       finalize) conservan el MISMO evidence_id + baseline_sha256 + tool_version que
+   │       el start pareado (INVARIANT 4): ningún finish de error pierde el contexto
    │     · se intenta una sola vez; un fallo se propaga sin retry ni reejecución
    │
    └─ devuelve { tool_id, argv, exit_code, stdout_sample, stderr_sample, parsed,
@@ -160,11 +180,21 @@ invente rutas** ni se salte la verificación. Dos piezas simétricas lo hacen:
   No coincide, falta o la ref es inválida → `ToolExecutionError` accionable y la tool **no
   se ejecuta** (RULE 2: nunca sobre un derivado sin verificar). Una ruta literal (`str`)
   bajo `artifacts/` no sustituye la referencia: se rechaza para impedir saltarse el re-hash.
+- **La procedencia se verifica, no se asume (P0.5-3).** El manifiesto del run productor —
+  cargado **determinísticamente por `run_id`** (`ArtifactStore.get_run`), nunca por
+  nombre/ruta ni por "la entrada de audit más cercana" — registra `evidence_id` +
+  `evidence_baseline_sha256` del run que lo produjo. El dispatcher exige que coincidan con
+  el `EvidenceContext` verificado del consumidor: **mismo caso NO es misma evidencia** — un
+  derivado producido sobre la evidencia B se rechaza ("procedencia cruzada") antes del
+  runner y del start cuando la ejecución está anclada a la evidencia A. Un manifiesto
+  anterior a P0.5-3 sin procedencia también se rechaza con error accionable (re-ejecutar el
+  productor); no se asume compatibilidad.
 
 La ref que produce icat es exactamente la que consume RegRipper, así que el agente encadena
 `icat → RegRipper` pasando `result["parsed"]["artifact"]` como `hive_path`. El **enlace de
-derivación** (qué artefacto de la corrida A alimentó la corrida B, con el hash re-verificado)
-queda en `tool_run_start.derived_inputs` del `audit.jsonl` — INVARIANT 4. Sin `case_id` no
+derivación** (qué artefacto de la corrida A alimentó la corrida B, con el hash re-verificado
+y `source_evidence_id` — la evidencia de origen verificada del productor) queda en
+`tool_run_start.derived_inputs` del `audit.jsonl` — INVARIANT 4. Sin `case_id` no
 hay árbol de artefactos que resolver: una ref sin caso falla fuerte.
 
 ## API HTTP que materializa el storage
@@ -196,7 +226,10 @@ El contrato HTTP completo de cada `ArtifactRun` es:
 `run_id`, `case_id`, `tool_id`, `argv`, `started_at`, `finished_at`,
 `status` (`running | finished | error`), `exit_code`, `output_files`
 (cada elemento contiene `relpath`, `sha256` y `size`), `stdout_sha256`,
-`stderr_sha256`, `error_type` y `error_message`. En `running`,
+`stderr_sha256`, `error_type`, `error_message`, y la procedencia del run
+(P0.5-3): `evidence_id`, `evidence_baseline_sha256` y `tool_version`
+(`null` solo en manifests anteriores a P0.5-3, que el dispatcher rechaza
+como fuente de derivados). En `running`,
 `finished_at` y `exit_code` aún pueden ser `null`; en `error` por excepción
 del runner/transporte, `finished_at` ya está fijado, `exit_code` es `null` y
 los campos de error son accionables. Este manifest HTTP es más amplio que el

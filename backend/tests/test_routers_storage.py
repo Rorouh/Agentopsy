@@ -13,6 +13,13 @@ from forensia.chats.store import ChatStore
 from forensia.evidence import EvidenceManager
 from forensia.server import create_app
 
+# Evidence provenance required by ArtifactStore.start_run (P0.5-3, INVARIANT 4).
+_PROV = {
+    "evidence_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "evidence_baseline_sha256": "a" * 64,
+    "tool_version": "tool 1.0 (dpkg)",
+}
+
 PORT = 51000
 
 
@@ -306,7 +313,7 @@ class TestArtifactsRoutes:
         case_id = self._new_case(client, auth)
         # Drop in a finalized run via the store directly — the HTTP layer is read-only.
         run_id, out_dir = isolated_storage["artifacts"].start_run(
-            case_id, "tool_x", argv=["x"]
+            case_id, "tool_x", argv=["x"], **_PROV
         )
         (out_dir / "a.csv").write_bytes(b"x")
         isolated_storage["artifacts"].finalize_run(
@@ -330,7 +337,7 @@ class TestArtifactsRoutes:
         case_id = self._new_case(client, auth)
         artifacts = isolated_storage["artifacts"]
 
-        finished_id, _ = artifacts.start_run(case_id, "tool_ok", argv=["ok"])
+        finished_id, _ = artifacts.start_run(case_id, "tool_ok", argv=["ok"], **_PROV)
         artifacts.finalize_run(
             case_id,
             finished_id,
@@ -339,7 +346,7 @@ class TestArtifactsRoutes:
             stderr="normal stderr",
         )
 
-        error_id, _ = artifacts.start_run(case_id, "tool_error", argv=["error"])
+        error_id, _ = artifacts.start_run(case_id, "tool_error", argv=["error"], **_PROV)
         artifacts.fail_run(
             case_id,
             error_id,

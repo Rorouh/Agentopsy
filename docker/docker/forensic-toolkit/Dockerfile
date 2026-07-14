@@ -45,8 +45,10 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       python3 python3-pip python3-venv \
       file less jq ripgrep sqlite3 coreutils \
-      # --- Primer vistazo / firmas (Cross): xxd (hex), yara (reglas) ---
-      xxd yara \
+      # --- Primer vistazo / firmas (Cross): xxd (hex), strings (binutils), yara ---
+      # binutils aporta `strings`, que el catálogo declara (strings_head) y que la
+      # base de Ubuntu no trae — sin él, gen_versions.py aborta el build (RULE 2).
+      xxd binutils yara \
       # --- Imagen y montaje (Cross) ---
       # libewf-tools (de GIFT) aporta ewfmount/ewfinfo SIN arrastrar libewf2,
       # evitando el conflicto con el libewf del PPA. NO usar el ewf-tools de Ubuntu.
@@ -276,6 +278,7 @@ ENV DOTNET_EnableWriteXorExecute=0 \
 RUN set -e; cd /tmp \
  && mkdir -p /opt/eztools \
  && printf '# EZ Tools — SHA-256 del zip desplegado + versión reportada por la tool\n' > /opt/eztools/VERSIONS.txt \
+ && : > /opt/eztools/versions.tsv \
  && for entry in \
       "EvtxECmd ${EVTXECMD_SHA256}" \
       "MFTECmd ${MFTECMD_SHA256}" \
@@ -301,7 +304,16 @@ RUN set -e; cd /tmp \
       printf '#!/bin/sh\nexec dotnet %s "$@"\n' "$dll" > "/opt/forensia/bin/${wrapper}"; \
       chmod +x "/opt/forensia/bin/${wrapper}"; \
       version="$("/opt/forensia/bin/${wrapper}" 2>&1 | grep -m1 -i 'version' || true)"; \
-      printf '%-22s zip_sha256=%s  %s\n' "$tool" "$(sha256sum "${tool}.zip" | cut -d' ' -f1)" "${version:-version no reportada}" >> /opt/eztools/VERSIONS.txt; \
+      zipsha="$(sha256sum "${tool}.zip" | cut -d' ' -f1)"; \
+      printf '%-22s zip_sha256=%s  %s\n' "$tool" "$zipsha" "${version:-version no reportada}" >> /opt/eztools/VERSIONS.txt; \
+      # Identidad de versión para el manifiesto de build (gen_versions.py): el número
+      # que la PROPIA tool reporta (identifica el parser real, no el wrapper) + el SHA
+      # del zip desplegado. Si una tool del catálogo no lo reporta, gen_versions.py
+      # aborta el build (RULE 2: sin placeholder).
+      version_num="$(printf '%s' "$version" | grep -oE '[0-9]+(\.[0-9]+){1,3}' | head -n1 || true)"; \
+      if [ -n "$version_num" ]; then \
+        printf '%s\t%s\t%s\n' "$wrapper" "$version_num" "$zipsha" >> /opt/eztools/versions.tsv; \
+      fi; \
       rm -f "${tool}.zip"; \
     done \
  && ln -sf /opt/forensia/bin/evtxecmd /usr/local/bin/EvtxECmd \
@@ -358,6 +370,16 @@ EOF
 RUN sed -i 's/\r$//' /usr/local/bin/evtx_dump \
  && chmod +x /usr/local/bin/evtx_dump
 
+# Manifiesto INMUTABLE de versiones (FORENSIC INVARIANT 4): gen_versions.py resuelve
+# la versión efectiva de CADA tool declarada del catálogo (dpkg / pip / ARG fijado /
+# commit git / versión reportada por las EZ Tools) y ABORTA EL BUILD si alguna no
+# tiene versión determinista y no vacía (RULE 2: sin "unknown", sin placeholder).
+# El exec-agent lo sirve por GET /versions; el backend lo consulta antes de cada
+# tool_run_start. Los ARG de versión del stage (HAYABUSA_VERSION, CHAINSAW_VERSION)
+# están en scope como env de este RUN.
+COPY tool-binaries.json gen_versions.py /opt/forensia/
+RUN python3 /opt/forensia/gen_versions.py --stage windows --out /opt/forensia/versions.json
+
 # exec-agent: el canal api→maletín (§B). Se copia al final del stage para no
 # invalidar las capas caras (hayabusa/chainsaw/pip) del build. El compose lo arranca
 # con `command:`; este CMD es el default para un `docker run` standalone del maletín.
@@ -381,6 +403,12 @@ RUN apt-get update \
       systemd \
       lnav acl attr \
  && rm -rf /var/lib/apt/lists/*
+
+# Manifiesto INMUTABLE de versiones para el stage unix (solo las tools Cross del
+# catálogo — este stage no añade tools de catálogo propias). Mismo contrato que en
+# el stage windows: sin versión determinista → el build ABORTA (RULE 2).
+COPY tool-binaries.json gen_versions.py /opt/forensia/
+RUN python3 /opt/forensia/gen_versions.py --stage unix --out /opt/forensia/versions.json
 
 # exec-agent: el canal api→maletín (§B). Se copia al final del stage para no
 # invalidar las capas caras (hayabusa/chainsaw/pip) del build. El compose lo arranca

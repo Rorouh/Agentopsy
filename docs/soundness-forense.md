@@ -51,25 +51,53 @@ Esquema por entrada:
 llevan `evidence_id` + `baseline_sha256`: el **EvidenceContext** verificado
 (`forensia.evidence_context.EvidenceContext`, inmutable) que la superficie (`ForensicAgent`
 / MCP) construye **desde el `EvidenceHandle`** de `EvidenceManager` y **hila explícitamente**
-hasta `dispatcher.execute(..., evidence_context=…)`. El dispatcher lo registra pero **no lo
-re-deriva** de una ruta, un param ni una lectura oportunista de `baseline.json` (RULE 2). Una
-tool que **lee evidencia** (declara `EVIDENCE_INPUT`) en un run anclado **exige** el contexto:
-sin él, o con un contexto inválido (hash que no es SHA-256), falla fuerte **antes** del runner
-y **antes** de `tool_run_start`. Todos los caminos de cierre —exit 0, exit != 0, excepción del
-runner, fallo de finalize— conservan el mismo `evidence_id` + `baseline_sha256` que el start
-pareado; ningún finish de error pierde el contexto.
+hasta `dispatcher.execute(..., evidence_context=…)`. **TODA ejecución anclada a un caso lo
+exige** — también las tools de solo input derivado (`tsk_mactime`, `plaso_psort`, `jq` sobre
+un `ArtifactRef`): sin contexto no hay `ArtifactRun`, no hay `tool_run_start` y no se cruza
+el runner (RULE 2, sin contexto por defecto). El dispatcher **no lo re-deriva** de una ruta,
+un param ni una lectura oportunista de `baseline.json` — pero **sí lo valida
+autoritativamente** antes de nada: pide el handle a `EvidenceManager`
+(`get(case_id, evidence_id)`) y comprueba que el contexto coincide exactamente (id + baseline
+SHA-256). Un contexto sintácticamente válido pero falsificado (id inexistente, evidencia de
+otro caso, hash divergente) falla fuerte antes del gate de rutas, del `ArtifactRun` y del
+start. El directorio de la evidencia verificada confina además los `EVIDENCE_INPUT`:
+**mismo caso NO es misma evidencia** — una ruta a otra evidencia del caso no puede correr
+bajo la identidad de este contexto. Todos los caminos de cierre —exit 0, exit != 0,
+excepción del runner, fallo de finalize— conservan el mismo `evidence_id` +
+`baseline_sha256` que el start pareado; ningún finish de error pierde el contexto.
 
-**`tool_version` — BLOQUEANTE cross-lane (pendiente).** El esquema reserva `tool_version`,
-pero **hoy no existe una fuente autoritativa reutilizable desde el `api`** sin tocar
-`docker/`: las versiones se fijan al build en el `Dockerfile` del maletín (ARGs
-`VOLATILITY3_VERSION`/`HAYABUSA_VERSION`/`CHAINSAW_VERSION`, apt del PPA GIFT, y
-`/opt/eztools/VERSIONS.txt` para las EZ Tools), pero el **exec-agent no expone ningún canal
-de versión** (`/health` → `{ok, stage}`; `/which` → presencia; `/exec` → salida del argv).
-Inventar una versión (`"unknown"`, `--version` con fallback por-tool, el nombre del binario)
-está prohibido (RULE 2). El cierre requiere un **cambio cross-lane mínimo en el exec-agent**
-(p. ej. un `/versions` que sirva un manifiesto `versions.json` horneado en la imagen, o
-extender `/which` a `{binario: versión}`), fuera del alcance de P0.5-3. Ver
-`docs/operacion/proximos-pasos.md` §B5.
+**Procedencia de artefactos derivados (P0.5-3).** El manifiesto de cada `ArtifactRun`
+persiste `evidence_id` + `evidence_baseline_sha256` + `tool_version` del run que lo produjo
+(`ArtifactStore.start_run` los exige; validados, nunca placeholders). Cuando una tool consume
+un `ArtifactRef` (`{run_id, relpath}`), el dispatcher carga el manifiesto del run productor
+**determinísticamente por `run_id`** (nunca por nombre/ruta ni "la entrada de audit más
+cercana"), re-hashea los bytes y **verifica que la procedencia del productor coincide con el
+contexto del consumidor**: un derivado de la evidencia B jamás se ejecuta bajo un audit
+anclado a la evidencia A (procedencia cruzada → fallo antes del start). Un manifiesto
+anterior a P0.5-3 sin procedencia se rechaza con error accionable (re-ejecutar el productor),
+no se asume compatibilidad. El enlace `derived_inputs` del start registra
+`source_evidence_id` junto al hash re-verificado.
+
+**`tool_version` — fuente autoritativa (P0.5-3).** La versión de cada tool se determina EN
+EL BUILD de la imagen del maletín: `gen_versions.py` (stdlib, corre como último paso de cada
+stage del `Dockerfile`) hornea un manifiesto **inmutable** `/opt/forensia/versions.json` con
+UNA fuente designada por binario — paquete dpkg propietario (tools apt/PPA GIFT),
+`importlib.metadata` (`vol`/volatility3), el ARG fijado del Dockerfile
+(`hayabusa`/`chainsaw`), el commit git exacto del clone (`rip.pl`/RegRipper) y la versión
+auto-reportada + SHA-256 del zip para las EZ Tools (`/opt/eztools/versions.tsv`). La lista de
+binarios declarados vive en `docker/docker/forensic-toolkit/tool-binaries.json` (espejo del
+catálogo; `backend/tests/test_tool_version.py` verifica que no divergen) y **el build FALLA**
+si una tool declarada no tiene versión determinista y no vacía — jamás existe un
+placeholder. El exec-agent lo sirve por el endpoint **cerrado** `GET /versions` (sin
+parámetros, sin paths del caller, sin ejecutar comandos; ausente/corrupto → 500 accionable).
+El dispatcher resuelve la versión del maletín seleccionado **antes** de reservar el
+`ArtifactRun` y de `tool_run_start` (orden: **versión → start → runner → finish**); si no se
+puede resolver (transporte caído, manifiesto ausente, binario sin entrada, o venue api-PATH
+de desarrollo, que no tiene manifiesto de build), la tool **no se ejecuta** — sin `--version`
+por corrida, sin fallback local ni cross-maletín, sin valor inventado (`"unknown"`/
+`"latest"`/nombre del binario están prohibidos y rechazados por cliente y store). El start y
+TODOS los finishes del run llevan la misma versión resuelta, y el manifiesto del run la
+persiste. El LLM nunca ve ni controla esta resolución.
 
 El límite del runner distingue dos resultados que no son intercambiables. Si el
 proceso devuelve un código —cero o distinto de cero— la ejecución terminó y se
@@ -134,7 +162,11 @@ reservar `ArtifactRun`, escribir `tool_run_start` o cruzar el runner:
 - `EVIDENCE_INPUT`: path inyectado desde el handle, existente y confinado a
   `case_dir/evidence` del caso activo.
 - `CASE_INPUT`: auxiliar RO existente y confinado al `case_dir` activo; otro caso,
-  traversal, escape por symlink y directorios sensibles se rechazan.
+  traversal, escape por symlink y directorios sensibles se rechazan. Desde P0.5-3
+  también se rechaza `case_dir/evidence/` entero: un input auxiliar (reglas YARA,
+  `input_path` de jq) no puede leer bytes de evidencia — la evidencia entra SOLO por
+  el `EVIDENCE_INPUT` confinado al contexto verificado o como `ArtifactRef`
+  re-hasheado (mismo caso ≠ misma evidencia, INVARIANT 4).
 - `DERIVED_INPUT`: solo el contrato compartido `ArtifactRef`: `run_id` y `relpath`
   obligatorios, `sha256` y `size` opcionales, sin claves adicionales.
   `ArtifactStore.resolve_output_file` confina y re-hashea siempre. Si los metadatos

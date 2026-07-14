@@ -25,16 +25,11 @@ from pathlib import Path
 
 import pytest
 
+from _custody import context_for, register_evidence, wire_dispatcher_custody
 from forensia.artifacts.store import ArtifactStore
 from forensia.cases.manager import CaseManager
-from forensia.evidence_context import EvidenceContext
 from forensia.toolkit import dispatcher
 from forensia.toolkit.tool import run_argv
-
-# Verified evidence context an anchored, evidence-reading run carries (INVARIANT 4).
-_CTX = EvidenceContext(
-    evidence_id="dddddddd-dddd-4ddd-8ddd-dddddddddddd", baseline_sha256="3" * 64
-)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXEC_AGENT_PY = REPO_ROOT / "docker" / "docker" / "forensic-toolkit" / "exec_agent.py"
@@ -63,17 +58,15 @@ def store(cases) -> ArtifactStore:
 
 
 @pytest.fixture
-def case(cases):
-    created = cases.create(name="op", examiner="alice", os_profile="unix")
-    evidence = cases.root / created.id / "evidence" / "original.raw"
-    evidence.write_bytes(b"disk")
-    return created
+def anchored(cases, tmp_path):
+    case = cases.create(name="op", examiner="alice", os_profile="unix")
+    handle = register_evidence(cases, case.id, tmp_path, payload=b"disk")
+    return {"case": case, "handle": handle, "ctx": context_for(handle)}
 
 
 @pytest.fixture
 def wired_dispatcher(monkeypatch, cases, store):
-    monkeypatch.setattr(dispatcher, "case_manager", cases)
-    monkeypatch.setattr(dispatcher, "artifact_store", store)
+    wire_dispatcher_custody(monkeypatch, dispatcher, cases, store)
     return dispatcher
 
 
@@ -101,8 +94,9 @@ def test_run_argv_binary_stdout_exact_roundtrip(tmp_path) -> None:
 #    the exact bytes, hashed by the artifact store (FORENSIC INVARIANT 4)
 # --------------------------------------------------------------------------- #
 def test_dispatcher_binary_stdout_lands_exact_hashed_artifact(
-    wired_dispatcher, monkeypatch, cases, case, store
+    wired_dispatcher, monkeypatch, cases, anchored, store
 ) -> None:
+    case, handle, ctx = anchored["case"], anchored["handle"], anchored["ctx"]
     # Force the maletín venue and fake the exec-agent: it writes the raw bytes to the
     # stdout_path the dispatcher hands it and returns an empty (text) stdout.
     monkeypatch.setattr(wired_dispatcher, "resolve", lambda _binary: None)
@@ -121,12 +115,12 @@ def test_dispatcher_binary_stdout_lands_exact_hashed_artifact(
     result = wired_dispatcher.execute(
         "tsk_icat",
         {
-            "image_path": str(cases.root / case.id / "evidence" / "original.raw"),
+            "image_path": str(handle.original_path),
             "inode": 5,
         },
         case_id=case.id,
         os_profile="unix",
-        evidence_context=_CTX,
+        evidence_context=ctx,
     )
 
     # Routed to the unix maletín with a stdout.bin target inside the run's out/ dir.
@@ -146,6 +140,9 @@ def test_dispatcher_binary_stdout_lands_exact_hashed_artifact(
     run = store.get_run(case.id, result["run_id"])
     on_disk = cases.root / case.id / "artifacts" / run.run_id / "out" / "stdout.bin"
     assert on_disk.read_bytes() == _BINARY_PAYLOAD
+    # The run manifest carries the evidence provenance (Bloqueante D).
+    assert run.evidence_id == ctx.evidence_id
+    assert run.evidence_baseline_sha256 == ctx.baseline_sha256
 
 
 # --------------------------------------------------------------------------- #

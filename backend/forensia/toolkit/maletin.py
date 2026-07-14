@@ -194,6 +194,81 @@ def run_argv_in_maletin(
     return int(body["exit"]), str(body.get("stdout", "")), str(body.get("stderr", ""))
 
 
+# Version identities the manifest must never contain: they carry no reproducibility
+# information and would silently satisfy the "a version exists" contract (RULE 2).
+_FORBIDDEN_VERSION_VALUES = frozenset({"", "unknown", "latest", "null", "none"})
+
+
+def _is_forbidden_version(version: str) -> bool:
+    """True for placeholder identities — whole-string OR embedded as a token
+    ("hayabusa latest" is as unreproducible as "latest")."""
+    lowered = version.strip().lower()
+    if lowered in _FORBIDDEN_VERSION_VALUES:
+        return True
+    return any(token in _FORBIDDEN_VERSION_VALUES for token in lowered.split())
+
+
+def tool_versions(service: str) -> dict[str, str]:
+    """The maletín's IMMUTABLE build-time version manifest, via ``GET /versions``.
+
+    The manifest (``versions.json``) is generated during the image build — the build
+    FAILS if any declared tool lacks a deterministic, non-empty version — and served by
+    the exec-agent as a closed, allowlisted map ``{binary: version}``. Raises
+    ``MaletinExecError`` (never a placeholder) when the URL is not configured, the
+    transport fails, or the manifest is missing/corrupt (RULE 2: no fallback).
+    """
+    base_url = service_url(service)
+    if not base_url:
+        raise MaletinExecError(_no_url_reason(service))
+    try:
+        status, body = _request("GET", f"{base_url}/versions")
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        raise MaletinExecError(
+            f"no se pudo consultar el manifiesto de versiones del exec-agent "
+            f"{base_url} ({type(exc).__name__}): {exc}"
+        ) from exc
+    versions = body.get("versions") if isinstance(body, dict) else None
+    if status != 200 or not isinstance(versions, dict):
+        detail = body.get("error") if isinstance(body, dict) else None
+        raise MaletinExecError(
+            f"el exec-agent {base_url} no sirvió un manifiesto de versiones válido "
+            f"(estado {status})" + (f": {detail}" if detail else "")
+            + " — reconstruye el maletín (docker compose build) para hornear "
+            "versions.json (RULE 1)."
+        )
+    for binary, version in versions.items():
+        if (
+            not isinstance(binary, str)
+            or not isinstance(version, str)
+            or _is_forbidden_version(version)
+        ):
+            raise MaletinExecError(
+                f"el manifiesto de versiones de {service} contiene una entrada "
+                f"inválida ({binary!r}: {version!r}) — manifiesto corrupto; "
+                "reconstruye el maletín."
+            )
+    return {binary: version.strip() for binary, version in versions.items()}
+
+
+def tool_version(service: str, binary: str) -> str:
+    """Authoritative version of ``binary`` in ``service``'s build manifest.
+
+    Fails loud when the manifest does not name the binary — a tool without a version
+    identity must not execute anchored (FORENSIC INVARIANT 4); there is no probe-and-
+    fallback and no cross-maletín lookup (RULE 2).
+    """
+    versions = tool_versions(service)
+    version = versions.get(binary)
+    if version is None:
+        raise MaletinExecError(
+            f"el manifiesto de versiones de {service} no contiene el binario "
+            f"{binary!r} — la tool no tiene identidad de versión en ese maletín; "
+            "alinea docker/docker/forensic-toolkit/tool-binaries.json con el catálogo "
+            "y reconstruye la imagen (RULE 2: sin versión no hay ejecución anclada)."
+        )
+    return version
+
+
 def _no_url_reason(service: str) -> str:
     return (
         f"el servicio api no tiene configurada la URL del exec-agent del maletín "
@@ -259,6 +334,7 @@ def _tool_status(
     tool: Tool,
     services: dict[str, dict[str, Any]],
     present: dict[str, set[str] | None],
+    versions: dict[str, dict[str, str] | None],
 ) -> dict[str, Any]:
     """Per-tool availability from pre-probed service + binary-presence maps.
 
@@ -266,6 +342,10 @@ def _tool_status(
     tool's OWN declared maletines are ever consulted; a Cross tool is `available` when
     its binary is confirmed in AT LEAST ONE of the maletines it lives in (genuine
     per-profile routing, not a fallback).
+
+    ``version`` reports the tool's build-manifest version identity (or ``None`` with
+    the reason in ``version_reason``): an available binary WITHOUT a version identity
+    cannot run anchored (INVARIANT 4), and this snapshot says so explicitly.
     """
     toolkits = list(tool.toolkits)
 
@@ -275,6 +355,11 @@ def _tool_status(
             "toolkits": toolkits,
             "via": "env-override-or-api-path",
             "reason": None,
+            "version": None,
+            "version_reason": (
+                "vía api-PATH/env-override: sin manifiesto de versiones de build — "
+                "las ejecuciones ancladas a caso exigen el maletín (INVARIANT 4)"
+            ),
             "detail": {},
         }
 
@@ -284,12 +369,16 @@ def _tool_status(
             "toolkits": [],
             "via": None,
             "reason": f"'{tool.id}' no declara maletín (toolkits vacío)",
+            "version": None,
+            "version_reason": None,
             "detail": {},
         }
 
     detail: dict[str, Any] = {}
     reasons: list[str] = []
     any_present = False
+    seen_versions: set[str] = set()
+    version_reasons: list[str] = []
     for service in toolkits:
         svc = services.get(service)
         if svc is None or svc["running"] is None:
@@ -308,21 +397,50 @@ def _tool_status(
             reasons.append(reason)
             continue
         is_present = tool.binary in found
+        service_versions = versions.get(service)
+        service_version = (
+            service_versions.get(tool.binary) if service_versions is not None else None
+        )
         detail[service] = {
             "running": True,
             "binary_present": is_present,
             "reason": None if is_present else f"binario '{tool.binary}' ausente en {service}",
+            "version": service_version,
         }
         if is_present:
             any_present = True
+            if service_version is not None:
+                seen_versions.add(service_version)
+            elif service_versions is None:
+                version_reasons.append(
+                    f"{service}: manifiesto de versiones no disponible (reconstruye el maletín)"
+                )
+            else:
+                version_reasons.append(
+                    f"{service}: '{tool.binary}' sin identidad de versión en el manifiesto"
+                )
         else:
             reasons.append(f"{service}: binario '{tool.binary}' ausente")
+
+    version: str | None = None
+    version_reason: str | None = None
+    if any_present:
+        if len(seen_versions) == 1 and not version_reasons:
+            version = next(iter(seen_versions))
+        elif len(seen_versions) > 1:
+            version_reason = (
+                f"versiones divergentes entre maletines: {sorted(seen_versions)}"
+            )
+        else:
+            version_reason = "; ".join(version_reasons) or None
 
     return {
         "available": any_present,
         "toolkits": toolkits,
         "via": "maletin" if any_present else None,
         "reason": None if any_present else "; ".join(reasons),
+        "version": version,
+        "version_reason": version_reason,
         "detail": detail,
     }
 
@@ -342,10 +460,18 @@ def snapshot(catalog: Iterable[Tool]) -> dict[str, Any]:
     services = {svc: probe_service(svc, base_url=urls[svc]) for svc in MALETINES}
 
     present: dict[str, set[str] | None] = {}
+    versions: dict[str, dict[str, str] | None] = {}
     for svc, info in services.items():
         if info["running"]:
             wanted = sorted({t.binary for t in tools if svc in t.toolkits})
             present[svc] = probe_binaries(svc, wanted, base_url=urls[svc])
+            # Version identities from the maletín's baked build manifest. A maletín
+            # without a (valid) manifest reports None — each affected tool then carries
+            # an explicit `version_reason` instead of a made-up value (RULE 2).
+            try:
+                versions[svc] = tool_versions(svc)
+            except MaletinExecError:
+                versions[svc] = None
 
     return {
         # True when at least one maletín exec-agent URL is configured — i.e. the api has
@@ -353,5 +479,5 @@ def snapshot(catalog: Iterable[Tool]) -> dict[str, Any]:
         # `services`.
         "client": any_url,
         "services": services,
-        "tools": {t.id: _tool_status(t, services, present) for t in tools},
+        "tools": {t.id: _tool_status(t, services, present, versions) for t in tools},
     }

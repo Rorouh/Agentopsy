@@ -27,6 +27,11 @@ from typing import Literal
 
 from forensia.cases.manager import CaseManager, case_manager
 
+# Baseline SHA-256 of the evidence a run acted on — 64 hex chars, always present in a
+# new manifest (evidence provenance, FORENSIC INVARIANT 4). Mirrors the validation in
+# ``forensia.evidence_context``.
+_SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+
 
 class ArtifactIntegrityError(RuntimeError):
     """A derived artifact's on-disk bytes no longer match the SHA-256 its producing run
@@ -95,6 +100,16 @@ class ArtifactRun:
     stderr_sha256: str | None = None
     error_type: str | None = None
     error_message: str | None = None
+    # Evidence PROVENANCE of the run (which evidence, at which baseline hash, the run
+    # acted on — FORENSIC INVARIANT 4). Always written by ``start_run`` for new runs;
+    # ``None`` only when reading a legacy manifest that predates provenance — consumers
+    # of derived artifacts must REJECT such runs (no silent compatibility, RULE 2).
+    evidence_id: str | None = None
+    evidence_baseline_sha256: str | None = None
+    # Authoritative version of the tool that executed (from the maletín's immutable
+    # build manifest, resolved by the dispatcher BEFORE the start). ``None`` only on
+    # legacy manifests.
+    tool_version: str | None = None
 
 
 class ArtifactStore:
@@ -148,6 +163,9 @@ class ArtifactStore:
             stderr_sha256=manifest.get("stderr_sha256"),
             error_type=manifest.get("error_type"),
             error_message=manifest.get("error_message"),
+            evidence_id=manifest.get("evidence_id"),
+            evidence_baseline_sha256=manifest.get("evidence_baseline_sha256"),
+            tool_version=manifest.get("tool_version"),
         )
 
     def _open_manifest(self, case_id: str, run_id: str) -> tuple[Path, dict]:
@@ -207,18 +225,54 @@ class ArtifactStore:
     # ---------- public API ----------
 
     def start_run(
-        self, case_id: str, tool_id: str, argv: list[str]
+        self,
+        case_id: str,
+        tool_id: str,
+        argv: list[str],
+        *,
+        evidence_id: str,
+        evidence_baseline_sha256: str,
+        tool_version: str,
     ) -> tuple[str, Path]:
         """Open a new run and return ``(run_id, out_dir)``.
 
         Creates ``artifacts/<run-id>/out/`` and writes a half-baked
         ``manifest.json`` marking ``status='running'``. The returned ``out_dir``
         is the path the dispatcher must hand to the wrapper as ``output_dir``.
+
+        ``evidence_id`` + ``evidence_baseline_sha256`` are the run's evidence
+        PROVENANCE (the verified context the dispatcher validated against
+        ``EvidenceManager``). They are REQUIRED — a manifest without provenance
+        cannot anchor its outputs to an evidence, and downstream consumers of its
+        derived artifacts would have nothing to verify against (INVARIANT 4).
         """
         if not isinstance(tool_id, str) or not tool_id:
             raise ValueError("tool_id must be a non-empty string")
         if not isinstance(argv, list) or not all(isinstance(a, str) for a in argv):
             raise ValueError("argv must be a list[str] (literal executed argv)")
+        if not isinstance(evidence_id, str) or not evidence_id.strip():
+            raise ValueError("evidence_id must be a non-empty string (run provenance)")
+        if not isinstance(evidence_baseline_sha256, str) or not _SHA256_RE.match(
+            evidence_baseline_sha256
+        ):
+            raise ValueError(
+                "evidence_baseline_sha256 must be a 64-hex SHA-256 digest "
+                f"(got {evidence_baseline_sha256!r})"
+            )
+        forbidden = ("unknown", "latest", "null", "none")
+        lowered = tool_version.strip().lower() if isinstance(tool_version, str) else ""
+        if (
+            not isinstance(tool_version, str)
+            or not lowered
+            or lowered in forbidden
+            # An embedded placeholder ("hayabusa latest") is as unreproducible as a
+            # bare one — reject it at the token level too (RULE 2).
+            or any(token in forbidden for token in lowered.split())
+        ):
+            raise ValueError(
+                "tool_version must be a non-empty, non-placeholder version string "
+                f"(got {tool_version!r})"
+            )
 
         run_id = str(uuid.uuid4())
         run_dir = self._runs_dir(case_id) / run_id
@@ -239,6 +293,9 @@ class ArtifactStore:
             "stderr_sha256": None,
             "error_type": None,
             "error_message": None,
+            "evidence_id": evidence_id,
+            "evidence_baseline_sha256": evidence_baseline_sha256,
+            "tool_version": tool_version.strip(),
         }
         _atomic_write_json(run_dir / "manifest.json", manifest)
         return run_id, out_dir

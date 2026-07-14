@@ -6,6 +6,12 @@ mínimo en la red interna del compose. El servicio `api` lo llama para consultar
 ejecutar herramientas sin necesidad del socket de Docker del host:
 
   - GET  /health                          -> ¿el maletín está vivo? (+ su stage)
+  - GET  /versions                        -> manifiesto INMUTABLE de versiones horneado
+                                             en el build de la imagen (versions.json):
+                                             {"stage": ..., "versions": {binario: versión}}.
+                                             Cerrado: no acepta parámetros, no ejecuta
+                                             nada, solo sirve identidades allowlisted;
+                                             si falta/corrupto -> 500 accionable (RULE 2).
   - POST /which  {"binaries": [...]}       -> subconjunto de binarios presentes en PATH
   - POST /exec   {"argv": [...],           -> ejecuta argv shell-free y devuelve
                   "timeout": N|null,          {exit, stdout, stderr, timed_out}
@@ -75,6 +81,13 @@ _MAX_TIMEOUT_S = 1800
 _HASH_CHUNK = 1024 * 1024  # 1 MiB
 # Techo de tiempo para montar/desmontar el `.E01` con ewfmount (no debe colgar el run).
 _EWF_MOUNT_TIMEOUT_S = 120
+# Manifiesto INMUTABLE de versiones de tools, generado durante el build de la imagen
+# (gen_versions.py — el build FALLA si una tool declarada no tiene versión determinista
+# y no vacía). El exec-agent solo lo SIRVE (`GET /versions`); nunca ejecuta `--version`
+# por corrida ni inventa un valor (RULE 2). Override solo para tests.
+_VERSIONS_MANIFEST = os.environ.get(
+    "FORENSIA_VERSIONS_MANIFEST", "/opt/forensia/versions.json"
+)
 
 
 class _EwfMountError(RuntimeError):
@@ -177,9 +190,52 @@ class Handler(BaseHTTPRequestHandler):
 
     # -- routes -----------------------------------------------------------------
     def do_GET(self) -> None:  # noqa: N802 (http.server contract)
-        if self.path.rstrip("/") == "/health":
+        path = self.path.rstrip("/")
+        if path == "/health":
             return self._send(200, {"ok": True, "stage": _STAGE})
+        if path == "/versions":
+            if not self._authed():
+                return self._send(401, {"error": "invalid or missing exec-agent token"})
+            return self._versions()
         return self._send(404, {"error": "not found"})
+
+    def _versions(self) -> None:
+        """Sirve el manifiesto de versiones horneado en el build. Endpoint CERRADO:
+        sin parámetros, sin paths del caller, sin ejecutar comandos — solo lee el
+        fichero inmutable de la imagen. Falta/corrupto → 500 accionable, jamás un
+        placeholder (RULE 2)."""
+        try:
+            with open(_VERSIONS_MANIFEST, encoding="utf-8") as handle:
+                manifest = json.load(handle)
+        except FileNotFoundError:
+            return self._send(500, {
+                "error": (
+                    f"manifiesto de versiones ausente ({_VERSIONS_MANIFEST}) — la imagen "
+                    "del maletín es anterior al manifiesto de build; reconstruye con "
+                    "docker compose build (gen_versions.py lo hornea y el build falla "
+                    "si una tool declarada no tiene versión)."
+                )
+            })
+        except (OSError, ValueError) as exc:
+            return self._send(500, {
+                "error": f"manifiesto de versiones ilegible ({_VERSIONS_MANIFEST}): {exc}"
+            })
+        versions = manifest.get("versions") if isinstance(manifest, dict) else None
+        if not isinstance(versions, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) and v.strip()
+            for k, v in versions.items()
+        ):
+            return self._send(500, {
+                "error": (
+                    f"manifiesto de versiones corrupto ({_VERSIONS_MANIFEST}): se "
+                    "esperaba {'versions': {binario: versión no vacía}} — reconstruye "
+                    "el maletín."
+                )
+            })
+        return self._send(200, {
+            "stage": manifest.get("stage", _STAGE),
+            "versions": versions,
+        })
 
     def do_POST(self) -> None:  # noqa: N802
         if not self._authed():

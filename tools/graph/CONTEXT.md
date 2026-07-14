@@ -85,13 +85,22 @@ central `PathParameter`); `forensia.path_policy` (roles `EVIDENCE_INPUT`, `CASE_
 `DERIVED_INPUT`, `RUN_OUTPUT`, `BUNDLED_RULESET`, `RUNTIME_DEVICE`, canonicalización y
 confinamiento same-case); `forensia.artifact_ref` (contrato único
 `{run_id, relpath, sha256?, size?}`, sin extras; el store re-hashea y valida metadatos);
-`dispatcher.execute()` (`tool + params (+ evidence_context verificado) → gate de rutas
-antes del run → exige contexto si la tool lee evidencia → ArtifactRun → argv fijado →
-tool_run_start durable (con evidence_id + baseline_sha256) → runner → intento único de
-finish o error accionable, conservando el contexto en todo cierre`); `maletin`
-(allowlist ∩ catalog, `select_maletin` por `os_profile` sin fallback, sonda de
-disponibilidad para `capabilities`); `resolver` (binario / runtime OCI);
-`run_in_container`; `Tool.run_argv()` shell-free.
+`dispatcher.execute()` (`tool + params + evidence_context OBLIGATORIO en todo run
+anclado → validación autoritativa contra EvidenceManager (id + baseline; falsificado /
+otro caso → rechazo) → gate de rutas (EVIDENCE_INPUT confinado al dir de ESA evidencia;
+procedencia de ArtifactRef verificada contra el manifiesto del run productor — mismo
+caso ≠ misma evidencia) → venue + tool_version autoritativa del manifiesto de build del
+maletín ANTES del run (irresoluble → no se ejecuta, sin fallback) → ArtifactRun (persiste
+evidence_id + baseline + tool_version) → argv fijado → tool_run_start durable (contexto +
+versión) → runner → intento único de finish o error accionable, conservando contexto y
+versión en todo cierre`); `maletin` (allowlist ∩ catalog, `select_maletin` por
+`os_profile` sin fallback, sonda de disponibilidad para `capabilities`,
+`tool_versions()`/`tool_version()` sobre el `GET /versions` del exec-agent — rechaza
+`unknown`/`latest`/vacío); `resolver` (binario / runtime OCI); `run_in_container`;
+`Tool.run_argv()` shell-free. Manifiesto de build:
+`docker/docker/forensic-toolkit/gen_versions.py` + `tool-binaries.json` (espejo del
+catálogo, gate de consistencia en `tests/test_tool_version.py`; el build del maletín
+falla si una tool declarada no tiene versión determinista).
 
 **Wrappers de tool** (todos con la misma forma `build_argv()` + `parse()` — el
 catálogo es uniforme):
