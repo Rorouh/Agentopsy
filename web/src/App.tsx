@@ -14,14 +14,7 @@ import { MitreAttackPage } from "./pages/MitreAttackPage";
 import { SystemStatusPage } from "./pages/SystemStatusPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
-import {
-  mockActiveCase,
-  mockActiveEvidence,
-  mockEvidenceFiles,
-  mockTimelineEvents,
-  mockFindings,
-  guideSteps,
-} from "./mocks/frontendPreviewData";
+import { guideSteps } from "./mocks/frontendPreviewData";
 
 export function App() {
   const [caps, setCaps] = useState<Capabilities | null>(null);
@@ -57,14 +50,7 @@ export function App() {
         {activeView === "guide" && <GuidePage steps={guideSteps} onNavigate={setActiveView} />}
         {activeView === "repository" && <RepositoryPage onNavigate={setActiveView} />}
         {activeView === "document-viewer" && <DocumentsPage />}
-        {activeView === "timeline" && (
-          <TimelinePage
-            activeCase={mockActiveCase}
-            activeEvidence={mockActiveEvidence}
-            events={mockTimelineEvents}
-            onNavigate={setActiveView}
-          />
-        )}
+        {activeView === "timeline" && <TimelinePage />}
         {activeView === "investigation" && (
           <InvestigationPage caps={caps} onNavigate={setActiveView} onCapsRefresh={refreshCaps} />
         )}
