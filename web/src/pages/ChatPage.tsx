@@ -196,6 +196,16 @@ function AgentActivity({ activity, streaming }: { activity: StreamEvent[]; strea
 // se introducen cuando el flujo lo pida explícitamente.
 const CHAT_SESSION_ID = "main";
 
+// Config key que persiste el modelo elegido POR proveedor (espejo de
+// backend/forensia/executors/__init__.py MODEL_CONFIG_KEY). Así FORENSIA recuerda
+// el último modelo de cada ejecutor entre recargas.
+const MODEL_CONFIG_KEY: Record<ExecutorId, string> = {
+  "claude-code": "CLAUDE_CODE_MODEL",
+  codex: "CODEX_MODEL",
+  gemini: "GEMINI_MODEL",
+  ollama: "OLLAMA_MODEL",
+};
+
 // Recordatorio UX de consentimientos ya registrados (la VERDAD está en el
 // audit.jsonl del caso, donde /api/agent/cloud-consent lo apendó).
 const consentStorageKey = (caseId: string, executor: string) =>
@@ -247,7 +257,8 @@ export function ChatPage({
   const [openMenu, setOpenMenu] = useState<null | "provider" | "model">(null);
   // Ejecutor cloud no disponible cuyo modal de login web está abierto.
   const [loginExecutor, setLoginExecutor] = useState<ExecutorId | null>(null);
-  const [modelConfigured, setModelConfigured] = useState<string>("");
+  // Modelo elegido por proveedor (persistido en config; recuerda el último).
+  const [modelByProvider, setModelByProvider] = useState<Partial<Record<ExecutorId, string>>>({});
   const [modelDraft, setModelDraft] = useState<string>("");
   const [modelSaving, setModelSaving] = useState(false);
   // Modelos que ofrece el ejecutor elegido (Ollama: lista real; cloud: nota).
@@ -266,8 +277,13 @@ export function ChatPage({
         if (def?.set && def.preview) {
           setExecutor((prev) => prev || (def.preview as ExecutorId));
         }
-        const mdl = snap.keys.OLLAMA_MODEL;
-        if (mdl?.set && mdl.preview) setModelConfigured(mdl.preview);
+        // Recupera el último modelo elegido de cada proveedor.
+        const restored: Partial<Record<ExecutorId, string>> = {};
+        (Object.keys(MODEL_CONFIG_KEY) as ExecutorId[]).forEach((id) => {
+          const mdl = snap.keys[MODEL_CONFIG_KEY[id]];
+          if (mdl?.set && mdl.preview) restored[id] = mdl.preview;
+        });
+        setModelByProvider(restored);
       })
       .catch(() => {
         /* sin config aún — el operador elige a mano */
@@ -311,19 +327,39 @@ export function ChatPage({
     return () => document.removeEventListener("mousedown", onDown);
   }, [openMenu]);
 
-  const saveOllamaModel = async (value: string) => {
+  // Persist the operator's model choice for the CURRENT provider. An empty value
+  // clears it (cloud → CLI default; Ollama → package model) — RULE 2: FORENSIA
+  // never invents one. The backend accepts "" as an unset for the model keys.
+  const saveModel = async (value: string) => {
+    if (!executor) return;
     const v = value.trim();
-    if (!v) return;
+    const key = MODEL_CONFIG_KEY[executor];
     setModelSaving(true);
     try {
-      await api.config.set("OLLAMA_MODEL", v);
-      setModelConfigured(v);
+      await api.config.set(key, v);
+      setModelByProvider((prev) => {
+        const next = { ...prev };
+        if (v) next[executor] = v;
+        else delete next[executor];
+        return next;
+      });
       setOpenMenu(null);
     } catch {
-      /* el backend degrada; se deja el menú abierto para reintentar */
+      /* el backend degrada (id inválido, etc.); se deja el menú abierto */
     } finally {
       setModelSaving(false);
     }
+  };
+
+  // Al elegir proveedor lo recordamos como DEFAULT_EXECUTOR (agencia del operador
+  // — no un default inventado; RULE 2). Best-effort: si falla, la selección de la
+  // sesión sigue viva aunque no se persista.
+  const selectExecutor = (id: ExecutorId) => {
+    setExecutor(id);
+    setOpenMenu(null);
+    api.config.set("DEFAULT_EXECUTOR", id).catch(() => {
+      /* persistencia best-effort */
+    });
   };
 
   // Source of truth for the agent selection: the CASE's os_profile, not the
@@ -587,14 +623,14 @@ export function ChatPage({
     : undefined;
 
   const providerLabel = executor ? executorStatus?.name ?? executor : "Proveedor";
+  // El modelo recomendado del paquete solo aplica a Ollama (modelo local).
   const recommendedModel = activeAgent?.model.name ?? "";
-  const effectiveModel = modelConfigured || recommendedModel;
+  const configuredModel = executor ? modelByProvider[executor] ?? "" : "";
+  const effectiveModel = configuredModel || (executor === "ollama" ? recommendedModel : "");
   const modelEditable = providerModels?.editable ?? false;
   const modelLabel = !executor
     ? "Modelo"
-    : !modelEditable
-      ? executorStatus?.name ?? "CLI"
-      : effectiveModel || "Modelo";
+    : effectiveModel || (executor === "ollama" ? "Modelo" : "por defecto");
 
   const composerFooter = (
     <div className="composer-footer">
@@ -643,10 +679,7 @@ export function ChatPage({
                     key={id}
                     type="button"
                     className={`composer-popover-item${id === executor ? " active" : ""}`}
-                    onClick={() => {
-                      setExecutor(id);
-                      setOpenMenu(null);
-                    }}
+                    onClick={() => selectExecutor(id)}
                   >
                     <span>
                       {status.name}
@@ -714,10 +747,29 @@ export function ChatPage({
               )}
               {!modelsLoading && modelEditable && (
                 <>
-                  {(providerModels?.models ?? []).length === 0 && (
-                    <div className="composer-popover-note">
-                      {providerModels?.note ?? "Sin modelos instalados en Ollama."}
-                    </div>
+                  {/* Nota del backend: para Ollama solo si no hay modelos; para
+                      los CLIs cloud explica que la lista son atajos + texto libre. */}
+                  {providerModels?.note && (
+                    <div className="composer-popover-note">{providerModels.note}</div>
+                  )}
+                  {executor !== "ollama" &&
+                    (providerModels?.models ?? []).length === 0 &&
+                    !providerModels?.note && (
+                      <div className="composer-popover-note">
+                        Escribe el id del modelo abajo.
+                      </div>
+                    )}
+                  {/* Cloud: volver al modelo por defecto del CLI (limpia la clave). */}
+                  {executor !== "ollama" && (
+                    <button
+                      type="button"
+                      className={`composer-popover-item${!configuredModel ? " active" : ""}`}
+                      disabled={modelSaving}
+                      onClick={() => saveModel("")}
+                    >
+                      <span>Por defecto del CLI</span>
+                      {!configuredModel && <span aria-hidden>✓</span>}
+                    </button>
                   )}
                   {(providerModels?.models ?? []).map((m) => (
                     <button
@@ -725,7 +777,7 @@ export function ChatPage({
                       type="button"
                       className={`composer-popover-item${m === effectiveModel ? " active" : ""}`}
                       disabled={modelSaving}
-                      onClick={() => saveOllamaModel(m)}
+                      onClick={() => saveModel(m)}
                     >
                       <span>{m}</span>
                       {m === recommendedModel && (
@@ -733,28 +785,34 @@ export function ChatPage({
                       )}
                     </button>
                   ))}
-                  <div className="composer-popover-input">
-                    <input
-                      value={modelDraft}
-                      onChange={(e) => setModelDraft(e.target.value)}
-                      placeholder="otro modelo (p. ej. qwen2.5:7b-instruct)"
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          saveOllamaModel(modelDraft);
+                  {(providerModels?.allow_custom ?? true) && (
+                    <div className="composer-popover-input">
+                      <input
+                        value={modelDraft}
+                        onChange={(e) => setModelDraft(e.target.value)}
+                        placeholder={
+                          executor === "ollama"
+                            ? "otro modelo (p. ej. qwen2.5:7b-instruct)"
+                            : "id de modelo (p. ej. opus, gpt-5.5)"
                         }
-                      }}
-                    />
-                    <Button
-                      variant="chip"
-                      disabled={modelSaving || !modelDraft.trim()}
-                      onClick={() => saveOllamaModel(modelDraft)}
-                    >
-                      {modelSaving ? "…" : "OK"}
-                    </Button>
-                  </div>
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            saveModel(modelDraft);
+                          }
+                        }}
+                      />
+                      <Button
+                        variant="chip"
+                        disabled={modelSaving || !modelDraft.trim()}
+                        onClick={() => saveModel(modelDraft)}
+                      >
+                        {modelSaving ? "…" : "OK"}
+                      </Button>
+                    </div>
+                  )}
                   <div className="composer-popover-note">
-                    Se guarda como <code>OLLAMA_MODEL</code>.
+                    Se guarda como <code>{executor ? MODEL_CONFIG_KEY[executor] : ""}</code>.
                   </div>
                 </>
               )}

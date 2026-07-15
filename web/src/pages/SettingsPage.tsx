@@ -35,19 +35,31 @@ type EditableKey =
   | "DEFAULT_EXECUTOR"
   | "OLLAMA_HOST"
   | "OLLAMA_MODEL"
+  | "CLAUDE_CODE_MODEL"
+  | "CODEX_MODEL"
+  | "GEMINI_MODEL"
   | "FORENSIA_EXECUTOR_TIMEOUT";
 
 const KEY_LABELS: Record<Exclude<EditableKey, "DEFAULT_EXECUTOR">, string> = {
   OLLAMA_HOST: "Ollama host",
   OLLAMA_MODEL: "Modelo de Ollama",
+  CLAUDE_CODE_MODEL: "Modelo de Claude Code",
+  CODEX_MODEL: "Modelo de Codex CLI",
+  GEMINI_MODEL: "Modelo de Gemini CLI",
   FORENSIA_EXECUTOR_TIMEOUT: "Timeout de ejecutor (s)",
 };
+
+const CLOUD_MODEL_HINT =
+  "Id que se pasa al CLI como --model (p. ej. opus, gpt-5.5). FORENSIA no puede enumerar el catálogo sin API key (SECURITY 7); déjalo vacío para usar el modelo por defecto del CLI. También se elige desde el chat.";
 
 const KEY_HINTS: Record<Exclude<EditableKey, "DEFAULT_EXECUTOR">, string> = {
   OLLAMA_HOST:
     "URL http(s) del servicio Ollama. En el compose ya llega por entorno (http://ollama:11434); esta clave cubre ejecuciones standalone.",
   OLLAMA_MODEL:
     "Tag del modelo local, p. ej. llama3.1:8b. Si no lo fijas, el ejecutor ollama usa el modelo que recomienda el paquete del agente.",
+  CLAUDE_CODE_MODEL: CLOUD_MODEL_HINT,
+  CODEX_MODEL: CLOUD_MODEL_HINT,
+  GEMINI_MODEL: CLOUD_MODEL_HINT,
   FORENSIA_EXECUTOR_TIMEOUT:
     "Segundos que una petición al ejecutor puede tardar antes de abortarse (y auditarse) como timeout. Sin fijar: 120 s. Súbelo si tu modelo local responde lento.",
 };
@@ -62,6 +74,9 @@ export function SettingsPage({ caps, version, onNavigate, onCapsRefresh }: Setti
     DEFAULT_EXECUTOR: "",
     OLLAMA_HOST: "",
     OLLAMA_MODEL: "",
+    CLAUDE_CODE_MODEL: "",
+    CODEX_MODEL: "",
+    GEMINI_MODEL: "",
     FORENSIA_EXECUTOR_TIMEOUT: "",
   });
   const [savingKey, setSavingKey] = useState<EditableKey | null>(null);

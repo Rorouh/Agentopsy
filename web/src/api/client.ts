@@ -245,8 +245,10 @@ export const api = {
     executors: () => request<{ executors: ExecutorId[] }>("/api/config/executors"),
   },
 
-  // Modelos que ofrece el selector del composer para un ejecutor (solo `ollama`
-  // devuelve lista editable; los CLIs cloud gestionan su modelo — RULE 2).
+  // Modelos que ofrece el selector del composer para un ejecutor. Ollama devuelve
+  // los instalados; los CLIs cloud, atajos + texto libre (allow_custom) que se
+  // pasan como --model — FORENSIA no puede enumerar su catálogo sin API key
+  // (SECURITY 7). El modelo elegido se persiste por proveedor (MODEL_CONFIG_KEY).
   executorModels: (id: ExecutorId) =>
     request<ExecutorModels>(`/api/executors/${id}/models`),
 
