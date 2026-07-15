@@ -11,6 +11,7 @@ import type {
   StreamEvent,
 } from "../api/types";
 import { Button } from "../ui/Button";
+import { ExecutorLoginModal } from "../components/ExecutorLoginModal";
 
 function renderBoldText(text: string) {
   // Simple regex to parse **bold** and `code`
@@ -219,9 +220,17 @@ interface ChatPageProps {
   // Called whenever a query() finishes (success or error) so the surrounding
   // page (Investigation) can refresh side-channel state like findings.
   onTurnComplete?: () => void;
+  // Refresca capabilities en App tras conectar un ejecutor CLI desde el selector.
+  onCapsRefresh?: () => Promise<void> | void;
 }
 
-export function ChatPage({ caps, activeCase, activeEvidence, onTurnComplete }: ChatPageProps) {
+export function ChatPage({
+  caps,
+  activeCase,
+  activeEvidence,
+  onTurnComplete,
+  onCapsRefresh,
+}: ChatPageProps) {
   const [msgs, setMsgs] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -236,6 +245,8 @@ export function ChatPage({ caps, activeCase, activeEvidence, onTurnComplete }: C
 
   // Composer option menus (proveedor / modelo) y el modelo elegido para Ollama.
   const [openMenu, setOpenMenu] = useState<null | "provider" | "model">(null);
+  // Ejecutor cloud no disponible cuyo modal de login web está abierto.
+  const [loginExecutor, setLoginExecutor] = useState<ExecutorId | null>(null);
   const [modelConfigured, setModelConfigured] = useState<string>("");
   const [modelDraft, setModelDraft] = useState<string>("");
   const [modelSaving, setModelSaving] = useState(false);
@@ -626,25 +637,50 @@ export function ChatPage({ caps, activeCase, activeEvidence, onTurnComplete }: C
               {executorEntries.length === 0 && (
                 <div className="composer-popover-note">consultando capacidades…</div>
               )}
-              {executorEntries.map(([id, status]) => (
-                <button
-                  key={id}
-                  type="button"
-                  className={`composer-popover-item${id === executor ? " active" : ""}`}
-                  disabled={!status.available}
-                  title={status.available ? undefined : status.reason ?? "No disponible"}
-                  onClick={() => {
-                    setExecutor(id);
-                    setOpenMenu(null);
-                  }}
-                >
-                  <span>
-                    {status.name}
-                    {status.local ? " ⌂" : ""}
-                  </span>
-                  {id === executor && <span aria-hidden>✓</span>}
-                </button>
-              ))}
+              {executorEntries.map(([id, status]) =>
+                status.available ? (
+                  <button
+                    key={id}
+                    type="button"
+                    className={`composer-popover-item${id === executor ? " active" : ""}`}
+                    onClick={() => {
+                      setExecutor(id);
+                      setOpenMenu(null);
+                    }}
+                  >
+                    <span>
+                      {status.name}
+                      {status.local ? " ⌂" : ""}
+                    </span>
+                    {id === executor && <span aria-hidden>✓</span>}
+                  </button>
+                ) : (
+                  // No disponible. Los CLI cloud (no locales) ofrecen conectar
+                  // desde aquí (login web); Ollama (local) solo muestra la razón.
+                  <div
+                    key={id}
+                    className="composer-popover-item disabled"
+                    title={status.reason ?? "No disponible"}
+                  >
+                    <span>
+                      {status.name}
+                      {status.local ? " ⌂" : ""} — no disponible
+                    </span>
+                    {!status.local && (
+                      <button
+                        type="button"
+                        className="chip"
+                        onClick={() => {
+                          setLoginExecutor(id);
+                          setOpenMenu(null);
+                        }}
+                      >
+                        Conectar
+                      </button>
+                    )}
+                  </div>
+                ),
+              )}
             </div>
           )}
         </div>
@@ -847,6 +883,20 @@ export function ChatPage({ caps, activeCase, activeEvidence, onTurnComplete }: C
             </div>
           </div>
         </div>
+      )}
+
+      {loginExecutor && (
+        <ExecutorLoginModal
+          executorId={loginExecutor}
+          executorName={caps?.executors[loginExecutor]?.name ?? loginExecutor}
+          open={loginExecutor !== null}
+          onClose={() => setLoginExecutor(null)}
+          onConnected={async () => {
+            // Refresca capabilities y preselecciona el ejecutor recién conectado.
+            if (onCapsRefresh) await onCapsRefresh();
+            setExecutor(loginExecutor);
+          }}
+        />
       )}
     </div>
   );

@@ -6,6 +6,47 @@ No reemplaza ni contradice `arquitectura.md` ni `modelo-amenazas.md`; los comple
 
 ---
 
+## Entrada 2026-07-15 — Conectar un ejecutor CLI cloud desde la web (login sin terminal)
+
+Hasta ahora la sesión de un ejecutor CLI cloud (Codex/Claude/Gemini) solo podía
+crearse desde una terminal (`docker compose exec -it api …`). Nuevo flujo: en
+*Ajustes → Ejecutores / IA* cada ejecutor cloud **No disponible** muestra un botón
+**«Conectar»**; lo mismo en el selector de proveedor del chat
+(`ChatPage`, popover del composer), donde las filas no disponibles no-locales
+ofrecen «Conectar» en vez de quedar solo deshabilitadas. La sesión sigue
+persistiendo en el volumen `forensia-cli-auth` (no cambia nada del backend de
+auth).
+
+`ExecutorLoginModal` (`web/src/components/ExecutorLoginModal.tsx`) es el
+componente reutilizable. Al abrir consulta `GET /api/executors/login-capabilities`
+y decide el modo según el **diagnóstico real** de cada CLI (capturado dentro del
+contenedor api, no supuesto):
+
+- **Codex** (`codex login --device-auth`) — flujo *device*: el modal muestra la
+  URL (estática, `auth.openai.com/codex/device`) + el **código** de un solo uso;
+  el operador **introduce el código en el navegador**. `needs_code_input=false`.
+  El backend detecta el fin por el **exit 0** del propio proceso de login.
+- **Claude** (`claude auth login`) — flujo *authorize + pegar código*: el modal
+  muestra la URL larga de autorización; el operador autoriza en el navegador y
+  **pega de vuelta** el código del callback en un input → `POST …/login/code`
+  (se relaya al stdin del CLI). `needs_code_input=true`.
+- **Gemini** — el login individual lo **rechaza Google en el servidor**
+  (`IneligibleTierError: UNSUPPORTED_CLIENT`) antes de emitir URL, así que
+  `relay_supported=false`: el modal **degrada** al comando manual exacto + botón
+  **«Comprobar»** (re-sondea el estado). RULE 2: nunca un spinner que no acaba.
+
+El modal sondea `GET …/login/status` cada 2,5 s (`waiting → logged_in | error |
+expired`); en `logged_in` refresca `capabilities` (prop `onCapsRefresh`, cableada
+`App → InvestigationPage → ChatPage`) y, desde el chat, preselecciona el ejecutor
+recién conectado. Al cerrar en `waiting` cancela el login server-side
+(`POST …/login/cancel`) para reapear el proceso. El **código de un solo uso** solo
+vive en la respuesta de `start` y en memoria de la pestaña; nunca se persiste ni
+se registra (RULE 3). Los cuatro POST llevan token de sesión (SECURITY INVARIANT
+3); el id está confinado al enum cloud en el backend (RULE 2). Detalle del
+contrato: [`login-ejecutores-web.md`](login-ejecutores-web.md).
+
+---
+
 ## Entrada 2026-07-08 (2) — El panel lateral de casos se sustituye por un buscador en modal
 
 Iteración sobre el master-detail del mismo día: el panel izquierdo

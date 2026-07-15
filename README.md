@@ -47,7 +47,15 @@ Abre <http://127.0.0.1:5173> en el navegador. Todos los puertos se publican úni
 
 ### Sesión de los CLIs (solo si usas un ejecutor cloud)
 
-El HOME del servicio `api` vive en el volumen `forensia-cli-auth`. En el primer arranque, el entrypoint **seedea** a ese volumen las credenciales que ya existan en tu host (`~/.claude`, `~/.claude.json`, `~/.codex`, `~/.gemini`, montadas en solo lectura como staging); desde entonces los CLIs leen y **refrescan sus tokens solo en el volumen**, nunca en tus ficheros. Si no había nada que seedear (p. ej. Claude Code en macOS guarda la sesión en el Keychain), inicia sesión **una única vez dentro del contenedor**:
+El HOME del servicio `api` vive en el volumen `forensia-cli-auth`. En el primer arranque, el entrypoint **seedea** a ese volumen las credenciales que ya existan en tu host (`~/.claude`, `~/.claude.json`, `~/.codex`, `~/.gemini`, montadas en solo lectura como staging); desde entonces los CLIs leen y **refrescan sus tokens solo en el volumen**, nunca en tus ficheros.
+
+**Conectar desde la web (recomendado).** Si un ejecutor aparece *No disponible* en *Ajustes → Ejecutores / IA* (o en el selector de proveedor del chat), pulsa **«Conectar»**: FORENSIA lanza el login del propio CLI dentro del contenedor y te muestra en un diálogo la **URL** a abrir y el **código** del flujo *device*/OAuth, sin abrir una terminal. La sesión se guarda en el volumen `forensia-cli-auth` igual que el login manual.
+
+- **Codex** (`codex login --device-auth`): abre la URL e **introduce el código en el navegador**; el diálogo pasa a *Disponible* solo cuando terminas.
+- **Claude Code** (`claude auth login`): abre la URL, autoriza y **pega de vuelta** en el diálogo el código que te da el navegador.
+- **Gemini**: el login individual lo rechaza Google en el servidor (`IneligibleTierError`), así que no puede relayarse; el diálogo degrada al comando manual exacto + un botón **«Comprobar»** (RULE 2 — nunca un spinner infinito).
+
+**Login manual** (o si prefieres la terminal / no había nada que seedear — p. ej. Claude Code en macOS guarda la sesión en el Keychain), **una única vez dentro del contenedor**:
 
 ```bash
 docker compose exec -it api claude auth login          # Claude Code

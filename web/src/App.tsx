@@ -75,7 +75,7 @@ export function App() {
           />
         )}
         {activeView === "investigation" && (
-          <InvestigationPage caps={caps} onNavigate={setActiveView} />
+          <InvestigationPage caps={caps} onNavigate={setActiveView} onCapsRefresh={refreshCaps} />
         )}
         {activeView === "mitre" && (
           <MitreAttackPage activeCase={mockActiveCase} activeEvidence={mockActiveEvidence} matches={mockMitreMatches} />

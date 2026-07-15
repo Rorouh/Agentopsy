@@ -1772,6 +1772,30 @@ details.agent-activity > summary::-webkit-details-marker { display: none; }
   margin: 3px 0 2px;
   line-height: 1.45;
 }
+.settings-exec-connect { margin: 4px 0 2px; }
+
+/* Login web de un ejecutor CLI cloud (ExecutorLoginModal). */
+.exec-login-ok {
+  color: var(--success);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.exec-login-loading,
+.exec-login-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+/* Fila de ejecutor NO disponible en el popover del composer: es un <div> (no un
+   <button>) para poder anidar el chip «Conectar» sin botones anidados. */
+.composer-popover-item.disabled {
+  opacity: 0.85;
+  cursor: default;
+  color: var(--text-muted);
+}
+.composer-popover-item.disabled:hover { background: transparent; }
 .settings-exec-hint {
   margin: 10px 0 0;
   font-family: var(--font-sans);

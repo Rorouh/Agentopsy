@@ -9,6 +9,9 @@ import { ChatPage } from "./ChatPage";
 interface InvestigationPageProps {
   caps: Capabilities | null;
   onNavigate?: (view: ViewId) => void;
+  // Refresca capabilities en App (p. ej. tras conectar un ejecutor CLI desde el
+  // selector del chat) para que la fila pase a Disponible sin recargar.
+  onCapsRefresh?: () => Promise<void> | void;
 }
 
 type Phase = "loading" | "ready" | "no-case" | "error";
@@ -30,7 +33,7 @@ const SEVERITY_LABEL: Record<AgentFinding["severity"], string> = {
 // Envuelve el ChatPage añadiendo contexto real de caso/evidencia + el panel
 // lateral de hallazgos que el agente persiste vía `record_finding`. El panel se
 // refresca tras cada turno del chat (ChatPage llama onTurnComplete en finally).
-export function InvestigationPage({ caps, onNavigate }: InvestigationPageProps) {
+export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: InvestigationPageProps) {
   const [activeCase, setActiveCase] = useState<Case | null>(null);
   const [activeEvidence, setActiveEvidence] = useState<EvidenceHandle | null>(null);
   const [findings, setFindings] = useState<AgentFinding[]>([]);
@@ -240,6 +243,7 @@ export function InvestigationPage({ caps, onNavigate }: InvestigationPageProps) 
           activeCase={activeCase}
           activeEvidence={activeEvidence}
           onTurnComplete={onTurnComplete}
+          onCapsRefresh={onCapsRefresh}
         />
 
         <div className="investigation-sidebar">

@@ -9,6 +9,7 @@ import { KeyValueList } from "../ui/KeyValueList";
 import { Button } from "../ui/Button";
 import { EmptyState } from "../ui/EmptyState";
 import { LoadingState } from "../ui/LoadingState";
+import { ExecutorLoginModal } from "../components/ExecutorLoginModal";
 
 interface SettingsPageProps {
   caps: Capabilities | null;
@@ -67,6 +68,8 @@ export function SettingsPage({ caps, version, onNavigate, onCapsRefresh }: Setti
   const [savedKey, setSavedKey] = useState<EditableKey | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
   const [refreshingCaps, setRefreshingCaps] = useState(false);
+  // Ejecutor cuyo modal de login web está abierto (null = ninguno).
+  const [loginExecutor, setLoginExecutor] = useState<ExecutorId | null>(null);
 
   const refreshConfig = useCallback(async () => {
     try {
@@ -174,6 +177,16 @@ export function SettingsPage({ caps, version, onNavigate, onCapsRefresh }: Setti
                     </div>
                     {!status.available && status.reason && (
                       <div className="settings-exec-reason">{status.reason}</div>
+                    )}
+                    {/* Login web para los ejecutores CLI cloud no disponibles:
+                        conecta Codex/Claude sin abrir terminal. Ollama (local) no
+                        tiene login, así que solo se ofrece a los no-locales. */}
+                    {!status.available && !status.local && (
+                      <div className="settings-exec-connect">
+                        <Button variant="chip" onClick={() => setLoginExecutor(id)}>
+                          Conectar {status.name} →
+                        </Button>
+                      </div>
                     )}
                   </div>
                 ))}
@@ -456,6 +469,16 @@ export function SettingsPage({ caps, version, onNavigate, onCapsRefresh }: Setti
             )}
           </div>
         </div>
+      )}
+
+      {loginExecutor && (
+        <ExecutorLoginModal
+          executorId={loginExecutor}
+          executorName={caps?.executors[loginExecutor]?.name ?? loginExecutor}
+          open={loginExecutor !== null}
+          onClose={() => setLoginExecutor(null)}
+          onConnected={refreshCaps}
+        />
       )}
     </div>
   );

@@ -16,6 +16,9 @@ import type {
   EvidenceHandle,
   EvidenceSource,
   ExecutorId,
+  ExecutorLoginCapability,
+  ExecutorLoginStart,
+  ExecutorLoginStatus,
   ExecutorModels,
   PersistedChatMessage,
   StreamEvent,
@@ -226,4 +229,24 @@ export const api = {
   // devuelve lista editable; los CLIs cloud gestionan su modelo — RULE 2).
   executorModels: (id: ExecutorId) =>
     request<ExecutorModels>(`/api/executors/${id}/models`),
+
+  // Login web de un ejecutor CLI cloud (Codex/Claude). Todos los POST llevan el
+  // token de sesión (SECURITY INVARIANT 3). El código de un solo uso solo viaja
+  // en la respuesta de `startLogin` y en la memoria de la pestaña — nunca se
+  // persiste ni se registra.
+  executorLogin: {
+    // Capacidad de relay de los ejecutores cloud (batch, para Ajustes).
+    capabilities: () =>
+      request<{ executors: Record<ExecutorId, ExecutorLoginCapability> }>(
+        "/api/executors/login-capabilities",
+      ),
+    start: (id: ExecutorId) =>
+      post<ExecutorLoginStart>(`/api/executors/${id}/login`, {}),
+    status: (id: ExecutorId) =>
+      request<ExecutorLoginStatus>(`/api/executors/${id}/login/status`),
+    submitCode: (id: ExecutorId, code: string) =>
+      post<{ ok: boolean; executor: ExecutorId }>(`/api/executors/${id}/login/code`, { code }),
+    cancel: (id: ExecutorId) =>
+      post<{ ok: boolean; executor: ExecutorId }>(`/api/executors/${id}/login/cancel`, {}),
+  },
 };

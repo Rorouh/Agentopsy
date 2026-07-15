@@ -24,6 +24,44 @@ export interface ExecutorModels {
   note: string | null;
 }
 
+// ── Login web de un ejecutor CLI cloud (2026-07-15) ────────────────────────
+// El operador conecta Codex/Claude DESDE LA WEB sin abrir una terminal: el
+// backend relaya el flujo device/OAuth del propio CLI. La sesión sigue viviendo
+// en el volumen forensia-cli-auth (SECURITY INVARIANT 7 — sin API keys).
+
+// Capacidad de relay de cada ejecutor cloud (/api/executors/login-capabilities).
+// `relay_supported:false` (Gemini) → la UI degrada al comando manual + «Comprobar»
+// en vez de un spinner infinito (RULE 2).
+export interface ExecutorLoginCapability {
+  executor: ExecutorId;
+  relay_supported: boolean;
+  needs_code_input: boolean;
+  manual_command: string;
+  reason: string | null;
+}
+
+// Respuesta de POST /api/executors/{id}/login: URL a abrir y, para el flujo
+// device (Codex), el código de un solo uso a introducir EN EL NAVEGADOR.
+export interface ExecutorLoginStart {
+  executor: ExecutorId;
+  state: "waiting";
+  url: string;
+  code: string | null;
+  needs_code_input: boolean;
+}
+
+export type ExecutorLoginState = "waiting" | "logged_in" | "error" | "expired";
+
+// GET /api/executors/{id}/login/status — sondeado cada ~2-3 s por el modal.
+export interface ExecutorLoginStatus {
+  executor: ExecutorId;
+  state: ExecutorLoginState;
+  available: boolean;
+  reason: string | null;
+  needs_code_input?: boolean;
+  code_submitted?: boolean;
+}
+
 // Eventos del stream de progreso del agente (/api/agent/query/stream, NDJSON).
 // Uno por línea; el terminal `done` trae la respuesta final + metadatos para
 // persistir el turno igual que el endpoint bloqueante.
