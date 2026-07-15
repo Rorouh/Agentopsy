@@ -8,6 +8,7 @@
 - [`modelo-amenazas.md`](modelo-amenazas.md) — superficies de ataque (API HTTP, tool-calling, ejecutores respaldados por cloud, sesiones CLI en el volumen `forensia-cli-auth`) y gates de seguridad 1-19.
 - [`soundness-forense.md`](soundness-forense.md) — cadena de custodia, read-only a nivel de bloque, audit log encadenado.
 - [`storage.md`](storage.md) — layout en disco caso-como-carpeta (en el compose, anclado a `./projects/`), invariantes y contratos por manager.
+- [`timeline.md`](timeline.md) — timeline forense de dos capas (investigación determinista + super-timeline MACB del sistema de ficheros bajo demanda), endpoints y UTC explícito.
 
 ## Agentes
 

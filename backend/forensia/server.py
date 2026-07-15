@@ -42,6 +42,7 @@ from forensia.routers import (
     mitre,
     health,
     session,
+    timeline,
 )
 from forensia.security import HostHeaderMiddleware, allowed_hosts, new_session_token
 
@@ -85,6 +86,7 @@ def create_app(port: int, ui_origins: Sequence[str] = ()) -> FastAPI:
     app.include_router(mitre.router)
     app.include_router(documents.router)
     app.include_router(agent.router)
+    app.include_router(timeline.router)
     return app
 
 

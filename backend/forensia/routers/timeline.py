@@ -1,0 +1,160 @@
+"""Timeline HTTP surface. Thin adapter over ``forensia.timeline`` (CLAUDE.md RULE 3).
+
+Two layers:
+
+- ``GET /api/cases/{case_id}/timeline`` — the deterministic *investigation* timeline
+  (audit tool runs + findings), always available, no tool executed.
+- ``POST /api/cases/{case_id}/timeline/filesystem`` — start the on-demand *filesystem
+  super-timeline* (``tsk_fls -m`` over the selected evidence) as a background job, then
+  poll it at ``GET …/timeline/filesystem/jobs/{job_id}``.
+
+RULE 2 — nothing is inferred: no ``evidence_id`` → 422; an unresolved ``os_profile``
+(unknown / low confidence / conflict) → 409 the operator must anchor; ``fls`` failure →
+the job carries the actionable error, never a partial timeline.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import BaseModel
+
+from forensia.agent.jobs import job_registry
+from forensia.cases.manager import (
+    OsProfileUnresolved,
+    case_manager,
+    resolve_os_profile,
+)
+from forensia.evidence import evidence_manager
+from forensia.evidence_context import EvidenceContext
+from forensia.security import require_token
+from forensia.timeline import (
+    TIMEZONE,
+    build_investigation_timeline,
+    run_filesystem_timeline,
+)
+from forensia.timeline.export import timeline_to_csv
+
+router = APIRouter()
+
+
+@router.get(
+    "/api/cases/{case_id}/timeline",
+    dependencies=[Depends(require_token)],
+)
+def investigation_timeline(case_id: str) -> dict[str, Any]:
+    """Chronological line of what happened in the case: every audited tool run and
+    every recorded finding, ordered by their UTC timestamp. Deterministic and always
+    available (it runs no new tool)."""
+    try:
+        events = build_investigation_timeline(case_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"case_id": case_id, "timezone": TIMEZONE, "events": events}
+
+
+@router.get(
+    "/api/cases/{case_id}/timeline/export.csv",
+    dependencies=[Depends(require_token)],
+)
+def export_investigation_timeline_csv(case_id: str) -> Response:
+    """CSV del timeline de investigación (ejecuciones de herramienta + hallazgos, en
+    orden cronológico UTC). Reusa el mismo builder determinista; un caso sin actividad
+    devuelve sólo la cabecera (0 filas, honesto)."""
+    try:
+        events = build_investigation_timeline(case_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    body = timeline_to_csv(events)
+    filename = f"timeline-{case_id}.csv"
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+class FilesystemTimelineRequest(BaseModel):
+    # The evidence to build the filesystem super-timeline from. REQUIRED — FORENSIA
+    # never assumes "the only" / "the most recent" evidence (RULE 2).
+    evidence_id: str | None = None
+
+
+@router.post(
+    "/api/cases/{case_id}/timeline/filesystem",
+    dependencies=[Depends(require_token)],
+)
+def start_filesystem_timeline(
+    case_id: str, req: FilesystemTimelineRequest
+) -> dict[str, Any]:
+    """Start the ``tsk_fls -m`` super-timeline over the selected evidence as a background
+    job and return its ``job_id`` immediately. Validation (evidence, os_profile) runs
+    here, synchronously, so it fails fast before anything is enqueued; the disk-reading
+    step runs decoupled from this request (a disconnect does not abort it)."""
+    if not req.evidence_id:
+        raise HTTPException(
+            status_code=422,
+            detail="evidence_id is required: selecciona una evidencia registrada en el "
+                   "caso para construir la super-timeline (FORENSIA no asume 'la única' "
+                   "ni 'la última' — RULE 2).",
+        )
+
+    try:
+        handle = evidence_manager.get(case_id, req.evidence_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    try:
+        case = case_manager.load(case_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
+        os_profile = resolve_os_profile(case)
+    except OsProfileUnresolved as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    evidence_context = EvidenceContext.from_handle(handle)
+
+    def _work(emit) -> dict:  # noqa: ANN001 — emit: Callable[[dict], None]
+        return run_filesystem_timeline(
+            case_id, handle, evidence_context, os_profile, emit=emit
+        )
+
+    job = job_registry.submit(
+        case_id,
+        "fs_timeline",
+        _work,
+        meta={"evidence_id": req.evidence_id, "os_profile": os_profile},
+    )
+    return job.public()
+
+
+@router.get(
+    "/api/cases/{case_id}/timeline/filesystem/jobs/{job_id}",
+    dependencies=[Depends(require_token)],
+)
+def get_filesystem_timeline_job(
+    case_id: str, job_id: str, since: int = 0
+) -> dict[str, Any]:
+    """Poll a filesystem super-timeline job: running / done (``result.events``) / error.
+
+    ``since`` returns only the progress events from that index onward, so the client can
+    show the stage (``fls`` → ``mactime`` → ``done``) as it advances."""
+    snap = job_registry.snapshot(job_id, since=max(0, since))
+    if snap is None:
+        raise HTTPException(status_code=404, detail=f"job {job_id} not found")
+    if snap.get("case_id") != case_id:
+        raise HTTPException(
+            status_code=404,
+            detail=f"job {job_id} does not belong to case {case_id}",
+        )
+    return snap
