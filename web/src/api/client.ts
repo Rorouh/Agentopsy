@@ -7,7 +7,10 @@
 // cookies) — vive solo en memoria de la pestaña.
 
 import type {
+  AdjudicateRequest,
   AgentFinding,
+  MitreCatalog,
+  MitreCoverageEntry,
   AgentSummary,
   Capabilities,
   Case,
@@ -168,6 +171,11 @@ export const api = {
       { case_id: caseId, executor },
     ),
 
+  // Catálogo ATT&CK (enum cerrada derivada de la semilla del orquestador).
+  // Global, no por caso: es dato de referencia, no evidencia.
+  mitre: {
+    catalog: () => request<MitreCatalog>("/api/mitre/catalog"),
+  },
   cases: {
     create: (body: CreateCaseRequest) => post<Case>("/api/cases", body),
     list: () => request<Case[]>("/api/cases"),
@@ -193,6 +201,15 @@ export const api = {
       request<AgentFinding[]>(`/api/cases/${encodeURIComponent(caseId)}/findings`),
     listToolUsage: (caseId: string) =>
       request<ToolUsage[]>(`/api/cases/${encodeURIComponent(caseId)}/tool-usage`),
+    // Cobertura ATT&CK del caso: propuestas del agente + dictámenes del operador.
+    listMitreCoverage: (caseId: string) =>
+      request<MitreCoverageEntry[]>(`/api/cases/${encodeURIComponent(caseId)}/mitre`),
+    // Dictamen del perito sobre una técnica. Queda en el log hash-encadenado.
+    adjudicateMitre: (caseId: string, body: AdjudicateRequest) =>
+      post<{ coverage: MitreCoverageEntry[] }>(
+        `/api/cases/${encodeURIComponent(caseId)}/mitre`,
+        body,
+      ),
     readChat: (caseId: string, sessionId: string) =>
       request<PersistedChatMessage[]>(
         `/api/cases/${encodeURIComponent(caseId)}/chats/${encodeURIComponent(sessionId)}`,
