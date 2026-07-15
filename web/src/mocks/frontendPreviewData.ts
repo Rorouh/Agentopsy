@@ -9,7 +9,6 @@ import type {
   EvidenceFile,
   ReportDocument,
   TimelineEvent,
-  MitreTechniqueMatch,
   InvestigationFinding,
   GuideStep,
 } from "../types/domain";
@@ -135,38 +134,6 @@ export const mockFindings: InvestigationFinding[] = [
   },
 ];
 
-export const mockMitreMatches: MitreTechniqueMatch[] = [
-  {
-    id: "mitre-001",
-    tacticId: "TA0003",
-    tacticName: "Persistence",
-    techniqueId: "T1547.001",
-    techniqueName: "Boot or Logon Autostart Execution: Registry Run Keys",
-    confidence: 82,
-    status: "correlated",
-    relatedFindingIds: ["find-001"],
-  },
-  {
-    id: "mitre-002",
-    tacticId: "TA0005",
-    tacticName: "Defense Evasion",
-    techniqueId: "T1055",
-    techniqueName: "Process Injection",
-    confidence: 67,
-    status: "correlated",
-    relatedFindingIds: ["find-002"],
-  },
-  {
-    id: "mitre-003",
-    tacticId: "TA0010",
-    tacticName: "Exfiltration",
-    techniqueId: "T1041",
-    techniqueName: "Exfiltration Over C2 Channel",
-    confidence: 0,
-    status: "pending",
-    relatedFindingIds: [],
-  },
-];
 
 export const guideSteps: GuideStep[] = [
   { step: 1, title: "Crear caso / repositorio", description: "Registra un nuevo caso y define el examinador responsable antes de tocar evidencia." },

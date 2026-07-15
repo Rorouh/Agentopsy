@@ -21,7 +21,6 @@ import {
   mockReportDocuments,
   mockTimelineEvents,
   mockFindings,
-  mockMitreMatches,
   guideSteps,
 } from "./mocks/frontendPreviewData";
 
@@ -78,7 +77,7 @@ export function App() {
           <InvestigationPage caps={caps} onNavigate={setActiveView} onCapsRefresh={refreshCaps} />
         )}
         {activeView === "mitre" && (
-          <MitreAttackPage activeCase={mockActiveCase} activeEvidence={mockActiveEvidence} matches={mockMitreMatches} />
+          <MitreAttackPage />
         )}
         {activeView === "system" && (
           <SystemStatusPage caps={caps} isConnected={isConnected} version={version} />

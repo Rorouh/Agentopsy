@@ -227,6 +227,61 @@ export interface AgentFinding {
   tool_id: string | null;
   run_id: string | null;
   created_at: string;
+  // Técnicas ATT&CK que el hallazgo sostiene. Enum cerrada: el backend sólo
+  // acepta ids de la semilla del orquestador (ver forensia/mitre/catalog.py).
+  mitre_hints: string[];
+}
+
+// ── MITRE ATT&CK ────────────────────────────────────────────────────────────
+// El catálogo se deriva de la semilla del orquestador (la enum cerrada que el
+// agente puede emitir), NO de una lista transcrita en el frontend.
+
+export interface MitreTechnique {
+  id: string;
+  name: string;
+  // Qué artefacto forense la sostiene (columna «Se sostiene con» de la semilla).
+  supported_by: string;
+  // "T1547" para "T1547.001"; null si es técnica de primer nivel.
+  parent_id: string | null;
+}
+
+export interface MitreTactic {
+  id: string;
+  name: string;
+  name_es: string;
+  phase: string;
+  techniques: MitreTechnique[];
+}
+
+export interface MitreCatalog {
+  available: boolean;
+  // Motivo accionable cuando available=false. Nunca hay catálogo "por defecto".
+  reason: string | null;
+  source: string | null;
+  phases: { key: string; label: string }[];
+  tactics: MitreTactic[];
+}
+
+// Veredicto del perito. `null` = NO EVALUADA (nunca "ausente").
+export type MitreStatus = "confirmada" | "sospechosa" | "descartada";
+
+// Dos ejes que no se funden: lo que el agente PROPONE (proposed_by, derivado de
+// hallazgos reales) y lo que el operador DICTAMINA (status, persistido y auditado).
+export interface MitreCoverageEntry {
+  technique_id: string;
+  tactic_id: string | null;
+  proposed_by: string[];
+  status: MitreStatus | null;
+  rationale: string;
+  adjudicated_at: string | null;
+  related_finding_ids: string[];
+}
+
+export interface AdjudicateRequest {
+  technique_id: string;
+  status: MitreStatus | "none";
+  rationale: string;
+  related_finding_ids?: string[];
 }
 
 // Conteo de uso de herramientas por caso (panel "Tools"), agregado del audit log.

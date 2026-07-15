@@ -481,7 +481,7 @@ No implementar sin cerrarla.
 |---|---|
 | `TimelinePage.tsx` | Necesita `forensia.timeline` (ver arriba). |
 | `DocumentViewerPage.tsx` | Necesita `forensia.reports` (ver arriba). |
-| `MitreAttackPage.tsx` | Necesita `_orchestrator/mitre.md` ejecutado por la capa de síntesis. |
+| ~~`MitreAttackPage.tsx`~~ | **Cableada (2026-07-14).** Ya no usa mocks: matriz sobre el catálogo real (`GET /api/mitre/catalog`, derivado de la semilla del orquestador), propuestas del agente desde los `mitre_hints` de hallazgos reales, y dictamen del perito persistido y auditado (`POST /api/cases/{id}/mitre`). **Pendiente aún:** la capa de síntesis (`_orchestrator/mitre.md` sobre `forensia.reports`) que produzca `MitreTechniqueMatch[]` con `confidence` — hoy la UI pinta los hints crudos, que es una propuesta con procedencia, no una correlación sintetizada. Ver `docs/agentes/contrato-paquetes.md` §5.bis. |
 | `SettingsPage` tabs "Operador" / "Reportes" / "Seguridad" / "Acerca de" | Inputs aún `disabled`. Operador + Reportes podrían persistirse vía el mismo `/api/config` extendiendo el allowlist. Seguridad es UI conceptual. |
 | `GuidePage.tsx` | Estática, OK como tal por ahora — el contenido refleja el flujo real. |
 

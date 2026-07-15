@@ -53,18 +53,6 @@ export interface TimelineEvent {
   evidenceId: string;
 }
 
-export type MitreCorrelationStatus = "pending" | "correlated" | "dismissed";
-
-export interface MitreTechniqueMatch {
-  id: string;
-  tacticId: string;
-  tacticName: string;
-  techniqueId: string;
-  techniqueName: string;
-  confidence: number; // 0-100
-  status: MitreCorrelationStatus;
-  relatedFindingIds: string[];
-}
 
 export interface InvestigationFinding {
   id: string;

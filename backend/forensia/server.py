@@ -38,6 +38,7 @@ from forensia.routers import (
     evidence,
     executors as executors_router,
     findings,
+    mitre,
     health,
     session,
 )
@@ -80,6 +81,7 @@ def create_app(port: int, ui_origins: Sequence[str] = ()) -> FastAPI:
     app.include_router(artifacts.router)
     app.include_router(chats.router)
     app.include_router(findings.router)
+    app.include_router(mitre.router)
     app.include_router(agent.router)
     return app
 

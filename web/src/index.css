@@ -1808,3 +1808,292 @@ details.agent-activity > summary::-webkit-details-marker { display: none; }
   font-size: 11px;
   color: var(--text-secondary);
 }
+
+/* ── MITRE ATT&CK ──────────────────────────────────────────────────────────
+   La matriz se pinta con las variables de tema del proyecto (claro y oscuro).
+   Los colores de estado son semánticos y los tres únicos que significan algo:
+   confirmada / sospechosa / descartada = dictamen del PERITO. La "propuesta"
+   del agente es un tratamiento aparte (punteado): sugerencia, no veredicto.
+   Sin color = NO EVALUADA, nunca "ausente".                                  */
+
+.mitre-page { position: relative; }
+
+.mitre-context {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; margin-bottom: 14px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  font-size: 13px; color: var(--text-secondary);
+}
+
+.mitre-summary { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+.mitre-chip {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 8px 16px; min-width: 104px;
+  border: 1px solid var(--border); border-radius: var(--radius-card);
+  background: var(--surface);
+}
+.mitre-chip-value { font-family: var(--font-mono); font-size: 17px; font-weight: 600; }
+.mitre-chip-label {
+  font-size: 10px; letter-spacing: .4px; text-transform: uppercase;
+  color: var(--text-muted);
+}
+.mitre-chip--confirmada { border-color: var(--danger); color: var(--danger); }
+.mitre-chip--sospechosa { border-color: var(--warning); color: var(--warning); }
+.mitre-chip--propuesta  { border-style: dashed; color: var(--text-secondary); }
+.mitre-chip--neutral    { color: var(--text-secondary); }
+
+/* Ribbon de fases — agrupación editorial de FORENSIA, no de ATT&CK. */
+.mitre-ribbon { display: flex; align-items: stretch; margin-bottom: 14px; flex-wrap: wrap; }
+.mitre-phase-wrap { display: flex; align-items: center; }
+.mitre-phase {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 8px 14px; min-width: 168px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+.mitre-phase-head { display: flex; align-items: center; gap: 8px; }
+.mitre-phase-label {
+  font-size: 11px; font-weight: 600; letter-spacing: .3px;
+  text-transform: uppercase; color: var(--text-primary);
+}
+.mitre-phase-stat {
+  margin-left: auto; font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-muted);
+}
+.mitre-phase-dot { width: 8px; height: 8px; border-radius: 2px; transform: rotate(45deg); }
+.mitre-phase-track {
+  height: 4px; border-radius: 3px; background: var(--border); overflow: hidden;
+}
+.mitre-phase-fill { height: 100%; transition: width .3s; }
+.mitre-phase-arrow { color: var(--text-muted); padding: 0 6px; }
+
+.mitre-phase-dot--access, .mitre-phase-fill--access { background: #d97706; }
+.mitre-phase-dot--root,   .mitre-phase-fill--root   { background: #ea580c; }
+.mitre-phase-dot--act,    .mitre-phase-fill--act    { background: #db2777; }
+.mitre-phase-dot--goal,   .mitre-phase-fill--goal   { background: var(--danger); }
+
+.mitre-toolbar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px;
+}
+.mitre-views {
+  display: flex; gap: 2px; padding: 2px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+.mitre-view-btn, .mitre-toggle {
+  cursor: pointer; font-family: var(--font-sans); font-size: 12px; font-weight: 500;
+  padding: 7px 13px; border-radius: var(--radius-card);
+  background: transparent; border: 1px solid transparent; color: var(--text-secondary);
+}
+.mitre-toggle { background: var(--surface); border-color: var(--border); }
+.mitre-view-btn.is-active, .mitre-toggle.is-active {
+  background: var(--accent-bg); color: var(--accent-text); border-color: var(--accent);
+}
+.mitre-view-btn:focus-visible, .mitre-toggle:focus-visible, .mitre-cell:focus-visible {
+  outline: 2px solid var(--focus-ring); outline-offset: 1px;
+}
+.mitre-search {
+  flex: 1; min-width: 220px; height: 34px; padding: 0 12px;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  color: var(--text-primary); font-size: 13px; font-family: var(--font-sans);
+}
+
+/* Matriz */
+.mitre-matrix-scroll { overflow-x: auto; padding-bottom: 8px; }
+.mitre-matrix { display: flex; align-items: flex-start; gap: 10px; width: max-content; }
+.mitre-col { flex: 0 0 auto; width: 172px; }
+.mitre-col-head {
+  position: sticky; top: 0; z-index: 5; overflow: hidden;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+.mitre-col-accent { height: 3px; }
+.mitre-col-body { padding: 8px 10px 10px; }
+.mitre-col-title { font-size: 12.5px; font-weight: 600; color: var(--text-primary); }
+.mitre-col-meta {
+  display: flex; justify-content: space-between; margin-top: 3px;
+  font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);
+}
+.mitre-col-track {
+  display: flex; gap: 1px; height: 5px; margin-top: 8px;
+  border-radius: 3px; overflow: hidden; background: var(--border);
+}
+.mitre-col-fill--confirmada { background: var(--danger); }
+.mitre-col-fill--sospechosa { background: var(--warning); }
+.mitre-col-cov {
+  margin-top: 5px; font-family: var(--font-mono); font-size: 10px;
+  color: var(--text-muted);
+}
+
+.mitre-cells { display: flex; flex-direction: column; gap: 5px; padding-top: 6px; }
+.mitre-cell {
+  display: flex; align-items: center; gap: 7px; width: 100%;
+  padding: 7px 9px; cursor: pointer; text-align: left;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  transition: opacity .15s, border-color .15s;
+}
+.mitre-cell:hover { border-color: var(--accent); }
+.mitre-cell.is-dim { opacity: .22; }
+.mitre-cell.is-selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.mitre-cell--sub { margin-left: 12px; }
+.mitre-cell-dot {
+  flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%;
+  background: transparent; outline: 1px solid var(--border); outline-offset: -1px;
+}
+.mitre-cell-name {
+  flex: 1; font-size: 11.5px; line-height: 1.25; color: var(--text-secondary);
+}
+.mitre-cell-badge {
+  flex: 0 0 auto; min-width: 16px; padding: 1px 5px;
+  font-family: var(--font-mono); font-size: 9.5px;
+  background: var(--accent-bg); color: var(--accent-text);
+  border-radius: var(--radius-pill);
+}
+
+/* Propuesta del agente: punteado. Es una sugerencia, no un veredicto. */
+.mitre-cell--propuesta { border-style: dashed; border-color: var(--accent); }
+.mitre-cell--propuesta .mitre-cell-name { color: var(--text-primary); }
+
+.mitre-cell--confirmada { border-color: var(--danger); background: var(--accent-bg); }
+.mitre-cell--confirmada .mitre-cell-dot { background: var(--danger); outline: none; }
+.mitre-cell--confirmada .mitre-cell-name { color: var(--danger); font-weight: 500; }
+
+.mitre-cell--sospechosa { border-color: var(--warning); }
+.mitre-cell--sospechosa .mitre-cell-dot { background: var(--warning); outline: none; }
+.mitre-cell--sospechosa .mitre-cell-name { color: var(--warning); font-weight: 500; }
+
+.mitre-cell--descartada { opacity: .55; }
+.mitre-cell--descartada .mitre-cell-dot { background: var(--text-muted); outline: none; }
+.mitre-cell--descartada .mitre-cell-name { text-decoration: line-through; }
+
+.mitre-legend {
+  display: flex; gap: 16px; flex-wrap: wrap; margin-top: 14px;
+  font-size: 11px; color: var(--text-muted);
+}
+.mitre-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.mitre-swatch {
+  width: 10px; height: 10px; border-radius: 2px;
+  border: 1px solid var(--border); background: var(--surface);
+}
+.mitre-swatch--propuesta { border-style: dashed; border-color: var(--accent); }
+.mitre-swatch--confirmada { background: var(--danger); border-color: var(--danger); }
+.mitre-swatch--sospechosa { background: var(--warning); border-color: var(--warning); }
+.mitre-swatch--descartada { background: var(--text-muted); border-color: var(--text-muted); }
+
+/* Línea temporal — hallazgos REALES que citan una técnica. */
+.mitre-timeline { display: flex; flex-direction: column; }
+.mitre-tl-row { display: flex; gap: 12px; }
+.mitre-tl-time {
+  flex: 0 0 132px; text-align: right; padding-top: 12px;
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);
+}
+.mitre-tl-rail { position: relative; flex: 0 0 16px; }
+.mitre-tl-rail::before {
+  content: ""; position: absolute; left: 7px; top: 0; bottom: 0;
+  width: 2px; background: var(--border);
+}
+.mitre-tl-dot {
+  position: absolute; left: 2px; top: 14px; width: 12px; height: 12px;
+  border-radius: 50%; background: var(--accent);
+  box-shadow: 0 0 0 3px var(--bg);
+}
+.mitre-tl-card {
+  flex: 1; margin-bottom: 12px; padding: 11px 14px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-left: 2px solid var(--accent); border-radius: var(--radius-card);
+}
+.mitre-tl-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+.mitre-tl-title { font-size: 13.5px; font-weight: 600; color: var(--text-primary); }
+.mitre-tl-summary {
+  margin-top: 6px; font-size: 12.5px; line-height: 1.5; color: var(--text-secondary);
+}
+.mitre-tl-foot {
+  margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
+}
+.mitre-tl-tool, .mitre-tl-tech {
+  font-family: var(--font-mono); font-size: 10.5px; padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--bg); border: 1px solid var(--border); color: var(--text-muted);
+}
+.mitre-tl-tech--confirmada { border-color: var(--danger); color: var(--danger); }
+.mitre-tl-tech--sospechosa { border-color: var(--warning); color: var(--warning); }
+.mitre-tl-tech--descartada { text-decoration: line-through; }
+
+/* Panel de detalle */
+.mitre-scrim { position: fixed; inset: 0; background: rgba(0, 0, 0, .45); z-index: 60; }
+.mitre-detail {
+  position: fixed; top: 0; right: 0; bottom: 0; width: 400px; max-width: 92vw;
+  z-index: 61; display: flex; flex-direction: column; overflow-y: auto;
+  padding: 20px 22px;
+  background: var(--bg); border-left: 1px solid var(--border);
+  box-shadow: -18px 0 48px rgba(0, 0, 0, .28);
+}
+.mitre-detail-head { display: flex; align-items: center; justify-content: space-between; }
+.mitre-detail-tactic {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 11px; letter-spacing: .5px; text-transform: uppercase;
+  color: var(--text-muted);
+}
+.mitre-detail-close {
+  background: none; border: none; cursor: pointer;
+  color: var(--text-muted); font-size: 22px; line-height: 1;
+}
+.mitre-detail-title {
+  margin-top: 12px; font-size: 20px; font-weight: 600; color: var(--text-primary);
+}
+.mitre-detail-id {
+  margin-top: 6px; display: inline-block; padding: 3px 8px;
+  font-family: var(--font-mono); font-size: 12px;
+  background: var(--accent-bg); color: var(--accent-text);
+  border-radius: var(--radius-card);
+}
+.mitre-detail-body { margin-top: 18px; }
+.mitre-detail-body section { margin-bottom: 22px; }
+.mitre-detail-body h4 {
+  margin: 0 0 8px; font-size: 10.5px; letter-spacing: .6px;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.mitre-detail-supports, .mitre-detail-empty, .mitre-detail-current {
+  font-size: 12.5px; line-height: 1.55; color: var(--text-secondary);
+}
+.mitre-detail-findings { margin: 0; padding-left: 18px; }
+.mitre-detail-findings li {
+  font-size: 12.5px; line-height: 1.5; color: var(--text-secondary); margin-bottom: 6px;
+}
+.mitre-detail-tool {
+  margin-left: 6px; font-family: var(--font-mono); font-size: 10px;
+  color: var(--text-muted);
+}
+.mitre-detail-label {
+  display: block; margin-bottom: 6px; font-size: 11.5px; color: var(--text-secondary);
+}
+.mitre-detail-rationale {
+  width: 100%; padding: 8px 10px; resize: vertical;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  color: var(--text-primary); font-family: var(--font-sans); font-size: 12.5px;
+}
+.mitre-detail-actions {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 10px;
+}
+.mitre-status-btn {
+  cursor: pointer; padding: 9px 6px; font-size: 12px; font-weight: 600;
+  font-family: var(--font-sans);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-card); color: var(--text-secondary);
+}
+.mitre-status-btn:disabled { opacity: .45; cursor: not-allowed; }
+.mitre-status-btn--confirmada.is-active { border-color: var(--danger); color: var(--danger); }
+.mitre-status-btn--sospechosa.is-active { border-color: var(--warning); color: var(--warning); }
+.mitre-status-btn--descartada.is-active { border-color: var(--text-muted); color: var(--text-muted); }
+.mitre-detail-hint {
+  margin-top: 8px; font-size: 11.5px; line-height: 1.5; color: var(--text-muted);
+}
+.mitre-detail-error {
+  margin-top: 8px; font-size: 12px; color: var(--danger);
+}

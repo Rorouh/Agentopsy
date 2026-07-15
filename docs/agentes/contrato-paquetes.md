@@ -116,6 +116,52 @@ custodia), no sobre la imagen cruda; por eso no encaja en el enum
 `os_profile ∈ {unix, windows}`. Detalle en
 [`agentes/_orchestrator/README.md`](../agentes/_orchestrator/README.md).
 
+### 5.bis `mitre_hints`: qué mitad del contrato MITRE está cerrada (2026-07-14)
+
+El esquema de hallazgo de los prompts (`agentes/*/prompts/system.md`, «Esquema de
+hallazgo») lleva tiempo prescribiendo `mitre_hints`, pero el motor **no lo
+implementaba**: `record_finding` cerraba con `additionalProperties: false`, así
+que el modelo no podía emitirlo aunque el prompt se lo pidiera, y el campo se
+perdía. Eso queda cerrado:
+
+- **`record_finding` acepta `mitre_hints: string[]`** y `Finding` lo persiste.
+- **Enum cerrada, validada en el servidor** (`forensia.mitre.catalog`): la lista
+  de ids permitidos se **parsea de `_orchestrator/knowledge/mitre_attack_seed.md`**,
+  que es la enum que `mitre.md` (regla 1) autoriza. No hay una segunda lista
+  transcrita en Python: duplicarla crearía un validador que acepta ids que el
+  agente tiene prohibido emitir. Un id fuera de la semilla **rechaza el hallazgo
+  entero** (SECURITY INVARIANT 5).
+- **Ampliar la cobertura = ampliar la semilla.** El backend la sigue sin cambios.
+
+Sigue **sin implementarse** la capa de síntesis del orquestador
+(`forensia.reports` está vacío): el `MitreTechniqueMatch[]` con `confidence` y
+`relatedFindingIds` que describe `mitre.md` **no lo produce nadie todavía**. Lo
+que la UI pinta hoy son los `mitre_hints` crudos de los hallazgos (propuesta con
+procedencia), no correlaciones sintetizadas. Son cosas distintas y la UI las
+distingue: ver §5.ter.
+
+Del esquema de hallazgo siguen huérfanos en el motor `confidence`, `provenance` y
+`observed_at` — mismo tipo de deuda, aún abierta.
+
+### 5.ter Propuesta del agente ≠ dictamen del perito
+
+Dos ejes, nunca fundidos (`forensia.mitre.coverage`):
+
+| | Quién | Dónde vive | Qué significa |
+|---|---|---|---|
+| `proposed_by` | el **agente** | derivado de los `mitre_hints` de hallazgos reales; se recalcula, no se persiste | «este hallazgo sostiene esta técnica». Sugerencia con procedencia. |
+| `status` | el **perito** | `mitre_adjudications.jsonl` (append-only) + audit log | `confirmada` / `sospechosa` / `descartada`. **Veredicto**, y exige `rationale`. |
+
+Es el patrón ya sancionado para `os_profile` (la máquina sugiere, el operador
+ancla — RULE 2). Fundirlos rompería el sistema en las dos direcciones: o la
+sugerencia del agente se disfraza de dictamen pericial, o la siguiente pasada del
+agente pisa el dictamen del perito.
+
+Emitir un dictamen es un **acto pericial** que acaba en un informe con firma, así
+que entra en el log hash-encadenado (acción `mitre_adjudicated`, FORENSIC
+INVARIANT 4) y **no se acepta sin motivo**. En la matriz, una celda sin color
+significa **no evaluada**, nunca «ausente».
+
 ## 6. Selección del agente en la UI
 
 El chat usa el agente del `os_profile` **del caso**, y ese perfil **se
