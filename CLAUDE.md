@@ -334,13 +334,39 @@ executor selector + audited cloud-consent flow, and registers evidence from the
 package prompts had been prescribing all along (the engine's `additionalProperties:
 false` was silently blocking them), validated server-side against a **closed enum
 parsed from `agentes/_orchestrator/knowledge/mitre_attack_seed.md`** — the same seed
-`mitre.md` authorises, never a second hand-typed list. `MitreAttackPage` is off mocks:
-it renders the real catalog, the agent's proposals (from real findings' hints) and the
-examiner's verdicts, which are append-only, require a rationale and land in the
-hash-chained audit log (`mitre_adjudicated`). Agent proposal and examiner verdict are
-**separate axes** and never merged; an uncoloured cell means *not evaluated*, never
-*absent*. Still missing: the orchestrator's synthesis layer (`forensia.reports` is
-empty), so `MitreTechniqueMatch[]` with `confidence` is not produced by anyone yet —
-see `docs/agentes/contrato-paquetes.md` §5.bis. The old delivery model is fully
+`mitre.md` authorises, never a second hand-typed list. **The matrix now paints the
+FULL ATT&CK Enterprise catalog** (2026-07-15, `forensia/mitre/enterprise.json`,
+~240 parent techniques, shipped with the api image — RULE 1), a SECOND axis from
+the seed: the seed is the closed enum the AGENT may propose (anti-hallucination);
+Enterprise is what the EXAMINER adjudicates against (`enterprise_is_known`), so a
+verdict can anchor on any real ATT&CK technique while the agent stays curated. The
+seed's «Se sostiene con» artefacts merge into the matching Enterprise techniques,
+and agent proposals (seed ids, possibly sub-techniques) paint on their Enterprise
+cell via `enterprise_display_id` (the parent when it's a sub-technique). Beyond
+record-time hints, the
+agent can ANCHOR techniques to an already-recorded finding on demand with the
+`annotate_mitre(finding_id, mitre_hints, note?)` side-channel tool (2026-07-15) — so
+asking the examiner-facing *"dame la correlación MITRE"* actually fills the board
+instead of only narrating in prose, and pre-feature findings can be back-filled.
+Annotations land in `mitre_proposals.jsonl` (append-only, last-write-per-finding wins;
+empty list retracts) and the hash-chained audit log (`mitre_proposed`);
+`CoverageStore.proposals` merges them with the findings' own `mitre_hints` (same
+agent-proposal axis). `MitreAttackPage` is off mocks: it renders the real catalog, the
+agent's proposals (findings' hints + annotations) and the examiner's verdicts, which are
+append-only, require a rationale and land in the hash-chained audit log
+(`mitre_adjudicated`). Agent proposal and examiner verdict are **separate axes** and
+never merged; an uncoloured cell means *not evaluated*, never *absent*. **Documents
+subsystem (2026-07-15, `forensia.reports`)**: a real per-case document STORE
+(`documents/<id>.json`) with SHA-256 content integrity, wired end to end — list /
+get / verify (recompute & compare) / sign (draft→final, audited) / delete (drafts
+only; a final can't be deleted — chain of custody) / **real PDF** (`fpdf2`,
+pure-python) rendered in the pericial-report format (cover + metadata + TOC +
+numbered H2/H3 sections + tables / findings / quotes / lists + per-page
+header-footer). The `DocumentsPage` (light theme, from the Claude Design import)
+lists and renders them and drives the actions; the store ships ready but **empty**
+until something creates a document (`POST …/documents`) — the orchestrator's report
+SYNTHESIS from findings is still not implemented, so `MitreTechniqueMatch[]` with
+`confidence` is not produced by anyone yet — see
+`docs/agentes/contrato-paquetes.md` §5.bis. The old delivery model is fully
 dismantled: `desktop/`, `docker/agent/`, `vendor/`, the PyInstaller spec and the
 release workflow are gone (2026-07-02) — nothing ships outside the compose.

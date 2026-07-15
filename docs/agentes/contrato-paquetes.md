@@ -131,7 +131,27 @@ perdía. Eso queda cerrado:
   transcrita en Python: duplicarla crearía un validador que acepta ids que el
   agente tiene prohibido emitir. Un id fuera de la semilla **rechaza el hallazgo
   entero** (SECURITY INVARIANT 5).
-- **Ampliar la cobertura = ampliar la semilla.** El backend la sigue sin cambios.
+- **Ampliar la cobertura del AGENTE = ampliar la semilla.** La semilla sigue
+  siendo la enum cerrada que el agente puede proponer.
+- **La matriz pinta el catálogo Enterprise COMPLETO** (2026-07-15,
+  `forensia/mitre/enterprise.json`, ~240 técnicas padre, enviado con la imagen).
+  Es un eje distinto de la semilla: el **perito** dictamina contra Enterprise
+  (`enterprise_is_known`), así que puede anclar un veredicto en cualquier técnica
+  real de ATT&CK; el **agente** sigue limitado a la semilla. Los `mitre_hints` de
+  la semilla se pintan en su celda Enterprise (la técnica padre si son
+  sub-técnicas, vía `enterprise_display_id`), y el «Se sostiene con» de la semilla
+  se fusiona en la técnica Enterprise homónima.
+- **Correlación bajo demanda (2026-07-15):** además de los hints al registrar, el
+  agente puede ANCLAR técnicas a un hallazgo YA registrado con la tool
+  `annotate_mitre(finding_id, mitre_hints, note?)`. Así, cuando el perito pide «dame
+  la correlación MITRE», el agente **persiste** el mapeo (no solo lo narra) y el
+  tablero se puebla; también permite completar hints de hallazgos antiguos. Se
+  guarda en `mitre_proposals.jsonl` (append-only, gana la última por hallazgo; lista
+  vacía retira) y se audita (`mitre_proposed`). `CoverageStore.proposals` fusiona
+  estas anotaciones con los `mitre_hints` del propio hallazgo — **mismo eje** de
+  propuesta del agente, nunca dictamen. Los ids siguen validados contra la semilla:
+  una técnica que el agente cite pero que no esté en la semilla (p. ej. `T1056.001`,
+  `T1133`) se rechaza — para pintarla hay que ampliar la semilla.
 
 Sigue **sin implementarse** la capa de síntesis del orquestador
 (`forensia.reports` está vacío): el `MitreTechniqueMatch[]` con `confidence` y
