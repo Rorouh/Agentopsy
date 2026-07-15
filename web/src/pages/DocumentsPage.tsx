@@ -6,6 +6,7 @@ import type {
   DocumentFull,
   DocumentMeta,
   DocumentVerifyResult,
+  GenerateReportRequest,
 } from "../api/types";
 import { EmptyState } from "../ui/EmptyState";
 import { PageHeader } from "../ui/PageHeader";
@@ -49,6 +50,9 @@ export function DocumentsPage() {
   const [busy, setBusy] = useState(false);
   const [verify, setVerify] = useState<DocumentVerifyResult | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+
+  const [genOpen, setGenOpen] = useState(false);
+  const [perito, setPerito] = useState<GenerateReportRequest>({});
 
   const activeCase = cases[0] ?? null;
 
@@ -193,6 +197,30 @@ export function DocumentsPage() {
       showToast("Borrador eliminado del caso.");
     });
 
+  // Síntesis "con un clic": el backend redacta el informe pericial desde los
+  // hallazgos / custodia / MITRE reales del caso; abrimos el borrador recién
+  // creado. Los campos del perito son opcionales (sin ellos, el examinador del
+  // caso figura como perito).
+  const onGenerate = () =>
+    runAction(async () => {
+      if (!activeCase) return;
+      const payload: GenerateReportRequest = {};
+      (["name", "colegiado", "organization", "email", "version"] as const).forEach(
+        (k) => {
+          const v = perito[k]?.trim();
+          if (v) payload[k] = v;
+        },
+      );
+      const doc = await api.cases.generateReport(activeCase.id, payload);
+      await refreshDocs(activeCase.id);
+      setGenOpen(false);
+      setSelectedId(doc.id);
+      showToast("Informe pericial generado como borrador.");
+    });
+
+  const setPeritoField = (k: keyof GenerateReportRequest, v: string) =>
+    setPerito((p) => ({ ...p, [k]: v }));
+
   // ── estados degradados ────────────────────────────────────────────────────
   if (phase === "loading") {
     return <PageHeader title="Documentos" subtitle="Cargando informes del caso…" />;
@@ -237,10 +265,86 @@ export function DocumentsPage() {
           Caso activo: <strong>{activeCase.name}</strong> · {activeCase.examiner}
           {activeCase.os_profile ? ` · perfil ${activeCase.os_profile}` : ""}
         </span>
-        <span className={`docs-badge ${activeCase.status === "active" ? "open" : "closed"}`}>
-          {activeCase.status === "active" ? "Abierto" : "Cerrado"}
+        <span className="docs-context-actions">
+          <button
+            className="docs-btn docs-btn--primary"
+            disabled={busy}
+            onClick={() => setGenOpen((v) => !v)}
+          >
+            {genOpen ? "Cancelar" : "Generar informe pericial"}
+          </button>
+          <span className={`docs-badge ${activeCase.status === "active" ? "open" : "closed"}`}>
+            {activeCase.status === "active" ? "Abierto" : "Cerrado"}
+          </span>
         </span>
       </div>
+
+      {genOpen && (
+        <form
+          className="docs-genform"
+          onSubmit={(e) => {
+            e.preventDefault();
+            onGenerate();
+          }}
+        >
+          <p className="docs-genform-hint">
+            El informe se redacta desde los hallazgos, la cadena de custodia y la
+            correlación MITRE reales del caso. Los datos del perito son opcionales;
+            sin ellos figura el examinador del caso.
+          </p>
+          <div className="docs-genform-grid">
+            <label>
+              Perito
+              <input
+                value={perito.name ?? ""}
+                onChange={(e) => setPeritoField("name", e.target.value)}
+                placeholder={activeCase.examiner}
+              />
+            </label>
+            <label>
+              Nº de colegiado
+              <input
+                value={perito.colegiado ?? ""}
+                onChange={(e) => setPeritoField("colegiado", e.target.value)}
+                placeholder="p. ej. COL-1234"
+              />
+            </label>
+            <label>
+              Organización
+              <input
+                value={perito.organization ?? ""}
+                onChange={(e) => setPeritoField("organization", e.target.value)}
+                placeholder="Laboratorio / empresa"
+              />
+            </label>
+            <label>
+              Contacto
+              <input
+                value={perito.email ?? ""}
+                onChange={(e) => setPeritoField("email", e.target.value)}
+                placeholder="correo@dominio"
+              />
+            </label>
+            <label>
+              Versión
+              <input
+                value={perito.version ?? ""}
+                onChange={(e) => setPeritoField("version", e.target.value)}
+                placeholder="v0.1"
+              />
+            </label>
+          </div>
+          <div className="docs-genform-actions">
+            <button
+              type="submit"
+              className="docs-btn docs-btn--sign"
+              disabled={busy}
+            >
+              {busy ? "Generando…" : "Generar borrador"}
+            </button>
+          </div>
+        </form>
+      )}
 
       {documents.length === 0 && (
         <div className="docs-note">

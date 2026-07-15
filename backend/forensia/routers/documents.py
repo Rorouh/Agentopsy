@@ -11,7 +11,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 
-from forensia.reports import document_store
+from forensia.reports import build_pericial_report, document_store
 from forensia.reports.pdf import render_pdf
 from forensia.security import require_token
 
@@ -26,6 +26,20 @@ class CreateDocumentRequest(BaseModel):
     version: str | None = None
     author: str | None = None
     sections: list[dict[str, Any]] = []
+
+
+class GenerateReportRequest(BaseModel):
+    """Datos opcionales del perito para la síntesis del informe pericial. Todos
+    son opcionales: en su ausencia el informe usa el examinador del caso como
+    perito (no un default silencioso de negocio — es el dato autoritativo del
+    caso). El cuerpo del informe se sintetiza de los hallazgos / custodia / MITRE
+    reales (forensia.reports.build_pericial_report)."""
+
+    name: str | None = None
+    colegiado: str | None = None
+    organization: str | None = None
+    email: str | None = None
+    version: str | None = None
 
 
 def _svc_error(exc: Exception) -> HTTPException:
@@ -55,6 +69,22 @@ def get_document(case_id: str, doc_id: str) -> dict[str, Any]:
 def create_document(case_id: str, req: CreateDocumentRequest) -> dict[str, Any]:
     try:
         return asdict(document_store.create(case_id, req.model_dump()))
+    except (KeyError, ValueError) as exc:
+        raise _svc_error(exc) from exc
+
+
+@router.post(
+    "/api/cases/{case_id}/documents/generate",
+    dependencies=[Depends(require_token)],
+)
+def generate_report(case_id: str, req: GenerateReportRequest) -> dict[str, Any]:
+    """Sintetiza el informe pericial del caso (metadatos + custodia + metodología
+    + hallazgos + correlación MITRE + conclusiones) y lo persiste como documento
+    (estado ``draft``). El PDF se obtiene después con el endpoint ``…/pdf``. Falla
+    fuerte si el caso no existe (RULE 2)."""
+    try:
+        data = build_pericial_report(case_id, req.model_dump(exclude_none=True))
+        return asdict(document_store.create(case_id, data))
     except (KeyError, ValueError) as exc:
         raise _svc_error(exc) from exc
 

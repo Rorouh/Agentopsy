@@ -103,11 +103,20 @@ escaneo lo salte (igual que los ficheros ocultos — ver §4, punto 2, y
 `os_profile`, así que nunca colisiona con la regla «un agente por perfil».
 
 Es el paquete declarativo del **orquestador**: prompts y conocimiento con los que
-la capa de síntesis (`forensia.reports`, aún sin implementar) convierte los
-`Finding[]` ya trazados por los agentes de nivel 1 en los tres entregables de la
-propuesta:
+la capa de síntesis (`forensia.reports`) convierte los `Finding[]` ya trazados por
+los agentes de nivel 1 en los tres entregables de la propuesta:
 
-1. **Informe pericial** (`reporter.md`) → `ReportDocument`.
+1. **Informe pericial** (`reporter.md`) → `ReportDocument`. **Implementado**
+   (`forensia.reports.build_pericial_report`, 2026-07-15): una síntesis
+   determinista "con un clic" ensambla las secciones del informe pericial
+   (resumen ejecutivo, datos del perito, cadena de custodia por evidencia,
+   metodología + herramientas usadas, hallazgos agrupados por severidad,
+   correlación MITRE y conclusiones) desde los datos REALES del caso
+   (`forensia.cases` + `custody` + `findings` + `mitre.coverage` +
+   `toolkit.usage`) y la persiste vía `DocumentStore.create` (estado `draft`).
+   No inventa nada (RULE 2): un caso sin hallazgos produce un informe honesto que
+   lo dice. La exponen el endpoint `POST /api/cases/{case_id}/documents/generate`
+   y el botón «Generar informe pericial» de la página Documentos.
 2. **Línea temporal** (`timeline.md`) → `TimelineEvent[]`.
 3. **Correlación MITRE ATT&CK** (`mitre.md` + `knowledge/`) → `MitreTechniqueMatch[]`.
 
@@ -153,12 +162,16 @@ perdía. Eso queda cerrado:
   una técnica que el agente cite pero que no esté en la semilla (p. ej. `T1056.001`,
   `T1133`) se rechaza — para pintarla hay que ampliar la semilla.
 
-Sigue **sin implementarse** la capa de síntesis del orquestador
-(`forensia.reports` está vacío): el `MitreTechniqueMatch[]` con `confidence` y
-`relatedFindingIds` que describe `mitre.md` **no lo produce nadie todavía**. Lo
-que la UI pinta hoy son los `mitre_hints` crudos de los hallazgos (propuesta con
-procedencia), no correlaciones sintetizadas. Son cosas distintas y la UI las
-distingue: ver §5.ter.
+La capa de síntesis del orquestador ya **redacta el informe pericial**
+(`forensia.reports.build_pericial_report`, ver §5, entregable 1): consolida los
+hallazgos, la cadena de custodia, el uso de herramientas y la correlación MITRE
+en un `Document` persistido. Lo que ese informe pinta en la sección MITRE son las
+técnicas del `CoverageStore` (propuesta del agente + veredicto del perito, sin
+fundir los ejes), no el `MitreTechniqueMatch[]` con `confidence` y
+`relatedFindingIds` que describe `mitre.md`: ese tipado con `confidence` sintetizado
+**sigue sin producirse**. Lo que la UI pinta en la matriz son los `mitre_hints`
+crudos de los hallazgos (propuesta con procedencia) y los dictámenes del perito.
+Son cosas distintas y la UI las distingue: ver §5.ter.
 
 Del esquema de hallazgo siguen huérfanos en el motor `confidence`, `provenance` y
 `observed_at` — mismo tipo de deuda, aún abierta.
