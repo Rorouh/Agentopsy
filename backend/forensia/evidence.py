@@ -53,6 +53,37 @@ _UUID4_RE = re.compile(
 _HASH_CHUNK = 1024 * 1024  # 1 MiB — evidence images run to tens of GB.
 _READ_ONLY_MODE = 0o444
 
+# Read-only enforcement level actually applied by ``register`` (step 6 below).
+# This is the HONEST label the metadata / acquisition-act surfaces show: v1 is
+# filesystem-level only (``chmod 0o444``); block-level read-only is Phase 2 and
+# is NOT implemented (see the module docstring). RULE 2 — never advertise a
+# guarantee we don't enforce.
+READ_ONLY_LEVEL = "fs"
+READ_ONLY_LEVEL_LABELS: dict[str, str] = {
+    "fs": (
+        "Solo lectura a nivel de sistema de ficheros (chmod 0444); "
+        "bloqueo a nivel de bloque pendiente (Fase 2)"
+    ),
+}
+
+
+def human_readable_size(size: int) -> str:
+    """Bytes → short human string (``1.5 GB``). Base-1024, one decimal above KB.
+
+    Pure presentation helper; the authoritative value is always ``size`` in bytes.
+    """
+    if not isinstance(size, int) or size < 0:
+        raise ValueError(f"size must be a non-negative int, got {size!r}")
+    units = ("B", "KB", "MB", "GB", "TB", "PB")
+    if size == 0:
+        return "0 B"
+    exp = 0
+    value = float(size)
+    while value >= 1024 and exp < len(units) - 1:
+        value /= 1024
+        exp += 1
+    return f"{int(value)} {units[exp]}" if exp == 0 else f"{value:.1f} {units[exp]}"
+
 
 @dataclass(frozen=True)
 class VerificationRecord:
@@ -357,6 +388,42 @@ class EvidenceManager:
     def get_verification(self, case_id: str, evidence_id: str) -> VerificationRecord | None:
         evidence_dir = self._evidence_dir(case_id, evidence_id)
         return self._read_verification(evidence_dir)
+
+    def metadata(self, case_id: str, evidence_id: str) -> dict:
+        """Chain-of-custody metadata for ONE registered evidence, JSON-friendly.
+
+        Surfaces what the UI needs to show honestly per evidence: the baseline
+        ``sha256`` + size (bytes and a human string), when it was registered,
+        the read-only level with a HONEST label (``fs`` today — Phase 2 adds
+        block-level; RULE 2: we never claim block-level here), the triage axes,
+        and the last on-demand verification if one exists. Unknown case /
+        evidence raises ``KeyError``; a malformed id raises ``ValueError`` — the
+        router maps these to 404 / 422 (never a silent empty answer, RULE 2).
+        """
+        handle = self.get(case_id, evidence_id)
+        lv = handle.last_verification
+        return {
+            "evidence_id": handle.evidence_id,
+            "case_id": handle.case_id,
+            "original_basename": handle.original_path.name,
+            "sha256": handle.sha256,
+            "size_bytes": handle.size,
+            "size_human": human_readable_size(handle.size),
+            "registered_at": handle.registered_at,
+            "read_only_level": READ_ONLY_LEVEL,
+            "read_only_label": READ_ONLY_LEVEL_LABELS[READ_ONLY_LEVEL],
+            "detected_os": handle.detected_os,
+            "detected_kind": handle.detected_kind,
+            "verification": (
+                {
+                    "verified_at": lv.verified_at,
+                    "verified": lv.verified,
+                    "current_sha256": lv.current_sha256,
+                }
+                if lv is not None
+                else None
+            ),
+        }
 
     # ---- internals ----------------------------------------------------------
 

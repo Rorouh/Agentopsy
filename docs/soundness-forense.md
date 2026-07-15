@@ -301,3 +301,33 @@ herramienta forense que necesite red es una bandera roja — egress significa ex
 potencial de bytes de evidencia y una superficie de SSRF a través de prompt injection.
 Habilitarla exige una decisión consciente del operador, queda registrada en el audit log
 junto con el motivo, y nunca se concede de forma persistente para la herramienta entera.
+
+## 8. Metadata de custodia y acta de adquisición
+
+La metadata de custodia de cada evidencia y su **acta de adquisición** se exponen sin
+inventar nada: se leen del `baseline.json` que escribe `EvidenceManager` en la ingesta y
+del evento `evidence_register` de la cadena hash-encadenada (`audit.jsonl`). No hay una
+segunda narración — el acta es un render fiel y reproducible de esos dos orígenes.
+
+- **Metadata por evidencia** — `GET /api/cases/{case_id}/evidence/{evidence_id}/metadata`
+  (`EvidenceManager.metadata`): `sha256` baseline, `size_bytes` + `size_human`,
+  `registered_at`, huella de triage (`detected_os`/`detected_kind`), la última
+  `verification` si existe, y el **nivel de solo-lectura** con etiqueta **honesta**.
+
+- **Acta de adquisición** — `GET /api/cases/{case_id}/evidence/{evidence_id}/custody-act`
+  (`forensia.custody.build_custody_act`, lógica pura — RULE 3): caso + examinador,
+  evidencia (origen, `sha256`, tamaño, timestamps), **cadena de custodia** (el `entry_hash`
+  y `prev_hash` del evento de registro, más si la cadena entera verifica hoy —
+  `hash_chain_verified`), nivel de solo-lectura y herramienta/versión (`FORENSIA` +
+  `__version__`). La UI («Casos y evidencias» → «Cadena de custodia») la muestra por
+  evidencia y permite descargarla en JSON.
+
+**Honestidad del nivel de solo-lectura (RULE 2).** Hoy el read-only que impone `register`
+es **a nivel de sistema de ficheros** (`chmod 0o444`), no a nivel de bloque: por eso
+`read_only_level` es `"fs"` y la etiqueta dice literalmente *«Solo lectura a nivel de
+sistema de ficheros (chmod 0444); bloqueo a nivel de bloque pendiente (Fase 2)»*. El
+bloqueo a nivel de bloque descrito en §1–§2 es el objetivo de la Fase 2 y **aún no está
+implementado** (ver el docstring de `backend/forensia/evidence.py`). La metadata y el acta
+**nunca** anuncian «block-level»: no se declara una garantía que no se aplica. Cuando la
+Fase 2 lo implemente, `READ_ONLY_LEVEL`/`READ_ONLY_LEVEL_LABELS` en `evidence.py` son el
+único punto a actualizar y ambas superficies reflejarán el cambio automáticamente.

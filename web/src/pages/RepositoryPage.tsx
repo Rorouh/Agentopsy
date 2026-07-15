@@ -1,11 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
-import type { Case, EvidenceHandle, EvidenceSource } from "../api/types";
+import type {
+  Case,
+  CustodyAct,
+  EvidenceHandle,
+  EvidenceMetadata,
+  EvidenceSource,
+} from "../api/types";
 import type { ViewId } from "../navigation/navItems";
 import { ActiveCaseHeader } from "../components/ActiveCaseHeader";
 import { CaseSearchModal } from "../components/CaseSearchModal";
 import { EvidenceInbox } from "../components/EvidenceInbox";
 import { EvidenceTable } from "../components/EvidenceTable";
+import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { EmptyState } from "../ui/EmptyState";
@@ -14,6 +21,17 @@ import { LoadingState } from "../ui/LoadingState";
 import { Modal } from "../ui/Modal";
 import { PageHeader } from "../ui/PageHeader";
 import { PageSection } from "../ui/PageSection";
+import { formatBytes, formatDate, shortHash } from "../utils/format";
+
+// Etiqueta corta del nivel de solo-lectura para la lista de custodia. La fuente
+// AUTORITATIVA es el backend (metadata.read_only_label / acta.read_only.label);
+// esto es solo la insignia compacta por fila. Honesta: FS (chmod 0444), el
+// bloqueo a nivel de bloque es Fase 2 (RULE 2 — no se anuncia lo que no se aplica).
+const READ_ONLY_BADGE = "Solo lectura: FS (chmod 0444)";
+
+function evidenceFileName(ev: EvidenceHandle): string {
+  return ev.original_path.split("/").pop() ?? ev.original_path;
+}
 
 interface RepositoryPageProps {
   onNavigate?: (view: ViewId) => void;
@@ -74,6 +92,15 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
   const [loadingSources, setLoadingSources] = useState(false);
   const [selectedSourcePath, setSelectedSourcePath] = useState("");
   const [verifyingIds, setVerifyingIds] = useState<Set<string>>(new Set());
+
+  // Acta de adquisición: modal por evidencia con la metadata de custodia + el
+  // acta estructurada (cadena hash-encadenada), ambas del backend.
+  const [actaOpen, setActaOpen] = useState(false);
+  const [actaEvidence, setActaEvidence] = useState<EvidenceHandle | null>(null);
+  const [actaMeta, setActaMeta] = useState<EvidenceMetadata | null>(null);
+  const [acta, setActa] = useState<CustodyAct | null>(null);
+  const [actaLoading, setActaLoading] = useState(false);
+  const [actaError, setActaError] = useState<string | null>(null);
   // Tagged so the toast can label the failure honestly. Mixing both in one
   // string slot used to mean a verify 404 showed up as "No se pudo registrar
   // la evidencia: …" which was wrong both ways.
@@ -289,6 +316,48 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
     },
     [activeCase]
   );
+
+  const openActa = useCallback(
+    async (ev: EvidenceHandle) => {
+      const caseId = activeCase?.id;
+      if (!caseId) return;
+      setActaEvidence(ev);
+      setActaOpen(true);
+      setActa(null);
+      setActaMeta(null);
+      setActaError(null);
+      setActaLoading(true);
+      try {
+        // Metadata + acta en paralelo — ambas son lecturas puras del backend.
+        const [meta, actaRes] = await Promise.all([
+          api.cases.evidenceMetadata(caseId, ev.evidence_id),
+          api.cases.custodyAct(caseId, ev.evidence_id),
+        ]);
+        setActaMeta(meta);
+        setActa(actaRes);
+      } catch (err) {
+        setActaError(String(err instanceof Error ? err.message : err));
+      } finally {
+        setActaLoading(false);
+      }
+    },
+    [activeCase]
+  );
+
+  const downloadActa = useCallback(() => {
+    if (!acta) return;
+    const blob = new Blob([JSON.stringify(acta, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `acta-adquisicion-${acta.evidence.evidence_id}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, [acta]);
 
   const closeActiveCase = useCallback(async () => {
     if (!activeCase) return;
@@ -559,6 +628,51 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
                   }
                 />
               </PageSection>
+
+              {evidence.length > 0 && (
+                <PageSection title="Cadena de custodia">
+                  <div className="dropzone-hint" style={{ marginBottom: 10 }}>
+                    Solo lectura a nivel de sistema de ficheros (chmod 0444); el
+                    bloqueo a nivel de bloque está pendiente (Fase 2). Genera el
+                    acta de adquisición de cada evidencia con su hash baseline,
+                    tamaño y el enlace de la cadena hash-encadenada.
+                  </div>
+                  <div className="custody-list">
+                    {evidence.map((ev) => (
+                      <Card key={ev.evidence_id}>
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            gap: 12,
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <div style={{ minWidth: 0 }}>
+                            <strong
+                              title={evidenceFileName(ev)}
+                              style={{ display: "block", overflowWrap: "anywhere" }}
+                            >
+                              {evidenceFileName(ev)}
+                            </strong>
+                            <div style={{ marginTop: 4, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                              <Badge variant="neutral">{formatBytes(ev.size)}</Badge>
+                              <span title={ev.sha256}>
+                                <Badge variant="neutral">SHA-256 {shortHash(ev.sha256)}</Badge>
+                              </span>
+                              <Badge variant="medium">{READ_ONLY_BADGE}</Badge>
+                            </div>
+                          </div>
+                          <Button variant="chip" onClick={() => openActa(ev)}>
+                            Acta de adquisición
+                          </Button>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                </PageSection>
+              )}
             </>
           )}
       </section>
@@ -635,6 +749,86 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
             Cancelar
           </Button>
         </div>
+      </Modal>
+
+      <Modal
+        open={actaOpen}
+        title="Acta de adquisición"
+        onClose={() => setActaOpen(false)}
+      >
+        {actaEvidence && (
+          <p style={{ marginTop: 0, wordBreak: "break-word" }}>
+            <strong>{evidenceFileName(actaEvidence)}</strong>
+          </p>
+        )}
+        {actaLoading ? (
+          <LoadingState label="Generando acta…" />
+        ) : actaError ? (
+          <ErrorState message={actaError} />
+        ) : acta && actaMeta ? (
+          <div className="acta-detail">
+            <dl className="acta-grid">
+              <dt>Caso</dt>
+              <dd>
+                {acta.case.name} · Examinador: {acta.case.examiner}
+              </dd>
+              <dt>Origen</dt>
+              <dd style={{ overflowWrap: "anywhere" }}>
+                {acta.evidence.source_path ?? "—"}
+              </dd>
+              <dt>SHA-256 (baseline)</dt>
+              <dd style={{ overflowWrap: "anywhere" }} title={acta.evidence.sha256}>
+                {acta.evidence.sha256}
+              </dd>
+              <dt>Tamaño</dt>
+              <dd>
+                {acta.evidence.size_human} ({acta.evidence.size_bytes.toLocaleString("es-ES")} bytes)
+              </dd>
+              <dt>Registrada</dt>
+              <dd>{formatDate(acta.evidence.registered_at)}</dd>
+              <dt>Nivel de solo-lectura</dt>
+              <dd>{actaMeta.read_only_label}</dd>
+              <dt>Cadena de custodia</dt>
+              <dd style={{ overflowWrap: "anywhere" }}>
+                entry_hash:{" "}
+                <code>{acta.chain_of_custody.register_entry_hash ?? "—"}</code>
+                <div style={{ marginTop: 6 }}>
+                  {acta.chain_of_custody.hash_chain_verified ? (
+                    <Badge variant="success">✓ Cadena hash verificada</Badge>
+                  ) : (
+                    <Badge variant="critical">⚠ Cadena hash NO verifica</Badge>
+                  )}
+                </div>
+              </dd>
+              <dt>Verificación</dt>
+              <dd>
+                {acta.verification ? (
+                  acta.verification.verified ? (
+                    <Badge variant="success">
+                      ✓ Verificada {formatDate(acta.verification.verified_at)}
+                    </Badge>
+                  ) : (
+                    <Badge variant="critical">⚠ Hash MISMATCH</Badge>
+                  )
+                ) : (
+                  <Badge variant="neutral">Sin verificar</Badge>
+                )}
+              </dd>
+              <dt>Herramienta</dt>
+              <dd>
+                {acta.tool.name} {acta.tool.version} · {acta.tool.method}
+              </dd>
+            </dl>
+            <div className="cta-row">
+              <Button variant="primary" onClick={downloadActa}>
+                Descargar acta (JSON)
+              </Button>
+              <Button variant="chip" onClick={() => setActaOpen(false)}>
+                Cerrar
+              </Button>
+            </div>
+          </div>
+        ) : null}
       </Modal>
 
       <Modal
