@@ -66,6 +66,22 @@ bajo la identidad de este contexto. Todos los caminos de cierre —exit 0, exit 
 excepción del runner, fallo de finalize— conservan el mismo `evidence_id` +
 `baseline_sha256` que el start pareado; ningún finish de error pierde el contexto.
 
+**El argv ejecutado en el maletín se verifica (P0.5-4).** El registro `tool_run_start`
+audita el argv que fija el api (con la `.E01` como identidad estable en runs EWF); el
+exec-agent devuelve en cada respuesta de `/exec` el `executed_argv` literal que lanzó, y
+`forensia.toolkit.maletin` lo compara token a token contra el auditado — idéntico sin
+EWF; con EWF, idéntico salvo el token `.E01`, reescrito (todas sus apariciones al MISMO
+bloque raw `ewf1` absoluto). Cualquier divergencia — campo ausente (imagen del maletín
+anterior al contrato), token alterado, longitud distinta, token EWF sin reescribir o
+reescrito a algo que no es el bloque raw — es "custodia rota": el run se cierra como
+error con su contexto forense y el resultado no se acepta (INVARIANT 4). Alcance: el
+campo es auto-reportado por el exec-agent, así que la verificación detecta divergencia
+honesta (imagen del maletín anterior al contrato, bug de reescritura EWF, drift de
+despliegue) — no protege contra un exec-agent malicioso que ejecute otra cosa y haga eco
+del argv solicitado; el maletín es una imagen construida por este repo y ese escenario
+queda fuera del modelo de amenaza (la amenaza es la evidencia hostil, no la
+infraestructura propia). Ver `docs/operacion/exec-agent.md`.
+
 **Procedencia de artefactos derivados (P0.5-3).** El manifiesto de cada `ArtifactRun`
 persiste `evidence_id` + `evidence_baseline_sha256` + `tool_version` del run que lo produjo
 (`ArtifactStore.start_run` los exige; validados, nunca placeholders). Cuando una tool consume
@@ -168,10 +184,14 @@ reservar `ArtifactRun`, escribir `tool_run_start` o cruzar el runner:
   el `EVIDENCE_INPUT` confinado al contexto verificado o como `ArtifactRef`
   re-hasheado (mismo caso ≠ misma evidencia, INVARIANT 4).
 - `DERIVED_INPUT`: solo el contrato compartido `ArtifactRef`: `run_id` y `relpath`
-  obligatorios, `sha256` y `size` opcionales, sin claves adicionales.
-  `ArtifactStore.resolve_output_file` confina y re-hashea siempre. Si los metadatos
-  opcionales no coinciden con ese valor autoritativo, falla antes del runner. Una ruta
-  literal bajo `artifacts/` se rechaza.
+  obligatorios, `sha256` y `size` opcionales, sin claves adicionales. Los gates de
+  MANIFIESTO van antes que los bytes (P0.5-5): el run productor debe haber cerrado
+  `finished` con `exit_code == 0` — un productor `running` (bytes aún mutando), `error`
+  (salida parcial, p. ej. timeout) o con exit != 0 (fallo declarado por la tool) se
+  rechaza con error accionable; luego la procedencia (P0.5-3) debe coincidir con el
+  contexto del consumidor; solo entonces `ArtifactStore.resolve_output_file` confina y
+  re-hashea. Si los metadatos opcionales no coinciden con ese valor autoritativo, falla
+  antes del runner. Una ruta literal bajo `artifacts/` se rechaza.
 - `RUN_OUTPUT`: el caller no lo puede suministrar. El dispatcher lo genera exclusivamente
   bajo `artifacts/<run_actual>/out`; no puede apuntar a `case.json`, `baseline.json`,
   `audit.jsonl`, manifests ni otro run. `bulk_extractor` recibe específicamente

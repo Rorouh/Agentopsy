@@ -382,6 +382,86 @@ def test_tampered_producer_provenance_is_rejected(
 
 
 # --------------------------------------------------------------------------- #
+# (P0.5-5) producer COMPLETION gate: only a successfully closed producer feeds a
+# consumer — running (bytes may mutate), error-closed (partial) and exit!=0 (failed
+# by the tool's own account) are all rejected BEFORE the consumer's start.
+# --------------------------------------------------------------------------- #
+def _producer_in_state(store: ArtifactStore, anchored, *, state: str) -> dict:
+    """A producer run with ctx-matching provenance whose artifact bytes are INTACT —
+    so the completion gate, not provenance nor re-hash, is what must reject it."""
+    case, ctx = anchored["case"], anchored["ctx"]
+    run_id, out_dir = store.start_run(
+        case.id,
+        "tsk_icat",
+        argv=["icat"],
+        evidence_id=ctx.evidence_id,
+        evidence_baseline_sha256=ctx.baseline_sha256,
+        tool_version="sleuthkit 4.12 (dpkg)",
+    )
+    (out_dir / "stdout.bin").write_bytes(_HIVE_BYTES)
+    if state == "error":
+        store.fail_run(
+            case.id, run_id,
+            error_type="TimeoutExpired", error_message="icat matado por timeout",
+        )
+    elif state == "nonzero":
+        store.finalize_run(case.id, run_id, exit_code=2, stdout="", stderr="boom")
+    elif state != "running":
+        raise AssertionError(f"unknown producer state {state!r}")
+    return {"run_id": run_id, "relpath": "stdout.bin"}
+
+
+@pytest.mark.parametrize(
+    ("state", "expected"),
+    [
+        ("running", "sigue en ejecución"),
+        ("error", "no completó con éxito"),
+        ("nonzero", "no completó con éxito"),
+    ],
+)
+def test_incomplete_producer_is_rejected_before_start(
+    wired_dispatcher, store, anchored, cases, state, expected
+) -> None:
+    case, ctx = anchored["case"], anchored["ctx"]
+    ref = _producer_in_state(store, anchored, state=state)
+    starts_before = sum(
+        1 for e in _tool_audit(cases, case.id) if e["action"] == "tool_run_start"
+    )
+    with pytest.raises(wired_dispatcher.ToolExecutionError, match=expected):
+        wired_dispatcher.execute(
+            "regripper",
+            {"hive_path": ref, "plugin": "compname"},
+            case_id=case.id,
+            os_profile="windows",
+            evidence_context=ctx,
+        )
+    starts_after = sum(
+        1 for e in _tool_audit(cases, case.id) if e["action"] == "tool_run_start"
+    )
+    assert starts_after == starts_before  # the consumer never started
+    assert AuditLog(cases.root / case.id / "audit.jsonl").verify() is True
+
+
+def test_error_producer_rejection_names_the_actionable_cause(
+    wired_dispatcher, store, anchored
+) -> None:
+    """The rejection is actionable: it names the producer's error and the remedy."""
+    case, ctx = anchored["case"], anchored["ctx"]
+    ref = _producer_in_state(store, anchored, state="error")
+    with pytest.raises(
+        wired_dispatcher.ToolExecutionError,
+        match="TimeoutExpired.*re-ejecuta el productor",
+    ):
+        wired_dispatcher.execute(
+            "regripper",
+            {"hive_path": ref, "plugin": "compname"},
+            case_id=case.id,
+            os_profile="windows",
+            evidence_context=ctx,
+        )
+
+
+# --------------------------------------------------------------------------- #
 # (4) the store's custody gate in isolation: confinement + re-hash
 # --------------------------------------------------------------------------- #
 _PROV = {

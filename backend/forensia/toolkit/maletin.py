@@ -188,10 +188,86 @@ def run_argv_in_maletin(
             f"el exec-agent {base_url} devolvió una respuesta inesperada (estado {status})"
             + (f": {detail}" if detail else "")
         )
+    # P0.5-4 (FORENSIC INVARIANT 4): the argv the maletín ACTUALLY launched must match
+    # the argv the api audited — identical without EWF, and differing ONLY in the
+    # ``ewf_image`` token(s) rewritten to the raw ``ewf1`` block when EWF routing ran.
+    # The exec-agent is not trusted blindly: a divergence here is a custody violation
+    # and the run is closed as an error, never accepted.
+    _verify_executed_argv(base_url, argv, body.get("executed_argv"), ewf_image)
     if stdout_path is not None:
         # Binary-safe: stdout went to `stdout_path` on the shared mount, not over the wire.
         return int(body["exit"]), "", str(body.get("stderr", ""))
     return int(body["exit"]), str(body.get("stdout", "")), str(body.get("stderr", ""))
+
+
+def _verify_executed_argv(
+    base_url: str,
+    requested: list[str],
+    executed: object,
+    ewf_image: str | None,
+) -> None:
+    """Token-by-token proof that the maletín executed EXACTLY the audited argv.
+
+    Contract (P0.5-4): every 200 from ``POST /exec`` carries ``executed_argv`` — the
+    literal list the exec-agent passed to ``subprocess.run``. Without ``ewf_image`` it
+    must equal the requested argv verbatim. With it, every position whose requested
+    token equals ``ewf_image`` must be rewritten — all to the SAME absolute raw block
+    whose basename is ``ewf1`` (what ``ewfmount`` exposes; never a filesystem mount,
+    FORENSIC INVARIANT 3) — and every other token must be untouched. Anything else
+    (missing field, length drift, altered token, unrewritten EWF token, a rewrite that
+    is not the raw block) raises ``MaletinExecError``: the caller closes the run as an
+    error and the artifact is never trusted (RULE 2 — no "probably fine").
+    """
+    if not isinstance(executed, list) or not all(isinstance(t, str) for t in executed):
+        raise MaletinExecError(
+            f"el exec-agent {base_url} no devolvió 'executed_argv' (o no es list[str]) — "
+            "la imagen del maletín es anterior al contrato P0.5-4; reconstruye con "
+            "docker compose build. Sin el argv ejecutado no se puede verificar que el "
+            "maletín corrió el comando auditado (FORENSIC INVARIANT 4)."
+        )
+    if len(executed) != len(requested):
+        raise MaletinExecError(
+            f"custodia rota: el exec-agent {base_url} ejecutó un argv de "
+            f"{len(executed)} tokens cuando el auditado tiene {len(requested)} — "
+            "el comando ejecutado no es el registrado (FORENSIC INVARIANT 4)."
+        )
+    rewrites: set[str] = set()
+    for index, (req, got) in enumerate(zip(requested, executed)):
+        if ewf_image is not None and req == ewf_image:
+            if got == req:
+                raise MaletinExecError(
+                    f"custodia rota: el exec-agent {base_url} no reescribió el token "
+                    f"EWF (posición {index}) — la tool habría leído el contenedor "
+                    ".E01 directamente, que TSK no interpreta (RULE 2: el routing "
+                    "EWF no puede degradarse en silencio)."
+                )
+            if not got.startswith("/") or got.rsplit("/", 1)[-1] != "ewf1":
+                raise MaletinExecError(
+                    f"custodia rota: el exec-agent {base_url} reescribió el token EWF "
+                    f"(posición {index}) a {got!r}, que no es el bloque raw 'ewf1' "
+                    "absoluto que expone ewfmount — reescritura no reconocida "
+                    "(FORENSIC INVARIANT 3/4)."
+                )
+            rewrites.add(got)
+        elif got != req:
+            raise MaletinExecError(
+                f"custodia rota: el exec-agent {base_url} ejecutó un argv distinto "
+                f"del auditado (posición {index}: se auditó {req!r}, se ejecutó "
+                f"{got!r}) — FORENSIC INVARIANT 4; el resultado no se acepta."
+            )
+    if ewf_image is not None:
+        if not rewrites:
+            raise MaletinExecError(
+                f"custodia rota: se pidió routing EWF para {ewf_image!r} pero ese "
+                f"token no aparece en el argv auditado — bug del llamador; el "
+                f"exec-agent {base_url} no pudo haberlo reescrito."
+            )
+        if len(rewrites) > 1:
+            raise MaletinExecError(
+                f"custodia rota: el exec-agent {base_url} reescribió el token EWF a "
+                f"rutas distintas en posiciones distintas ({sorted(rewrites)}) — "
+                "reescritura inconsistente (FORENSIC INVARIANT 4)."
+            )
 
 
 # Version identities the manifest must never contain: they carry no reproducibility

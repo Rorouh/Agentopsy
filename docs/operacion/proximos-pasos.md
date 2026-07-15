@@ -185,9 +185,50 @@ Este cambio cierra **únicamente P0.5-2**; no implica el cierre del resto de P0.
 
   Tests: `test_evidence_context.py`, `test_evidence_context_e2e.py`,
   `test_derived_handoff.py`, `test_tool_path_policy.py`, `test_dispatcher_case_anchored.py`,
-  `test_tool_version.py`, `test_e2e_chain.py`. **Quedan fuera de P0.5-3** (tareas
-  posteriores, no mezcladas): **P0.5-4** (verificar que el argv EWF ejecutado coincide con
-  el solicitado) y **P0.5-5** (contrato del canal `stdout.bin`).
+  `test_tool_version.py`, `test_e2e_chain.py`.
+
+- [x] **P0.5-4 (2026-07-14):** el argv EJECUTADO en el maletín se verifica contra el
+  auditado. Toda respuesta 200 de `POST /exec` incluye `executed_argv` (la lista literal
+  que el exec-agent pasó a `subprocess.run` — también en exit 127/timeout);
+  `maletin.run_argv_in_maletin` la compara token a token: sin `ewf_image` deben ser
+  idénticos; con `ewf_image`, cada aparición del token `.E01` debe estar reescrita —
+  todas al MISMO bloque raw absoluto `…/ewf1` — y el resto intacto. Campo ausente
+  (imagen anterior al contrato → reconstruir), longitud distinta, token alterado, token
+  EWF sin reescribir o reescrito a otra cosa → `MaletinExecError` "custodia rota": el
+  dispatcher cierra el run como error con su contexto y el resultado no se acepta
+  (FORENSIC INVARIANT 4, RULE 2). El audit sigue citando la `.E01` (identidad estable);
+  la verificación garantiza que lo ejecutado solo difirió en ese token. Tests:
+  `test_ewf_routing.py` §4 (verificación del cliente + E2E con exec-agent mentiroso),
+  `test_binary_stdout_channel.py` / `test_exec_timeout_custody.py` (contrato del campo).
+
+- [x] **P0.5-5 (2026-07-14):** contrato del canal `stdout.bin` cerrado. (a) **Gate de
+  completitud del productor**: un `ArtifactRef` solo se resuelve si el run productor
+  cerró `finished` con `exit_code == 0` — `running` (bytes aún mutando; cierra además un
+  TOCTOU real), `error` (salida parcial: icat matado por timeout con `stdout.bin`
+  truncado hasheado por `fail_run`) y exit != 0 se rechazan con error accionable ANTES
+  del `tool_run_start` del consumidor; orden de gates: completitud → procedencia →
+  re-hash (manifiesto antes que bytes). (b) **Streaming verificado**: el canal es
+  fd-directo (el stdout del hijo ES el fichero, sin buffering en RAM) y el hash es
+  chunked (1 MiB) en ambos lados (`exec_agent._sha256_size`, `store._hash_file`); sin
+  tope de tamaño por diseño (el volumen `/cases` es disco del operador) — round-trip
+  byte-exacto de 8 MiB fijado por test. Tests: `test_derived_handoff.py` (sección
+  P0.5-5), `test_binary_stdout_channel.py::test_exec_agent_streams_large_binary_stdout_exactly`.
+
+- [ ] **Seguimiento P2 de la auditoría adversarial P0.5-4/5 (2026-07-15)** — mejoras
+  no bloqueantes (el veredicto fue "sin P0/P1"); baratas, agrupables en un pase corto:
+    1. exec-agent: un `FileNotFoundError` al abrir `stdout_path` (p. ej. mount `/cases`
+       ausente en el maletín) se atribuye hoy como "binario no encontrado" (127) o error
+       de transporte genérico — distinguir la causa real en la respuesta.
+    2. `maletin.py`: un `exit` no coercible a int en la respuesta del exec-agent lanza
+       `ValueError`/`TypeError` crudo (en runs no anclados se propaga sin envolver) —
+       convertirlo en `MaletinExecError` accionable.
+    3. Cobertura: assert de `executed_argv` también en las respuestas 127/timeout del
+       canal de texto del exec-agent real, y un test directo del modo combinado
+       EWF + `stdout_path` (mismo código; riesgo bajo).
+    4. Un consumo derivado RECHAZADO por los gates de completitud/procedencia no deja
+       traza en `audit.jsonl` (cumple el contrato — es "antes del start" — pero el
+       intento es invisible para un revisor forense). Decidir: anotar como diseño o
+       registrar un evento de rechazo.
 
 ### A. ~~Construir las 3 imágenes OCI~~ **[SUPERSEDIDO por el pivote 2026-07-02]**
 
@@ -395,6 +436,45 @@ Los antiguos ítems `models.local` (Ollama `NotImplementedError`) y `models.anth
 (clave aceptada sin uso) quedan absorbidos aquí: el primero se convierte en el ejecutor
 Ollama; el segundo desaparece — no habrá backend por SDK con API key (resuelve D-3 de §7).
 
+### Coste de tokens de los ejecutores — medir y optimizar (2026-07-15)
+
+El ejecutor es **sin estado**: cada iteración del bucle del agente lanza un proceso CLI
+nuevo (`CliPromptExecutor.run`, `backend/forensia/executors/base.py`) y la conversación
+completa —sistema + playbook + historial + resultados de tools— viaja entera en cada
+turno, así que el coste de cable de una sesión crece **O(N²)**. Ya existe una primera
+capa de mitigación (Bug 008, `backend/forensia/agent/context.py`): stubbing de
+resultados de tools antiguos (`window_messages`, se conservan los últimos 4 —
+`FORENSIA_CONTEXT_KEEP_TOOL_RESULTS`), poda del playbook por rama según
+`detected_kind`, specs de tools en JSON compacto y caps del replay de historial
+(6 turnos / 8K chars / 30 entradas de ledger). Lo que queda, por niveles y **en este
+orden** (no optimizar sin medir):
+
+**Nivel 0 — telemetría de coste (hacer primero).**
+
+| | |
+|---|---|
+| **Qué** | Persistir tokens/coste por turno en el evento `executor_run_finish` del audit (que ya registra `prompt_chars`/`response_chars`). Los envelopes ya traen los datos y hoy se descartan: Claude Code devuelve `total_cost_usd` + usage en su JSON (`claude_code.py::_extract_text` solo extrae `result`); `codex exec --json` reporta tokens; Ollama devuelve `prompt_eval_count`/`eval_count`. Exponer el agregado por sesión/caso/ejecutor. |
+| **Por qué** | Sin medición no hay optimización honesta. Además la comparativa entre los cuatro ejecutores es la contribución experimental del TFM — coste/tokens por caso y ejecutor es una métrica directa para la memoria. |
+| **Dónde toca** | `backend/forensia/executors/*.py` (extraer usage del envelope sin cambiar el contrato de `_extract_text`), `base.py::_audit_finish`, y una superficie fina para el agregado (¿`capabilities` o un endpoint de métricas?). |
+| **Estimación** | Medio día. |
+
+**Nivel 1 — apretar los mandos existentes (tras el Nivel 0, con datos).**
+
+- Bajar `FORENSIA_CONTEXT_KEEP_TOOL_RESULTS` de 4 a 2-3 y medir si la calidad del
+  análisis aguanta.
+- Podar el anexo por-tool del playbook a las tools de la fase/allowlist actual (hoy
+  viaja entero).
+- Reforzar en los playbooks el patrón «pasa el `ArtifactRef`, no vuelques stdout» —
+  la infraestructura ya lo favorece.
+- Ojo con Ollama: su prompt caching depende de un **prefijo byte-estable**, y el
+  stubbing de `window_messages` muta mensajes antiguos entre turnos, rompiéndolo.
+  Medir el trade-off con el Nivel 0 antes de tocar nada.
+- Estimación: horas.
+
+**Nivel 2 — sesiones con estado por ejecutor.** El gran salto (O(N²) → O(N) + prompt
+caching del proveedor), pero exige una decisión de equipo previa: ver **D-6** en §7.
+No implementar sin cerrarla.
+
 ### Páginas frontend aún mock
 
 | Página | Mock que falta cablear |
@@ -491,6 +571,7 @@ Cosas que **no son TODO sino preguntas pendientes** para el equipo:
 | **D-3** | Anthropic backend: ¿se implementa pre-defensa o se quita del allowlist de config para que RULE 2 sea estricta? | **Resuelta por el pivote 2026-07-02**: sin API keys en el proyecto — se retira del allowlist. El acceso a modelos Anthropic es vía el ejecutor Claude Code con la suscripción del operador. |
 | **D-4** | El campo `os_profile` del `Case` es **frozen** hoy. ¿Permitir cambio post-creación con entrada en audit log? Caso de uso: el examinador eligió mal al crear el caso. | **Resuelta (2026-07, auto-routing)**: `os_profile` pasa a nullable/derivado; el cambio post-creación es el anclaje del operador (`anchor_os_profile` → `POST /api/cases/{id}/os-profile`) con entrada en audit log. |
 | **D-5** | ¿Auto-detección del `os_profile` al registrar la primera evidencia (warning, no override)? | **Resuelta (2026-07)**: triage auto-deriva el perfil al registrar evidencia; en ambigüedad/conflicto escala al operador (no override silencioso). |
+| **D-6** | **Sesiones con estado por ejecutor** (`claude -p --resume <session_id>` — el `session_id` ya llega en el envelope y hoy se descarta; Codex tiene reanudación equivalente; Gemini/Ollama parcial). Solo viajaría el **delta** por iteración: el coste baja de O(N²) a O(N) y se activa el prompt caching del proveedor. Pero: (a) rompe la uniformidad del «camino degradado único» que el harness comparativo usa como variable independiente única (`models/base.py::capabilities`) — habría que evaluarlo como modo aparte de la comparativa, no mezclado; (b) tendría que ser **opt-in explícito del operador**, nunca un comportamiento silencioso (RULE 2). ¿Se implementa como modo comparable adicional, o se descarta para mantener una sola variable experimental? Prerrequisito: telemetría del Nivel 0 (ver §2 «Coste de tokens»). | Abierta. |
 
 ---
 
@@ -509,6 +590,9 @@ Orden ejecutable para llegar a una **demo end-to-end real** sobre Caso CFReDS:
 6. §2 — `forensia.reports` para cerrar el flujo análisis → informe (1-2 días).
 7. §2 — `forensia.timeline` para desmoquear TimelinePage (medio día).
 8. §3 — MCP S2 (`mcp-evidence` + agente como cliente MCP) si queda tiempo (1-2 días).
+9. §2 «Coste de tokens» — Nivel 0 (telemetría por turno/ejecutor) en cuanto haya
+   sesiones reales: medio día y alimenta directamente la comparativa experimental
+   de la memoria del TFM. Niveles 1-2 después, con datos (D-6 antes del Nivel 2).
 
 Si solo hay tiempo para los puntos 1-3, hay demo de "el analista despliega con un
 comando, el agente investiga un caso real por el ejecutor elegido, ejecuta tools de

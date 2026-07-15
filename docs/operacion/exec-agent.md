@@ -44,8 +44,8 @@ api  ──HTTP (red interna del compose)──▶  exec-agent  ──subprocess
 | `GET`  | `/health` | — | `{"ok": true, "stage": "unix"\|"windows"}` |
 | `GET`  | `/versions` | — | `{"stage": …, "versions": {binario: versión}}` — el manifiesto **inmutable** horneado en el build (`/opt/forensia/versions.json`); ausente/corrupto → `500` accionable |
 | `POST` | `/which`  | `{"binaries": ["fls","vol",…]}` | `{"present": ["fls",…]}` (subconjunto en PATH) |
-| `POST` | `/exec`   | `{"argv": ["fls","-r","/evidence/…"], "timeout": 300}` | `{"exit": int, "stdout": str, "stderr": str, "timed_out": bool}` |
-| `POST` | `/exec` (binario) | `{"argv": ["icat",…], "timeout": 300, "stdout_path": "/cases/…/out/stdout.bin"}` | `{"exit": int, "stdout_file": str, "stdout_sha256": str, "stdout_size": int, "stderr": str, "timed_out": bool}` |
+| `POST` | `/exec`   | `{"argv": ["fls","-r","/evidence/…"], "timeout": 300}` | `{"exit": int, "stdout": str, "stderr": str, "timed_out": bool, "executed_argv": [str]}` |
+| `POST` | `/exec` (binario) | `{"argv": ["icat",…], "timeout": 300, "stdout_path": "/cases/…/out/stdout.bin"}` | `{"exit": int, "stdout_file": str, "stdout_sha256": str, "stdout_size": int, "stderr": str, "timed_out": bool, "executed_argv": [str]}` |
 | `POST` | `/exec` (EWF)     | `{"argv": ["mmls",…,"/cases/…/original.E01"], "timeout": 300, "ewf_image": "/cases/…/original.E01"}` | igual que `/exec` (o el binario si además va `stdout_path`); en fallo de montaje: `424 {"error": "…ewfmount…"}` |
 
 El campo `timeout` acepta `null` (el api no impone timeout): entonces el exec-agent aplica
@@ -84,6 +84,18 @@ bloque raw `ewf1`. La reescritura al `ewf1` es un detalle de transporte RO **ef�
 dentro del maletín; por eso el registro cita la evidencia y no el mount temporal — coherente
 con FORENSIC INVARIANT 4 (se audita el argv literal que fija el api, no la intención del LLM,
 que además nunca elige el mountpoint).
+
+**El argv ejecutado se VERIFICA, no se presume (P0.5-4).** Toda respuesta 200 de `/exec`
+incluye `executed_argv`: la lista literal que el exec-agent pasó a `subprocess.run` (también
+en exit 127/timeout). `forensia.toolkit.maletin.run_argv_in_maletin` la compara token a
+token contra el argv auditado: sin `ewf_image` deben ser idénticos; con `ewf_image`, cada
+posición cuyo token solicitado era el `.E01` debe estar reescrita — todas al MISMO bloque
+raw absoluto con basename `ewf1` — y el resto intacto. Cualquier otra cosa (campo ausente
+→ imagen anterior al contrato, reconstruye el maletín; longitud distinta; token alterado;
+token EWF sin reescribir; reescritura que no es el bloque raw) es `MaletinExecError`
+("custodia rota"): el dispatcher cierra el run como error con su contexto forense y el
+resultado **no se acepta** (RULE 2 — nunca "probablemente hizo lo correcto"). Tests:
+`backend/tests/test_ewf_routing.py` §4.
 
 El **dispatcher** (`toolkit/dispatcher.py`) ejecuta las tools sobre este canal:
 resuelve el argv desde el allowlist, elige el maletín por el `os_profile` del caso

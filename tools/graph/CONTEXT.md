@@ -88,16 +88,20 @@ confinamiento same-case); `forensia.artifact_ref` (contrato único
 `dispatcher.execute()` (`tool + params + evidence_context OBLIGATORIO en todo run
 anclado → validación autoritativa contra EvidenceManager (id + baseline; falsificado /
 otro caso → rechazo) → gate de rutas (EVIDENCE_INPUT confinado al dir de ESA evidencia;
-procedencia de ArtifactRef verificada contra el manifiesto del run productor — mismo
-caso ≠ misma evidencia) → venue + tool_version autoritativa del manifiesto de build del
-maletín ANTES del run (irresoluble → no se ejecuta, sin fallback) → ArtifactRun (persiste
-evidence_id + baseline + tool_version) → argv fijado → tool_run_start durable (contexto +
-versión) → runner → intento único de finish o error accionable, conservando contexto y
-versión en todo cierre`); `maletin` (allowlist ∩ catalog, `select_maletin` por
-`os_profile` sin fallback, sonda de disponibilidad para `capabilities`,
-`tool_versions()`/`tool_version()` sobre el `GET /versions` del exec-agent — rechaza
-`unknown`/`latest`/vacío); `resolver` (binario / runtime OCI); `run_in_container`;
-`Tool.run_argv()` shell-free. Manifiesto de build:
+ArtifactRef con gates de manifiesto antes que bytes: completitud del productor
+(finished + exit 0 — running/error/exit!=0 rechazados, P0.5-5) → procedencia contra el
+contexto del consumidor (mismo caso ≠ misma evidencia) → re-hash) → venue + tool_version
+autoritativa del manifiesto de build del maletín ANTES del run (irresoluble → no se
+ejecuta, sin fallback) → ArtifactRun (persiste evidence_id + baseline + tool_version) →
+argv fijado → tool_run_start durable (contexto + versión) → runner → intento único de
+finish o error accionable, conservando contexto y versión en todo cierre`); `maletin`
+(allowlist ∩ catalog, `select_maletin` por `os_profile` sin fallback, sonda de
+disponibilidad para `capabilities`, `tool_versions()`/`tool_version()` sobre el
+`GET /versions` del exec-agent — rechaza `unknown`/`latest`/vacío;
+`_verify_executed_argv()` compara token a token el `executed_argv` de cada `POST /exec`
+contra el argv auditado — sin EWF idénticos, con EWF solo el token `.E01` reescrito al
+bloque raw `ewf1`; divergencia = custodia rota, P0.5-4); `resolver` (binario / runtime
+OCI); `run_in_container`; `Tool.run_argv()` shell-free. Manifiesto de build:
 `docker/docker/forensic-toolkit/gen_versions.py` + `tool-binaries.json` (espejo del
 catálogo, gate de consistencia en `tests/test_tool_version.py`; el build del maletín
 falla si una tool declarada no tiene versión determinista).

@@ -201,5 +201,67 @@ def test_exec_agent_stdout_path_writes_exact_bytes(monkeypatch, tmp_path) -> Non
     assert "stdout" not in body
     assert body["stdout_sha256"] == _EXPECTED_SHA
     assert body["stdout_size"] == len(_BINARY_PAYLOAD)
+    # P0.5-4: the binary channel also reports the argv it actually launched.
+    assert body["executed_argv"] == [sys.executable, "-c", _EMIT_STDOUT, str(src)]
     # The file the child wrote is byte-for-byte the original.
     assert dst.read_bytes() == _BINARY_PAYLOAD
+
+
+# A deterministic 8 MiB stream (all 256 byte values, way beyond any pipe buffer): the
+# child regenerates it, the test recomputes its SHA-256 — nothing is trusted from the
+# response that the test cannot derive independently.
+_LARGE_BLOCK = bytes(range(256)) * 4096  # 1 MiB
+_LARGE_BLOCKS = 8
+_EMIT_LARGE = (
+    "import sys\n"
+    "block = bytes(range(256)) * 4096\n"
+    f"for _ in range({_LARGE_BLOCKS}):\n"
+    "    sys.stdout.buffer.write(block)\n"
+)
+
+
+def test_exec_agent_streams_large_binary_stdout_exactly(monkeypatch, tmp_path) -> None:
+    """P0.5-5: the binary channel is fd-direct (the child's stdout IS the file) and the
+    hash is chunked — an 8 MiB payload round-trips byte-exact with a stable SHA-256,
+    never buffered in memory as text."""
+    monkeypatch.delenv("FORENSIA_EXEC_AGENT_TOKEN", raising=False)
+    module = _load_exec_agent()
+    dst = tmp_path / "stdout.bin"
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), module.Handler)
+    port = server.server_address[1]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        payload = json.dumps(
+            {
+                "argv": [sys.executable, "-c", _EMIT_LARGE],
+                "timeout": 120,
+                "stdout_path": str(dst),
+            }
+        ).encode("utf-8")
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/exec",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=120) as resp:  # noqa: S310 — loopback test
+            body = json.loads(resp.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    expected_size = len(_LARGE_BLOCK) * _LARGE_BLOCKS
+    digest = hashlib.sha256()
+    for _ in range(_LARGE_BLOCKS):
+        digest.update(_LARGE_BLOCK)
+
+    assert body["exit"] == 0
+    assert body["stdout_size"] == expected_size
+    assert body["stdout_sha256"] == digest.hexdigest()
+    assert dst.stat().st_size == expected_size
+    # Spot-check the tail (a truncated pipe would corrupt the end first).
+    with dst.open("rb") as fh:
+        fh.seek(-len(_LARGE_BLOCK), 2)
+        assert fh.read() == _LARGE_BLOCK

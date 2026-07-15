@@ -88,12 +88,16 @@ dispatcher.execute(tool_id, params, case_id="…", evidence_context=EvidenceCont
    │     · CASE_INPUT → case_dir del caso activo; nunca otro caso, nunca artifacts/
    │       ni evidence/ (un auxiliar no puede leer bytes de evidencia: entra por
    │       EVIDENCE_INPUT del contexto o como ArtifactRef)
-   │     · DERIVED_INPUT → ArtifactRef {run_id, relpath, sha256?, size?}, sin extras;
-   │                       resolve_output_file + re-hash autoritativo + PROCEDENCIA:
-   │                       el manifiesto del run productor (cargado por run_id) debe
-   │                       registrar evidence_id + baseline y COINCIDIR con el contexto
-   │                       del consumidor; manifiesto sin procedencia (pre-P0.5-3) o
-   │                       procedencia cruzada → rechazo antes del start
+   │     · DERIVED_INPUT → ArtifactRef {run_id, relpath, sha256?, size?}, sin extras.
+   │                       Orden de gates (manifiesto antes que bytes): (1) COMPLETITUD
+   │                       del productor (P0.5-5): status "running" (bytes aún mutando),
+   │                       "error" (salida parcial) o exit != 0 (fallida) → rechazo;
+   │                       solo un productor finished+exit 0 alimenta a un consumidor;
+   │                       (2) PROCEDENCIA: el manifiesto del run productor (cargado por
+   │                       run_id) debe registrar evidence_id + baseline y COINCIDIR con
+   │                       el contexto del consumidor; manifiesto sin procedencia
+   │                       (pre-P0.5-3) o procedencia cruzada → rechazo; (3) re-hash
+   │                       autoritativo vía resolve_output_file. Todo antes del start
    │     · RUN_OUTPUT del caller → rechazo; bundled/runtime → id exacto allowlisted
    │
    ├─ resolver venue (ANTES de reservar run): binario en PATH del api (dev) o el ÚNICO
@@ -180,6 +184,14 @@ invente rutas** ni se salte la verificación. Dos piezas simétricas lo hacen:
   No coincide, falta o la ref es inválida → `ToolExecutionError` accionable y la tool **no
   se ejecuta** (RULE 2: nunca sobre un derivado sin verificar). Una ruta literal (`str`)
   bajo `artifacts/` no sustituye la referencia: se rechaza para impedir saltarse el re-hash.
+- **Solo un productor que COMPLETÓ con éxito alimenta a un consumidor (P0.5-5).** Antes
+  de tocar los bytes, el dispatcher comprueba el estado del run productor en su
+  manifiesto: `"running"` se rechaza (sus artefactos pueden estar mutando — no hay
+  custodia que verificar todavía), `"error"` se rechaza (la salida es parcial: p. ej. un
+  `icat` matado por timeout cuyo `stdout.bin` truncado quedó igualmente hasheado por
+  `fail_run`) y `exit_code != 0` se rechaza (la tool declaró su propio fallo). El error
+  es accionable — nombra el estado/exit y el remedio (re-ejecutar el productor) — y
+  ocurre antes del `tool_run_start` del consumidor.
 - **La procedencia se verifica, no se asume (P0.5-3).** El manifiesto del run productor —
   cargado **determinísticamente por `run_id`** (`ArtifactStore.get_run`), nunca por
   nombre/ruta ni por "la entrada de audit más cercana" — registra `evidence_id` +
