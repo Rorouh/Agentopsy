@@ -9,6 +9,7 @@
 import type {
   AdjudicateRequest,
   AgentFinding,
+  AgentJob,
   MitreCatalog,
   MitreCoverageEntry,
   ExecutorCost,
@@ -122,6 +123,15 @@ export const api = {
 
   query: (req: QueryRequest) => post<QueryResponse>("/api/agent/query", req),
 
+  // Análisis en SEGUNDO PLANO: arranca un job y devuelve su id al instante; el
+  // análisis sigue aunque el cliente se desconecte. Se sondea con getJob.
+  analyze: (req: QueryRequest) =>
+    post<{ job_id: string; status: string; case_id: string }>("/api/agent/analyze", req),
+  getJob: (jobId: string, since = 0) =>
+    request<AgentJob>(`/api/agent/jobs/${encodeURIComponent(jobId)}?since=${since}`),
+  listCaseJobs: (caseId: string) =>
+    request<AgentJob[]>(`/api/cases/${encodeURIComponent(caseId)}/agent/jobs`),
+
   // Igual que query() pero recibe el progreso del agente en vivo: llama a
   // `onEvent` por cada evento NDJSON (reasoning / tool_call / tool_result /
   // finding / final) y termina con el evento `done`.
@@ -226,11 +236,21 @@ export const api = {
     appendChat: (
       caseId: string,
       sessionId: string,
-      msg: { role: string; content: string; tool_calls?: unknown[] | null },
+      msg: {
+        role: string;
+        content: string;
+        tool_calls?: unknown[] | null;
+        activity?: unknown[] | null;
+      },
     ) =>
       post<PersistedChatMessage>(
         `/api/cases/${encodeURIComponent(caseId)}/chats/${encodeURIComponent(sessionId)}/messages`,
-        { role: msg.role, content: msg.content, tool_calls: msg.tool_calls ?? null },
+        {
+          role: msg.role,
+          content: msg.content,
+          tool_calls: msg.tool_calls ?? null,
+          activity: msg.activity ?? null,
+        },
       ),
 
     // ── Documentos / informes del caso ──────────────────────────────────────

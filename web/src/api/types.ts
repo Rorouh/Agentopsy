@@ -3,6 +3,23 @@
 
 export type ExecutorId = "claude-code" | "codex" | "gemini" | "ollama";
 
+// Análisis del agente lanzado en SEGUNDO PLANO (POST /api/agent/analyze). Corre
+// desacoplado de la conexión: una desconexión no lo aborta. Se consulta por id.
+export interface AgentJob {
+  job_id: string;
+  case_id: string;
+  kind: string;
+  status: "running" | "done" | "error";
+  created_at: string;
+  finished_at: string | null;
+  result: { reply: string; iterations: number; tool_calls: unknown[] } | null;
+  error: string | null;
+  // Eventos de progreso acumulados (tool_call con argv, tool_result, finding…);
+  // `event_count` es el total (para sondear con `since`).
+  events?: StreamEvent[];
+  event_count?: number;
+}
+
 // Estado de un ejecutor tal y como lo reporta /api/capabilities (RULE 2: si no
 // está disponible, `reason` trae la razón accionable — binario ausente,
 // credenciales sin montar, Ollama inaccesible — y la UI degrada explícitamente).
@@ -80,6 +97,8 @@ export type StreamEvent =
       status: "ok" | "nonzero" | "error" | "refused" | "blocked";
       exit_code?: number | null;
       run_id?: string;
+      // argv literal ejecutado — el comando que el perito ve en el chat.
+      argv?: string[] | null;
       summary?: string;
     }
   | { type: "finding"; iteration: number; title: string; severity: string }
@@ -220,6 +239,8 @@ export interface PersistedChatMessage {
   content: string;
   ts: string;
   tool_calls: unknown[] | null;
+  // Traza de actividad del turno para re-pintar el bloque "✓ N pasos" al recargar.
+  activity?: StreamEvent[] | null;
 }
 
 export interface AgentFinding {

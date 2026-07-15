@@ -140,10 +140,13 @@ function ActivityLine({ ev }: { ev: StreamEvent }) {
   }
   if (ev.type === "tool_result") {
     const ok = ev.status === "ok";
+    const cmd = ev.argv && ev.argv.length ? ev.argv.join(" ") : "";
+    const shownCmd = cmd.length > 110 ? cmd.slice(0, 109) + "…" : cmd;
     return (
       <div className={`al ${ok ? "al-ok" : "al-err"}`}>
         {"  "}
-        {ok ? "✓" : "✗"} {ev.summary ?? ev.status}
+        {ok ? "✓" : "✗"} {shownCmd && <code className="al-cmd">{shownCmd}</code>}{" "}
+        {ev.summary ?? ev.status}
         {ev.status === "nonzero" && ev.exit_code != null ? ` (exit ${ev.exit_code})` : ""}
       </div>
     );
@@ -424,134 +427,193 @@ export function ChatPage({
 
   // Load persisted chat history when the active case changes. A 404 (no session
   // file yet) means "fresh conversation" — not an error to surface.
+  // Sondeo del análisis en segundo plano. `pollRef` marca el sondeo activo para
+  // cancelarlo al desmontar / cambiar de caso sin tocar estado de un componente ido.
+  const pollRef = useRef<{ cancelled: boolean } | null>(null);
+  useEffect(
+    () => () => {
+      if (pollRef.current) pollRef.current.cancelled = true;
+    },
+    [],
+  );
+
+  const patchLast = (patch: Partial<ChatMessage>) =>
+    setMsgs((prev) => {
+      if (prev.length === 0) return prev;
+      const next = [...prev];
+      next[next.length - 1] = { ...next[next.length - 1], ...patch };
+      return next;
+    });
+
+  // Engancha a un análisis en segundo plano (nuevo o reanudado) y SONDEA su
+  // estado hasta terminar, pintando el progreso (segundos · nº de hallazgos que
+  // se van registrando en caliente). Si el cliente se fue, el job siguió vivo en
+  // el servidor y esto vuelve a engancharse; una desconexión no lo aborta.
+  const pushActivity = (ev: StreamEvent) =>
+    setMsgs((prev) => {
+      if (prev.length === 0) return prev;
+      const next = [...prev];
+      const last = next[next.length - 1];
+      next[next.length - 1] = { ...last, activity: [...(last.activity ?? []), ev] };
+      return next;
+    });
+
+  const drivePoll = async (caseId: string, jobId: string) => {
+    const token = { cancelled: false };
+    pollRef.current = token;
+    setBusy(true);
+    let reply = "";
+    let tools: unknown[] | null = null;
+    let cursor = 0; // eventos de progreso ya pintados en el chat
+    const collected: StreamEvent[] = []; // para persistir la traza con el mensaje
+    const startedAt = Date.now();
+    // Mantén la cabecera "en vivo" y muestra el feed de actividad (comando +
+    // hallazgo) según llegan, aunque sondeemos en vez de recibir un stream.
+    patchLast({ streaming: true });
+    try {
+      while (!token.cancelled) {
+        const job = await api.getJob(jobId, cursor);
+        // Pinta los eventos NUEVOS (tool_call con argv, tool_result, finding…).
+        (job.events ?? []).forEach((ev) => {
+          pushActivity(ev);
+          collected.push(ev);
+        });
+        cursor += job.events?.length ?? 0;
+
+        if (job.status === "done") {
+          reply = job.result?.reply ?? "";
+          tools = (job.result?.tool_calls as unknown[]) ?? null;
+          break;
+        }
+        if (job.status === "error") {
+          reply = job.error ?? "El análisis en segundo plano falló.";
+          break;
+        }
+        const s = Math.round((Date.now() - startedAt) / 1000);
+        patchLast({
+          content:
+            `Analizando en segundo plano · ${s}s · puedes cerrar la pestaña y ` +
+            "volver: el análisis no se detiene y los hallazgos se guardan en caliente.",
+        });
+        if (onCapsRefresh) await onCapsRefresh();
+        await new Promise((r) => setTimeout(r, 2500));
+      }
+    } catch (e) {
+      reply = e instanceof ApiError ? e.detail : String(e instanceof Error ? e.message : e);
+    }
+    if (token.cancelled) return; // desmontado o caso cambiado: no toques estado
+    patchLast({ content: reply, pending: false, streaming: false });
+    setBusy(false);
+    pollRef.current = null;
+    if (reply) {
+      api.cases
+        .appendChat(caseId, CHAT_SESSION_ID, {
+          role: "assistant",
+          content: reply,
+          tool_calls: tools,
+          // Persistir la traza de actividad para re-pintar "✓ N pasos" al recargar.
+          activity: collected.length ? collected : null,
+        })
+        .catch(() => {
+          /* best-effort */
+        });
+    }
+    if (onTurnComplete) onTurnComplete();
+  };
+
   useEffect(() => {
     if (!activeCase) {
       setMsgs([]);
       return;
     }
+    const caseId = activeCase.id;
     let cancelled = false;
     api.cases
-      .readChat(activeCase.id, CHAT_SESSION_ID)
+      .readChat(caseId, CHAT_SESSION_ID)
       .then((history) => {
         if (cancelled) return;
         const restored: ChatMessage[] = history
           .filter((m) => m.role === "user" || m.role === "assistant")
-          .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+          .map((m) => ({
+            role: m.role as "user" | "assistant",
+            content: m.content,
+            // Re-pinta el bloque colapsable de actividad si se persistió.
+            activity: m.activity ?? undefined,
+          }));
         setMsgs(restored);
       })
       .catch(() => {
         // No prior session yet — start empty.
         if (!cancelled) setMsgs([]);
+      })
+      .finally(async () => {
+        // Robustez: si quedó un análisis corriendo en segundo plano (el perito
+        // cerró la pestaña y volvió), reengánchate a él y muestra su progreso.
+        if (cancelled || pollRef.current) return;
+        try {
+          const jobs = await api.listCaseJobs(caseId);
+          const running = jobs.find((j) => j.status === "running");
+          if (running && !cancelled && !pollRef.current) {
+            setMsgs((prev) => [
+              ...prev,
+              { role: "assistant", content: "Reanudando análisis en curso…", pending: true, streaming: false, activity: [] },
+            ]);
+            void drivePoll(caseId, running.job_id);
+          }
+        } catch {
+          /* best-effort */
+        }
       });
     return () => {
       cancelled = true;
     };
+    // drivePoll/patchLast son estables en la práctica; sólo re-corre al cambiar de caso.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCase?.id]);
 
   const send = async () => {
     const text = input.trim();
-    if (!text || busy || sendBlockedByConsent) return;
+    if (!text || busy || sendBlockedByConsent || !activeCase) return;
+    const caseId = activeCase.id;
     setInput("");
     setBusy(true);
     setMsgs((prev) => [...prev, { role: "user", content: text }]);
-
-    // Add typing state (streaming: se irá rellenando con la actividad en vivo).
     setMsgs((prev) => [
       ...prev,
-      { role: "assistant", content: "", pending: true, streaming: true, activity: [] },
+      { role: "assistant", content: "Lanzando análisis en segundo plano…", pending: true, streaming: false, activity: [] },
     ]);
 
-    // Persist user turn upfront so a crash/disconnect during query() doesn't
-    // erase what the analyst asked. The assistant turn gets appended below
-    // once the response (or the error) is known.
-    if (activeCase) {
-      api.cases
-        .appendChat(activeCase.id, CHAT_SESSION_ID, { role: "user", content: text })
-        .catch(() => {
-          /* persistence best-effort; UI state stays */
-        });
-    }
-
-    let assistantReply = "";
-    // Captured per-turn so the assistant ChatMessage we persist below carries
-    // the tool ledger; without it the backend can't replay "what you already
-    // ran" into the next turn's context.
-    let toolCalls: unknown[] | null = null;
-
-    const patchLast = (patch: Partial<ChatMessage>) =>
-      setMsgs((prev) => {
-        const next = [...prev];
-        next[next.length - 1] = { ...next[next.length - 1], ...patch };
-        return next;
-      });
-    const pushActivity = (ev: StreamEvent) =>
-      setMsgs((prev) => {
-        const next = [...prev];
-        const last = next[next.length - 1];
-        next[next.length - 1] = { ...last, activity: [...(last.activity ?? []), ev] };
-        return next;
+    // Persist user turn upfront so a disconnect doesn't erase what the analyst
+    // asked. La asistente se persiste al terminar el job (en drivePoll).
+    api.cases
+      .appendChat(caseId, CHAT_SESSION_ID, { role: "user", content: text })
+      .catch(() => {
+        /* persistence best-effort; UI state stays */
       });
 
     try {
-      await api.queryStream(
-        {
-          prompt: text,
-          // El backend resuelve el os_profile del caso en el servidor y
-          // ignora esta clave si se manda (ver QueryRequest en
-          // backend/forensia/routers/agent.py) — no hace falta enviarla, y
-          // activeProfile puede ser null (SO aún sin determinar).
-          evidence_id: activeEvidence?.evidence_id ?? "",
-          case_id: activeCase?.id,
-          executor: executor || undefined,
-          session_id: CHAT_SESSION_ID,
-        },
-        (ev) => {
-          switch (ev.type) {
-            case "reasoning":
-            case "tool_call":
-            case "tool_result":
-            case "finding":
-              pushActivity(ev);
-              break;
-            case "final":
-              assistantReply = ev.text;
-              patchLast({ content: ev.text });
-              break;
-            case "done":
-              assistantReply = ev.reply || assistantReply;
-              toolCalls = (ev.tool_calls as unknown[]) ?? null;
-              patchLast({ content: ev.reply || assistantReply, pending: false, streaming: false });
-              break;
-            case "error":
-              assistantReply = ev.detail;
-              patchLast({ content: ev.detail, pending: false, streaming: false });
-              break;
-          }
-        },
-      );
+      // Arranca el análisis en SEGUNDO PLANO: la petición vuelve al instante con
+      // un job_id; el análisis sigue en el servidor aunque el cliente se
+      // desconecte (RULE: robustez para evidencia grande). `drivePoll` sondea.
+      const { job_id } = await api.analyze({
+        prompt: text,
+        // El backend resuelve el os_profile del caso; esta clave se ignora si
+        // se manda. activeProfile puede ser null (SO aún sin determinar).
+        evidence_id: activeEvidence?.evidence_id ?? "",
+        case_id: caseId,
+        executor: executor || undefined,
+        session_id: CHAT_SESSION_ID,
+      });
+      await drivePoll(caseId, job_id);
     } catch (e) {
-      // El backend responde SIEMPRE con detail accionable (RULE 2) — se muestra
-      // tal cual, sin sustituirlo por un mensaje genérico que lo enmascare.
+      // Falló el ARRANQUE (validación: ejecutor/evidencia/consentimiento). El
+      // backend responde con detail accionable (RULE 2); se muestra tal cual.
       const friendly =
         e instanceof ApiError
           ? e.detail
-          : "No se pudo conectar con el servicio api. ¿Está levantado el compose?";
-      assistantReply = friendly;
+          : "No se pudo lanzar el análisis. ¿Está levantado el compose?";
       patchLast({ content: friendly, pending: false, streaming: false });
-    } finally {
-      patchLast({ pending: false, streaming: false });
       setBusy(false);
-      if (activeCase && assistantReply) {
-        api.cases
-          .appendChat(activeCase.id, CHAT_SESSION_ID, {
-            role: "assistant",
-            content: assistantReply,
-            tool_calls: toolCalls,
-          })
-          .catch(() => {
-            /* best-effort */
-          });
-      }
       if (onTurnComplete) onTurnComplete();
     }
   };
