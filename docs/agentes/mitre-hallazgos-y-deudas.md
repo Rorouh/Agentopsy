@@ -90,6 +90,60 @@ existente (no quise introducir una convención distinta para una sola pestaña).
   vez de cada una resolviendo `list[0]` por su cuenta. Toca también `ContextBanner`,
   Timeline y Documentos, que hoy comen mocks.
 
+## Export de la cobertura (hallazgo D)
+
+El perito se lleva la cobertura ATT&CK del caso fuera de FORENSIA en dos formatos.
+El formateo vive en `backend/forensia/mitre/export.py` (RULE 3); ambos derivan de
+`CoverageStore.coverage` (propuestas del agente + dictámenes del perito, sin fundir los
+dos ejes) y toman nombres/tácticas del **catálogo Enterprise** — nunca inventados. Un
+caso con **0 técnicas evaluadas** exporta igual (CSV con sólo la cabecera; layer válido
+sin celdas), nunca un error.
+
+### CSV de cobertura
+
+```
+GET /api/cases/{case_id}/mitre/export.csv
+→ 200  Content-Type: text/csv; charset=utf-8
+       Content-Disposition: attachment; filename="mitre-coverage-{case_id}.csv"
+
+technique_id,technique_name,tactic_id,tactic,agent_proposed,examiner_verdict,rationale,findings,enterprise_display_id
+T1055,Process Injection,TA0005,Sigilo,true,confirmada,"RWX, shellcode",<finding-id>,T1055
+```
+
+`agent_proposed` es `true`/`false`; `examiner_verdict` queda vacío si el perito no ha
+dictaminado (gris = no evaluada, no «ausente»); `findings` son los ids que sostienen la
+fila (propuesta + anclados al dictamen), separados por `;`. Si el catálogo Enterprise no
+está montado, `technique_name`/`tactic` degradan a vacío y el `technique_id` queda como
+única referencia honesta (RULE 2).
+
+### Layer del ATT&CK Navigator
+
+Un *layer* válido del [ATT&CK Navigator](https://mitre-attack.github.io/attack-navigator/)
+oficial (formato de layer **4.5**, `domain: "enterprise-attack"`). Emitimos sólo
+`versions.layer` — no fingimos una versión de ATT&CK ni de Navigator que no conocemos
+(RULE 2).
+
+```
+GET /api/cases/{case_id}/mitre/navigator
+→ 200  Content-Type: application/json; charset=utf-8
+       Content-Disposition: attachment; filename="mitre-navigator-{case_id}.json"
+
+{ "name": "FORENSIA — <caso>", "versions": { "layer": "4.5" },
+  "domain": "enterprise-attack",
+  "techniques": [ { "techniqueID": "T1055", "color": "#c1121f",
+                    "comment": "Dictamen del perito: Confirmada — …",
+                    "enabled": true, "metadata": [], "showSubtechniques": false } ],
+  "legendItems": [ … ] }
+```
+
+Cada técnica se pinta en su **celda Enterprise** (la padre si es una sub-técnica). El
+color lo manda el eje: rojo `#c1121f` confirmada, ámbar `#e08a00` sospechosa, gris
+`#8a8f98` descartada (dictamen del perito); azul `#2f6fed` propuesta del agente sin
+dictaminar. El dictamen del perito gana el color sobre la propuesta, pero ambos constan
+en el `comment`. La UI ofrece **«Exportar CSV»** y **«Exportar Navigator layer»** en la
+barra de la pestaña MITRE (`api.cases.exportMitreCsv` / `exportMitreNavigator`, blob
+mismo-origen con el token).
+
 ## Hallazgo colateral (de la sesión de exploración, previo al trabajo MITRE)
 
 ### `bulk_extractor`: 6 corridas, 6 fallos — `no such scanner: credit_cards`

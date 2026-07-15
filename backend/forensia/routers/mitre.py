@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 
+from forensia.cases.manager import case_manager
 from forensia.mitre import catalog
 from forensia.mitre.coverage import coverage_store
+from forensia.mitre.export import coverage_to_csv, coverage_to_navigator_layer
 from forensia.security import require_token
 
 router = APIRouter()
@@ -42,6 +45,52 @@ def get_coverage(case_id: str) -> list[dict[str, Any]]:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get(
+    "/api/cases/{case_id}/mitre/export.csv",
+    dependencies=[Depends(require_token)],
+)
+def export_coverage_csv(case_id: str) -> Response:
+    """CSV de la cobertura ATT&CK del caso (una fila por técnica evaluada). Un caso
+    sin propuestas ni dictámenes devuelve sólo la cabecera (0 filas, honesto)."""
+    try:
+        entries = coverage_store.coverage(case_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    body = coverage_to_csv(entries)
+    filename = f"mitre-coverage-{case_id}.csv"
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get(
+    "/api/cases/{case_id}/mitre/navigator",
+    dependencies=[Depends(require_token)],
+)
+def export_navigator_layer(case_id: str) -> Response:
+    """Layer del MITRE ATT&CK Navigator (formato 4.5, dominio enterprise-attack) con
+    las técnicas propuestas/adjudicadas coloreadas, para cargarlo en el Navigator
+    oficial. Un caso sin técnicas evaluadas produce un layer válido sin celdas."""
+    try:
+        entries = coverage_store.coverage(case_id)
+        case = case_manager.load(case_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    layer = coverage_to_navigator_layer(entries, case_id=case_id, case_name=case.name)
+    filename = f"mitre-navigator-{case_id}.json"
+    return Response(
+        content=json.dumps(layer, ensure_ascii=False, indent=2),
+        media_type="application/json; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/api/cases/{case_id}/mitre", dependencies=[Depends(require_token)])

@@ -58,6 +58,8 @@ export function MitreAttackPage() {
   const [rationale, setRationale] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
 
   const activeCase = useMemo(
     () => cases.find((c) => c.id === activeCaseId) ?? null,
@@ -169,6 +171,25 @@ export function MitreAttackPage() {
       }
     },
     [activeCase, sel, rationale, byTechnique, refreshCoverage],
+  );
+
+  // Export de la cobertura del caso (CSV o layer del Navigator). Se descarga con el
+  // token mismo-origen; un caso con 0 propuestas exporta igual (cabecera honesta).
+  const onExport = useCallback(
+    async (kind: "csv" | "navigator") => {
+      if (!activeCase) return;
+      setExporting(true);
+      setExportError("");
+      try {
+        if (kind === "csv") await api.cases.exportMitreCsv(activeCase.id);
+        else await api.cases.exportMitreNavigator(activeCase.id);
+      } catch (err) {
+        setExportError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setExporting(false);
+      }
+    },
+    [activeCase],
   );
 
   const openTechnique = useCallback(
@@ -374,7 +395,33 @@ export function MitreAttackPage() {
             Solo cubiertas
           </button>
         )}
+        {caseMode && (
+          <>
+            <button
+              className="mitre-toggle"
+              onClick={() => onExport("csv")}
+              disabled={exporting}
+              title="Descargar la cobertura ATT&CK del caso como CSV"
+            >
+              Exportar CSV
+            </button>
+            <button
+              className="mitre-toggle"
+              onClick={() => onExport("navigator")}
+              disabled={exporting}
+              title="Descargar un layer del ATT&CK Navigator (formato 4.5)"
+            >
+              Exportar Navigator layer
+            </button>
+          </>
+        )}
       </div>
+
+      {exportError && (
+        <div className="mitre-context mitre-context--error">
+          No se pudo exportar: {exportError}
+        </div>
+      )}
 
       {/* ===================== RIBBON DE FASES + RESUMEN ===================== */}
       <div className="mitre-ribbon-row">
