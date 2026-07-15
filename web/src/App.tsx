@@ -7,7 +7,7 @@ import { DEFAULT_VIEW, type ViewId } from "./navigation/navItems";
 
 import { GuidePage } from "./pages/GuidePage";
 import { RepositoryPage } from "./pages/RepositoryPage";
-import { DocumentViewerPage } from "./pages/DocumentViewerPage";
+import { DocumentsPage } from "./pages/DocumentsPage";
 import { TimelinePage } from "./pages/TimelinePage";
 import { InvestigationPage } from "./pages/InvestigationPage";
 import { MitreAttackPage } from "./pages/MitreAttackPage";
@@ -18,7 +18,6 @@ import {
   mockActiveCase,
   mockActiveEvidence,
   mockEvidenceFiles,
-  mockReportDocuments,
   mockTimelineEvents,
   mockFindings,
   guideSteps,
@@ -57,14 +56,7 @@ export function App() {
             llamadas a forensia/routers/* en lugar de los arrays mock. */}
         {activeView === "guide" && <GuidePage steps={guideSteps} onNavigate={setActiveView} />}
         {activeView === "repository" && <RepositoryPage onNavigate={setActiveView} />}
-        {activeView === "document-viewer" && (
-          <DocumentViewerPage
-            activeCase={mockActiveCase}
-            activeEvidence={mockActiveEvidence}
-            documents={mockReportDocuments}
-            onNavigate={setActiveView}
-          />
-        )}
+        {activeView === "document-viewer" && <DocumentsPage />}
         {activeView === "timeline" && (
           <TimelinePage
             activeCase={mockActiveCase}

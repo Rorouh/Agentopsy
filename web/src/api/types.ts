@@ -248,6 +248,9 @@ export interface MitreTechnique {
   supported_by: string;
   // "T1547" para "T1547.001"; null si es técnica de primer nivel.
   parent_id: string | null;
+  // Nº de sub-técnicas (el catálogo Enterprise enumera padres + conteo; las
+  // propuestas del agente sobre una sub-técnica se pintan en su padre).
+  sub: number;
 }
 
 export interface MitreTactic {
@@ -256,6 +259,57 @@ export interface MitreTactic {
   name_es: string;
   phase: string;
   techniques: MitreTechnique[];
+}
+
+// ── Documentos / informes del caso ────────────────────────────────────────
+// Espejo de forensia.reports. Un bloque del cuerpo del informe: párrafo,
+// sub-encabezado, cita, lista, código, pares clave-valor, tabla o hallazgo.
+export interface DocumentBlock {
+  t: "p" | "h3" | "quote" | "list" | "code" | "kv" | "table" | "finding";
+  text?: string;
+  ordered?: boolean;
+  items?: string[];
+  pairs?: { k: string; v: string }[];
+  headers?: string[];
+  rows?: string[][];
+  // Sólo para finding:
+  sev?: "critical" | "high" | "medium" | "low";
+  title?: string;
+  tags?: string[];
+}
+
+export interface DocumentSection {
+  num: string;
+  title: string;
+  blocks: DocumentBlock[];
+}
+
+// Ficha del documento en la LISTA (sin el cuerpo de secciones).
+export interface DocumentMeta {
+  id: string;
+  case_id: string;
+  title: string;
+  type: string;
+  evidence_id: string | null;
+  status: "draft" | "final";
+  created_at: string;
+  version: string;
+  author: string;
+  summary: string;
+  sha256: string;
+  page_count: number;
+}
+
+// Documento completo (ficha + cuerpo).
+export interface DocumentFull extends DocumentMeta {
+  sections: DocumentSection[];
+}
+
+export interface DocumentVerifyResult {
+  document_id: string;
+  ok: boolean;
+  registered_sha256: string;
+  recomputed_sha256: string;
 }
 
 export interface MitreCatalog {

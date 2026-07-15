@@ -17,6 +17,9 @@ import type {
   Case,
   ConfigSnapshot,
   CreateCaseRequest,
+  DocumentMeta,
+  DocumentFull,
+  DocumentVerifyResult,
   EvidenceHandle,
   EvidenceSource,
   ExecutorId,
@@ -229,6 +232,48 @@ export const api = {
         `/api/cases/${encodeURIComponent(caseId)}/chats/${encodeURIComponent(sessionId)}/messages`,
         { role: msg.role, content: msg.content, tool_calls: msg.tool_calls ?? null },
       ),
+
+    // ── Documentos / informes del caso ──────────────────────────────────────
+    listDocuments: (caseId: string) =>
+      request<DocumentMeta[]>(`/api/cases/${encodeURIComponent(caseId)}/documents`),
+    getDocument: (caseId: string, docId: string) =>
+      request<DocumentFull>(
+        `/api/cases/${encodeURIComponent(caseId)}/documents/${encodeURIComponent(docId)}`,
+      ),
+    verifyDocument: (caseId: string, docId: string) =>
+      post<DocumentVerifyResult>(
+        `/api/cases/${encodeURIComponent(caseId)}/documents/${encodeURIComponent(docId)}/verify`,
+        {},
+      ),
+    signDocument: (caseId: string, docId: string) =>
+      post<DocumentFull>(
+        `/api/cases/${encodeURIComponent(caseId)}/documents/${encodeURIComponent(docId)}/sign`,
+        {},
+      ),
+    deleteDocument: (caseId: string, docId: string) =>
+      request<{ deleted: boolean }>(
+        `/api/cases/${encodeURIComponent(caseId)}/documents/${encodeURIComponent(docId)}`,
+        { method: "DELETE" },
+      ),
+    // Descarga el PDF real con el token en cabecera (un <a href> no puede) y
+    // dispara la descarga desde un blob mismo-origen.
+    downloadDocumentPdf: async (caseId: string, docId: string, filename: string) => {
+      const token = await getToken();
+      const res = await fetch(
+        `/api/cases/${encodeURIComponent(caseId)}/documents/${encodeURIComponent(docId)}/pdf`,
+        { headers: { "X-Forensia-Token": token } },
+      );
+      if (!res.ok) throw new ApiError(res.status, await readDetail(res));
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    },
   },
 
   evidence: {

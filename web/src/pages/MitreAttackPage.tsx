@@ -22,8 +22,11 @@ import { PageHeader } from "../ui/PageHeader";
 //
 // Una celda gris significa **no evaluada**, nunca «ausente»: el catálogo es la
 // semilla del orquestador (enum cerrada), así que el denominador es honesto.
+//
+// El layout replica el diseño de Claude Design (barra superior única + selector
+// de caso + ribbon con métricas), en el tema CLARO del proyecto.
 
-type Phase = "loading" | "ready" | "no-case" | "no-catalog" | "error";
+type Phase = "loading" | "ready" | "no-catalog" | "error";
 
 const STATUS_LABEL: Record<MitreStatus, string> = {
   confirmada: "Confirmada",
@@ -40,7 +43,8 @@ interface Selection {
 
 export function MitreAttackPage() {
   const [catalog, setCatalog] = useState<MitreCatalog | null>(null);
-  const [activeCase, setActiveCase] = useState<Case | null>(null);
+  const [cases, setCases] = useState<Case[]>([]);
+  const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
   const [coverage, setCoverage] = useState<MitreCoverageEntry[]>([]);
   const [findings, setFindings] = useState<AgentFinding[]>([]);
   const [phase, setPhase] = useState<Phase>("loading");
@@ -48,17 +52,28 @@ export function MitreAttackPage() {
 
   const [search, setSearch] = useState("");
   const [subsOn, setSubsOn] = useState(true);
-  const [onlyTouched, setOnlyTouched] = useState(false);
+  const [onlyCovered, setOnlyCovered] = useState(false);
   const [view, setView] = useState<"matrix" | "timeline">("matrix");
   const [sel, setSel] = useState<Selection | null>(null);
   const [rationale, setRationale] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
 
+  const activeCase = useMemo(
+    () => cases.find((c) => c.id === activeCaseId) ?? null,
+    [cases, activeCaseId],
+  );
+  const caseMode = activeCase !== null;
+  // El caso activo de la app (el más reciente, como en la Investigación). El
+  // selector solo ofrece este + "Sin caso"; no es un conmutador de casos.
+  const appActiveCase = cases.length > 0 ? cases[0] : null;
+
   const refreshCoverage = useCallback(async (caseId: string) => {
     setCoverage(await api.cases.listMitreCoverage(caseId));
   }, []);
 
+  // Carga inicial: catálogo + lista de casos. Auto-selecciona el primer caso si
+  // lo hay (útil por defecto); "Sin caso" = modo exploración.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -70,21 +85,10 @@ export function MitreAttackPage() {
           setPhase("no-catalog");
           return;
         }
-        const cases = await api.cases.list();
+        const list = await api.cases.list();
         if (cancelled) return;
-        if (cases.length === 0) {
-          setPhase("no-case");
-          return;
-        }
-        const current = cases[0];
-        setActiveCase(current);
-        const [cov, finds] = await Promise.all([
-          api.cases.listMitreCoverage(current.id),
-          api.cases.listFindings(current.id).catch(() => [] as AgentFinding[]),
-        ]);
-        if (cancelled) return;
-        setCoverage(cov);
-        setFindings(finds);
+        setCases(list);
+        setActiveCaseId(list.length > 0 ? list[0].id : null);
         setPhase("ready");
       } catch (err) {
         if (cancelled) return;
@@ -96,6 +100,29 @@ export function MitreAttackPage() {
       cancelled = true;
     };
   }, []);
+
+  // Al cambiar de caso: carga su cobertura + hallazgos (o limpia en exploración).
+  useEffect(() => {
+    setSel(null);
+    if (!activeCaseId) {
+      setCoverage([]);
+      setFindings([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const [cov, finds] = await Promise.all([
+        api.cases.listMitreCoverage(activeCaseId),
+        api.cases.listFindings(activeCaseId).catch(() => [] as AgentFinding[]),
+      ]);
+      if (cancelled) return;
+      setCoverage(cov);
+      setFindings(finds);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeCaseId]);
 
   // technique_id → entrada de cobertura
   const byTechnique = useMemo(() => {
@@ -156,11 +183,7 @@ export function MitreAttackPage() {
   // ── estados degradados ────────────────────────────────────────────────────
 
   if (phase === "loading") {
-    return (
-      <div>
-        <PageHeader title="MITRE ATT&CK" subtitle="Cargando la matriz…" />
-      </div>
-    );
+    return <PageHeader title="MITRE ATT&CK" subtitle="Cargando la matriz…" />;
   }
 
   if (phase === "error") {
@@ -172,7 +195,7 @@ export function MitreAttackPage() {
     );
   }
 
-  if (phase === "no-catalog") {
+  if (phase === "no-catalog" || !catalog) {
     return (
       <div>
         <PageHeader
@@ -190,33 +213,17 @@ export function MitreAttackPage() {
     );
   }
 
-  if (phase === "no-case" || !activeCase || !catalog) {
-    return (
-      <div>
-        <PageHeader
-          title="MITRE ATT&CK"
-          subtitle="Correlación de los hallazgos del caso con tácticas y técnicas ATT&CK."
-        />
-        <EmptyState
-          title="Sin caso abierto"
-          description="Abre un caso y registra evidencia: la matriz correlaciona los hallazgos que el agente produce sobre esa evidencia."
-        />
-      </div>
-    );
-  }
+  // ── métricas reales (sólo en modo caso) ───────────────────────────────────
 
-  // ── métricas reales ───────────────────────────────────────────────────────
+  const confirmed = coverage.filter((c) => c.status === "confirmada").length;
+  const suspected = coverage.filter((c) => c.status === "sospechosa").length;
 
-  const adjudicated = coverage.filter((c) => c.status !== null);
-  const confirmed = adjudicated.filter((c) => c.status === "confirmada").length;
-  const suspected = adjudicated.filter((c) => c.status === "sospechosa").length;
-  const proposed = coverage.filter(
-    (c) => c.proposed_by.length > 0 && c.status === null,
+  const tacticsTouched = catalog.tactics.filter((t) =>
+    t.techniques.some((te) => {
+      const c = byTechnique.get(te.id);
+      return c && (c.status === "confirmada" || c.status === "sospechosa");
+    }),
   ).length;
-  const totalTechniques = catalog.tactics.reduce(
-    (n, t) => n + t.techniques.length,
-    0,
-  );
 
   const phaseStats = catalog.phases.map((ph) => {
     const tactics = catalog.tactics.filter((t) => t.phase === ph.key);
@@ -233,24 +240,34 @@ export function MitreAttackPage() {
 
   const columns = catalog.tactics
     .map((tactic) => {
-      const techniques = tactic.techniques.filter(
-        (te) => subsOn || te.parent_id === null,
-      );
+      // Enterprise enumera técnicas padre; el toggle «Sub-técnicas» solo muestra
+      // el conteo de sub por técnica, no filas aparte.
+      const techniques = tactic.techniques;
+      let conf = 0;
+      let susp = 0;
+      let disc = 0;
+      techniques.forEach((te) => {
+        const s = byTechnique.get(te.id)?.status;
+        if (s === "confirmada") conf++;
+        else if (s === "sospechosa") susp++;
+        else if (s === "descartada") disc++;
+      });
+      const covered = conf + susp;
       const visible = techniques.filter((te) => {
         if (!matches(te)) return false;
-        if (!onlyTouched) return true;
+        if (!caseMode || !onlyCovered) return true;
         const c = byTechnique.get(te.id);
         return !!c && (c.status !== null || c.proposed_by.length > 0);
       });
-      const conf = techniques.filter(
-        (te) => byTechnique.get(te.id)?.status === "confirmada",
-      ).length;
-      const susp = techniques.filter(
-        (te) => byTechnique.get(te.id)?.status === "sospechosa",
-      ).length;
-      return { tactic, techniques, visible, conf, susp };
+      return { tactic, techniques, visible, conf, susp, disc, covered };
     })
-    .filter((col) => col.visible.length > 0);
+    .filter((col) => {
+      if (col.visible.length === 0) return false;
+      // "Solo cubiertas": oculta tácticas sin cobertura ni descartes.
+      if (caseMode && onlyCovered && col.covered === 0 && col.disc === 0)
+        return false;
+      return true;
+    });
 
   // Timeline: hallazgos reales que citan al menos una técnica, en orden.
   const timeline = findings
@@ -265,92 +282,81 @@ export function MitreAttackPage() {
 
   return (
     <div className="mitre-page">
-      <PageHeader
-        title="MITRE ATT&CK"
-        subtitle="Correlación de los hallazgos del caso con tácticas y técnicas ATT&CK. El agente propone; el perito dictamina."
-      />
-
-      <div className="mitre-context">
-        <span>
-          Caso activo: <strong>{activeCase.name}</strong> · {activeCase.examiner}
-          {activeCase.os_profile ? ` · perfil ${activeCase.os_profile}` : ""}
-        </span>
-        <Badge variant={activeCase.status === "active" ? "success" : "neutral"}>
-          {activeCase.status === "active" ? "Abierto" : "Cerrado"}
-        </Badge>
-      </div>
-
-      {/* Resumen — sólo cuenta lo DICTAMINADO. Las propuestas van aparte. */}
-      <div className="mitre-summary">
-        <div className="mitre-chip mitre-chip--confirmada">
-          <span className="mitre-chip-value">{confirmed}</span>
-          <span className="mitre-chip-label">Confirmadas</span>
-        </div>
-        <div className="mitre-chip mitre-chip--sospechosa">
-          <span className="mitre-chip-value">{suspected}</span>
-          <span className="mitre-chip-label">Sospechosas</span>
-        </div>
-        <div className="mitre-chip mitre-chip--propuesta">
-          <span className="mitre-chip-value">{proposed}</span>
-          <span className="mitre-chip-label">Propuestas sin dictaminar</span>
-        </div>
-        <div className="mitre-chip mitre-chip--neutral">
-          <span className="mitre-chip-value">
-            {adjudicated.length}/{totalTechniques}
+      {/* ===================== BARRA SUPERIOR ===================== */}
+      <div className="mitre-topbar">
+        <div className="mitre-brand">
+          <span className="mitre-brand-mark" aria-hidden />
+          <span className="mitre-brand-text">
+            <span className="mitre-brand-title">MITRE ATT&amp;CK</span>
+            <span className="mitre-brand-sub">MATRIZ · ENTERPRISE</span>
           </span>
-          <span className="mitre-chip-label">Técnicas evaluadas</span>
         </div>
-      </div>
 
-      {/* Ribbon de fases — agrupación editorial de FORENSIA, no de ATT&CK. */}
-      <div className="mitre-ribbon">
-        {phaseStats.map((ph, i) => (
-          <div className="mitre-phase-wrap" key={ph.key}>
-            <div className="mitre-phase">
-              <div className="mitre-phase-head">
-                <span className={`mitre-phase-dot mitre-phase-dot--${ph.key}`} />
-                <span className="mitre-phase-label">{ph.label}</span>
-                <span className="mitre-phase-stat">
-                  {ph.touched}/{ph.total}
-                </span>
-              </div>
-              <div className="mitre-phase-track">
-                <div
-                  className={`mitre-phase-fill mitre-phase-fill--${ph.key}`}
-                  style={{
-                    width: ph.total ? `${(ph.touched / ph.total) * 100}%` : "0%",
-                  }}
-                />
-              </div>
-            </div>
-            {i < phaseStats.length - 1 && <span className="mitre-phase-arrow">›</span>}
+        {/* Selector: "Sin caso" (exploración) + SOLO el caso activo de la app
+            (el caso más reciente, el mismo que usa la Investigación). No es un
+            conmutador de casos: la matriz sigue al caso activo. */}
+        <div className="mitre-seg" role="group" aria-label="Caso activo">
+          <button
+            className={`mitre-seg-btn${!caseMode ? " is-active" : ""}`}
+            onClick={() => setActiveCaseId(null)}
+            title="Explorar la matriz sin caso"
+          >
+            <span className="mitre-seg-label">Sin caso</span>
+            <span className="mitre-seg-sub">exploración</span>
+          </button>
+          {appActiveCase && (
+            <button
+              className={`mitre-seg-btn${activeCaseId === appActiveCase.id ? " is-active" : ""}`}
+              onClick={() => setActiveCaseId(appActiveCase.id)}
+              title={appActiveCase.name}
+            >
+              <span className="mitre-seg-label">{appActiveCase.name}</span>
+              <span className="mitre-seg-sub">
+                {appActiveCase.os_profile
+                  ? `perfil ${appActiveCase.os_profile}`
+                  : appActiveCase.id.slice(0, 8)}
+              </span>
+            </button>
+          )}
+        </div>
+
+        {/* Conmutador de vista (sólo en modo caso). */}
+        {caseMode && (
+          <div className="mitre-seg" role="group" aria-label="Vista">
+            <button
+              className={`mitre-seg-btn mitre-seg-btn--view${view === "matrix" ? " is-active" : ""}`}
+              onClick={() => setView("matrix")}
+            >
+              Matriz
+            </button>
+            <button
+              className={`mitre-seg-btn mitre-seg-btn--view${view === "timeline" ? " is-active" : ""}`}
+              onClick={() => setView("timeline")}
+            >
+              Línea temporal
+            </button>
           </div>
-        ))}
-      </div>
+        )}
 
-      <div className="mitre-toolbar">
-        <div className="mitre-views">
-          <button
-            className={`mitre-view-btn${view === "matrix" ? " is-active" : ""}`}
-            onClick={() => setView("matrix")}
-          >
-            Matriz
-          </button>
-          <button
-            className={`mitre-view-btn${view === "timeline" ? " is-active" : ""}`}
-            onClick={() => setView("timeline")}
-          >
-            Línea temporal
-          </button>
+        <div className="mitre-topbar-spacer" />
+
+        <div className="mitre-searchbox">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="11" cy="11" r="7" />
+            <path d="M21 21l-4.3-4.3" />
+          </svg>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar técnica o ID (T1055)…"
+            aria-label="Buscar técnica o identificador ATT&CK"
+          />
+          {search && (
+            <button className="mitre-searchbox-clear" onClick={() => setSearch("")} aria-label="Limpiar búsqueda">
+              ×
+            </button>
+          )}
         </div>
-
-        <input
-          className="mitre-search"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Buscar técnica o ID (T1055)…"
-          aria-label="Buscar técnica o identificador ATT&CK"
-        />
 
         <button
           className={`mitre-toggle${subsOn ? " is-active" : ""}`}
@@ -359,15 +365,70 @@ export function MitreAttackPage() {
         >
           Sub-técnicas
         </button>
-        <button
-          className={`mitre-toggle${onlyTouched ? " is-active" : ""}`}
-          onClick={() => setOnlyTouched((v) => !v)}
-          aria-pressed={onlyTouched}
-        >
-          Solo con actividad
-        </button>
+        {caseMode && view === "matrix" && (
+          <button
+            className={`mitre-toggle${onlyCovered ? " is-active" : ""}`}
+            onClick={() => setOnlyCovered((v) => !v)}
+            aria-pressed={onlyCovered}
+          >
+            Solo cubiertas
+          </button>
+        )}
       </div>
 
+      {/* ===================== RIBBON DE FASES + RESUMEN ===================== */}
+      <div className="mitre-ribbon-row">
+        <div className="mitre-ribbon">
+          {phaseStats.map((ph, i) => (
+            <div className="mitre-phase-wrap" key={ph.key}>
+              <div className="mitre-phase">
+                <div className="mitre-phase-head">
+                  <span className={`mitre-phase-dot mitre-phase-dot--${ph.key}`} />
+                  <span className="mitre-phase-label">{ph.label}</span>
+                  <span className="mitre-phase-stat">
+                    {caseMode ? `${ph.touched}/${ph.total}` : `${ph.total} tácticas`}
+                  </span>
+                </div>
+                <div className="mitre-phase-track">
+                  <div
+                    className={`mitre-phase-fill mitre-phase-fill--${ph.key}`}
+                    style={{
+                      width: caseMode
+                        ? ph.total
+                          ? `${(ph.touched / ph.total) * 100}%`
+                          : "0%"
+                        : "100%",
+                      opacity: caseMode ? 1 : 0.4,
+                    }}
+                  />
+                </div>
+              </div>
+              {i < phaseStats.length - 1 && <span className="mitre-phase-arrow">›</span>}
+            </div>
+          ))}
+        </div>
+
+        {caseMode && (
+          <div className="mitre-summary">
+            <div className="mitre-chip mitre-chip--confirmada">
+              <span className="mitre-chip-value">{confirmed}</span>
+              <span className="mitre-chip-label">Confirmadas</span>
+            </div>
+            <div className="mitre-chip mitre-chip--sospechosa">
+              <span className="mitre-chip-value">{suspected}</span>
+              <span className="mitre-chip-label">Sospechosas</span>
+            </div>
+            <div className="mitre-chip mitre-chip--tacticas">
+              <span className="mitre-chip-value">
+                {tacticsTouched}/{catalog.tactics.length}
+              </span>
+              <span className="mitre-chip-label">Tácticas</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ===================== MATRIZ ===================== */}
       {view === "matrix" && (
         <>
           {columns.length === 0 ? (
@@ -376,45 +437,48 @@ export function MitreAttackPage() {
               description={
                 searching
                   ? `Ninguna técnica coincide con «${search}».`
-                  : "Ninguna técnica tiene actividad todavía. Desactiva «Solo con actividad» para ver la matriz completa."
+                  : "Ninguna táctica tiene cobertura todavía. Desactiva «Solo cubiertas» para ver la matriz completa."
               }
             />
           ) : (
             <div className="mitre-matrix-scroll">
               <div className="mitre-matrix">
-                {columns.map(({ tactic, techniques, visible, conf, susp }) => (
+                {columns.map(({ tactic, techniques, visible, conf, susp, disc, covered }) => (
                   <div className="mitre-col" key={tactic.id}>
                     <div className="mitre-col-head">
-                      <div
-                        className={`mitre-col-accent mitre-phase-fill--${tactic.phase}`}
-                      />
+                      <div className={`mitre-col-accent mitre-phase-fill--${tactic.phase}`} />
                       <div className="mitre-col-body">
                         <div className="mitre-col-title">{tactic.name_es}</div>
                         <div className="mitre-col-meta">
                           <span className="mitre-col-en">{tactic.name}</span>
                           <span className="mitre-col-count">{techniques.length}</span>
                         </div>
-                        <div className="mitre-col-track">
-                          <div
-                            className="mitre-col-fill mitre-col-fill--confirmada"
-                            style={{
-                              width: techniques.length
-                                ? `${(conf / techniques.length) * 100}%`
-                                : "0%",
-                            }}
-                          />
-                          <div
-                            className="mitre-col-fill mitre-col-fill--sospechosa"
-                            style={{
-                              width: techniques.length
-                                ? `${(susp / techniques.length) * 100}%`
-                                : "0%",
-                            }}
-                          />
-                        </div>
-                        <div className="mitre-col-cov">
-                          {conf + susp}/{techniques.length} dictaminadas
-                        </div>
+                        {caseMode && (
+                          <>
+                            <div className="mitre-col-track">
+                              <div
+                                className="mitre-col-fill mitre-col-fill--confirmada"
+                                style={{
+                                  width: techniques.length
+                                    ? `${(conf / techniques.length) * 100}%`
+                                    : "0%",
+                                }}
+                              />
+                              <div
+                                className="mitre-col-fill mitre-col-fill--sospechosa"
+                                style={{
+                                  width: techniques.length
+                                    ? `${(susp / techniques.length) * 100}%`
+                                    : "0%",
+                                }}
+                              />
+                            </div>
+                            <div className="mitre-col-cov">
+                              {covered}/{techniques.length} cubiertas
+                              {disc > 0 ? ` · ${disc} descart.` : ""}
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
 
@@ -428,7 +492,6 @@ export function MitreAttackPage() {
                           "mitre-cell",
                           status ? `mitre-cell--${status}` : "",
                           !status && isProposed ? "mitre-cell--propuesta" : "",
-                          te.parent_id ? "mitre-cell--sub" : "",
                           dim ? "is-dim" : "",
                           sel?.technique.id === te.id ? "is-selected" : "",
                         ]
@@ -449,6 +512,11 @@ export function MitreAttackPage() {
                                 title={`${c!.proposed_by.length} hallazgo(s) del agente citan esta técnica`}
                               >
                                 {c!.proposed_by.length}
+                              </span>
+                            )}
+                            {subsOn && te.sub > 0 && (
+                              <span className="mitre-cell-sub" title={`${te.sub} sub-técnicas`}>
+                                {te.sub} sub
                               </span>
                             )}
                           </button>
@@ -482,7 +550,8 @@ export function MitreAttackPage() {
         </>
       )}
 
-      {view === "timeline" && (
+      {/* ===================== LÍNEA TEMPORAL ===================== */}
+      {caseMode && view === "timeline" && (
         <div className="mitre-timeline">
           {timeline.length === 0 ? (
             <EmptyState
@@ -525,16 +594,14 @@ export function MitreAttackPage() {
         </div>
       )}
 
-      {/* Panel de detalle — aquí el perito dictamina, y debe justificarlo. */}
+      {/* ===================== PANEL DE DETALLE ===================== */}
       {sel && selTactic && (
         <>
           <div className="mitre-scrim" onClick={() => setSel(null)} />
           <aside className="mitre-detail" aria-label={`Detalle de ${sel.technique.id}`}>
             <div className="mitre-detail-head">
               <div className="mitre-detail-tactic">
-                <span
-                  className={`mitre-phase-dot mitre-phase-dot--${selTactic.phase}`}
-                />
+                <span className={`mitre-phase-dot mitre-phase-dot--${selTactic.phase}`} />
                 {selTactic.name_es}
               </div>
               <button
@@ -547,7 +614,14 @@ export function MitreAttackPage() {
             </div>
 
             <div className="mitre-detail-title">{sel.technique.name}</div>
-            <div className="mitre-detail-id">{sel.technique.id}</div>
+            <div className="mitre-detail-idrow">
+              <span className="mitre-detail-id">{sel.technique.id}</span>
+              {sel.technique.sub > 0 && (
+                <span className="mitre-detail-subnote">
+                  {sel.technique.sub} sub-técnicas
+                </span>
+              )}
+            </div>
 
             <div className="mitre-detail-body">
               <section>
@@ -555,81 +629,96 @@ export function MitreAttackPage() {
                 <p className="mitre-detail-supports">{sel.technique.supported_by}</p>
               </section>
 
-              <section>
-                <h4>Propuesta del agente</h4>
-                {selEntry && selEntry.proposed_by.length > 0 ? (
-                  <ul className="mitre-detail-findings">
-                    {selEntry.proposed_by.map((fid) => {
-                      const f = findingById.get(fid);
-                      return (
-                        <li key={fid}>
-                          {f ? f.title : fid}
-                          {f?.tool_id && (
-                            <span className="mitre-detail-tool">{f.tool_id}</span>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                ) : (
-                  <p className="mitre-detail-empty">
-                    Ningún hallazgo del agente cita esta técnica. Puedes dictaminarla
-                    igualmente si la evidencia que has revisado lo sostiene.
-                  </p>
-                )}
-              </section>
+              {!caseMode ? (
+                <section>
+                  <div className="mitre-detail-explore">
+                    Abre un caso para registrar si esta técnica se ha{" "}
+                    <span className="is-confirmada">confirmado</span>, está{" "}
+                    <span className="is-sospechosa">en sospecha</span> o se ha{" "}
+                    <span className="is-descartada">descartado</span> en la
+                    investigación.
+                  </div>
+                </section>
+              ) : (
+                <>
+                  <section>
+                    <h4>Propuesta del agente</h4>
+                    {selEntry && selEntry.proposed_by.length > 0 ? (
+                      <ul className="mitre-detail-findings">
+                        {selEntry.proposed_by.map((fid) => {
+                          const f = findingById.get(fid);
+                          return (
+                            <li key={fid}>
+                              {f ? f.title : fid}
+                              {f?.tool_id && (
+                                <span className="mitre-detail-tool">{f.tool_id}</span>
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ) : (
+                      <p className="mitre-detail-empty">
+                        Ningún hallazgo del agente cita esta técnica. Puedes
+                        dictaminarla igualmente si la evidencia que has revisado lo
+                        sostiene.
+                      </p>
+                    )}
+                  </section>
 
-              <section>
-                <h4>Dictamen del perito</h4>
-                {selEntry?.status && (
-                  <p className="mitre-detail-current">
-                    Actualmente: <strong>{STATUS_LABEL[selEntry.status]}</strong>
-                    {selEntry.adjudicated_at &&
-                      ` · ${new Date(selEntry.adjudicated_at).toLocaleString("es-ES")}`}
-                  </p>
-                )}
-                <label className="mitre-detail-label" htmlFor="mitre-rationale">
-                  Motivo (obligatorio — queda en el log de auditoría)
-                </label>
-                <textarea
-                  id="mitre-rationale"
-                  className="mitre-detail-rationale"
-                  value={rationale}
-                  onChange={(e) => setRationale(e.target.value)}
-                  rows={3}
-                  placeholder="Qué evidencia sostiene este veredicto…"
-                />
-                <div className="mitre-detail-actions">
-                  {STATUS_ORDER.map((s) => (
-                    <button
-                      key={s}
-                      className={`mitre-status-btn mitre-status-btn--${s}${
-                        selEntry?.status === s ? " is-active" : ""
-                      }`}
-                      disabled={saving || rationale.trim().length === 0}
-                      onClick={() => onAdjudicate(s)}
-                    >
-                      {STATUS_LABEL[s]}
-                    </button>
-                  ))}
-                </div>
-                {selEntry?.status && (
-                  <Button
-                    variant="chip"
-                    disabled={saving}
-                    onClick={() => onAdjudicate("none")}
-                  >
-                    Retirar dictamen
-                  </Button>
-                )}
-                {rationale.trim().length === 0 && (
-                  <p className="mitre-detail-hint">
-                    Un veredicto sin motivo no vale nada en un informe pericial: el
-                    backend lo rechaza.
-                  </p>
-                )}
-                {saveError && <p className="mitre-detail-error">{saveError}</p>}
-              </section>
+                  <section>
+                    <h4>Dictamen del perito</h4>
+                    {selEntry?.status && (
+                      <p className="mitre-detail-current">
+                        Actualmente: <strong>{STATUS_LABEL[selEntry.status]}</strong>
+                        {selEntry.adjudicated_at &&
+                          ` · ${new Date(selEntry.adjudicated_at).toLocaleString("es-ES")}`}
+                      </p>
+                    )}
+                    <label className="mitre-detail-label" htmlFor="mitre-rationale">
+                      Motivo (obligatorio — queda en el log de auditoría)
+                    </label>
+                    <textarea
+                      id="mitre-rationale"
+                      className="mitre-detail-rationale"
+                      value={rationale}
+                      onChange={(e) => setRationale(e.target.value)}
+                      rows={3}
+                      placeholder="Qué evidencia sostiene este veredicto…"
+                    />
+                    <div className="mitre-detail-actions">
+                      {STATUS_ORDER.map((s) => (
+                        <button
+                          key={s}
+                          className={`mitre-status-btn mitre-status-btn--${s}${
+                            selEntry?.status === s ? " is-active" : ""
+                          }`}
+                          disabled={saving || rationale.trim().length === 0}
+                          onClick={() => onAdjudicate(s)}
+                        >
+                          {STATUS_LABEL[s]}
+                        </button>
+                      ))}
+                    </div>
+                    {selEntry?.status && (
+                      <Button
+                        variant="chip"
+                        disabled={saving}
+                        onClick={() => onAdjudicate("none")}
+                      >
+                        Retirar dictamen
+                      </Button>
+                    )}
+                    {rationale.trim().length === 0 && (
+                      <p className="mitre-detail-hint">
+                        Un veredicto sin motivo no vale nada en un informe pericial:
+                        el backend lo rechaza.
+                      </p>
+                    )}
+                    {saveError && <p className="mitre-detail-error">{saveError}</p>}
+                  </section>
+                </>
+              )}
             </div>
           </aside>
         </>
