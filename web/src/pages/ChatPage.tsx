@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, api } from "../api/client";
 import type {
   AgentSummary,
+  AnalysisEstimate,
   Capabilities,
   Case,
   EvidenceHandle,
@@ -268,6 +269,11 @@ export function ChatPage({
   const [providerModels, setProviderModels] = useState<ExecutorModels | null>(null);
   const [modelsLoading, setModelsLoading] = useState(false);
 
+  // Estimación PRE-VUELO del análisis (hallazgo E): rangos honestos de
+  // iteraciones/tokens/coste/tiempo con supuestos declarados, ANTES de lanzar.
+  const [estimate, setEstimate] = useState<AnalysisEstimate | null>(null);
+  const [estimateError, setEstimateError] = useState<string | null>(null);
+
   const logRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const actionsRef = useRef<HTMLDivElement>(null);
@@ -317,6 +323,33 @@ export function ChatPage({
       alive = false;
     };
   }, [executor]);
+
+  // Estimación pre-vuelo: al elegir caso + ejecutor (y opcionalmente evidencia)
+  // pedimos el rango honesto de tokens/coste/tiempo para avisar ANTES de lanzar.
+  useEffect(() => {
+    if (!activeCase || !executor) {
+      setEstimate(null);
+      setEstimateError(null);
+      return;
+    }
+    let alive = true;
+    setEstimateError(null);
+    api
+      .analyzeEstimate(activeCase.id, executor as ExecutorId, activeEvidence?.evidence_id)
+      .then((e) => {
+        if (alive) setEstimate(e);
+      })
+      .catch((err) => {
+        if (!alive) return;
+        setEstimate(null);
+        setEstimateError(
+          err instanceof ApiError ? err.detail : "No se pudo estimar el coste.",
+        );
+      });
+    return () => {
+      alive = false;
+    };
+  }, [activeCase?.id, executor, activeEvidence?.evidence_id]);
 
   // Cerrar el menú abierto al hacer clic fuera del grupo de acciones.
   useEffect(() => {
@@ -679,6 +712,62 @@ export function ChatPage({
     </div>
   );
 
+  // Aviso PRE-VUELO (hallazgo E): rango orientativo de tokens/coste/tiempo con
+  // supuestos declarados, para que el operador sepa a qué se compromete ANTES de
+  // lanzar. No es un presupuesto; el envío sigue siendo la confirmación (y para
+  // cloud, además, el consentimiento de arriba).
+  const fmtTime = (s: number) =>
+    s < 90 ? `${s} s` : `${Math.round(s / 60)} min`;
+  const costText = estimate
+    ? !estimate.cost_usd.available
+      ? "no disponible"
+      : estimate.cost_usd.tariff === null
+        ? estimate.cost_usd.label ?? "0 USD"
+        : `${estimate.cost_usd.min?.toFixed(4)}–${estimate.cost_usd.max?.toFixed(4)} USD`
+    : "";
+  const estimateNotice = estimate && (
+    <div className="profile-mismatch-banner" style={{ marginBottom: 8 }}>
+      <span className="profile-mismatch-banner-icon" aria-hidden="true">≈</span>
+      <div className="profile-mismatch-banner-body">
+        <div className="profile-mismatch-banner-title">
+          Estimación previa · {estimate.executor.name}
+          {estimate.evidence_size_human
+            ? ` · evidencia ${estimate.evidence_size_human}`
+            : ""}
+        </div>
+        <div>
+          <strong>Iteraciones</strong> {estimate.iterations.min}–
+          {estimate.iterations.max} · <strong>Tokens</strong>{" "}
+          {estimate.tokens.min.toLocaleString()}–
+          {estimate.tokens.max.toLocaleString()} · <strong>Tiempo</strong>{" "}
+          {fmtTime(estimate.time_seconds.min)}–{fmtTime(estimate.time_seconds.max)} ·{" "}
+          <strong>Coste</strong> {costText}
+          <div style={{ marginTop: 4, opacity: 0.8 }}>
+            Base: {estimate.basis}
+            {estimate.cost_usd.tariff
+              ? ` Tarifa: ${estimate.cost_usd.tariff.source}`
+              : ""}
+          </div>
+          {estimate.cost_usd.note && (
+            <div style={{ marginTop: 4 }}>{estimate.cost_usd.note}</div>
+          )}
+          <div style={{ marginTop: 4, opacity: 0.8 }}>{estimate.disclaimer}</div>
+        </div>
+      </div>
+    </div>
+  );
+  const estimateErrorNotice = estimateError && (
+    <div className="profile-mismatch-banner" style={{ marginBottom: 8 }}>
+      <span className="profile-mismatch-banner-icon" aria-hidden="true">⚠</span>
+      <div className="profile-mismatch-banner-body">
+        <div className="profile-mismatch-banner-title">
+          No se pudo estimar el coste
+        </div>
+        <div>{estimateError}</div>
+      </div>
+    </div>
+  );
+
   const sendDisabled = !input.trim() || busy || sendBlockedByConsent;
   const sendTitle = sendBlockedByConsent
     ? "Confirma el aviso del ejecutor cloud para poder enviar"
@@ -937,6 +1026,8 @@ export function ChatPage({
           {/* Composer inside welcome */}
           <div className="composer-wrapper" style={{ width: "100%" }}>
             {cloudNotice}
+            {estimateNotice}
+            {estimateErrorNotice}
             <div className="composer">
               <textarea
                 ref={inputRef}
@@ -989,6 +1080,8 @@ export function ChatPage({
 
           <div className="composer-wrapper">
             {cloudNotice}
+            {estimateNotice}
+            {estimateErrorNotice}
             <div className="composer">
               <textarea
                 ref={inputRef}

@@ -477,6 +477,31 @@ agregado distingue «no reportado» de un cero real vía `runs_with_tokens`. Tes
   así que el texto sigue viniendo del fichero (extracción intacta) y los tokens se
   parsean del stream JSONL de stdout de forma defensiva (→ None si no aparecen).
 
+**Estimación PRE-VUELO del análisis — ✅ HECHO (2026-07-15, hallazgo E).**
+
+Antes el análisis se lanzaba a ciegas (un disco real tarda >7 min y un ejecutor
+cloud factura al usuario). Ahora `GET /api/cases/{id}/analyze/estimate?executor=<id>`
+(`&evidence_id=<id>` opcional; adaptador fino en `routers/agent.py`) devuelve una
+estimación HONESTA con **rangos y supuestos declarados**, NUNCA un número fingido
+(RULE 2). Toda la lógica y las constantes de tarifa/heurística viven en
+`forensia/agent/estimate.py` (RULE 3). Devuelve, cada uno con su `basis`
+(`history` = anclado en la media real por ejecución del histórico del caso vía
+`executor_cost`; `heuristic` = por defecto documentado):
+- **iteraciones** (rango; el tope duro es `max_iterations` del paquete),
+- **tokens** (per-iteración × rango de iteraciones),
+- **tiempo** (segundos/iteración observados en el audit —`duration_ms`— o heurística),
+- **coste USD**: tokens × tarifa **pública** cableada del ejecutor. Ollama (local) →
+  `0` con etiqueta «local, sin coste monetario»; cloud con tarifa citable
+  (`TARIFFS`, hoy solo `claude-code` con la tarifa pública de API de Claude Sonnet
+  3/15 USD·Mtok) → rango; cloud **sin** tarifa cableada (`codex`, `gemini`) →
+  `available:false` con nota accionable (no se inventa un precio). El `disclaimer`
+  recuerda que es orientativo y que bajo suscripción de la CLI el coste marginal
+  puede ser 0. Ejecutor ausente/ inválido → 422 (RULE 2: no se elige «el local»).
+- **UI:** `ChatPage` pide la estimación al elegir caso + ejecutor y pinta un aviso
+  con los rangos + `basis` + `disclaimer` ANTES de lanzar (reusa el estilo del
+  aviso de consentimiento cloud). El envío sigue siendo la confirmación; para cloud
+  se mantiene además el consentimiento auditado. Tests: `tests/test_estimate.py`.
+
 **Nivel 1 — apretar los mandos existentes (ahora sí, con el Nivel 0 midiendo).**
 
 El barrido estático de sumideros (2026-07-15) cuantificó el prefijo fijo de un
