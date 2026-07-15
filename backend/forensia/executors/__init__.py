@@ -14,6 +14,7 @@ from forensia.executors.base import (
     ExecutorResult,
     PromptExecutor,
     resolve_timeout,
+    validate_model_id,
 )
 from forensia.executors.claude_code import ClaudeCodeExecutor
 from forensia.executors.codex import CodexExecutor
@@ -22,6 +23,18 @@ from forensia.executors.ollama import OllamaExecutor
 
 # Closed enum of executor ids the API accepts. Order = display order in the UI.
 EXECUTOR_IDS: tuple[str, ...] = ("claude-code", "codex", "gemini", "ollama")
+
+# Config key that persists the operator-selected model PER executor (so the
+# choice survives a reload — "recuerda el último modelo"). Read by the agent
+# router into the run context and written by the composer's model picker. RULE 2:
+# an unset key means "no operator choice" — Ollama then demands the package's
+# model, a cloud CLI uses its own default; FORENSIA never invents one.
+MODEL_CONFIG_KEY: dict[str, str] = {
+    "claude-code": "CLAUDE_CODE_MODEL",
+    "codex": "CODEX_MODEL",
+    "gemini": "GEMINI_MODEL",
+    "ollama": "OLLAMA_MODEL",
+}
 
 _FACTORIES = {
     "claude-code": ClaudeCodeExecutor,
@@ -45,27 +58,47 @@ def get_executor(executor_id: str) -> PromptExecutor:
 def executor_models(executor_id: str) -> dict[str, object]:
     """Models selectable for ``executor_id``, for the composer's model picker.
 
-    Only ``ollama`` exposes a selectable list (the installed models, which the
-    backend actually honours via ``OLLAMA_MODEL``). The cloud CLIs manage their own
-    model inside their session; FORENSIA does not override it (RULE 2), so they
-    return ``editable=False`` with an actionable note instead of a fake list. If the
-    Ollama host is down, the reason travels in ``note`` (empty list) so the UI
-    degrades explicitly rather than silently.
+    Every executor is ``editable``: the operator chooses the model and FORENSIA
+    honours it via ``MODEL_CONFIG_KEY`` (Ollama over HTTP, the cloud CLIs as a
+    ``--model`` argv flag). What differs is the list:
+
+    - ``ollama`` returns the REAL installed models (``/api/tags``); if the host
+      is down the reason travels in ``note`` (empty list) so the UI degrades
+      explicitly.
+    - the cloud CLIs return only the documented shortcut aliases as SUGGESTIONS
+      (``allow_custom`` is always true — the operator can type any id the CLI
+      accepts). FORENSIA cannot ENUMERATE their catalogs: that would need an API
+      key (SECURITY INVARIANT 7). Leaving the model empty uses the CLI's own
+      default (RULE 2: FORENSIA never invents one).
     """
     executor = get_executor(executor_id)  # loud on unknown id
     if isinstance(executor, OllamaExecutor):
         try:
             models = executor.list_models()
-            return {"executor": executor_id, "editable": True, "models": models, "note": None}
+            return {
+                "executor": executor_id,
+                "editable": True,
+                "allow_custom": True,
+                "models": models,
+                "note": None,
+            }
         except ExecutorError as exc:
-            return {"executor": executor_id, "editable": True, "models": [], "note": str(exc)}
+            return {
+                "executor": executor_id,
+                "editable": True,
+                "allow_custom": True,
+                "models": [],
+                "note": str(exc),
+            }
     return {
         "executor": executor_id,
-        "editable": False,
-        "models": [],
+        "editable": True,
+        "allow_custom": True,
+        "models": executor.suggested_models(),
         "note": (
-            f"El modelo lo gestiona el CLI de {executor.name}; FORENSIA no lo "
-            "sobrescribe (RULE 2). Cámbialo en la sesión del propio CLI."
+            f"FORENSIA no puede enumerar los modelos de {executor.name} sin una API "
+            "key (SECURITY INVARIANT 7). Escribe el id que aceptes en su CLI — se "
+            "pasa como --model; déjalo vacío para usar el modelo por defecto del CLI."
         ),
     }
 
@@ -89,6 +122,7 @@ def executors_status() -> dict[str, dict[str, object]]:
 __all__ = [
     "DEFAULT_TIMEOUT_S",
     "EXECUTOR_IDS",
+    "MODEL_CONFIG_KEY",
     "ExecutorAvailability",
     "ExecutorError",
     "ExecutorResult",
@@ -101,4 +135,5 @@ __all__ = [
     "executor_models",
     "executors_status",
     "resolve_timeout",
+    "validate_model_id",
 ]

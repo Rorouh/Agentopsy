@@ -94,8 +94,14 @@ class GeminiExecutor(CliPromptExecutor):
             ),
         )
 
-    def _build_argv(self, prompt: str) -> list[str]:
-        return ["gemini", "-p", prompt, "--output-format", "json"]
+    def _build_argv(self, prompt: str, model: str | None) -> list[str]:
+        argv = ["gemini", "-p", prompt]
+        if model:
+            # `-m/--model` — verified in `gemini --help`. Uses the OAuth session,
+            # no API key (SECURITY INVARIANT 7).
+            argv += ["--model", model]
+        argv += ["--output-format", "json"]
+        return argv
 
     def _extract_text(self, stdout: str) -> str:
         try:

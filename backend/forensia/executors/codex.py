@@ -65,14 +65,14 @@ class CodexExecutor(CliPromptExecutor):
     def __init__(self) -> None:
         self._last_message_path: str | None = None
 
-    def _build_argv(self, prompt: str) -> list[str]:
+    def _build_argv(self, prompt: str, model: str | None) -> list[str]:
         # self._last_message_path is set per-run in run() below.
         # `--json` and `--output-last-message` are ORTHOGONAL: the final text still
         # goes to the file (text extraction unchanged); `--json` only turns stdout
         # into a JSONL event stream, which is where Codex reports token usage
         # (Bug 008 Nivel 0). If a Codex version ever stopped honouring the file
         # under --json, `_extract_text` fails loud (RULE 2), never silently wrong.
-        return [
+        argv = [
             "codex",
             "exec",
             "--json",
@@ -81,8 +81,13 @@ class CodexExecutor(CliPromptExecutor):
             "read-only",
             "--output-last-message",
             str(self._last_message_path),
-            prompt,
         ]
+        if model:
+            # `-m/--model` — verified in `codex exec --help`. Uses the OAuth
+            # session, no API key (SECURITY INVARIANT 7).
+            argv += ["--model", model]
+        argv.append(prompt)
+        return argv
 
     def _extract_text(self, stdout: str) -> str:
         path = self._last_message_path

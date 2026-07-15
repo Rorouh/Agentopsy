@@ -40,7 +40,7 @@ from forensia.cases.manager import (
 from forensia.config import config
 from forensia.consent import get_cloud_consent, record_cloud_consent
 from forensia.evidence import evidence_manager
-from forensia.executors import EXECUTOR_IDS, get_executor
+from forensia.executors import EXECUTOR_IDS, MODEL_CONFIG_KEY, get_executor
 from forensia.models.base import ExecutorBackend
 from forensia.security import require_token
 
@@ -167,8 +167,17 @@ def _prepare_run(req: QueryRequest) -> tuple[ForensicAgent, str, list, str | Non
         "case_id": req.case_id,
         "temperature": float(pkg.model.temperature),
     }
+    # Operator-selected model, persisted per executor (RULE 2: never invented).
+    configured_model = config.get(MODEL_CONFIG_KEY[executor.id])
     if executor.id == "ollama":
-        run_context["model"] = config.get("OLLAMA_MODEL") or pkg.model.name
+        # Ollama DEMANDS a model at call time; fall back to the package's declared
+        # local model when the operator hasn't chosen one (still explicit — it is
+        # the trained package's value, not a code guess).
+        run_context["model"] = configured_model or pkg.model.name
+    elif configured_model:
+        # Cloud CLI: pass the chosen model as --model. Unset → the CLI's own
+        # default (FORENSIA does not override it).
+        run_context["model"] = configured_model
 
     model = ExecutorBackend(executor, run_context=run_context)
     agent = ForensicAgent(package=pkg, model=model, evidence=evidence_manager, audit=audit)

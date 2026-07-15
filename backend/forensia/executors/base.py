@@ -29,6 +29,7 @@ Contract:
 from __future__ import annotations
 
 import hashlib
+import re
 import shutil
 import subprocess
 import time
@@ -48,6 +49,33 @@ DEFAULT_TIMEOUT_S = 120
 # Budget for the NON-INTERACTIVE auth-status probes in ``is_available()``
 # (`claude auth status` / `codex login status` spawn a CLI process).
 AUTH_PROBE_TIMEOUT_S = 15
+
+# A model id reaches a CLI as a separate ``--model`` argv element. The argv is
+# shell-free (SECURITY INVARIANT 4), so a value can never spawn a subshell — but
+# a value that STARTS WITH ``-`` would be read by the CLI as another FLAG
+# (argv/flag injection: e.g. ``--dangerously-skip-permissions``). Restrict to a
+# conservative charset that MUST start with an alphanumeric so such values are
+# rejected before they ever reach the CLI (SECURITY INVARIANT 5). ``/`` is
+# allowed for namespaced tags (Ollama: ``hf.co/user/model:tag``).
+_MODEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
+
+
+def validate_model_id(model: str) -> str:
+    """Return ``model`` unchanged if it is a safe id, else raise ``ExecutorError``.
+
+    The operator picks the model explicitly; FORENSIA passes it verbatim as a
+    ``--model`` argv element. This gate stops a value from masquerading as a CLI
+    flag (SECURITY INVARIANT 5) — it is NOT a catalog check (FORENSIA cannot
+    enumerate a cloud CLI's models without an API key — SECURITY INVARIANT 7).
+    """
+    if not isinstance(model, str) or not _MODEL_ID_RE.match(model):
+        raise ExecutorError(
+            f"id de modelo inválido {model!r}: debe empezar por un carácter "
+            "alfanumérico y usar solo [A-Za-z0-9 . _ : / -] (máx. 128). FORENSIA lo "
+            "rechaza para que no pueda colarse como un flag del CLI (SECURITY "
+            "INVARIANT 5)."
+        )
+    return model
 
 
 class ExecutorError(RuntimeError):
@@ -271,9 +299,24 @@ class CliPromptExecutor(PromptExecutor):
         reason on failure names the CONCRETE login command."""
 
     @abstractmethod
-    def _build_argv(self, prompt: str) -> list[str]:
+    def _build_argv(self, prompt: str, model: str | None) -> list[str]:
         """Literal argv for one non-interactive run (verified against the
-        official CLI docs — see each subclass)."""
+        official CLI docs — see each subclass).
+
+        ``model`` is the operator-selected model id (already validated by
+        ``run``): when set, the subclass appends the CLI's model flag; when
+        ``None`` it appends nothing, so the CLI uses its own configured model —
+        FORENSIA never invents one (RULE 2)."""
+
+    def suggested_models(self) -> list[str]:
+        """Model-id shortcuts the composer's picker offers for this CLI.
+
+        A curated hint list (the aliases the CLI itself documents), never a live
+        catalog — enumerating a cloud CLI's models would need an API key
+        (SECURITY INVARIANT 7). Empty by default; the operator can always type
+        any id the CLI accepts. Ollama does not use this (it lists real installed
+        models via HTTP)."""
+        return []
 
     @abstractmethod
     def _extract_text(self, stdout: str) -> str:
@@ -290,7 +333,20 @@ class CliPromptExecutor(PromptExecutor):
         if not availability.available:
             raise ExecutorError(availability.reason or f"{self.id} is not available")
 
-        argv = self._build_argv(prompt)
+        # Operator-selected model (optional). Absent → the CLI's own default
+        # (RULE 2: FORENSIA does not invent one). Present → validated so it can
+        # never masquerade as a CLI flag before it reaches argv (SECURITY 5).
+        model = ctx.get("model")
+        if isinstance(model, str):
+            model = model.strip() or None
+        elif model is not None:
+            raise ExecutorError(
+                f"'model' del contexto debe ser str o None, no {type(model).__name__}"
+            )
+        if model is not None:
+            validate_model_id(model)
+
+        argv = self._build_argv(prompt, model)
         timeout = resolve_timeout(ctx)
         audit = ctx.get("audit")
         case_id = ctx.get("case_id")

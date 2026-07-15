@@ -55,8 +55,21 @@ class ClaudeCodeExecutor(CliPromptExecutor):
             reason += f" (detalle de `claude auth status`: {detail})"
         return ExecutorAvailability(available=False, reason=reason)
 
-    def _build_argv(self, prompt: str) -> list[str]:
-        return ["claude", "-p", prompt, "--output-format", "json"]
+    def _build_argv(self, prompt: str, model: str | None) -> list[str]:
+        argv = ["claude", "-p", prompt]
+        if model:
+            # `--model` accepts an alias ('opus', 'sonnet', 'haiku', 'fable') or a
+            # full name ('claude-fable-5') — verified in `claude --help`. It does
+            # NOT introduce an API key (the session stays OAuth in the volume), so
+            # SECURITY INVARIANT 7 holds.
+            argv += ["--model", model]
+        argv += ["--output-format", "json"]
+        return argv
+
+    def suggested_models(self) -> list[str]:
+        # Aliases `claude --help` documents (stable); the operator may also type a
+        # full name. Not a live catalog — that would need an API key (SECURITY 7).
+        return ["opus", "sonnet", "haiku"]
 
     def _extract_text(self, stdout: str) -> str:
         try:
