@@ -84,6 +84,12 @@ class CodexExecutor(CliPromptExecutor):
         with open(path, encoding="utf-8") as fh:
             return fh.read().strip()
 
+    # No `_extract_usage` override on purpose (Bug 008 Nivel 0): Codex exposes
+    # token counts only via the `--json` JSONL event stream, which this executor
+    # deliberately does not consume (the final text comes from
+    # `--output-last-message`). Reporting None is the honest state until we decide
+    # to adopt `--json` — never a number parsed out of free-text stdout (RULE 2).
+
     def run(self, prompt: str, context: dict[str, Any] | None = None) -> ExecutorResult:
         # Private temp file for the final message; the literal argv recorded in
         # the audit log includes this exact path.

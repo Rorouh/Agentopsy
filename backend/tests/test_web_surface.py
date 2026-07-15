@@ -391,3 +391,36 @@ def test_verify_endpoint_audits_result(
     assert ver[0]["evidence_id"] == evidence_id
     assert ver[0]["verified"] is True
     assert ver[0]["baseline_sha256"] == reg.json()["sha256"]
+
+
+# ---- /api/cases/{id}/executor-cost (Bug 008 Nivel 0) --------------------------
+
+
+def test_executor_cost_endpoint_returns_aggregated_usage(
+    client: TestClient, auth, isolated_cases, monkeypatch
+) -> None:
+    """El endpoint fino agrega el usage de los eventos executor_run_finish."""
+    from forensia.audit.log import AuditLog
+    from forensia.executors import cost as cost_mod
+
+    monkeypatch.setattr(cost_mod, "case_manager", isolated_cases)
+    case = isolated_cases.create(name="c", examiner="e", os_profile="windows")
+    audit = AuditLog(isolated_cases.case_dir(case.id) / "audit.jsonl")
+    audit.append({
+        "action": "executor_run_finish", "executor": "claude-code", "case_id": case.id,
+        "exit_code": None, "duration_ms": 5, "response_sha256": "x", "response_chars": 80,
+        "input_tokens": 1000, "output_tokens": 200, "cost_usd": 0.01,
+        "usage_source": "claude_code.usage",
+    })
+
+    resp = client.get(f"/api/cases/{case.id}/executor-cost", headers=auth)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body[0]["executor"] == "claude-code"
+    assert body[0]["total_tokens"] == 1200
+    assert body[0]["cost_usd"] == 0.01
+
+
+def test_executor_cost_endpoint_requires_token(client: TestClient) -> None:
+    resp = client.get("/api/cases/whatever/executor-cost")
+    assert resp.status_code == 401

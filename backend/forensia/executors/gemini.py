@@ -26,7 +26,14 @@ import json
 import time
 from pathlib import Path
 
-from forensia.executors.base import CliPromptExecutor, ExecutorAvailability, ExecutorError
+from forensia.executors.base import (
+    CliPromptExecutor,
+    ExecutorAvailability,
+    ExecutorError,
+    Usage,
+    _as_int,
+    _find_key,
+)
 
 _LOGIN_HINT = (
     "Inicia sesión con tu cuenta de Google: en el HOST, ejecuta `gemini` y "
@@ -111,3 +118,27 @@ class GeminiExecutor(CliPromptExecutor):
                 "la respuesta JSON de Gemini CLI no contiene el campo 'response' de texto"
             )
         return response
+
+    def _extract_usage(self, raw: str) -> Usage | None:
+        # The exact shape of Gemini CLI's `stats` block is version-dependent, so
+        # instead of guessing a path we search it for the CANONICAL GenAI
+        # usageMetadata field names (stable across the API). Not found → None,
+        # never a wrong number (Bug 008 Nivel 0, RULE 2).
+        try:
+            envelope = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        if not isinstance(envelope, dict):
+            return None
+        stats = envelope.get("stats")
+        scope = stats if isinstance(stats, dict) else envelope
+        prompt = _find_key(scope, "promptTokenCount")
+        candidates = _find_key(scope, "candidatesTokenCount")
+        if prompt is None and candidates is None:
+            return None
+        u = Usage(
+            input_tokens=_as_int(prompt),
+            output_tokens=_as_int(candidates),
+            source="gemini.stats",
+        )
+        return u if (u.input_tokens or u.output_tokens) is not None else None

@@ -22,7 +22,14 @@ from __future__ import annotations
 
 import json
 
-from forensia.executors.base import CliPromptExecutor, ExecutorAvailability, ExecutorError
+from forensia.executors.base import (
+    CliPromptExecutor,
+    ExecutorAvailability,
+    ExecutorError,
+    Usage,
+    _as_float,
+    _as_int,
+)
 
 _LOGIN_HINT = (
     "Inicia sesión UNA VEZ dentro del contenedor: "
@@ -73,3 +80,24 @@ class ClaudeCodeExecutor(CliPromptExecutor):
                 "la respuesta JSON de Claude Code no contiene el campo 'result' de texto"
             )
         return result
+
+    def _extract_usage(self, raw: str) -> Usage | None:
+        # `claude -p --output-format json` carries `usage.{input_tokens,
+        # output_tokens}` and `total_cost_usd`. Defensive: any missing/renamed
+        # field degrades to None rather than a wrong number (Bug 008 Nivel 0).
+        try:
+            envelope = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        if not isinstance(envelope, dict):
+            return None
+        usage = envelope.get("usage")
+        usage = usage if isinstance(usage, dict) else {}
+        cost = envelope.get("total_cost_usd")
+        u = Usage(
+            input_tokens=_as_int(usage.get("input_tokens")),
+            output_tokens=_as_int(usage.get("output_tokens")),
+            cost_usd=_as_float(cost),
+            source="claude_code.usage",
+        )
+        return u if (u.input_tokens or u.output_tokens or u.cost_usd) is not None else None

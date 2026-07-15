@@ -449,26 +449,50 @@ resultados de tools antiguos (`window_messages`, se conservan los últimos 4 —
 (6 turnos / 8K chars / 30 entradas de ledger). Lo que queda, por niveles y **en este
 orden** (no optimizar sin medir):
 
-**Nivel 0 — telemetría de coste (hacer primero).**
+**Nivel 0 — telemetría de coste. ✅ HECHO (2026-07-15).**
 
-| | |
-|---|---|
-| **Qué** | Persistir tokens/coste por turno en el evento `executor_run_finish` del audit (que ya registra `prompt_chars`/`response_chars`). Los envelopes ya traen los datos y hoy se descartan: Claude Code devuelve `total_cost_usd` + usage en su JSON (`claude_code.py::_extract_text` solo extrae `result`); `codex exec --json` reporta tokens; Ollama devuelve `prompt_eval_count`/`eval_count`. Exponer el agregado por sesión/caso/ejecutor. |
-| **Por qué** | Sin medición no hay optimización honesta. Además la comparativa entre los cuatro ejecutores es la contribución experimental del TFM — coste/tokens por caso y ejecutor es una métrica directa para la memoria. |
-| **Dónde toca** | `backend/forensia/executors/*.py` (extraer usage del envelope sin cambiar el contrato de `_extract_text`), `base.py::_audit_finish`, y una superficie fina para el agregado (¿`capabilities` o un endpoint de métricas?). |
-| **Estimación** | Medio día. |
+Backend implementado (`forensia/mitre` fue MITRE; esto es `forensia/executors`):
+`Usage` en `ExecutorResult` + un hook `_extract_usage()` en paralelo a
+`_extract_text` (sin tocar su contrato). Cada ejecutor parsea SU envelope —
+Claude Code `usage.{input,output}_tokens` + `total_cost_usd`; Ollama
+`prompt_eval_count`/`eval_count` (local, sin coste); Gemini busca las claves
+canónicas `promptTokenCount`/`candidatesTokenCount` en `stats`. **Codex reporta
+`None`** a propósito: sus tokens solo salen por el stream `--json` que hoy no se
+consume — mejor «no reportado» que un número parseado de texto libre (RULE 2).
+Forma inesperada del envelope → `None`, jamás un número fabricado. Se persiste en
+`executor_run_finish` (`base.py`/`ollama.py`) junto a `prompt_chars`/`response_chars`,
+y se agrega por caso/ejecutor en `forensia/executors/cost.py`, expuesto en
+`GET /api/cases/{id}/executor-cost` (adaptador fino en `routers/findings.py`). El
+agregado distingue «no reportado» de un cero real vía `runs_with_tokens`. Tests:
+`tests/test_executor_cost.py` + endpoint en `tests/test_web_surface.py`.
 
-**Nivel 1 — apretar los mandos existentes (tras el Nivel 0, con datos).**
+**Pendiente del Nivel 0:** la superficie de UI (comparativa coste/tokens por
+ejecutor) — es la figura experimental del TFM y merece diseño propio (skill de
+dataviz), no un panel a medias; el endpoint ya sirve el dato. Y decidir si adoptar
+`codex exec --json` para desbloquear los tokens de Codex.
 
-- Bajar `FORENSIA_CONTEXT_KEEP_TOOL_RESULTS` de 4 a 2-3 y medir si la calidad del
-  análisis aguanta.
-- Podar el anexo por-tool del playbook a las tools de la fase/allowlist actual (hoy
-  viaja entero).
-- Reforzar en los playbooks el patrón «pasa el `ArtifactRef`, no vuelques stdout» —
-  la infraestructura ya lo favorece.
-- Ojo con Ollama: su prompt caching depende de un **prefijo byte-estable**, y el
-  stubbing de `window_messages` muta mensajes antiguos entre turnos, rompiéndolo.
-  Medir el trade-off con el Nivel 0 antes de tocar nada.
+**Nivel 1 — apretar los mandos existentes (ahora sí, con el Nivel 0 midiendo).**
+
+El barrido estático de sumideros (2026-07-15) cuantificó el prefijo fijo de un
+memdump **Windows** en ~11.900 tok/iteración (×12 iter ≈ ~143 K tok de input por
+pasada) y encontró **dos sumideros que el bug 008 no tocó** — juntos, casi la mitad
+del prefijo:
+
+- **Payload `specs` (11.917 B/iter, ~2.979 tok).** Los JSON-schemas de las **27
+  tools** viajan íntegros cada iteración; `window_messages`/`redact_messages` operan
+  sobre `messages`, **no sobre `specs`** (`agent.py:281,334`). Palanca: enviar solo
+  los schemas de las tools de la fase/rama activa. **Mayor rendimiento no explotado.**
+- **Anexo por-herramienta del playbook (9.438 B/iter, ~2.360 tok).**
+  `select_playbook_section` lo trata como «común» y **nunca lo trocea**
+  (`context.py:114-123`); ~6 KB son docs de tools de disco, peso muerto en un memdump.
+  Palanca: subdividir el Anexo por rama en `_section_branch`, igual que las secciones
+  A/B. (Es exclusivo de Windows: el playbook Unix no tiene Anexo.)
+- Bajar `FORENSIA_CONTEXT_KEEP_TOOL_RESULTS` de 4 a 2-3 y medir si la calidad aguanta.
+- Reforzar «pasa el `ArtifactRef`, no vuelques stdout».
+- Ojo con Ollama: `window_messages` recalcula la proyección cada iteración y el corte
+  «últimos K» se desplaza, así que los bytes de un mensaje viejo cambian (full→stub)
+  entre turnos → invalida su KV-cache de prefijo byte-estable. Trade-off deliberado
+  (`context.py:5-8`); medir con el Nivel 0 antes de bajar `KEEP`.
 - Estimación: horas.
 
 **Nivel 2 — sesiones con estado por ejecutor.** El gran salto (O(N²) → O(N) + prompt
