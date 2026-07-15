@@ -370,3 +370,15 @@ SYNTHESIS from findings is still not implemented, so `MitreTechniqueMatch[]` wit
 `docs/agentes/contrato-paquetes.md` §5.bis. The old delivery model is fully
 dismantled: `desktop/`, `docker/agent/`, `vendor/`, the PyInstaller spec and the
 release workflow are gone (2026-07-02) — nothing ships outside the compose.
+
+**Agent analysis hardening (2026-07-15)**: the loop now forces the agent to
+`record_finding` HOT (a strict prompt rule + a **structural nudge** in
+`agent.py`: after ≥3 catalog tools with no finding, a reminder is injected) so a
+long analysis that gets cut off still persists what it concluded; the unix/windows
+playbooks pin fixed forensic pipelines (`tsk_fls -m → tsk_mactime`,
+`bulk_extractor → jq → finding-per-category`). And analysis can now run
+**asynchronously**: `POST /api/agent/analyze` starts a background job
+(`forensia.agent.jobs`) and returns a `job_id` immediately (decoupled from the
+request — a disconnect no longer aborts it), polled via `GET /api/agent/jobs/{id}`.
+Measured: `/analyze` returns in ~0.3s and findings register incrementally. The
+`web` chat still uses the streaming endpoint; adopting `/analyze`+polling is next.
