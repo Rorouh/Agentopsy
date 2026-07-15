@@ -10,6 +10,7 @@ import type {
   AdjudicateRequest,
   AgentFinding,
   AgentJob,
+  AnalysisEstimate,
   MitreCatalog,
   MitreCoverageEntry,
   ExecutorCost,
@@ -18,12 +19,17 @@ import type {
   Case,
   ConfigSnapshot,
   CreateCaseRequest,
+  CustodyAct,
   DocumentMeta,
   DocumentFull,
   DocumentVerifyResult,
+  GenerateReportRequest,
   EvidenceHandle,
+  EvidenceMetadata,
   EvidenceSource,
   ExecutorId,
+  FsTimelineJob,
+  InvestigationTimeline,
   ExecutorLoginCapability,
   ExecutorLoginStart,
   ExecutorLoginStatus,
@@ -108,6 +114,27 @@ function post<T>(path: string, body: unknown): Promise<T> {
   return request<T>(path, { method: "POST", body: JSON.stringify(body) });
 }
 
+// Descarga binaria/textual con el token en cabecera (un <a href> no puede
+// llevarlo) y la dispara desde un blob mismo-origen. El nombre de fichero sale
+// del Content-Disposition del backend; `fallback` si el servidor no lo manda.
+async function download(path: string, fallback: string): Promise<void> {
+  const token = await getToken();
+  const res = await fetch(path, { headers: { "X-Forensia-Token": token } });
+  if (!res.ok) throw new ApiError(res.status, await readDetail(res));
+  const blob = await res.blob();
+  const cd = res.headers.get("Content-Disposition") ?? "";
+  const match = /filename="?([^"]+?)"?(?:;|$)/.exec(cd);
+  const name = match ? match[1] : fallback;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export const api = {
   // Sin token a propósito: es el "¿está vivo el api?" que App usa para pintar
   // el estado de conexión; no debe depender del bootstrap del token.
@@ -131,6 +158,17 @@ export const api = {
     request<AgentJob>(`/api/agent/jobs/${encodeURIComponent(jobId)}?since=${since}`),
   listCaseJobs: (caseId: string) =>
     request<AgentJob[]>(`/api/cases/${encodeURIComponent(caseId)}/agent/jobs`),
+
+  // Estimación HONESTA (rangos + supuestos) del coste de lanzar un análisis
+  // ANTES de lanzarlo (hallazgo E). `executor` es obligatorio (RULE 2); un id
+  // desconocido → 422. `evidenceId` es opcional (enriquece con el tamaño).
+  analyzeEstimate: (caseId: string, executor: ExecutorId, evidenceId?: string) => {
+    const qs = new URLSearchParams({ executor });
+    if (evidenceId) qs.set("evidence_id", evidenceId);
+    return request<AnalysisEstimate>(
+      `/api/cases/${encodeURIComponent(caseId)}/analyze/estimate?${qs.toString()}`,
+    );
+  },
 
   // Igual que query() pero recibe el progreso del agente en vivo: llama a
   // `onEvent` por cada evento NDJSON (reasoning / tool_call / tool_result /
@@ -214,12 +252,41 @@ export const api = {
         `/api/cases/${encodeURIComponent(caseId)}/evidence/${encodeURIComponent(evidenceId)}/verify`,
         {},
       ),
+    // Metadata de custodia de una evidencia (hash baseline, tamaño legible,
+    // nivel de solo-lectura HONESTO, última verificación).
+    evidenceMetadata: (caseId: string, evidenceId: string) =>
+      request<EvidenceMetadata>(
+        `/api/cases/${encodeURIComponent(caseId)}/evidence/${encodeURIComponent(evidenceId)}/metadata`,
+      ),
+    // Acta de adquisición estructurada (cadena de custodia hash-encadenada).
+    custodyAct: (caseId: string, evidenceId: string) =>
+      request<CustodyAct>(
+        `/api/cases/${encodeURIComponent(caseId)}/evidence/${encodeURIComponent(evidenceId)}/custody-act`,
+      ),
     listFindings: (caseId: string) =>
       request<AgentFinding[]>(`/api/cases/${encodeURIComponent(caseId)}/findings`),
     listToolUsage: (caseId: string) =>
       request<ToolUsage[]>(`/api/cases/${encodeURIComponent(caseId)}/tool-usage`),
     listExecutorCost: (caseId: string) =>
       request<ExecutorCost[]>(`/api/cases/${encodeURIComponent(caseId)}/executor-cost`),
+
+    // ── Timeline forense del caso ───────────────────────────────────────────
+    // Capa 1: timeline de investigación (determinista) — ejecuciones de tool del
+    // audit log + hallazgos, en orden cronológico UTC.
+    timeline: (caseId: string) =>
+      request<InvestigationTimeline>(`/api/cases/${encodeURIComponent(caseId)}/timeline`),
+    // Capa 2: arranca la super-timeline del sistema de ficheros (tsk_fls -m) en
+    // SEGUNDO PLANO y devuelve el job; se sondea con getFsTimelineJob.
+    startFsTimeline: (caseId: string, evidenceId: string) =>
+      post<FsTimelineJob>(`/api/cases/${encodeURIComponent(caseId)}/timeline/filesystem`, {
+        evidence_id: evidenceId,
+      }),
+    getFsTimelineJob: (caseId: string, jobId: string, since = 0) =>
+      request<FsTimelineJob>(
+        `/api/cases/${encodeURIComponent(caseId)}/timeline/filesystem/jobs/${encodeURIComponent(
+          jobId,
+        )}?since=${since}`,
+      ),
     // Cobertura ATT&CK del caso: propuestas del agente + dictámenes del operador.
     listMitreCoverage: (caseId: string) =>
       request<MitreCoverageEntry[]>(`/api/cases/${encodeURIComponent(caseId)}/mitre`),
@@ -228,6 +295,25 @@ export const api = {
       post<{ coverage: MitreCoverageEntry[] }>(
         `/api/cases/${encodeURIComponent(caseId)}/mitre`,
         body,
+      ),
+    // Export CSV de la cobertura ATT&CK del caso (0 propuestas → cabecera + 0 filas).
+    exportMitreCsv: (caseId: string) =>
+      download(
+        `/api/cases/${encodeURIComponent(caseId)}/mitre/export.csv`,
+        `mitre-coverage-${caseId}.csv`,
+      ),
+    // Export del layer del ATT&CK Navigator (formato 4.5) para cargarlo en el
+    // Navigator oficial: colorea las técnicas propuestas/adjudicadas del caso.
+    exportMitreNavigator: (caseId: string) =>
+      download(
+        `/api/cases/${encodeURIComponent(caseId)}/mitre/navigator`,
+        `mitre-navigator-${caseId}.json`,
+      ),
+    // Export CSV del timeline de investigación (tool runs + hallazgos, orden UTC).
+    exportTimelineCsv: (caseId: string) =>
+      download(
+        `/api/cases/${encodeURIComponent(caseId)}/timeline/export.csv`,
+        `timeline-${caseId}.csv`,
       ),
     readChat: (caseId: string, sessionId: string) =>
       request<PersistedChatMessage[]>(
@@ -259,6 +345,13 @@ export const api = {
     getDocument: (caseId: string, docId: string) =>
       request<DocumentFull>(
         `/api/cases/${encodeURIComponent(caseId)}/documents/${encodeURIComponent(docId)}`,
+      ),
+    // Síntesis "con un clic": el backend redacta el informe pericial desde los
+    // hallazgos / custodia / MITRE reales del caso y lo persiste como borrador.
+    generateReport: (caseId: string, perito: GenerateReportRequest) =>
+      post<DocumentFull>(
+        `/api/cases/${encodeURIComponent(caseId)}/documents/generate`,
+        perito,
       ),
     verifyDocument: (caseId: string, docId: string) =>
       post<DocumentVerifyResult>(

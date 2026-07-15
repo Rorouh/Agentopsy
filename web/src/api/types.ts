@@ -234,6 +234,63 @@ export interface UpdateCaseRequest {
 
 export type VerifyResult = EvidenceHandle & { verified: boolean };
 
+// Metadata de custodia de una evidencia (GET …/evidence/{id}/metadata).
+// `read_only_level` es HONESTO: "fs" = solo lectura a nivel de sistema de
+// ficheros (chmod 0444); el bloqueo a nivel de bloque es Fase 2 (RULE 2 —
+// nunca se anuncia una garantía que no se aplica). `read_only_label` es la
+// etiqueta lista para mostrar.
+export interface EvidenceMetadata {
+  evidence_id: string;
+  case_id: string;
+  original_basename: string;
+  sha256: string;
+  size_bytes: number;
+  size_human: string;
+  registered_at: string;
+  read_only_level: "fs";
+  read_only_label: string;
+  detected_os: "unix" | "windows" | "unknown";
+  detected_kind: "disk" | "memory" | "container_disk" | "unknown";
+  verification: VerificationRecord | null;
+}
+
+// Acta de adquisición estructurada (GET …/evidence/{id}/custody-act). Se
+// construye de forma pura desde el baseline + el evento `evidence_register` del
+// audit hash-encadenado; no narra nada nuevo (forensia.custody).
+export interface CustodyAct {
+  generated_at: string;
+  tool: { name: string; version: string; component: string; method: string };
+  case: {
+    id: string;
+    name: string;
+    examiner: string;
+    created_at: string;
+    status: "active" | "closed";
+    os_profile: "unix" | "windows" | null;
+    os_profile_source: string | null;
+  };
+  evidence: {
+    evidence_id: string;
+    source_path: string | null;
+    original_basename: string | null;
+    sha256: string;
+    size_bytes: number;
+    size_human: string;
+    registered_at: string;
+    detected_os: "unix" | "windows" | "unknown";
+    detected_kind: "disk" | "memory" | "container_disk" | "unknown";
+  };
+  read_only: { level: "fs"; label: string };
+  chain_of_custody: {
+    audit_log: string;
+    register_entry_hash: string | null;
+    register_prev_hash: string | null;
+    register_ts_utc: string | null;
+    hash_chain_verified: boolean;
+  };
+  verification: VerificationRecord | null;
+}
+
 export interface PersistedChatMessage {
   role: "user" | "assistant" | "system" | "tool";
   content: string;
@@ -333,6 +390,16 @@ export interface DocumentVerifyResult {
   recomputed_sha256: string;
 }
 
+// Datos opcionales del perito para la síntesis del informe pericial. Todos
+// opcionales: sin ellos el backend usa el examinador del caso como perito.
+export interface GenerateReportRequest {
+  name?: string;
+  colegiado?: string;
+  organization?: string;
+  email?: string;
+  version?: string;
+}
+
 export interface MitreCatalog {
   available: boolean;
   // Motivo accionable cuando available=false. Nunca hay catálogo "por defecto".
@@ -386,6 +453,53 @@ export interface ExecutorCost {
   response_chars: number;
 }
 
+// Estimación PRE-VUELO del análisis (GET /api/cases/{id}/analyze/estimate,
+// hallazgo E): rangos + supuestos declarados, NUNCA un número fingido (RULE 2).
+// `basis` de cada cantidad dice si sale del histórico real del caso o de una
+// heurística documentada. Para Ollama (local) el coste monetario es 0.
+export interface AnalysisEstimateRange {
+  min: number;
+  max: number;
+  // tokens/iteración o segundos/iteración usados como base.
+  per_iteration: number;
+  // "history" = anclado en la media real del caso; "heuristic" = por defecto.
+  basis: "history" | "heuristic";
+}
+
+export interface AnalysisCostTariff {
+  assumed_model: string;
+  input_usd_per_mtok: number;
+  output_usd_per_mtok: number;
+  source: string; // cita de la tarifa (RULE 2: sin cita no se cablea)
+}
+
+export interface AnalysisCostEstimate {
+  // false → no hay tarifa pública cableada para ese ejecutor cloud; el coste no
+  // se inventa (RULE 2). min/max serán null en ese caso.
+  available: boolean;
+  min: number | null;
+  max: number | null;
+  currency: string;
+  // p. ej. "local, sin coste monetario" para Ollama.
+  label: string | null;
+  tariff: AnalysisCostTariff | null;
+  note: string | null;
+}
+
+export interface AnalysisEstimate {
+  case_id: string;
+  executor: { id: ExecutorId; name: string; local: boolean };
+  evidence_id: string | null;
+  evidence_size_bytes: number | null;
+  evidence_size_human: string | null;
+  iterations: { min: number; max: number };
+  tokens: AnalysisEstimateRange;
+  cost_usd: AnalysisCostEstimate;
+  time_seconds: AnalysisEstimateRange;
+  basis: string; // resumen humano de en qué se apoya
+  disclaimer: string; // aviso de que es orientativo
+}
+
 export interface ConfigKeyStatus {
   set: boolean;
   preview: string | null;
@@ -415,4 +529,82 @@ export interface QueryRequest {
   // sin ninguno de los dos responde 422 accionable (RULE 2).
   executor?: ExecutorId;
   session_id?: string;
+}
+
+// ── Timeline forense del caso (backend/forensia/timeline) ───────────────────
+// Todas las marcas `ts` son UTC, normalizadas a un ISO-8601 con `Z` explícito
+// (hallazgo F: la zona horaria nunca se deja implícita).
+
+// Capa 1 — timeline de INVESTIGACIÓN (determinista, siempre disponible): cada
+// ejecución de herramienta del audit log y cada hallazgo, en orden cronológico.
+export interface TimelineToolRunEvent {
+  kind: "tool_run";
+  ts: string | null;
+  tool_id: string | null;
+  run_id: string | null;
+  argv: string[];
+  exit: number | null;
+  status: string;
+  evidence_id: string | null;
+  artifacts: { relpath: string; sha256: string }[];
+  output_files_count: number | null;
+}
+export interface TimelineFindingEvent {
+  kind: "finding";
+  ts: string | null;
+  finding_id: string;
+  title: string;
+  summary: string;
+  severity: "low" | "medium" | "high" | "critical";
+  tool_id: string | null;
+  evidence_id: string | null;
+  mitre_hints: string[];
+}
+export type TimelineEvent = TimelineToolRunEvent | TimelineFindingEvent;
+
+export interface InvestigationTimeline {
+  case_id: string;
+  timezone: string; // "UTC"
+  events: TimelineEvent[];
+}
+
+// Capa 2 — super-timeline del SISTEMA DE FICHEROS (tsk_fls -m → eventos MACB),
+// bajo demanda y asíncrona (registro de jobs).
+export interface FsTimelineEvent {
+  kind: "fs";
+  ts: string;
+  path: string;
+  macb: string; // p. ej. "m.c.", "macb"
+  size: number;
+  inode: string;
+}
+export interface FsTimelineResult {
+  timezone: string;
+  evidence_id: string;
+  os_profile: string;
+  fls_run_id: string;
+  total_events: number;
+  returned: number;
+  truncated: boolean;
+  events: FsTimelineEvent[];
+}
+// Evento de progreso que el job acumula (`fls` → `mactime` → `done`).
+export interface TimelineJobProgress {
+  type: string;
+  stage?: string;
+  message?: string;
+}
+export interface FsTimelineJob {
+  job_id: string;
+  case_id: string;
+  kind: string;
+  status: "running" | "done" | "error";
+  created_at: string;
+  finished_at: string | null;
+  result: FsTimelineResult | null;
+  error: string | null;
+  events?: TimelineJobProgress[];
+  event_count?: number;
+  evidence_id?: string;
+  os_profile?: string;
 }

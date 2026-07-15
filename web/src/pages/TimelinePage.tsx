@@ -1,63 +1,77 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { api } from "../api/client";
-import type { AgentFinding, Case } from "../api/types";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { api, ApiError } from "../api/client";
+import type {
+  Case,
+  EvidenceHandle,
+  FsTimelineEvent,
+  FsTimelineJob,
+  TimelineEvent,
+} from "../api/types";
 import { EmptyState } from "../ui/EmptyState";
 import { PageHeader } from "../ui/PageHeader";
 
-// Timeline de eventos del caso. Vista REAL: cada evento es un hallazgo que el
-// agente registró (record_finding) sobre la evidencia, en orden cronológico por
-// su created_at. Fuente = tool_id, severidad = severity, técnicas = mitre_hints.
-// Sin datos inventados: un caso sin hallazgos sale vacío (RULE 2).
+// Timeline forense del caso — DOS capas REALES (sin datos inventados, RULE 2):
+//   1) Investigación: cada ejecución de herramienta del audit log + cada hallazgo,
+//      en orden cronológico. Determinista, siempre disponible.
+//   2) Sistema de ficheros: la super-timeline MACB (tsk_fls -m) sobre la evidencia
+//      seleccionada, bajo demanda y asíncrona (job).
+// Todas las marcas de tiempo son UTC y se muestran con la zona explícita
+// (hallazgo F): NUNCA se convierten a la hora local del navegador.
 
 type Phase = "loading" | "ready" | "no-case" | "error";
-type Severity = "low" | "medium" | "high" | "critical";
-type SevFilter = Severity | "all";
+type Layer = "investigation" | "filesystem";
 
-const SEV_LABEL: Record<Severity, string> = {
+const SEV_LABEL: Record<string, string> = {
   low: "Baja",
   medium: "Media",
   high: "Alta",
   critical: "Crítica",
 };
-const SEV_ORDER: SevFilter[] = ["all", "low", "medium", "high", "critical"];
 
-interface TlEvent {
-  id: string;
-  dateLabel: string;
-  timeLabel: string;
-  sortKey: string;
-  source: string;
-  severity: Severity;
-  evidenceId: string;
-  description: string;
-  techniques: string[];
+function fmtUtc(ts: string | null): { date: string; time: string } {
+  if (!ts) return { date: "sin fecha", time: "—" };
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return { date: ts.slice(0, 10) || "sin fecha", time: ts.slice(11, 19) };
+  const p = (n: number) => String(n).padStart(2, "0");
+  return {
+    date: `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`,
+    time: `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`,
+  };
 }
 
-function toEvent(f: AgentFinding): TlEvent {
-  const d = new Date(f.created_at);
-  const valid = !isNaN(d.getTime());
-  return {
-    id: f.id,
-    dateLabel: valid ? d.toLocaleDateString("es-ES") : f.created_at.slice(0, 10),
-    timeLabel: valid ? d.toLocaleTimeString("es-ES") : "",
-    sortKey: f.created_at,
-    source: f.tool_id ?? "agente",
-    severity: f.severity,
-    evidenceId: f.evidence_id ?? "—",
-    description: f.summary || f.title,
-    techniques: f.mitre_hints,
-  };
+function groupByDay<T>(rows: T[], ts: (row: T) => string | null): { label: string; rows: T[] }[] {
+  const map = new Map<string, T[]>();
+  for (const row of rows) {
+    const label = fmtUtc(ts(row)).date;
+    if (!map.has(label)) map.set(label, []);
+    map.get(label)!.push(row);
+  }
+  return Array.from(map.entries()).map(([label, r]) => ({ label, rows: r }));
+}
+
+function evidenceName(e: EvidenceHandle): string {
+  const parts = e.original_path.split(/[\\/]/);
+  return parts[parts.length - 1] || e.evidence_id;
 }
 
 export function TimelinePage() {
   const [cases, setCases] = useState<Case[]>([]);
-  const [findings, setFindings] = useState<AgentFinding[]>([]);
   const [phase, setPhase] = useState<Phase>("loading");
   const [error, setError] = useState("");
-
+  const [layer, setLayer] = useState<Layer>("investigation");
   const [search, setSearch] = useState("");
-  const [sevFilter, setSevFilter] = useState<SevFilter>("all");
-  const [sourceFilter, setSourceFilter] = useState<string>("all");
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
+
+  // Capa 1
+  const [events, setEvents] = useState<TimelineEvent[]>([]);
+  // Capa 2
+  const [evidences, setEvidences] = useState<EvidenceHandle[]>([]);
+  const [selectedEvidence, setSelectedEvidence] = useState("");
+  const [fsJob, setFsJob] = useState<FsTimelineJob | null>(null);
+  const [fsError, setFsError] = useState("");
+  const [starting, setStarting] = useState(false);
+  const pollRef = useRef<number | null>(null);
 
   const activeCase = cases[0] ?? null;
 
@@ -72,11 +86,15 @@ export function TimelinePage() {
           setPhase("no-case");
           return;
         }
-        const finds = await api.cases
-          .listFindings(list[0].id)
-          .catch(() => [] as AgentFinding[]);
+        const caseId = list[0].id;
+        const [tl, evs] = await Promise.all([
+          api.cases.timeline(caseId),
+          api.cases.listEvidence(caseId).catch(() => [] as EvidenceHandle[]),
+        ]);
         if (cancelled) return;
-        setFindings(finds);
+        setEvents(tl.events);
+        setEvidences(evs);
+        if (evs.length > 0) setSelectedEvidence(evs[0].evidence_id);
         setPhase("ready");
       } catch (err) {
         if (!cancelled) {
@@ -90,53 +108,106 @@ export function TimelinePage() {
     };
   }, []);
 
-  const events = useMemo(
-    () => findings.map(toEvent).sort((a, b) => a.sortKey.localeCompare(b.sortKey)),
-    [findings],
-  );
+  // Limpia el sondeo al desmontar.
+  useEffect(() => {
+    return () => {
+      if (pollRef.current !== null) window.clearTimeout(pollRef.current);
+    };
+  }, []);
 
-  const sources = useMemo(
-    () => Array.from(new Set(events.map((e) => e.source))).sort(),
-    [events],
-  );
+  const poll = useCallback((caseId: string, jobId: string) => {
+    const tick = async () => {
+      try {
+        const snap = await api.cases.getFsTimelineJob(caseId, jobId);
+        setFsJob(snap);
+        if (snap.status === "running") {
+          pollRef.current = window.setTimeout(tick, 1200);
+        }
+      } catch (err) {
+        setFsError(err instanceof ApiError ? err.detail : String(err));
+      }
+    };
+    void tick();
+  }, []);
 
-  const matches = useCallback(
-    (e: TlEvent) => {
-      if (sevFilter !== "all" && e.severity !== sevFilter) return false;
-      if (sourceFilter !== "all" && e.source !== sourceFilter) return false;
+  const startFsTimeline = useCallback(async () => {
+    if (!activeCase || !selectedEvidence) return;
+    setFsError("");
+    setFsJob(null);
+    setStarting(true);
+    if (pollRef.current !== null) window.clearTimeout(pollRef.current);
+    try {
+      const job = await api.cases.startFsTimeline(activeCase.id, selectedEvidence);
+      setFsJob(job);
+      poll(activeCase.id, job.job_id);
+    } catch (err) {
+      setFsError(err instanceof ApiError ? err.detail : String(err));
+    } finally {
+      setStarting(false);
+    }
+  }, [activeCase, selectedEvidence, poll]);
+
+  // Export CSV del timeline de investigación (tool runs + hallazgos). Se descarga con
+  // el token mismo-origen; un caso sin actividad exporta igual (cabecera honesta).
+  const exportInvestigationCsv = useCallback(async () => {
+    if (!activeCase) return;
+    setExporting(true);
+    setExportError("");
+    try {
+      await api.cases.exportTimelineCsv(activeCase.id);
+    } catch (err) {
+      setExportError(err instanceof ApiError ? err.detail : String(err));
+    } finally {
+      setExporting(false);
+    }
+  }, [activeCase]);
+
+  const invMatches = useCallback(
+    (e: TimelineEvent) => {
       const q = search.trim().toLowerCase();
       if (!q) return true;
-      return `${e.source} ${e.description} ${e.evidenceId} ${e.techniques.join(" ")}`
-        .toLowerCase()
-        .includes(q);
+      const hay =
+        e.kind === "finding"
+          ? `${e.tool_id ?? ""} ${e.title} ${e.summary} ${e.mitre_hints.join(" ")}`
+          : `${e.tool_id ?? ""} ${e.argv.join(" ")} ${e.status}`;
+      return hay.toLowerCase().includes(q);
     },
-    [sevFilter, sourceFilter, search],
+    [search],
   );
 
-  const filtered = useMemo(() => events.filter(matches), [events, matches]);
+  const invFiltered = useMemo(() => events.filter(invMatches), [events, invMatches]);
+  const invDays = useMemo(() => groupByDay(invFiltered, (e) => e.ts), [invFiltered]);
 
   const counts = useMemo(() => {
-    const c = { critical: 0, high: 0, medium: 0, low: 0 };
-    events.forEach((e) => (c[e.severity] += 1));
-    return c;
+    let toolRuns = 0;
+    let findings = 0;
+    for (const e of events) {
+      if (e.kind === "tool_run") toolRuns += 1;
+      else findings += 1;
+    }
+    return { toolRuns, findings, total: events.length };
   }, [events]);
 
-  const days = useMemo(() => {
-    const map = new Map<string, TlEvent[]>();
-    filtered.forEach((e) => {
-      if (!map.has(e.dateLabel)) map.set(e.dateLabel, []);
-      map.get(e.dateLabel)!.push(e);
-    });
-    return Array.from(map.entries()).map(([label, evs]) => ({ label, events: evs }));
-  }, [filtered]);
+  const fsResult = fsJob?.status === "done" ? fsJob.result : null;
+  const fsFiltered = useMemo(() => {
+    if (!fsResult) return [] as FsTimelineEvent[];
+    const q = search.trim().toLowerCase();
+    if (!q) return fsResult.events;
+    return fsResult.events.filter((e) =>
+      `${e.path} ${e.macb} ${e.inode}`.toLowerCase().includes(q),
+    );
+  }, [fsResult, search]);
+  const fsDays = useMemo(() => groupByDay(fsFiltered, (e) => e.ts), [fsFiltered]);
+  const fsProgress = fsJob?.events ?? [];
+  const lastProgress = fsProgress[fsProgress.length - 1]?.message ?? "";
 
   if (phase === "loading") {
-    return <PageHeader title="Timeline de eventos" subtitle="Cargando la línea de tiempo…" />;
+    return <PageHeader title="Timeline forense" subtitle="Cargando la línea de tiempo…" />;
   }
   if (phase === "error") {
     return (
       <div>
-        <PageHeader title="Timeline de eventos" subtitle="No se pudo cargar la línea de tiempo." />
+        <PageHeader title="Timeline forense" subtitle="No se pudo cargar la línea de tiempo." />
         <EmptyState title="Error" description={error} />
       </div>
     );
@@ -145,29 +216,22 @@ export function TimelinePage() {
     return (
       <div>
         <PageHeader
-          title="Timeline de eventos"
-          subtitle="Secuencia cronológica de hallazgos extraídos por las herramientas forenses."
+          title="Timeline forense"
+          subtitle="Línea temporal del caso: acciones de investigación y super-timeline del sistema de ficheros."
         />
         <EmptyState
           title="Sin caso abierto"
-          description="Abre un caso: la línea de tiempo se construye con los hallazgos que el agente registra sobre la evidencia."
+          description="Abre un caso: la línea de tiempo se construye con la actividad auditada y la evidencia del caso."
         />
       </div>
     );
   }
 
-  const metrics: { label: string; count: number; sev: Severity }[] = [
-    { label: "Críticos", count: counts.critical, sev: "critical" },
-    { label: "Altos", count: counts.high, sev: "high" },
-    { label: "Medios", count: counts.medium, sev: "medium" },
-    { label: "Bajos", count: counts.low, sev: "low" },
-  ];
-
   return (
     <div className="tl-page">
       <PageHeader
-        title="Timeline de eventos"
-        subtitle="Secuencia cronológica de hallazgos extraídos por las herramientas forenses sobre la evidencia analizada."
+        title="Timeline forense"
+        subtitle="Línea temporal del caso. Todas las marcas de tiempo se muestran en UTC."
       />
 
       <div className="mitre-context">
@@ -175,104 +239,250 @@ export function TimelinePage() {
           Caso activo: <strong>{activeCase.name}</strong> · {activeCase.examiner}
           {activeCase.os_profile ? ` · perfil ${activeCase.os_profile}` : ""}
         </span>
-        <span className={`docs-badge ${activeCase.status === "active" ? "open" : "closed"}`}>
-          {activeCase.status === "active" ? "Abierto" : "Cerrado"}
-        </span>
+        <span className="tl-tz">Zona horaria: UTC</span>
       </div>
 
-      {events.length === 0 && (
-        <div className="docs-note">
-          Aún no hay hallazgos en este caso. La línea de tiempo se construye con los
-          hallazgos que el agente registra al analizar la evidencia desde el chat.
-        </div>
-      )}
-
-      {/* Métricas por severidad */}
-      <div className="tl-metrics">
-        {metrics.map((m) => (
-          <div key={m.sev} className={`tl-metric tl-metric--${m.sev}`}>
-            <div className="tl-metric-label">{m.label}</div>
-            <div className={`tl-metric-value tl-metric-value--${m.sev}`}>{m.count}</div>
-          </div>
-        ))}
+      {/* Selector de capa */}
+      <div className="tl-layers">
+        <button
+          className={`tl-layer${layer === "investigation" ? " is-active" : ""}`}
+          onClick={() => setLayer("investigation")}
+        >
+          Investigación
+          <span className="tl-layer-count">{counts.total}</span>
+        </button>
+        <button
+          className={`tl-layer${layer === "filesystem" ? " is-active" : ""}`}
+          onClick={() => setLayer("filesystem")}
+        >
+          Sistema de ficheros (MACB)
+          {fsResult && <span className="tl-layer-count">{fsResult.total_events}</span>}
+        </button>
       </div>
 
-      {/* Toolbar */}
+      {/* Buscador (común a ambas capas) */}
       <div className="tl-toolbar">
         <input
           className="tl-search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Buscar en eventos, fuente o descripción…"
+          placeholder={
+            layer === "investigation"
+              ? "Buscar por herramienta, argv, hallazgo o técnica…"
+              : "Buscar por ruta, MACB o inode…"
+          }
         />
-        <div className="tl-filters">
-          {SEV_ORDER.map((f) => (
-            <button
-              key={f}
-              className={`tl-chip${sevFilter === f ? " is-active" : ""}`}
-              onClick={() => setSevFilter(f)}
-            >
-              {f === "all" ? "Todas" : SEV_LABEL[f]}
-            </button>
-          ))}
-        </div>
-        <select
-          className="tl-source"
-          value={sourceFilter}
-          onChange={(e) => setSourceFilter(e.target.value)}
-        >
-          <option value="all">Todas las fuentes</option>
-          {sources.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* Timeline */}
-      <div className="tl-scroll">
-        {filtered.length === 0 ? (
-          <div className="tl-empty">
-            No hay eventos con ese filtro de severidad, fuente o búsqueda.
+        {layer === "investigation" && (
+          <div className="tl-summary">
+            <span>{counts.toolRuns} ejecuciones</span>
+            <span>{counts.findings} hallazgos</span>
           </div>
-        ) : (
-          days.map((day) => (
-            <div className="tl-day" key={day.label}>
-              <div className="tl-day-head">
-                <span className="tl-day-label">{day.label}</span>
-                <span className="tl-day-rule" />
-                <span className="tl-day-count">{day.events.length} eventos</span>
-              </div>
-              <div className="tl-rail">
-                {day.events.map((ev) => (
-                  <div className="tl-event" key={ev.id}>
-                    <span className={`tl-dot tl-dot--${ev.severity}`} />
-                    <div className="tl-event-meta">
-                      <span className="tl-time">{ev.timeLabel}</span>
-                      <span className="tl-src">{ev.source}</span>
-                      <span className={`tl-sev tl-sev--${ev.severity}`}>
-                        {SEV_LABEL[ev.severity]}
-                      </span>
-                      <span className="tl-evid">{ev.evidenceId}</span>
-                    </div>
-                    <p className="tl-desc">{ev.description}</p>
-                    {ev.techniques.length > 0 && (
-                      <div className="tl-techs">
-                        {ev.techniques.map((t) => (
-                          <span className="tl-tech" key={t}>
-                            {t}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))
+        )}
+        {layer === "investigation" && (
+          <button
+            className="tl-run-btn"
+            onClick={exportInvestigationCsv}
+            disabled={exporting}
+            title="Descargar el timeline de investigación como CSV"
+          >
+            {exporting ? "Exportando…" : "Exportar CSV"}
+          </button>
         )}
       </div>
+
+      {exportError && layer === "investigation" && (
+        <div className="tl-fserror">No se pudo exportar: {exportError}</div>
+      )}
+
+      {layer === "investigation" ? (
+        <div className="tl-scroll">
+          {events.length === 0 ? (
+            <div className="tl-empty">
+              Aún no hay actividad en este caso. La línea de tiempo se llena con cada
+              herramienta que se ejecuta y cada hallazgo que el agente registra.
+            </div>
+          ) : invFiltered.length === 0 ? (
+            <div className="tl-empty">No hay eventos que coincidan con la búsqueda.</div>
+          ) : (
+            invDays.map((day) => (
+              <div className="tl-day" key={day.label}>
+                <div className="tl-day-head">
+                  <span className="tl-day-label">{day.label} · UTC</span>
+                  <span className="tl-day-rule" />
+                  <span className="tl-day-count">{day.rows.length} eventos</span>
+                </div>
+                <div className="tl-rail">
+                  {day.rows.map((ev) =>
+                    ev.kind === "finding" ? (
+                      <div className="tl-event" key={ev.finding_id}>
+                        <span className={`tl-dot tl-dot--${ev.severity}`} />
+                        <div className="tl-event-meta">
+                          <span className="tl-time">{fmtUtc(ev.ts).time} UTC</span>
+                          <span className="tl-kind tl-kind--finding">Hallazgo</span>
+                          <span className="tl-src">{ev.tool_id ?? "agente"}</span>
+                          <span className={`tl-sev tl-sev--${ev.severity}`}>
+                            {SEV_LABEL[ev.severity] ?? ev.severity}
+                          </span>
+                        </div>
+                        <p className="tl-desc">{ev.summary || ev.title}</p>
+                        {ev.mitre_hints.length > 0 && (
+                          <div className="tl-techs">
+                            {ev.mitre_hints.map((t) => (
+                              <span className="tl-tech" key={t}>
+                                {t}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="tl-event" key={ev.run_id ?? `${ev.ts}-${ev.tool_id}`}>
+                        <span
+                          className={`tl-dot ${
+                            ev.exit === 0 ? "tl-dot--ok" : ev.exit === null ? "tl-dot--run" : "tl-dot--fail"
+                          }`}
+                        />
+                        <div className="tl-event-meta">
+                          <span className="tl-time">{fmtUtc(ev.ts).time} UTC</span>
+                          <span className="tl-kind tl-kind--tool">Ejecución</span>
+                          <span className="tl-src">{ev.tool_id ?? "tool"}</span>
+                          <span
+                            className={`tl-exit ${
+                              ev.exit === 0
+                                ? "tl-exit--ok"
+                                : ev.exit === null
+                                  ? "tl-exit--run"
+                                  : "tl-exit--fail"
+                            }`}
+                          >
+                            {ev.exit === null ? ev.status : `exit ${ev.exit}`}
+                          </span>
+                        </div>
+                        <code className="tl-argv">{ev.argv.join(" ") || "(sin argv)"}</code>
+                        {ev.output_files_count !== null && ev.output_files_count > 0 && (
+                          <div className="tl-techs">
+                            <span className="tl-tech">
+                              {ev.output_files_count} artefacto
+                              {ev.output_files_count === 1 ? "" : "s"}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ),
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      ) : (
+        <>
+          <div className="tl-fsbar">
+            <select
+              className="tl-source"
+              value={selectedEvidence}
+              onChange={(e) => setSelectedEvidence(e.target.value)}
+              disabled={evidences.length === 0 || fsJob?.status === "running"}
+            >
+              {evidences.length === 0 && <option value="">Sin evidencia registrada</option>}
+              {evidences.map((e) => (
+                <option key={e.evidence_id} value={e.evidence_id}>
+                  {evidenceName(e)}
+                </option>
+              ))}
+            </select>
+            <button
+              className="tl-run-btn"
+              onClick={startFsTimeline}
+              disabled={
+                !selectedEvidence || starting || fsJob?.status === "running" || evidences.length === 0
+              }
+            >
+              {fsJob?.status === "running" || starting
+                ? "Generando…"
+                : "Generar super-timeline (tsk_fls -m)"}
+            </button>
+          </div>
+
+          {evidences.length === 0 && (
+            <div className="docs-note">
+              Registra una evidencia en el caso para construir la super-timeline del sistema
+              de ficheros.
+            </div>
+          )}
+
+          {fsError && <div className="tl-fserror">{fsError}</div>}
+
+          {fsJob?.status === "running" && (
+            <div className="tl-fsstatus">
+              <span className="tl-spinner" />
+              {lastProgress || "Ejecutando tsk_fls -m sobre la evidencia…"}
+            </div>
+          )}
+          {fsJob?.status === "error" && (
+            <div className="tl-fserror">{fsJob.error ?? "El análisis falló."}</div>
+          )}
+
+          {fsResult && (
+            <div className="tl-scroll">
+              {fsResult.truncated && (
+                <div className="tl-truncated">
+                  Mostrando {fsResult.returned} de {fsResult.total_events} eventos (recortado
+                  para acotar el tamaño). Afina con la búsqueda.
+                </div>
+              )}
+              {fsFiltered.length === 0 ? (
+                <div className="tl-empty">
+                  {fsResult.total_events === 0
+                    ? "La evidencia no produjo eventos de sistema de ficheros."
+                    : "No hay eventos que coincidan con la búsqueda."}
+                </div>
+              ) : (
+                fsDays.map((day) => (
+                  <div className="tl-day" key={day.label}>
+                    <div className="tl-day-head">
+                      <span className="tl-day-label">{day.label} · UTC</span>
+                      <span className="tl-day-rule" />
+                      <span className="tl-day-count">{day.rows.length} eventos</span>
+                    </div>
+                    <table className="tl-fstable">
+                      <thead>
+                        <tr>
+                          <th>Hora (UTC)</th>
+                          <th>MACB</th>
+                          <th>Tamaño</th>
+                          <th>Inodo</th>
+                          <th>Ruta</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {day.rows.map((ev, i) => (
+                          <tr key={`${ev.inode}-${ev.ts}-${i}`}>
+                            <td className="tl-fs-time">{fmtUtc(ev.ts).time}</td>
+                            <td>
+                              <code className="tl-macb">{ev.macb}</code>
+                            </td>
+                            <td className="tl-fs-size">{ev.size.toLocaleString("es-ES")}</td>
+                            <td className="tl-fs-inode">{ev.inode}</td>
+                            <td className="tl-fs-path">{ev.path}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+
+          {!fsJob && !fsError && evidences.length > 0 && (
+            <div className="tl-empty">
+              Pulsa «Generar super-timeline» para construir la línea temporal MACB del sistema
+              de ficheros a partir de la evidencia seleccionada.
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

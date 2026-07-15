@@ -274,8 +274,34 @@ al recargar si hay un job en curso. Test de dos sesiones con Playwright:
 - **RESULT: ROBUSTO OK** — se cumple "lanzar y volver, con garantía de que termina
   y persiste".
 
-Pendientes de las carencias: super-timeline del *sistema* volcada a la vista
-Timeline, generador de informe, captura de datos del perito, y exportaciones.
+## ✎ Iteración multi-agente — carencias cerradas (2026-07-16)
+
+Las carencias pendientes se implementaron y **verificaron end-to-end con Playwright**,
+cada una por un agente experto (trabajo secuencial para no colisionar en los ficheros
+compartidos del frontend). Todas con gates verdes (ruff · **964 tests** · typecheck ·
+build · compose config):
+
+- **A · Super-timeline forense.** La vista Timeline deja los mocks: capa de
+  *investigación* (audit log → cada `tool_run` con argv+exit, + hallazgos, cronológico)
+  y capa de *sistema de ficheros* (MACB) bajo demanda vía `tsk_fls -m` como job async.
+  Verificado: 43.604 eventos MACB sobre `dvwa-disk.raw`.
+- **F · UTC explícito** en cada marca y cabecera del Timeline.
+- **C · Metadata de evidencia + acta de adquisición.** "Casos y evidencias" muestra
+  tamaño (1.1 GB) + SHA-256 baseline + nivel de solo-lectura, y genera el **acta de
+  adquisición** (modal + descarga JSON) con la cadena hash-encadenada verificada.
+  Honesto: declara solo-lectura a nivel FS (chmod 0444), no finge block-level (RULE 2).
+- **B · Generador de informe pericial.** Botón en Documentos → sintetiza 7 secciones
+  (resumen, datos del perito, custodia con SHA-256, metodología+herramientas, hallazgos
+  por severidad, correlación MITRE con veredicto, conclusiones) desde los datos reales,
+  lo crea con integridad SHA-256 y renderiza **PDF pericial**. Captura los datos del
+  perito. Honesto si no hay hallazgos/MITRE.
+- **E · Estimación previa de tiempo/coste.** El chat avisa antes de lanzar: rangos de
+  iteraciones/tokens/tiempo/coste + base (histórico del caso vs heurística) + disclaimer.
+  Ancla en el histórico real; Ollama = "local, sin coste"; cloud sin tarifa citable =
+  "no disponible" (RULE 2: no inventa precios).
+- **D · Exportaciones.** MITRE a CSV y a **ATT&CK Navigator layer** (JSON 4.5 cargable
+  en el Navigator oficial); Timeline de investigación a CSV. Caso sin propuestas → CSV
+  con solo cabecera (honesto).
 
 ---
 
