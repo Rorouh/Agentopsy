@@ -150,7 +150,7 @@ web/src/                       ← the SPA (own package.json + vite.config.ts at
 │   ├── TimelinePage.tsx    Mock chronological events with severity filter ("Vista demo" banner). CTA → document-viewer.
 │   ├── DocumentViewerPage.tsx  Mock report list + viewer pane ("Vista demo" banner). CTA → mitre.
 │   ├── MitreAttackPage.tsx Mock MITRE technique correlation grid ("Vista demo" banner). Last step in the flow, no onNavigate.
-│   ├── SettingsPage.tsx    4 accessible tabs (tablist/tab/tabpanel): Ejecutores/IA (real: status of the 4 executors with local/cloud + reasons, capabilities refresh, DEFAULT_EXECUTOR select, OLLAMA_HOST/OLLAMA_MODEL/FORENSIA_EXECUTOR_TIMEOUT, CLI-session/forensia-cli-auth explainer — no API keys anywhere), Operador y reportes (preview forms, disabled), Apariencia (real theme toggle + persistence), Sistema (security notes, diagnostics, about; CTA → system).
+│   ├── SettingsPage.tsx    4 accessible tabs (tablist/tab/tabpanel): Ejecutores/IA (real: status of the 4 executors with local/cloud + reasons, capabilities refresh, DEFAULT_EXECUTOR select, OLLAMA_HOST/OLLAMA_MODEL, per-cloud-CLI model (CLAUDE_CODE_MODEL/CODEX_MODEL/GEMINI_MODEL, passed as --model; empty = CLI default)/FORENSIA_EXECUTOR_TIMEOUT, CLI-session/forensia-cli-auth explainer — no API keys anywhere), Operador y reportes (preview forms, disabled), Apariencia (real theme toggle + persistence), Sistema (security notes, diagnostics, about; CTA → system).
 │   └── SystemStatusPage.tsx  Capabilities dashboard. Renders caps.tools, caps.toolkits and caps.executors from the capabilities endpoint + connection/version (ex-sidebar-footer).
 └── ui/
     ├── Button.tsx, Card.tsx, StatusDot.tsx   Original primitives, unchanged.

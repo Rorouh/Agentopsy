@@ -63,7 +63,9 @@ pendiente, en la rama `feature/compose-y-cli-executors`:
 - [x] Retirar `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` del allowlist de
       `routers/config.py`, del código y de los tests — hecho el 2026-07-02
       (resuelve D-3 de §7). Claves editables ahora: `DEFAULT_EXECUTOR` (opcional,
-      lo fija el usuario en Settings), `OLLAMA_HOST` y `OLLAMA_MODEL`; dependencia
+      lo fija el usuario en Settings), `OLLAMA_HOST`, `OLLAMA_MODEL` y el modelo
+      por CLI cloud `CLAUDE_CODE_MODEL` / `CODEX_MODEL` / `GEMINI_MODEL` (pasado
+      como `--model`; vacío = default del CLI); dependencia
       `openai` y extra `[models]` fuera de `pyproject.toml`; test de regresión
       (`tests/test_executors.py`) que barre `backend/` y falla si las cadenas
       reaparecen. `capabilities` reporta los cuatro ejecutores con su razón

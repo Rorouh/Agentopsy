@@ -96,8 +96,15 @@ docker compose exec ollama ollama list                 # confírmalo
 
 Luego en la UI, **Configuración → Ejecutores/IA**: pon *Ejecutor por defecto* = **Ollama** y,
 si quieres, fija *Modelo de Ollama* (`OLLAMA_MODEL`, p. ej. `qwen2.5:14b`). También puedes
-elegir proveedor y modelo **por sesión** desde el propio chat (menús *Proveedor* / *Modelo*
-del composer).
+elegir proveedor y modelo desde el propio chat (menús *Proveedor* / *Modelo* del composer);
+la elección se **recuerda** por proveedor (`DEFAULT_EXECUTOR` + `OLLAMA_MODEL` /
+`CLAUDE_CODE_MODEL` / `CODEX_MODEL` / `GEMINI_MODEL`).
+
+Para los **CLIs cloud** (Claude Code / Codex / Gemini) el modelo se pasa como `--model`. El
+menú *Modelo* ofrece atajos (p. ej. `opus`, `sonnet` para Claude) y admite escribir cualquier
+id que acepte el CLI; *Por defecto del CLI* lo deja sin fijar y manda el modelo por defecto del
+CLI. FORENSIA **no puede enumerar** el catálogo de un CLI cloud sin API key (SECURITY 7): la
+lista son sugerencias, no el catálogo completo. Ollama sí lista los modelos realmente instalados.
 
 ### Opción B — Claude Code / Codex CLI / Gemini CLI (tu suscripción, sin API keys)
 
