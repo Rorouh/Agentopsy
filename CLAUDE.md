@@ -329,6 +329,18 @@ last Windows tools into the maletín Dockerfiles, and drop the now-unused legacy
 through
 `web/src/api/client.ts` (token from `GET /api/session`, memory-only), carries the
 executor selector + audited cloud-consent flow, and registers evidence from the
-`./evidence` inbox. The old delivery model is fully dismantled: `desktop/`,
-`docker/agent/`, `vendor/`, the PyInstaller spec and the release workflow are gone
-(2026-07-02) — nothing ships outside the compose.
+`./evidence` inbox. **MITRE ATT&CK is wired end to end (2026-07-14)**
+(`backend/forensia/mitre/`): `record_finding` now accepts the `mitre_hints` the
+package prompts had been prescribing all along (the engine's `additionalProperties:
+false` was silently blocking them), validated server-side against a **closed enum
+parsed from `agentes/_orchestrator/knowledge/mitre_attack_seed.md`** — the same seed
+`mitre.md` authorises, never a second hand-typed list. `MitreAttackPage` is off mocks:
+it renders the real catalog, the agent's proposals (from real findings' hints) and the
+examiner's verdicts, which are append-only, require a rationale and land in the
+hash-chained audit log (`mitre_adjudicated`). Agent proposal and examiner verdict are
+**separate axes** and never merged; an uncoloured cell means *not evaluated*, never
+*absent*. Still missing: the orchestrator's synthesis layer (`forensia.reports` is
+empty), so `MitreTechniqueMatch[]` with `confidence` is not produced by anyone yet —
+see `docs/agentes/contrato-paquetes.md` §5.bis. The old delivery model is fully
+dismantled: `desktop/`, `docker/agent/`, `vendor/`, the PyInstaller spec and the
+release workflow are gone (2026-07-02) — nothing ships outside the compose.
