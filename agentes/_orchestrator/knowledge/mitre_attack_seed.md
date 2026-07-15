@@ -27,6 +27,7 @@ ampliar).
 | T1505.003 | Server Software Component: Web Shell | ficheros en `/var/www`/`inetpub`, YARA, logs web |
 | T1136 | Create Account | SAM, EVTX 4720, `/etc/passwd` |
 | T1098 | Account Manipulation | EVTX 4738/4724, `authorized_keys` |
+| T1133 | External Remote Services | servicios de acceso remoto expuestos (SSH/RDP/VPN) en `netscan` LISTENING, EVTX/`auth.log` de acceso, servicios residentes |
 
 ## TA0004 — Privilege Escalation
 | Técnica | Nombre | Se sostiene con |
@@ -63,6 +64,7 @@ ampliar).
 |---|---|---|
 | T1021 | Remote Services | 4624 type 3/10, RDP/SMB, `lastlog` |
 | T1021.001 | Remote Desktop Protocol | EVTX TerminalServices, 4624 type 10 |
+| T1021.004 | Remote Services: SSH | `netscan` 22/tcp + `sshd` residente, `auth.log`, `lastlog`, `~/.ssh/authorized_keys` |
 
 ## TA0011 — Command and Control
 | Técnica | Nombre | Se sostiene con |
@@ -74,6 +76,8 @@ ampliar).
 | Técnica | Nombre | Se sostiene con |
 |---|---|---|
 | T1005 | Data from Local System | documentos/imágenes recopilados del sistema; `$MFT`, `filescan`/`dumpfiles` en RAM |
+| T1056 | Input Capture | proceso de captura residente, región RWX (`malfind`), fichero de log de pulsaciones |
+| T1056.001 | Keylogging | binario keylogger (nombre/ruta de usuario, no firmado), `SetWindowsHookEx` en `handles`/`dlllist`, log de teclas, región RWX en `malfind` |
 | T1074 | Data Staged | ficheros reunidos en ubicación intermedia antes de exfiltrar |
 | T1074.001 | Local Data Staging | carpeta de staging local (p.ej. `Pics\Hidden`), `filescan`/`$MFT`, timeline |
 | T1114 | Email Collection | almacén de correo local, cliente de email residente en RAM |

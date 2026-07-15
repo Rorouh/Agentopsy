@@ -69,6 +69,39 @@ def test_catalog_as_dict_is_serialisable_and_flags_availability() -> None:
     assert {p["key"] for p in payload["phases"]} == {"access", "root", "act", "goal"}
 
 
+# ── catálogo Enterprise completo (display + dictamen del perito) ──────────────
+
+
+def test_enterprise_catalog_is_the_full_matrix() -> None:
+    ent = catalog.load_enterprise()
+    assert ent.available
+    assert [k for k, _ in ent.phases] == ["prep", "access", "root", "act", "goal"]
+    assert len(ent.tactics) == 15
+    total = sum(len(t.techniques) for t in ent.tactics)
+    assert total > 200  # ~240 técnicas padre de Enterprise
+    # Técnica fuera de la semilla curada pero real en Enterprise:
+    assert catalog.enterprise_is_known("T1595")
+    assert not catalog.is_known("T1595")
+
+
+def test_enterprise_merges_seed_supported_by() -> None:
+    """El artefacto forense de la semilla viaja a la técnica Enterprise homónima."""
+    assert "malfind" in catalog.enterprise_technique("T1055").supported_by
+
+
+def test_enterprise_display_id_folds_subtechnique_to_parent() -> None:
+    assert catalog.enterprise_display_id("T1547.001") == "T1547"
+    assert catalog.enterprise_display_id("T1055") == "T1055"
+
+
+def test_enterprise_as_dict_is_serialisable_with_sub_counts() -> None:
+    payload = catalog.enterprise_as_dict()
+    json.dumps(payload)
+    assert payload["available"] is True
+    techs = [te for t in payload["tactics"] for te in t["techniques"]]
+    assert any(te["sub"] > 0 for te in techs)  # los conteos de sub llegan a la UI
+
+
 # ── mitre_hints en los hallazgos ─────────────────────────────────────────────
 
 
@@ -159,6 +192,80 @@ def test_agent_proposals_are_derived_from_real_findings(tmp_case) -> None:
     assert entries[0]["status"] is None
 
 
+def test_annotate_anchors_techniques_to_an_existing_finding(tmp_case) -> None:
+    """La correlación bajo demanda: annotate ancla técnicas a un hallazgo ya
+    registrado y aparecen como propuestas (mismo eje 1 que los hints)."""
+    cases, case_id = tmp_case
+    findings = FindingStore(cases)
+    coverage = CoverageStore(cases, findings)
+    # Hallazgo SIN hints (como los previos a la feature) — annotate lo rellena.
+    f = findings.append(case_id, {
+        "title": "sshd escuchando",
+        "summary": "netscan: 22/tcp LISTENING.",
+        "severity": "medium",
+    })
+    coverage.annotate(case_id, f.id, ["T1021", "T1543"])
+    proposals = coverage.proposals(case_id)
+    assert proposals["T1021"] == [f.id]
+    assert proposals["T1543"] == [f.id]
+
+
+def test_annotate_merges_with_record_time_hints_without_duplicates(tmp_case) -> None:
+    cases, case_id = tmp_case
+    findings = FindingStore(cases)
+    coverage = CoverageStore(cases, findings)
+    f = findings.append(case_id, {
+        "title": "malfind", "summary": "RWX.", "severity": "high",
+        "mitre_hints": ["T1055"],
+    })
+    coverage.annotate(case_id, f.id, ["T1055", "T1547.001"])  # T1055 ya venía en el hint
+    proposals = coverage.proposals(case_id)
+    assert proposals["T1055"] == [f.id]  # sin duplicar el finding
+    # La sub-técnica de la semilla se pinta en la celda Enterprise padre (T1547).
+    assert proposals["T1547"] == [f.id]
+    assert "T1547.001" not in proposals
+
+
+def test_annotate_is_idempotent_last_call_replaces(tmp_case) -> None:
+    cases, case_id = tmp_case
+    findings = FindingStore(cases)
+    coverage = CoverageStore(cases, findings)
+    f = findings.append(case_id, {"title": "x", "summary": "y", "severity": "low"})
+    coverage.annotate(case_id, f.id, ["T1055"])
+    coverage.annotate(case_id, f.id, ["T1543"])  # reemplaza
+    proposals = coverage.proposals(case_id)
+    assert "T1055" not in proposals
+    assert proposals["T1543"] == [f.id]
+    # Lista vacía retira la correlación del hallazgo.
+    coverage.annotate(case_id, f.id, [])
+    assert coverage.proposals(case_id) == {}
+
+
+def test_annotate_rejects_unknown_finding_and_hallucinated_technique(tmp_case) -> None:
+    cases, case_id = tmp_case
+    findings = FindingStore(cases)
+    coverage = CoverageStore(cases, findings)
+    f = findings.append(case_id, {"title": "x", "summary": "y", "severity": "low"})
+    with pytest.raises(ValueError, match="not found in case"):
+        coverage.annotate(case_id, "00000000-0000-4000-8000-000000000000", ["T1055"])
+    with pytest.raises(ValueError, match="not in the ATT&CK seed"):
+        coverage.annotate(case_id, f.id, ["T9999"])
+
+
+def test_annotate_is_audited(tmp_case) -> None:
+    """FORENSIC INVARIANT 4: la propuesta anclada entra en el log hash-encadenado."""
+    cases, case_id = tmp_case
+    findings = FindingStore(cases)
+    coverage = CoverageStore(cases, findings)
+    f = findings.append(case_id, {"title": "x", "summary": "y", "severity": "low"})
+    coverage.annotate(case_id, f.id, ["T1055"], note="malfind RWX")
+    log = AuditLog(cases.case_dir(case_id) / "audit.jsonl")
+    assert log.verify()
+    lines = (cases.case_dir(case_id) / "audit.jsonl").read_text().splitlines()
+    actions = [json.loads(line)["action"] for line in lines if line.strip()]
+    assert "mitre_proposed" in actions
+
+
 def test_a_proposal_never_counts_as_a_verdict(tmp_case) -> None:
     """El eje del agente y el del operador no se funden nunca."""
     cases, case_id = tmp_case
@@ -221,11 +328,26 @@ def test_unmarking_retires_the_verdict_without_requiring_a_rationale(tmp_case) -
     assert "T1055" not in coverage.adjudications(case_id)
 
 
-def test_cannot_adjudicate_a_technique_outside_the_seed(tmp_case) -> None:
+def test_cannot_adjudicate_a_technique_outside_enterprise(tmp_case) -> None:
+    """El perito dictamina sobre el catálogo Enterprise; un id que no existe en
+    ATT&CK se rechaza."""
     cases, case_id = tmp_case
     coverage = CoverageStore(cases, FindingStore(cases))
-    with pytest.raises(ValueError, match="not in the ATT&CK seed"):
+    with pytest.raises(ValueError, match="not in the ATT&CK Enterprise catalog"):
         coverage.adjudicate(case_id, "T9999", "confirmada", "Motivo.")
+
+
+def test_examiner_can_adjudicate_enterprise_technique_outside_the_seed(tmp_case) -> None:
+    """A diferencia del agente (limitado a la semilla), el perito puede anclar un
+    veredicto en CUALQUIER técnica Enterprise real (p. ej. T1595 Reconnaissance,
+    fuera de la semilla curada)."""
+    cases, case_id = tmp_case
+    coverage = CoverageStore(cases, FindingStore(cases))
+    assert not catalog.is_known("T1595")  # fuera de la enum del agente
+    assert catalog.enterprise_is_known("T1595")  # pero es técnica Enterprise real
+    adj = coverage.adjudicate(case_id, "T1595", "sospechosa", "Escaneo activo observado.")
+    assert adj.status == "sospechosa"
+    assert coverage.adjudications(case_id)["T1595"].status == "sospechosa"
 
 
 def test_cannot_anchor_a_verdict_to_a_finding_from_another_case(tmp_case) -> None:

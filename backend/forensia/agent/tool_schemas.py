@@ -396,6 +396,35 @@ _INTERNAL_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "required": ["title", "summary", "severity"],
         "additionalProperties": False,
     },
+    "annotate_mitre": {
+        "type": "object",
+        "properties": {
+            "finding_id": {
+                "type": "string",
+                "description": (
+                    "UUID de un hallazgo YA registrado (el `finding_id` que devolvió "
+                    "`record_finding`) que sostiene estas técnicas."
+                ),
+            },
+            "mitre_hints": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Técnicas ATT&CK que sostiene el hallazgo, p. ej. [\"T1055\", "
+                    "\"T1056.001\"]. ENUM CERRADA: sólo ids de la semilla "
+                    "(_orchestrator/knowledge/mitre_attack_seed.md); un id fuera de "
+                    "la semilla RECHAZA la anotación. Envía la lista COMPLETA: "
+                    "reemplaza la anterior de ese hallazgo (lista vacía la retira)."
+                ),
+            },
+            "note": {
+                "type": "string",
+                "description": "Por qué el hallazgo sostiene esas técnicas (opcional).",
+            },
+        },
+        "required": ["finding_id", "mitre_hints"],
+        "additionalProperties": False,
+    },
 }
 
 _INTERNAL_DESCRIPTIONS: dict[str, str] = {
@@ -406,6 +435,15 @@ _INTERNAL_DESCRIPTIONS: dict[str, str] = {
         "findings panel in the UI reads these. severity: low for context, medium for "
         "noteworthy, high for actionable, critical for clear compromise. Attach "
         "mitre_hints when the finding supports an ATT&CK technique from the seed."
+    ),
+    "annotate_mitre": (
+        "ANCHOR ATT&CK techniques to an ALREADY-recorded finding so they show up as "
+        "proposals on the MITRE board. Use it whenever you correlate findings to "
+        "techniques (e.g. the examiner asks for the MITRE correlation), or to fill in "
+        "hints you didn't attach at record time. finding_id must exist; ids come from "
+        "the seed. Idempotent per finding: re-call with the FULL list (it replaces the "
+        "previous one). This PERSISTS the correlation — prose in your answer does not "
+        "reach the board on its own."
     ),
 }
 

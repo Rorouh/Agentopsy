@@ -191,14 +191,18 @@ def _findings_ledger(case_id: str) -> str:
     # Most recent first; cap.
     findings = list(findings)[-MAX_FINDINGS_ENTRIES:]
     rows = [
-        f"- [{f.severity}] {f.title}"
+        f"- `{f.id}` [{f.severity}] {f.title}"
         + (f" (tool={f.tool_id})" if f.tool_id else "")
         for f in findings
     ]
     return (
         "## Findings so far (este caso)\n"
         "Estos hallazgos YA están registrados por turnos previos tuyos. Tómalos "
-        "como base — no los re-deduzcas. Construye sobre ellos.\n\n"
+        "como base — no los re-deduzcas. Construye sobre ellos.\n"
+        "El id entre backticks es el `finding_id` REAL: úsalo tal cual en "
+        "`annotate_mitre(finding_id, …)` para anclar técnicas ATT&CK a un hallazgo "
+        "existente. NUNCA inventes un finding_id — si no está en esta lista, no "
+        "existe.\n\n"
         + "\n".join(rows)
     )
 

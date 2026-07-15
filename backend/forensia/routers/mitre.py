@@ -23,12 +23,14 @@ class AdjudicateRequest(BaseModel):
 
 @router.get("/api/mitre/catalog", dependencies=[Depends(require_token)])
 def get_catalog() -> dict[str, Any]:
-    """El catálogo ATT&CK. Derivado de la semilla del orquestador — la enum cerrada.
+    """El catálogo ATT&CK Enterprise COMPLETO — lo que pinta la matriz y contra lo
+    que dictamina el perito. La enum del agente (semilla curada) es un eje aparte:
+    valida los `mitre_hints` que el agente propone, no lo que se muestra.
 
-    Si la semilla no está montada, devuelve `available: false` con un motivo
-    accionable en vez de una lista por defecto (RULE 2).
+    Si el catálogo no está, devuelve `available: false` con un motivo accionable
+    en vez de una lista por defecto (RULE 2).
     """
-    return catalog.as_dict()
+    return catalog.enterprise_as_dict()
 
 
 @router.get("/api/cases/{case_id}/mitre", dependencies=[Depends(require_token)])

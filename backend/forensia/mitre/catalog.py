@@ -1,23 +1,28 @@
-"""MITRE ATT&CK — catálogo de referencia, derivado de la SEMILLA del orquestador.
+"""MITRE ATT&CK — DOS catálogos, dos ejes que no se confunden.
 
-**Una sola fuente de verdad.** El catálogo NO se teclea aquí: se parsea de
-``agentes/_orchestrator/knowledge/mitre_attack_seed.md``, que es la **enum
-cerrada** que `agentes/_orchestrator/mitre.md` (regla 1) autoriza al agente a
-emitir. Duplicar la lista en Python crearía un validador que acepta ids que el
-agente tiene prohibido usar, y una matriz cuyo denominador de cobertura sería
-ficticio.
+1. **Semilla del orquestador** (``load`` / ``is_known`` / ``technique``): la
+   **enum cerrada** que el AGENTE puede proponer. Se parsea de
+   ``agentes/_orchestrator/knowledge/mitre_attack_seed.md``, que es lo que
+   `agentes/_orchestrator/mitre.md` (regla 1) autoriza. Valida los ``mitre_hints``
+   de los hallazgos y las anotaciones del agente (anti-alucinación). NO se teclea
+   aquí: duplicarla crearía un validador que acepta ids prohibidos al agente.
 
-Cuando el corpus Enterprise completo aterrice (S5), se amplía la semilla y este
-módulo la sigue sin cambios — o se sustituye la fuente por el STIX oficial de
-MITRE. Lo que no se hace nunca es transcribir técnicas a mano.
+2. **Catálogo Enterprise COMPLETO** (``load_enterprise`` / ``enterprise_*``): las
+   ~240 técnicas padre de ATT&CK Enterprise que PINTA la matriz y contra las que
+   el PERITO dictamina. Se envía con la imagen en ``enterprise.json`` (RULE 1) y
+   se le fusiona la columna «Se sostiene con» de la semilla (mismo id). El perito
+   puede anclar un veredicto en cualquier técnica Enterprise real; el agente,
+   sólo en la semilla. Las propuestas del agente (ids de la semilla, posibles
+   sub-técnicas) se pintan en su celda Enterprise vía ``enterprise_display_id``
+   (a la técnica padre si son sub-técnicas).
 
-Si la semilla no está (``agentes/`` sin montar), el catálogo queda vacío y las
-superficies degradan explícitamente con un motivo accionable — nunca se
-sustituye por una lista "por defecto" (RULE 2).
+Si una fuente no está, la superficie afectada degrada explícitamente con un
+motivo accionable — nunca se sustituye por una lista "por defecto" (RULE 2).
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -28,6 +33,14 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 SEED_RELPATH = Path("_orchestrator") / "knowledge" / "mitre_attack_seed.md"
+
+#: Catálogo ATT&CK Enterprise COMPLETO — lo que PINTA la matriz y contra lo que
+#: el PERITO dictamina. Se envía con la imagen (RULE 1). Es un eje distinto de la
+#: semilla: la semilla es la enum cerrada que el AGENTE puede proponer
+#: (anti-alucinación); Enterprise es la referencia de contexto sobre la que el
+#: perito ancla su veredicto. Las propuestas del agente (ids de la semilla) se
+#: mapean a la celda Enterprise (a la técnica padre si son sub-técnicas).
+ENTERPRISE_PATH = Path(__file__).resolve().parent / "enterprise.json"
 
 
 def _agents_dir() -> Path:
@@ -94,6 +107,9 @@ class Technique:
     supported_by: str
     #: ``T1059`` para ``T1059.001``; ``None`` si es técnica de primer nivel.
     parent_id: str | None
+    #: Nº de sub-técnicas (catálogo Enterprise, que enumera padres + conteo). 0 en
+    #: la semilla, que sí lista las sub-técnicas concretas que el agente puede citar.
+    sub: int = 0
 
 
 @dataclass(frozen=True)
@@ -215,7 +231,8 @@ def unavailable_reason() -> str | None:
 
 
 def as_dict() -> dict:
-    """El catálogo completo, serializable — lo que sirve `GET /api/mitre/catalog`."""
+    """La SEMILLA completa, serializable. La UI pinta el catálogo Enterprise
+    (``enterprise_as_dict``); esto queda para depurar la enum del agente."""
     cat = load()
     return {
         "available": cat.available,
@@ -234,6 +251,134 @@ def as_dict() -> dict:
                         "name": te.name,
                         "supported_by": te.supported_by,
                         "parent_id": te.parent_id,
+                        "sub": te.sub,
+                    }
+                    for te in t.techniques
+                ],
+            }
+            for t in cat.tactics
+        ],
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Catálogo ATT&CK Enterprise COMPLETO — display + dictamen del perito
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class EnterpriseCatalog:
+    source: Path | None
+    phases: tuple[tuple[str, str], ...]  # (key, label), en orden
+    tactics: tuple[Tactic, ...]
+
+    @property
+    def available(self) -> bool:
+        return bool(self.tactics)
+
+
+@lru_cache(maxsize=1)
+def load_enterprise() -> EnterpriseCatalog:
+    """Carga el catálogo Enterprise del JSON que se envía con la imagen y le
+    fusiona la columna «Se sostiene con» de la semilla (mismo id → mismo
+    artefacto forense). Cacheado: dato estático durante la vida del proceso."""
+    if not ENTERPRISE_PATH.is_file():
+        logger.warning("[mitre] enterprise catalog not found at %s", ENTERPRISE_PATH)
+        return EnterpriseCatalog(source=None, phases=(), tactics=())
+    try:
+        data = json.loads(ENTERPRISE_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("[mitre] enterprise catalog unreadable: %s", exc)
+        return EnterpriseCatalog(source=None, phases=(), tactics=())
+
+    # supported_by de la semilla, por id (para no perder el artefacto forense).
+    seed_support = {te.id: te.supported_by for te in _index().values()}
+
+    tactics: list[Tactic] = []
+    for t in data.get("tactics", []):
+        techs = tuple(
+            Technique(
+                id=te["id"],
+                name=te["name"],
+                tactic_id=t["id"],
+                supported_by=seed_support.get(te["id"], ""),
+                parent_id=None,  # Enterprise enumera padres; la sub va como conteo
+                sub=int(te.get("sub", 0)),
+            )
+            for te in t.get("techniques", [])
+        )
+        tactics.append(
+            Tactic(
+                id=t["id"], name=t["name"], name_es=t.get("name_es", t["name"]),
+                phase=t.get("phase", "act"), techniques=techs,
+            )
+        )
+    phases = tuple((p["key"], p["label"]) for p in data.get("phases", []))
+    return EnterpriseCatalog(source=ENTERPRISE_PATH, phases=phases, tactics=tuple(tactics))
+
+
+def _enterprise_index() -> dict[str, Technique]:
+    return {
+        tech.id: tech
+        for tactic in load_enterprise().tactics
+        for tech in tactic.techniques
+    }
+
+
+def enterprise_is_known(technique_id: str) -> bool:
+    return technique_id in _enterprise_index()
+
+
+def enterprise_technique(technique_id: str) -> Technique:
+    try:
+        return _enterprise_index()[technique_id]
+    except KeyError:
+        raise KeyError(
+            f"{technique_id!r} is not in the ATT&CK Enterprise catalog"
+        ) from None
+
+
+def enterprise_display_id(technique_id: str) -> str:
+    """La celda Enterprise en la que se pinta una técnica de la semilla. Si el id
+    exacto no está en Enterprise (es una sub-técnica: Enterprise enumera padres),
+    cae a la técnica padre — que SÍ está (verificado: todo padre de la semilla
+    existe en Enterprise)."""
+    if enterprise_is_known(technique_id):
+        return technique_id
+    return technique_id.split(".")[0]
+
+
+def enterprise_unavailable_reason() -> str | None:
+    if load_enterprise().available:
+        return None
+    return (
+        f"MITRE ATT&CK Enterprise catalog not found at {ENTERPRISE_PATH}. It ships "
+        "with the api image under forensia/mitre/enterprise.json."
+    )
+
+
+def enterprise_as_dict() -> dict:
+    """El catálogo Enterprise completo, serializable — lo que sirve
+    ``GET /api/mitre/catalog`` y pinta la matriz."""
+    cat = load_enterprise()
+    return {
+        "available": cat.available,
+        "reason": enterprise_unavailable_reason(),
+        "source": str(cat.source) if cat.source else None,
+        "phases": [{"key": k, "label": label} for k, label in cat.phases],
+        "tactics": [
+            {
+                "id": t.id,
+                "name": t.name,
+                "name_es": t.name_es,
+                "phase": t.phase,
+                "techniques": [
+                    {
+                        "id": te.id,
+                        "name": te.name,
+                        "supported_by": te.supported_by,
+                        "parent_id": te.parent_id,
+                        "sub": te.sub,
                     }
                     for te in t.techniques
                 ],

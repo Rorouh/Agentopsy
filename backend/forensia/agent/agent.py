@@ -57,6 +57,7 @@ from forensia.audit import AuditLog
 from forensia.evidence import EvidenceManager
 from forensia.evidence_context import EvidenceContext
 from forensia.findings.store import finding_store
+from forensia.mitre.coverage import coverage_store
 from forensia.models.base import FinalAnswer, ModelBackend, ToolCall
 from forensia.path_policy import inject_evidence_path
 from forensia.toolkit.catalog import BY_ID as TOOL_BY_ID
@@ -393,6 +394,34 @@ class ForensicAgent:
                     })
                     continue
 
+                if action.tool_id == "annotate_mitre":
+                    # Anchors ATT&CK techniques to an existing finding → shows up on
+                    # the MITRE board as an agent proposal (coverage eje 1). Same
+                    # in-process side-channel shape as record_finding.
+                    try:
+                        params = dict(action.params)
+                        finding_id = (params.get("finding_id") or "").strip()
+                        rec = coverage_store.annotate(
+                            case_id,
+                            finding_id,
+                            params.get("mitre_hints") or [],
+                            params.get("note"),
+                        )
+                        body = {
+                            "finding_id": finding_id,
+                            "technique_ids": rec["technique_ids"],
+                            "annotated": True,
+                        }
+                    except (KeyError, ValueError) as exc:
+                        body = {"error": f"annotate_mitre rejected: {exc}"}
+                    messages.append(self._tool_result_msg(action, body))
+                    tool_calls_log.append({
+                        "tool_id": "annotate_mitre",
+                        "finding_id": body.get("finding_id"),
+                        "error": body.get("error"),
+                    })
+                    continue
+
                 if action.tool_id not in allowed:
                     refusal = (
                         f"El tool `{action.tool_id}` no está en la allowlist del "
@@ -654,7 +683,19 @@ class ForensicAgent:
             "`mitre_hints` es la lista de técnicas ATT&CK que el hallazgo sostiene "
             "(p. ej. `[\"T1055\"]`). ENUM CERRADA: sólo ids de la semilla del "
             "orquestador; un id inventado rechaza el hallazgo entero. Omítelo si el "
-            "hallazgo no sostiene ninguna técnica.\n\n"
+            "hallazgo no sostiene ninguna técnica; pero si SÍ la sostiene, "
+            "adjúntalo SIEMPRE en el mismo `record_finding` — es lo que llena el "
+            "tablero MITRE.\n\n"
+            "## Correlación MITRE — persístela, no la narres\n"
+            "El tablero MITRE se alimenta de los `mitre_hints` de los hallazgos, "
+            "NO del texto de tu respuesta. Cuando correlaciones hallazgos a "
+            "técnicas (típico: el perito pide *\"dame la correlación MITRE\"*), por "
+            "cada hallazgo relevante llama a "
+            "`annotate_mitre(finding_id, mitre_hints, note?)` con el `finding_id` "
+            "que te devolvió `record_finding` y la lista COMPLETA de técnicas que "
+            "sostiene. Hazlo ANTES de componer la respuesta. Si te limitas a "
+            "escribir la tabla en prosa, el tablero se queda vacío. También sirve "
+            "para completar hints de hallazgos que registraste sin ellos.\n\n"
             "## NUNCA sugieras el siguiente paso — EJECÚTALO\n"
             "Si tras los pasos 0 ves indicadores de \"memdump Windows\", NO "
             "termines con \"sugiero correr volatility3 windows.info\". "
