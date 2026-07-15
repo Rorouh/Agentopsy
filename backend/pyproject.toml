@@ -15,6 +15,9 @@ dependencies = [
     # Cross-platform exclusive file lock for AuditLog.append (replaces fcntl.flock
     # so the audit chain stays coherent across processes on Win/macOS/Linux).
     "filelock>=3.13",
+    # PDF real de los documentos del caso (forensia.reports.pdf). Pure-python: no
+    # arrastra libs de sistema (a diferencia de weasyprint), así la imagen no crece.
+    "fpdf2>=2.7.6",
 ]
 
 [project.optional-dependencies]

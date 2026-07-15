@@ -35,6 +35,7 @@ from forensia.routers import (
     cases,
     chats,
     config as config_router,
+    documents,
     evidence,
     executors as executors_router,
     findings,
@@ -66,7 +67,7 @@ def create_app(port: int, ui_origins: Sequence[str] = ()) -> FastAPI:
             f"http://localhost:{port}",
             *ui_origins,
         ],
-        allow_methods=["GET", "POST"],
+        allow_methods=["GET", "POST", "DELETE"],
         allow_headers=["X-Forensia-Token", "Content-Type"],
         allow_credentials=False,
     )
@@ -82,6 +83,7 @@ def create_app(port: int, ui_origins: Sequence[str] = ()) -> FastAPI:
     app.include_router(chats.router)
     app.include_router(findings.router)
     app.include_router(mitre.router)
+    app.include_router(documents.router)
     app.include_router(agent.router)
     return app
 
