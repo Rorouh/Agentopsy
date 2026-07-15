@@ -79,7 +79,7 @@ def test_codex_argv_uses_json_but_text_still_from_file() -> None:
     from forensia.executors.codex import CodexExecutor
     ex = CodexExecutor()
     ex._last_message_path = "/tmp/x.md"
-    argv = ex._build_argv("hola")
+    argv = ex._build_argv("hola", None)
     assert "--json" in argv
     assert "--output-last-message" in argv  # el texto sigue viniendo del fichero
 

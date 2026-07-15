@@ -34,6 +34,7 @@ from forensia.config import config
 from forensia.executors import (
     DEFAULT_TIMEOUT_S,
     EXECUTOR_IDS,
+    MODEL_CONFIG_KEY,
     ClaudeCodeExecutor,
     CodexExecutor,
     ExecutorAvailability,
@@ -43,6 +44,7 @@ from forensia.executors import (
     executor_models,
     get_executor,
     resolve_timeout,
+    validate_model_id,
 )
 from forensia.executors import base as executors_base
 from forensia.server import create_app
@@ -60,7 +62,15 @@ def client() -> TestClient:
 @pytest.fixture
 def clean_config(monkeypatch: pytest.MonkeyPatch) -> None:
     """Neutralise the dev machine's env/config.json so RULE 2 paths are exercised."""
-    for key in ("DEFAULT_EXECUTOR", "OLLAMA_HOST", "OLLAMA_MODEL", "FORENSIA_EXECUTOR_TIMEOUT"):
+    for key in (
+        "DEFAULT_EXECUTOR",
+        "OLLAMA_HOST",
+        "OLLAMA_MODEL",
+        "CLAUDE_CODE_MODEL",
+        "CODEX_MODEL",
+        "GEMINI_MODEL",
+        "FORENSIA_EXECUTOR_TIMEOUT",
+    ):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setattr(config, "_data", {})
 
@@ -411,13 +421,18 @@ def test_no_api_key_strings_anywhere_in_backend() -> None:
 # --------------------------------------------------------------------------- #
 # executor_models — selector de modelos del composer (por proveedor)
 # --------------------------------------------------------------------------- #
-def test_executor_models_cloud_is_not_editable_and_notes_cli() -> None:
-    """Los CLIs cloud gestionan su modelo; FORENSIA no lo sobrescribe (RULE 2)."""
+def test_executor_models_cloud_is_editable_with_suggestions_and_custom() -> None:
+    """El operador elige el modelo del CLI cloud (--model); FORENSIA no puede
+    ENUMERAR el catálogo sin API key (SECURITY 7), así que ofrece atajos + texto
+    libre y lo dice en la nota."""
     for cid in ("claude-code", "codex", "gemini"):
         res = executor_models(cid)
-        assert res["editable"] is False
-        assert res["models"] == []
-        assert isinstance(res["note"], str) and res["note"]
+        assert res["editable"] is True
+        assert res["allow_custom"] is True
+        assert isinstance(res["models"], list)
+        assert isinstance(res["note"], str) and "API" in res["note"]
+    # Claude documenta alias estables; se ofrecen como sugerencias.
+    assert "opus" in executor_models("claude-code")["models"]
 
 
 def test_executor_models_ollama_lists_installed(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -445,6 +460,44 @@ def test_executor_models_unknown_id_fails_loud() -> None:
         executor_models("gpt5")
 
 
+# --------------------------------------------------------------------------- #
+# model selection — --model threading + flag-injection gate (SECURITY 5)
+# --------------------------------------------------------------------------- #
+def test_model_config_key_covers_every_executor() -> None:
+    assert set(MODEL_CONFIG_KEY) == set(EXECUTOR_IDS)
+
+
+@pytest.mark.parametrize("bad", ["--dangerously-skip-permissions", "-m", "a b", "a;b", "", "/x"])
+def test_validate_model_id_rejects_flag_injection(bad: str) -> None:
+    with pytest.raises(ExecutorError, match="id de modelo inválido"):
+        validate_model_id(bad)
+
+
+@pytest.mark.parametrize("ok", ["opus", "claude-fable-5", "gpt-5.5", "llama3.1:8b", "hf.co/u/m:Q4"])
+def test_validate_model_id_accepts_real_ids(ok: str) -> None:
+    assert validate_model_id(ok) == ok
+
+
+def test_cloud_build_argv_includes_model_when_set() -> None:
+    assert ClaudeCodeExecutor()._build_argv("hi", "opus")[:5] == [
+        "claude", "-p", "hi", "--model", "opus",
+    ]
+    assert "--model" in GeminiExecutor()._build_argv("hi", "gemini-2.5-pro")
+    codex = CodexExecutor()
+    codex._last_message_path = "/tmp/x.md"
+    argv = codex._build_argv("hi", "gpt-5.5")
+    assert argv[-3:] == ["--model", "gpt-5.5", "hi"]
+
+
+def test_cloud_build_argv_omits_model_when_none() -> None:
+    """Sin modelo elegido no se pasa --model: manda el default del CLI (RULE 2)."""
+    assert "--model" not in ClaudeCodeExecutor()._build_argv("hi", None)
+    assert "--model" not in GeminiExecutor()._build_argv("hi", None)
+    codex = CodexExecutor()
+    codex._last_message_path = "/tmp/x.md"
+    assert "--model" not in codex._build_argv("hi", None)
+
+
 def test_models_endpoint_ollama(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(OllamaExecutor, "list_models", lambda self: ["qwen2.5:7b-instruct"])
     r = client.get(
@@ -456,6 +509,32 @@ def test_models_endpoint_ollama(client: TestClient, monkeypatch: pytest.MonkeyPa
     assert body["executor"] == "ollama"
     assert body["editable"] is True
     assert body["models"] == ["qwen2.5:7b-instruct"]
+
+
+def _set_config(client: TestClient, key: str, value: str) -> object:
+    return client.post(
+        "/api/config",
+        headers={"X-Forensia-Token": client.app.state.token},
+        json={"key": key, "value": value},
+    )
+
+
+def test_cloud_model_key_set_and_unset(client: TestClient, clean_config: None) -> None:
+    r = _set_config(client, "CLAUDE_CODE_MODEL", "opus")
+    assert r.status_code == 200 and r.json() == {
+        "key": "CLAUDE_CODE_MODEL", "set": True, "preview": "opus",
+    }
+    assert config.get("CLAUDE_CODE_MODEL") == "opus"
+    # Empty clears it back to the CLI default (RULE 2), not a 422.
+    r = _set_config(client, "CLAUDE_CODE_MODEL", "")
+    assert r.status_code == 200 and r.json()["set"] is False
+    assert config.get("CLAUDE_CODE_MODEL") is None
+
+
+def test_cloud_model_key_rejects_flag_injection(client: TestClient, clean_config: None) -> None:
+    r = _set_config(client, "CODEX_MODEL", "--dangerously-skip-permissions")
+    assert r.status_code == 422
+    assert "id de modelo inválido" in r.json()["detail"]
 
 
 def test_models_endpoint_unknown_id_is_400(client: TestClient) -> None:
