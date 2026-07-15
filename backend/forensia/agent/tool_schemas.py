@@ -375,6 +375,23 @@ _INTERNAL_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 "type": "string",
                 "description": "UUID4 del ArtifactRun que respalda este hallazgo.",
             },
+            # Los prompts de los paquetes YA prescriben este campo («Esquema de
+            # hallazgo» en agentes/*/prompts/system.md). Sin él en el schema,
+            # `additionalProperties: False` impedía al modelo emitirlo y la
+            # correlación MITRE nunca llegaba al backend.
+            "mitre_hints": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Técnicas ATT&CK que sostiene este hallazgo, p. ej. "
+                    "[\"T1547.001\"]. ENUM CERRADA: sólo ids de la semilla "
+                    "(_orchestrator/knowledge/mitre_attack_seed.md). Un id fuera de "
+                    "la semilla RECHAZA el hallazgo entero — no inventes ids. Mapea "
+                    "a sub-técnica cuando la evidencia lo permita; si no, a la "
+                    "técnica padre. Omite el campo si el hallazgo no sostiene "
+                    "ninguna técnica."
+                ),
+            },
         },
         "required": ["title", "summary", "severity"],
         "additionalProperties": False,
@@ -387,7 +404,8 @@ _INTERNAL_DESCRIPTIONS: dict[str, str] = {
         "final answer for EACH meaningful conclusion (file type identified, kernel "
         "version detected, IOC found, hypothesis confirmed/rejected, etc.). The "
         "findings panel in the UI reads these. severity: low for context, medium for "
-        "noteworthy, high for actionable, critical for clear compromise."
+        "noteworthy, high for actionable, critical for clear compromise. Attach "
+        "mitre_hints when the finding supports an ATT&CK technique from the seed."
     ),
 }
 

@@ -22,6 +22,10 @@ class AppendFindingRequest(BaseModel):
     evidence_id: str | None = None
     tool_id: str | None = None
     run_id: str | None = None
+    #: Técnicas ATT&CK que sostiene el hallazgo. Enum cerrada validada contra la
+    #: semilla en forensia.findings.store — la ruta HTTP y la del agente comparten
+    #: el mismo contrato, no pueden divergir.
+    mitre_hints: list[str] = []
 
 
 @router.get(
