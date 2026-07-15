@@ -466,10 +466,14 @@ y se agrega por caso/ejecutor en `forensia/executors/cost.py`, expuesto en
 agregado distingue «no reportado» de un cero real vía `runs_with_tokens`. Tests:
 `tests/test_executor_cost.py` + endpoint en `tests/test_web_surface.py`.
 
-**Pendiente del Nivel 0:** la superficie de UI (comparativa coste/tokens por
-ejecutor) — es la figura experimental del TFM y merece diseño propio (skill de
-dataviz), no un panel a medias; el endpoint ya sirve el dato. Y decidir si adoptar
-`codex exec --json` para desbloquear los tokens de Codex.
+**Nivel 0 — cerrado del todo (2026-07-15):**
+- **UI:** panel «Coste por ejecutor» en `InvestigationPage` (barras de magnitud
+  con la identidad en la etiqueta — un solo tono de acento, no paleta categórica;
+  `runs_with_tokens` distingue «no reportado» de un cero falso). Consume
+  `GET /api/cases/{id}/executor-cost`.
+- **Codex `--json`:** adoptado. `--json` y `--output-last-message` son ortogonales,
+  así que el texto sigue viniendo del fichero (extracción intacta) y los tokens se
+  parsean del stream JSONL de stdout de forma defensiva (→ None si no aparecen).
 
 **Nivel 1 — apretar los mandos existentes (ahora sí, con el Nivel 0 midiendo).**
 
@@ -482,11 +486,13 @@ del prefijo:
   tools** viajan íntegros cada iteración; `window_messages`/`redact_messages` operan
   sobre `messages`, **no sobre `specs`** (`agent.py:281,334`). Palanca: enviar solo
   los schemas de las tools de la fase/rama activa. **Mayor rendimiento no explotado.**
-- **Anexo por-herramienta del playbook (9.438 B/iter, ~2.360 tok).**
-  `select_playbook_section` lo trata como «común» y **nunca lo trocea**
-  (`context.py:114-123`); ~6 KB son docs de tools de disco, peso muerto en un memdump.
-  Palanca: subdividir el Anexo por rama en `_section_branch`, igual que las secciones
-  A/B. (Es exclusivo de Windows: el playbook Unix no tiene Anexo.)
+- **Anexo por-herramienta del playbook (9.438 B/iter, ~2.360 tok). ✅ HECHO
+  (2026-07-15).** `select_playbook_section` ahora trocea las subsecciones `###` del
+  Anexo por rama (`_annex_subsection_branch` + `_trim_annex_subsections` en
+  `context.py`), conservador (subsección sin rama clara → se queda, RULE 2). Medido:
+  memdump Windows pasa de 15 % a **36 % de playbook recortado** (~6 KB/iter menos,
+  ~1.500 tok/iter; ×12 ≈ ~18K tok/pasada). `disk` simétrico; `unknown` intacto.
+  (Exclusivo de Windows: el playbook Unix no tiene Anexo.)
 - Bajar `FORENSIA_CONTEXT_KEEP_TOOL_RESULTS` de 4 a 2-3 y medir si la calidad aguanta.
 - Reforzar «pasa el `ArtifactRef`, no vuelques stdout».
 - Ojo con Ollama: `window_messages` recalcula la proyección cada iteración y el corte

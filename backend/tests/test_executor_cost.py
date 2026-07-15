@@ -53,6 +53,42 @@ def test_gemini_finds_canonical_token_keys_nested_in_stats() -> None:
     assert u.output_tokens == 150
 
 
+def test_codex_parses_token_counts_from_jsonl_stream() -> None:
+    from forensia.executors.codex import CodexExecutor
+    stream = "\n".join([
+        '{"type":"item.started"}',
+        '{"type":"turn.completed","usage":{"input_tokens":2200,"output_tokens":450}}',
+    ])
+    u = CodexExecutor()._extract_usage(stream)
+    assert u.input_tokens == 2200
+    assert u.output_tokens == 450
+    assert u.source == "codex.json"
+
+
+def test_codex_last_token_event_wins() -> None:
+    from forensia.executors.codex import CodexExecutor
+    stream = "\n".join([
+        '{"usage":{"input_tokens":100,"output_tokens":10}}',
+        '{"usage":{"input_tokens":300,"output_tokens":80}}',
+    ])
+    u = CodexExecutor()._extract_usage(stream)
+    assert u.input_tokens == 300 and u.output_tokens == 80
+
+
+def test_codex_argv_uses_json_but_text_still_from_file() -> None:
+    from forensia.executors.codex import CodexExecutor
+    ex = CodexExecutor()
+    ex._last_message_path = "/tmp/x.md"
+    argv = ex._build_argv("hola")
+    assert "--json" in argv
+    assert "--output-last-message" in argv  # el texto sigue viniendo del fichero
+
+
+def test_codex_no_token_events_degrades_to_none() -> None:
+    from forensia.executors.codex import CodexExecutor
+    assert CodexExecutor()._extract_usage('{"type":"item.started"}') is None
+
+
 def test_unparseable_or_reshaped_envelope_degrades_to_none() -> None:
     """RULE 2: forma inesperada → 'no reportado', jamás un número fabricado."""
     assert ClaudeCodeExecutor()._extract_usage("not json") is None

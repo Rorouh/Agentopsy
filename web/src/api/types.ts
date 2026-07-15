@@ -254,6 +254,20 @@ export interface ToolUsage {
   failed: number;
 }
 
+// Coste/tokens por ejecutor agregado del audit log (Bug 008 §2 Nivel 0).
+// `runs_with_tokens` distingue "el ejecutor no reportó tokens" de un cero real
+// (p. ej. Codex hoy no reporta si no se adopta --json).
+export interface ExecutorCost {
+  executor: string;
+  runs: number;
+  runs_with_tokens: number;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  cost_usd: number;
+  response_chars: number;
+}
+
 export interface ConfigKeyStatus {
   set: boolean;
   preview: string | null;
