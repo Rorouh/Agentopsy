@@ -299,6 +299,12 @@ class ForensicAgent:
             consent_ref=consent_ref,
         )
 
+        # Nudge estructural: si el agente encadena herramientas del catálogo sin
+        # registrar hallazgos, se le recuerda que registre EN CALIENTE (un análisis
+        # largo puede cortarse y se perdería lo no persistido). Refuerza el prompt.
+        tools_since_finding = 0
+        FINDING_NUDGE_AFTER = 3
+
         for iteration in range(max_iter):
             # Bug 008 — provider-agnostic context management. FORENSIA owns the
             # conversation; the executor is stateless and re-charges the whole
@@ -370,6 +376,7 @@ class ForensicAgent:
                             params["evidence_id"] = evidence_id
                         finding = finding_store.append(case_id, params)
                         body = {"finding_id": finding.id, "stored": True}
+                        tools_since_finding = 0  # cerró el bucle: registró
                         # F3 — record the finding's provenance in the audit chain
                         # (only the id; the finding body lives in findings.jsonl).
                         self._audit_event(
@@ -529,6 +536,9 @@ class ForensicAgent:
                     "status": "ok" if exit_code == 0 else "nonzero",
                     "exit_code": exit_code,
                     "run_id": result.get("run_id"),
+                    # El argv LITERAL que se ejecutó, para que el perito VEA el
+                    # comando lanzado en el chat (no sólo el resultado).
+                    "argv": result.get("argv"),
                     "summary": _result_summary(result),
                 })
                 messages.append(self._tool_result_msg(action, self._tool_result_payload(result)))
@@ -539,6 +549,22 @@ class ForensicAgent:
                         "exit_code": exit_code,
                     }
                 )
+                # Nudge: si acumula herramientas sin registrar, se lo recuerda de
+                # forma explícita (además del prompt). Reinicia el contador para no
+                # repetir cada iteración.
+                tools_since_finding += 1
+                if tools_since_finding >= FINDING_NUDGE_AFTER:
+                    messages.append({
+                        "role": "system",
+                        "content": (
+                            f"[Recordatorio] Llevas {tools_since_finding} herramientas "
+                            "seguidas sin registrar ningún hallazgo. REGISTRA AHORA con "
+                            "record_finding lo que ya has concluido de esos ArtifactRun "
+                            "(o un hallazgo de descarte), ANTES de invocar otra "
+                            "herramienta — el análisis puede cortarse y se perdería."
+                        ),
+                    })
+                    tools_since_finding = 0
                 continue
 
             raise RuntimeError(
@@ -673,13 +699,19 @@ class ForensicAgent:
             "tool calls siguiendo tu playbook. No saludes y luego esperes — "
             "saluda E invoca tools en la misma respuesta si quieres, pero NUNCA "
             "te quedes esperando una clarificación que el sistema ya te dio.\n\n"
-            "## Registra hallazgos a medida que avanzas\n"
+            "## Registra hallazgos EN CALIENTE — regla estricta\n"
             "Tienes una tool especial `record_finding(title, summary, severity, "
-            "tool_id?, run_id?, mitre_hints?)`. Cada vez que llegues a una "
-            "conclusión concreta (tipo de archivo identificado, kernel detectado, "
-            "IOC encontrado, hipótesis confirmada o descartada), LLÁMALA antes de "
-            "seguir. Se persisten en el caso y la UI las pinta en el panel "
-            "lateral.\n"
+            "tool_id?, run_id?, mitre_hints?)`. **Después de CADA herramienta cuyo "
+            "resultado te dé una conclusión (aunque sea parcial o un descarte), "
+            "llama a `record_finding` INMEDIATAMENTE, ANTES de invocar la siguiente "
+            "herramienta.** NO acumules hallazgos para el final: un análisis real "
+            "es largo y puede cortarse (timeout, desconexión) — todo lo que no "
+            "hayas registrado se pierde, y los `ArtifactRun` quedan huérfanos sin "
+            "conclusión. Regla práctica: **por cada ArtifactRun con salida útil, al "
+            "menos un `record_finding`** (o un hallazgo de descarte que explique por "
+            "qué esa vía no aporta). Pasa `run_id` con el id del ArtifactRun que lo "
+            "sostiene y `tool_id` con la herramienta. Se persisten al instante y la "
+            "UI/Timeline los pinta.\n"
             "`mitre_hints` es la lista de técnicas ATT&CK que el hallazgo sostiene "
             "(p. ej. `[\"T1055\"]`). ENUM CERRADA: sólo ids de la semilla del "
             "orquestador; un id inventado rechaza el hallazgo entero. Omítelo si el "

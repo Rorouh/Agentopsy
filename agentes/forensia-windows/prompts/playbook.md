@@ -9,6 +9,23 @@ la evidencia está **verificada** (`verified=true`).
 > `tsk_fls` (localizar) → `tsk_icat` (extraer el artefacto vía handle read-only)
 > → procesar **solo** ese fichero derivado.
 
+## Disciplina de ejecución (OBLIGATORIO)
+
+1. **Registra en caliente.** Tras CADA herramienta con salida útil, llama a
+   `record_finding` (con `run_id` y `tool_id`) ANTES de la siguiente. Un descarte
+   también cuenta. Nunca dejes los hallazgos "para el final": el análisis puede
+   cortarse y se perdería.
+2. **Cierra el bucle: recopilar → analizar → registrar.** Procesa cada artefacto
+   intermedio (bodyfile, `.plaso`, salida de EVTX/registro); no lo dejes huérfano.
+3. **Pipelines fijos** (encadénalos entero):
+   - **Super-timeline:** `tsk_fls` (`body_format: true`) → `tsk_mactime`; o
+     `plaso_log2timeline` → `plaso_psort` cuando haya muchas fuentes. Registra las
+     ventanas temporales relevantes como hallazgos.
+   - **Eventos:** `evtxecmd` sobre los `.evtx` extraídos → correlaciona EIDs clave
+     (4624/4625/4688/4720/7045…) y registra un hallazgo por patrón detectado.
+   - **Registro:** `regripper` sobre los hives extraídos → persistencia, cuentas,
+     USB; un hallazgo por hallazgo real.
+
 ---
 
 ## 0. Routing por tipo de evidencia (antes que nada)

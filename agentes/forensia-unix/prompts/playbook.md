@@ -5,6 +5,25 @@ un analista humano probaría primero. Si una pista lleva a otro camino, lo sigue
 Antes de cualquier herramienta, confirma que la evidencia está **verificada**
 (`verified=true`); si no, pídelo y espera.
 
+## Disciplina de ejecución (OBLIGATORIO)
+
+1. **Registra en caliente.** Tras CADA herramienta con salida útil, llama a
+   `record_finding` (con `run_id` y `tool_id`) ANTES de la siguiente. Un hallazgo
+   de descarte también cuenta. Nunca dejes los hallazgos "para el final".
+2. **Cierra el bucle: recopilar → analizar → registrar.** No basta con ejecutar la
+   herramienta; interpreta su salida y persístela. Si generas un artefacto
+   intermedio (bodyfile, `.plaso`, salida de `bulk_extractor`), **procésalo**, no
+   lo dejes huérfano.
+3. **Pipelines fijos** (encadénalos entero, no a medias):
+   - **Super-timeline:** `tsk_fls` con `body_format: true` (bodyfile) →
+     `tsk_mactime` sobre ese bodyfile → línea temporal MAC(b). Registra los
+     eventos/ventanas relevantes como hallazgos. Esta es la **columna vertebral
+     cronológica**; ejecútala siempre en una imagen de disco, no la marques como
+     opcional.
+   - **IOCs:** `bulk_extractor` → filtra cada `feature file` con `jq`/patrones
+     (emails, URLs, IPs, tarjetas, PII) → registra un hallazgo por categoría con
+     hits (o el descarte si no hay).
+
 ---
 
 ## A. Imagen de disco (`.raw`, `.dd`, `.img`, `.E01`, `.vmdk`)

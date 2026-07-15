@@ -171,3 +171,40 @@ def test_successful_tool_is_not_capped(monkeypatch: pytest.MonkeyPatch) -> None:
     # Nunca se bloquea; corre una vez por iteración hasta agotar max_iter.
     assert calls["n"] == result["iterations"]
     assert not any(c.get("blocked") for c in result["tool_calls"])
+
+
+def test_records_nudge_injected_after_tools_without_finding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Refuerzo estructural: si el agente encadena herramientas del catálogo sin
+    registrar hallazgos, el loop le inyecta un recordatorio de `record_finding`."""
+    monkeypatch.setenv("FORENSIA_MAX_TOOL_ATTEMPTS", "10")  # sin tope de fallos
+
+    def fake_execute(
+        tool_id, params, *, case_id=None, os_profile=None, timeout=None, evidence_context=None
+    ):
+        return {
+            "tool_id": tool_id, "argv": ["fls", "/cases/x/original.raw"], "exit_code": 0,
+            "stdout_sample": "d/d 13:\tbin", "stderr_sample": "",
+            "parsed": {"format": "list", "entries_count": 1, "entries": []}, "run_id": "r",
+        }
+
+    monkeypatch.setattr("forensia.toolkit.dispatcher.execute", fake_execute)
+
+    seen: list[int] = []
+
+    class _Capturing(_AlwaysSameTool):
+        def next_action(self, state, tools):  # noqa: ANN001
+            msgs = state.get("messages", [])
+            if any(
+                isinstance(m, dict) and "[Recordatorio]" in str(m.get("content", ""))
+                for m in msgs
+            ):
+                seen.append(len(msgs))
+            return super().next_action(state, tools)
+
+    pkg = load_package(AGENTES_DIR / "forensia-unix")
+    agent = ForensicAgent(pkg, _Capturing("tsk_fls"), _FakeEvidence())
+    agent.run("lista la raíz", case_id="c", evidence_id="e")
+
+    assert seen, "tras 3 herramientas sin registrar hallazgo debe inyectarse el recordatorio"
