@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from forensia.executors.cost import executor_cost
 from forensia.findings.store import finding_store
 from forensia.security import require_token
 from forensia.toolkit.usage import tool_usage
@@ -49,6 +50,21 @@ def list_tool_usage(case_id: str) -> list[dict[str, Any]]:
     """Per-tool run counts for the case (Tools panel). Aggregated from audit.jsonl."""
     try:
         return tool_usage(case_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get(
+    "/api/cases/{case_id}/executor-cost",
+    dependencies=[Depends(require_token)],
+)
+def list_executor_cost(case_id: str) -> list[dict[str, Any]]:
+    """Per-executor token/cost totals for the case (Bug 008 Nivel 0). Aggregated
+    from the ``executor_run_finish`` events in audit.jsonl."""
+    try:
+        return executor_cost(case_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:

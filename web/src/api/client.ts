@@ -11,6 +11,7 @@ import type {
   AgentFinding,
   MitreCatalog,
   MitreCoverageEntry,
+  ExecutorCost,
   AgentSummary,
   Capabilities,
   Case,
@@ -204,6 +205,8 @@ export const api = {
       request<AgentFinding[]>(`/api/cases/${encodeURIComponent(caseId)}/findings`),
     listToolUsage: (caseId: string) =>
       request<ToolUsage[]>(`/api/cases/${encodeURIComponent(caseId)}/tool-usage`),
+    listExecutorCost: (caseId: string) =>
+      request<ExecutorCost[]>(`/api/cases/${encodeURIComponent(caseId)}/executor-cost`),
     // Cobertura ATT&CK del caso: propuestas del agente + dictámenes del operador.
     listMitreCoverage: (caseId: string) =>
       request<MitreCoverageEntry[]>(`/api/cases/${encodeURIComponent(caseId)}/mitre`),

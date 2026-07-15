@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
-import type { AgentFinding, Capabilities, Case, EvidenceHandle, ToolUsage } from "../api/types";
+import type {
+  AgentFinding,
+  Capabilities,
+  Case,
+  EvidenceHandle,
+  ExecutorCost,
+  ToolUsage,
+} from "../api/types";
 import type { ViewId } from "../navigation/navItems";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
@@ -38,6 +45,7 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
   const [activeEvidence, setActiveEvidence] = useState<EvidenceHandle | null>(null);
   const [findings, setFindings] = useState<AgentFinding[]>([]);
   const [toolUsage, setToolUsage] = useState<ToolUsage[]>([]);
+  const [executorCost, setExecutorCost] = useState<ExecutorCost[]>([]);
   const [phase, setPhase] = useState<Phase>("loading");
   const [error, setError] = useState<string | null>(null);
 
@@ -57,6 +65,11 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
     } catch {
       // Sin audit.jsonl aún → sin herramientas ejecutadas. Estado vacío, no error.
       setToolUsage([]);
+    }
+    try {
+      setExecutorCost(await api.cases.listExecutorCost(caseId));
+    } catch {
+      setExecutorCost([]);
     }
   }, []);
 
@@ -310,8 +323,89 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
             ))
           )}
         </div>
+
+        <ExecutorCostPanel rows={executorCost} />
         </div>
       </div>
+    </div>
+  );
+}
+
+// Comparativa de coste/tokens por ejecutor (Bug 008 §2 Nivel 0). Forma: magnitud
+// (tokens por ejecutor) → barras horizontales; la IDENTIDAD la lleva la etiqueta
+// de fila, así que un solo tono de acento basta (no una paleta categórica). Los
+// valores van direct-labeled; un ejecutor que no reportó tokens se marca como tal,
+// nunca como un cero falso.
+function ExecutorCostPanel({ rows }: { rows: ExecutorCost[] }) {
+  const withTokens = rows.filter((r) => r.runs_with_tokens > 0);
+  const totalTokens = rows.reduce((n, r) => n + r.total_tokens, 0);
+  const totalCost = rows.reduce((n, r) => n + r.cost_usd, 0);
+  const max = Math.max(1, ...withTokens.map((r) => r.total_tokens));
+
+  return (
+    <div className="findings-panel cost-panel">
+      <div className="findings-panel-title">
+        Coste por ejecutor
+        {totalTokens > 0 && (
+          <span className="cost-panel-total">
+            {totalTokens.toLocaleString("es-ES")} tok
+            {totalCost > 0 ? ` · $${totalCost.toFixed(4)}` : ""}
+          </span>
+        )}
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="empty-state" style={{ padding: "20px 12px" }}>
+          Sin ejecuciones registradas todavía. El coste en tokens aparece por
+          ejecutor cuando el agente corre sobre el caso.
+        </div>
+      ) : (
+        <div className="cost-rows">
+          {rows.map((r) => {
+            const reported = r.runs_with_tokens > 0;
+            return (
+              <div className="cost-row" key={r.executor}>
+                <div className="cost-row-head">
+                  <span className="cost-row-name">{r.executor}</span>
+                  <span className="cost-row-value">
+                    {reported ? (
+                      <>
+                        {r.total_tokens.toLocaleString("es-ES")} tok
+                        {r.cost_usd > 0 && (
+                          <span className="cost-row-usd"> · ${r.cost_usd.toFixed(4)}</span>
+                        )}
+                      </>
+                    ) : (
+                      <span
+                        className="cost-row-unreported"
+                        title="Este ejecutor no reporta tokens en su envelope (p. ej. Codex sin --json)."
+                      >
+                        no reportado
+                      </span>
+                    )}
+                  </span>
+                </div>
+                <div className="cost-bar-track">
+                  <div
+                    className={`cost-bar-fill${reported ? "" : " cost-bar-fill--none"}`}
+                    style={{ width: reported ? `${(r.total_tokens / max) * 100}%` : "0%" }}
+                  />
+                </div>
+                <div className="cost-row-sub">
+                  {r.runs} {r.runs === 1 ? "ejecución" : "ejecuciones"}
+                  {reported && (
+                    <>
+                      {" · "}
+                      {r.input_tokens.toLocaleString("es-ES")} in /{" "}
+                      {r.output_tokens.toLocaleString("es-ES")} out
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

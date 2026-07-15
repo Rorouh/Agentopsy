@@ -2097,3 +2097,32 @@ details.agent-activity > summary::-webkit-details-marker { display: none; }
 .mitre-detail-error {
   margin-top: 8px; font-size: 12px; color: var(--danger);
 }
+
+/* ── Panel de coste por ejecutor (Bug 008 §2 Nivel 0) ──────────────────────
+   Barras de MAGNITUD (tokens por ejecutor). Un solo tono de acento: la
+   identidad la lleva la etiqueta de fila, no el color. Valores direct-labeled;
+   "no reportado" es un estado explícito, nunca un cero falso.               */
+.cost-panel { margin-top: 14px; }
+.cost-panel .findings-panel-title {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+}
+.cost-panel-total {
+  margin-left: auto; font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-muted); font-weight: 400;
+}
+.cost-rows { display: flex; flex-direction: column; gap: 12px; padding: 4px 2px; }
+.cost-row { display: flex; flex-direction: column; gap: 4px; }
+.cost-row-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.cost-row-name { font-size: 12.5px; font-weight: 600; color: var(--text-primary); }
+.cost-row-value { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-secondary); }
+.cost-row-usd { color: var(--text-muted); }
+.cost-row-unreported { font-style: italic; color: var(--text-muted); }
+.cost-bar-track {
+  height: 8px; border-radius: 4px; background: var(--border); overflow: hidden;
+}
+.cost-bar-fill {
+  height: 100%; border-radius: 4px; background: var(--accent);
+  transition: width .3s;
+}
+.cost-bar-fill--none { background: transparent; }
+.cost-row-sub { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-muted); }

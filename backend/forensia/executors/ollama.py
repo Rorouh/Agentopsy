@@ -27,6 +27,8 @@ from forensia.executors.base import (
     ExecutorError,
     ExecutorResult,
     PromptExecutor,
+    Usage,
+    _as_int,
     resolve_timeout,
     sha256_text,
 )
@@ -185,18 +187,20 @@ class OllamaExecutor(PromptExecutor):
                 "la respuesta de Ollama no contiene el campo 'response' de texto"
             )
 
+        usage = self._extract_usage_from(envelope)
         if audit is not None:
-            audit.append(
-                {
-                    "action": "executor_run_finish",
-                    "executor": self.id,
-                    "case_id": case_id,
-                    "exit_code": None,
-                    "duration_ms": duration_ms,
-                    "response_sha256": sha256_text(text),
-                    "response_chars": len(text),
-                }
-            )
+            event = {
+                "action": "executor_run_finish",
+                "executor": self.id,
+                "case_id": case_id,
+                "exit_code": None,
+                "duration_ms": duration_ms,
+                "response_sha256": sha256_text(text),
+                "response_chars": len(text),
+            }
+            if usage is not None:
+                event.update(usage.as_audit_fields())
+            audit.append(event)
         return ExecutorResult(
             executor=self.id,
             text=text,
@@ -204,7 +208,28 @@ class OllamaExecutor(PromptExecutor):
             exit_code=None,
             duration_ms=duration_ms,
             raw=body,
+            usage=usage,
         )
+
+    def _extract_usage(self, raw: str) -> Usage | None:
+        try:
+            return self._extract_usage_from(json.loads(raw))
+        except (json.JSONDecodeError, TypeError):
+            return None
+
+    @staticmethod
+    def _extract_usage_from(envelope: Any) -> Usage | None:
+        # /api/generate with stream:false returns prompt_eval_count (input) and
+        # eval_count (output) — stable, documented fields. Ollama is local so
+        # there is no cost_usd. Missing → None (Bug 008 Nivel 0).
+        if not isinstance(envelope, dict):
+            return None
+        u = Usage(
+            input_tokens=_as_int(envelope.get("prompt_eval_count")),
+            output_tokens=_as_int(envelope.get("eval_count")),
+            source="ollama.eval_count",
+        )
+        return u if (u.input_tokens or u.output_tokens) is not None else None
 
     @staticmethod
     def _audit_finish(audit: Any, case_id: str | None, started: float, *, error: str) -> None:

@@ -32,7 +32,16 @@ from typing import Any
 # triage `detected_kind`. Common sections (routing, cost discipline, best
 # practices, per-tool annex) and the intro always stay.
 _H2_RE = re.compile(r"^## .*$", re.MULTILINE)
+_H3_RE = re.compile(r"^### .*$", re.MULTILINE)
 _DISK_KINDS = frozenset({"disk", "container_disk"})
+
+# Per-tool annex sub-headings (### …) worth branch-trimming. The annex ships in
+# EVERY iteration as a "common" ## section, but ~6 KB of it are disk-only tool
+# docs that are dead weight on a memory dump (Bug 008 §2 Nivel 1). Keyword sets are
+# CONSERVATIVE: a sub-heading that matches neither stays (fails safe — RULE 2:
+# never hide guidance we're unsure about).
+_ANNEX_DISK_KEYS = ("particiones", "sistema de ficheros", "artefactos windows", "ez tools")
+_ANNEX_MEMORY_KEYS = ("memoria volátil", "memoria volatil")
 
 
 def keep_last_tool_results_default() -> int:
@@ -123,6 +132,38 @@ def _section_branch(heading: str) -> str:
     return "common"
 
 
+def _annex_subsection_branch(heading: str) -> str:
+    """Classify a per-tool annex ``### …`` sub-heading. Conservative: unknown → common."""
+    h = heading.lower()
+    if any(k in h for k in _ANNEX_DISK_KEYS):
+        return "disk"
+    if any(k in h for k in _ANNEX_MEMORY_KEYS):
+        return "memory"
+    return "common"
+
+
+def _trim_annex_subsections(section: str, *, keep_disk: bool, keep_memory: bool) -> str:
+    """Drop the disk/memory ``### …`` sub-blocks of the annex that don't apply.
+
+    Everything before the first ``###`` (the annex intro) and every ``common``
+    sub-block stays. No ``###`` headers → unchanged.
+    """
+    subs = list(_H3_RE.finditer(section))
+    if not subs:
+        return section
+    kept = [section[: subs[0].start()]]
+    for i, match in enumerate(subs):
+        start = match.start()
+        end = subs[i + 1].start() if i + 1 < len(subs) else len(section)
+        branch = _annex_subsection_branch(section[match.start() : match.end()])
+        if branch == "disk" and not keep_disk:
+            continue
+        if branch == "memory" and not keep_memory:
+            continue
+        kept.append(section[start:end])
+    return "".join(kept)
+
+
 def select_playbook_section(playbook: str, detected_kind: str) -> str:
     """Return the playbook with the primary branch that does NOT match
     ``detected_kind`` removed, keeping the intro and every common section.
@@ -158,7 +199,15 @@ def select_playbook_section(playbook: str, detected_kind: str) -> str:
             continue
         if branch == "memory" and not keep_memory:
             continue
-        kept.append(playbook[start:end])
+        section = playbook[start:end]
+        # The per-tool annex is a "common" section, but its disk/memory tool docs
+        # can still be branch-trimmed (Bug 008 §2 Nivel 1). Only when we're actually
+        # dropping a branch (not the unknown "keep both" case).
+        if "anexo" in heading.lower() and not (keep_disk and keep_memory):
+            section = _trim_annex_subsections(
+                section, keep_disk=keep_disk, keep_memory=keep_memory
+            )
+        kept.append(section)
     return "".join(kept).rstrip() + "\n"
 
 

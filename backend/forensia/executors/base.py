@@ -63,6 +63,36 @@ class ExecutorAvailability:
 
 
 @dataclass(frozen=True)
+class Usage:
+    """Token/cost accounting for ONE executor run, parsed from the envelope the
+    executor already returns (Bug 008 / §2 «Coste de tokens», Nivel 0).
+
+    Every field is optional: an executor whose envelope does not carry a datum
+    reports ``None`` for it — never a fabricated or estimated value (RULE 2). The
+    audit event only persists the fields that are actually present.
+    """
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cost_usd: float | None = None
+    #: How the numbers were obtained (e.g. "claude_code.usage", "ollama.eval_count").
+    #: Lets a reviewer tell a real 0 from "the executor didn't report it".
+    source: str | None = None
+
+    def as_audit_fields(self) -> dict[str, Any]:
+        """The subset actually present — flat keys for the audit event."""
+        out: dict[str, Any] = {}
+        if self.input_tokens is not None:
+            out["input_tokens"] = self.input_tokens
+        if self.output_tokens is not None:
+            out["output_tokens"] = self.output_tokens
+        if self.cost_usd is not None:
+            out["cost_usd"] = self.cost_usd
+        if out and self.source:
+            out["usage_source"] = self.source
+        return out
+
+
+@dataclass(frozen=True)
 class ExecutorResult:
     executor: str                  # executor id ("claude-code" | "codex" | "gemini" | "ollama")
     text: str                      # the assistant's final text
@@ -70,6 +100,7 @@ class ExecutorResult:
     exit_code: int | None          # CLI exit code; None for HTTP
     duration_ms: int
     raw: str                       # raw stdout / HTTP body the text was extracted from
+    usage: Usage | None = None     # token/cost accounting when the envelope carries it
 
 
 class PromptExecutor(ABC):
@@ -82,6 +113,16 @@ class PromptExecutor(ABC):
 
     @abstractmethod
     def is_available(self) -> ExecutorAvailability: ...
+
+    def _extract_usage(self, raw: str) -> Usage | None:
+        """Best-effort token/cost accounting from the executor's own envelope.
+
+        Runs IN PARALLEL to ``_extract_text`` and never affects it: a subclass
+        that can't parse usage returns ``None`` (usage unavailable), so a changed
+        envelope shape degrades to "not reported" instead of a wrong number or a
+        crash (RULE 2). Default: nothing reported.
+        """
+        return None
 
     @abstractmethod
     def run(self, prompt: str, context: dict[str, Any] | None = None) -> ExecutorResult:
@@ -99,6 +140,50 @@ class PromptExecutor(ABC):
 
 def sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _as_int(value: Any) -> int | None:
+    """A non-negative int from an envelope field, or None. Never raises."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value >= 0 else None
+    if isinstance(value, float) and value.is_integer() and value >= 0:
+        return int(value)
+    return None
+
+
+def _as_float(value: Any) -> float | None:
+    """A non-negative float from an envelope field, or None. Never raises."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value) if value >= 0 else None
+    return None
+
+
+def _find_key(obj: Any, key: str, _depth: int = 0) -> Any:
+    """First value for ``key`` anywhere in a nested dict/list, or None.
+
+    Depth-bounded (≤ 6) so a pathological envelope can't blow the stack. Used to
+    locate token counts under version-dependent envelope shapes without hard-coding
+    a fragile path.
+    """
+    if _depth > 6:
+        return None
+    if isinstance(obj, dict):
+        if key in obj:
+            return obj[key]
+        for v in obj.values():
+            found = _find_key(v, key, _depth + 1)
+            if found is not None:
+                return found
+    elif isinstance(obj, list):
+        for v in obj:
+            found = _find_key(v, key, _depth + 1)
+            if found is not None:
+                return found
+    return None
 
 
 def resolve_timeout(context: dict[str, Any]) -> int:
@@ -264,9 +349,16 @@ class CliPromptExecutor(PromptExecutor):
                                duration_ms=duration_ms, error="unparseable envelope")
             raise
 
+        # Best-effort usage from the same stdout the text came from. Never lets a
+        # parsing problem sink a successful run — the text is already in hand.
+        try:
+            usage = self._extract_usage(proc.stdout or "")
+        except Exception:  # noqa: BLE001 — telemetry must not break the run
+            usage = None
+
         self._audit_finish(
             audit, case_id, exit_code=proc.returncode, duration_ms=duration_ms,
-            response_sha256=sha256_text(text), response_chars=len(text),
+            response_sha256=sha256_text(text), response_chars=len(text), usage=usage,
         )
         return ExecutorResult(
             executor=self.id,
@@ -275,6 +367,7 @@ class CliPromptExecutor(PromptExecutor):
             exit_code=proc.returncode,
             duration_ms=duration_ms,
             raw=proc.stdout or "",
+            usage=usage,
         )
 
     def _audit_finish(
@@ -286,6 +379,7 @@ class CliPromptExecutor(PromptExecutor):
         duration_ms: int,
         response_sha256: str | None = None,
         response_chars: int | None = None,
+        usage: Usage | None = None,
         error: str | None = None,
     ) -> None:
         if audit is None:
@@ -300,6 +394,8 @@ class CliPromptExecutor(PromptExecutor):
         if response_sha256 is not None:
             event["response_sha256"] = response_sha256
             event["response_chars"] = response_chars
+        if usage is not None:
+            event.update(usage.as_audit_fields())
         if error is not None:
             event["error"] = error
         audit.append(event)
