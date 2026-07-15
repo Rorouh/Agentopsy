@@ -24,6 +24,7 @@ class AppendMessageRequest(BaseModel):
     role: str
     content: str
     tool_calls: list[dict] | None = None
+    activity: list[dict] | None = None  # traza de actividad para re-pintar al recargar
 
 
 def _msg_dict(msg: Any) -> dict[str, Any]:
@@ -70,6 +71,7 @@ def append_chat_message(
         content=req.content,
         ts=_utc_now_iso(),
         tool_calls=req.tool_calls,
+        activity=req.activity,
     )
     try:
         chat_store.append(case_id, session_id, message)

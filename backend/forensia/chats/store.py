@@ -33,6 +33,10 @@ class ChatMessage:
     content: str
     ts: str  # ISO-8601 UTC; auto-filled by ChatStore.append if empty
     tool_calls: list[dict] | None = None  # optional; { tool_id, params, run_id }
+    # Traza de actividad del turno (eventos tool_call/tool_result/finding/
+    # reasoning) para poder RE-PINTAR el bloque colapsable "✓ N pasos" al recargar
+    # el chat, como en Claude Code. Sólo presentación; NO se re-inyecta al modelo.
+    activity: list[dict] | None = None
 
 
 class ChatStore:
@@ -67,6 +71,8 @@ class ChatStore:
             raise ValueError("ChatMessage.content must be a str")
         if message.tool_calls is not None and not isinstance(message.tool_calls, list):
             raise ValueError("ChatMessage.tool_calls must be a list[dict] or None")
+        if message.activity is not None and not isinstance(message.activity, list):
+            raise ValueError("ChatMessage.activity must be a list[dict] or None")
 
     # ---------- public API ----------
 
@@ -126,6 +132,7 @@ class ChatStore:
                     content=obj["content"],
                     ts=obj["ts"],
                     tool_calls=obj.get("tool_calls"),
+                    activity=obj.get("activity"),
                 )
             )
         return messages

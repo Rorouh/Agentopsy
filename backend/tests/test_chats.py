@@ -147,3 +147,26 @@ class TestSequentialAppendsAreOrdered:
             store.append(case.id, session_id, _msg(content=str(n)))
         msgs = store.read(case.id, session_id)
         assert [m.content for m in msgs] == [str(n) for n in range(50)]
+
+
+def test_activity_trace_round_trips(store, case, session_id) -> None:
+    """La traza de actividad (para re-pintar '✓ N pasos' al recargar) persiste y
+    se restaura tal cual junto al mensaje del asistente."""
+    activity = [
+        {"type": "tool_call", "tool_id": "tsk_mmls"},
+        {"type": "tool_result", "tool_id": "tsk_mmls", "status": "nonzero",
+         "argv": ["mmls", "-i", "raw", "/cases/x/original.raw"]},
+        {"type": "finding", "severity": "low", "title": "raíz ext"},
+    ]
+    store.append(case.id, session_id, ChatMessage(
+        role="assistant", content="Resumen del análisis.", ts="", activity=activity,
+    ))
+    restored = store.read(case.id, session_id)
+    assert len(restored) == 1
+    assert restored[0].activity == activity
+
+
+def test_activity_defaults_to_none_and_reads_back(store, case, session_id) -> None:
+    store.append(case.id, session_id, ChatMessage(role="user", content="hola", ts=""))
+    restored = store.read(case.id, session_id)
+    assert restored[0].activity is None

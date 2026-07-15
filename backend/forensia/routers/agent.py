@@ -30,6 +30,7 @@ from pydantic import BaseModel
 
 from forensia.agent.agent import ForensicAgent
 from forensia.agent.history import build_replay_messages
+from forensia.agent.jobs import job_registry
 from forensia.agent.registry import agent_registry
 from forensia.audit.log import AuditLog
 from forensia.cases.manager import (
@@ -213,6 +214,59 @@ def query(req: QueryRequest) -> dict:
         "tool_calls": result.get("tool_calls", []),
         **meta,
     }
+
+
+@router.post("/api/agent/analyze", dependencies=[Depends(require_token)])
+def analyze(req: QueryRequest) -> dict:
+    """Arranca el análisis del agente en SEGUNDO PLANO y devuelve un `job_id`.
+
+    A diferencia de `/query` (síncrono) y `/query/stream` (atado a la conexión, se
+    corta si el cliente se desconecta), aquí el análisis corre desacoplado de esta
+    petición: el cliente puede cerrar la pestaña y volver luego a consultar el
+    estado en `GET /api/agent/jobs/{job_id}`. Los hallazgos se persisten en
+    caliente durante el run, así que el análisis termina y persiste aunque nadie
+    consulte el job. La validación (ejecutor, evidencia, consentimiento, perfil)
+    ocurre AQUÍ, síncrona, para fallar rápido antes de encolar."""
+    agent, prompt, prior_messages, consent_ref, meta = _prepare_run(req)
+
+    def _work(emit) -> dict:  # noqa: ANN001 — emit: Callable[[dict], None]
+        result = agent.run(
+            prompt=prompt,
+            case_id=req.case_id,
+            evidence_id=req.evidence_id,
+            consent_ref=consent_ref,
+            prior_messages=prior_messages,
+            on_event=emit,  # los eventos (tool_call/tool_result/finding) → al job
+        )
+        return {
+            "reply": result.get("reply", ""),
+            "iterations": result.get("iterations"),
+            "tool_calls": result.get("tool_calls", []),
+        }
+
+    job = job_registry.submit(
+        req.case_id, "analyze", _work, prompt_chars=len(prompt), meta=meta
+    )
+    return job.public()
+
+
+@router.get("/api/agent/jobs/{job_id}", dependencies=[Depends(require_token)])
+def get_job(job_id: str, since: int = 0) -> dict:
+    """Estado de un análisis en segundo plano: running / done (con result) / error.
+
+    `since` devuelve sólo los eventos de progreso a partir de ese índice, para que
+    el cliente sondee incrementalmente (el chat pinta el comando lanzado, el
+    hallazgo registrado, etc. según van ocurriendo)."""
+    snap = job_registry.snapshot(job_id, since=max(0, since))
+    if snap is None:
+        raise HTTPException(status_code=404, detail=f"job {job_id} not found")
+    return snap
+
+
+@router.get("/api/cases/{case_id}/agent/jobs", dependencies=[Depends(require_token)])
+def list_case_jobs(case_id: str) -> list[dict]:
+    """Los análisis en segundo plano de un caso, más recientes primero."""
+    return job_registry.list_for_case(case_id)
 
 
 @router.post("/api/agent/query/stream", dependencies=[Depends(require_token)])
