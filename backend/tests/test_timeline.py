@@ -466,6 +466,16 @@ def test_query_unknown_category_rejected(monkeypatch, tmp_path) -> None:
         builder.query_filesystem_timeline("case-1", _EVIDENCE_ID, category="inventada")
 
 
+def test_query_inverted_date_range_fails_loud(monkeypatch, tmp_path) -> None:
+    """Un rango invertido (from>to) es error de operador: se rechaza con mensaje
+    accionable, no se devuelve 0 que se lea como «no pasó nada» (RULE 2)."""
+    _persist_query_timeline(monkeypatch, tmp_path)
+    with pytest.raises(ValueError, match="rango de fechas invertido"):
+        builder.query_filesystem_timeline(
+            "case-1", _EVIDENCE_ID, date_from="2024-12-31", date_to="2024-01-01"
+        )
+
+
 def test_query_rejects_malformed_evidence_id(monkeypatch, tmp_path) -> None:
     cases = _fake_cases(tmp_path)
     monkeypatch.setattr(builder, "case_manager", cases)

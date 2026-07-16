@@ -474,9 +474,15 @@ def query_filesystem_timeline(
         )
     lo = _parse_query_bound(date_from, end=False) if date_from else None
     hi = _parse_query_bound(date_to, end=True) if date_to else None
+    if lo is not None and hi is not None and lo > hi:
+        raise ValueError(
+            f"rango de fechas invertido: date_from ({date_from}) es posterior a "
+            f"date_to ({date_to})"
+        )
     needle = path_contains.replace("\\", "/").lower() if path_contains else None
     if not isinstance(limit, int) or limit <= 0:
         limit = 100
+    limit = min(limit, 500)  # tope duro; el schema declara maximum:500 pero es advisory
 
     all_events = _bodyfile_to_all_events(_read_run_stdout(case_id, run_id))
 
