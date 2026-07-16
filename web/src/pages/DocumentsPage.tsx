@@ -10,6 +10,7 @@ import type {
 } from "../api/types";
 import { EmptyState } from "../ui/EmptyState";
 import { PageHeader } from "../ui/PageHeader";
+import { useActiveCase, useActiveCaseFrom } from "../state/activeCase";
 
 // Documentos / informes del caso. Almacén real (forensia.reports): cada
 // documento lleva su SHA-256 y las acciones del perito (verificar integridad,
@@ -54,7 +55,9 @@ export function DocumentsPage() {
   const [genOpen, setGenOpen] = useState(false);
   const [perito, setPerito] = useState<GenerateReportRequest>({});
 
-  const activeCase = cases[0] ?? null;
+  // Caso activo GLOBAL (compartido con las demás vistas).
+  const { setActiveCaseId } = useActiveCase();
+  const activeCase = useActiveCaseFrom(cases);
 
   const showToast = useCallback((t: string) => {
     setToast(t);
@@ -65,6 +68,9 @@ export function DocumentsPage() {
     setDocuments(await api.cases.listDocuments(caseId));
   }, []);
 
+  // Carga la LISTA de casos una vez. Los documentos del caso activo los gobierna
+  // el efecto de abajo (keyed en activeCase.id) para que cambiar de caso — aquí o
+  // en otra vista — refetchee uniformemente.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -72,12 +78,7 @@ export function DocumentsPage() {
         const list = await api.cases.list();
         if (cancelled) return;
         setCases(list);
-        if (list.length === 0) {
-          setPhase("no-case");
-          return;
-        }
-        setDocuments(await api.cases.listDocuments(list[0].id));
-        if (!cancelled) setPhase("ready");
+        setPhase(list.length === 0 ? "no-case" : "ready");
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : String(err));
@@ -89,6 +90,30 @@ export function DocumentsPage() {
       cancelled = true;
     };
   }, []);
+
+  // Documentos del caso activo. Se recargan al cambiar de caso (aquí o en otra
+  // vista) y se limpia la selección para no arrastrar un doc del caso anterior.
+  useEffect(() => {
+    const caseId = activeCase?.id;
+    if (!caseId) {
+      setDocuments([]);
+      setSelectedId(null);
+      return;
+    }
+    let cancelled = false;
+    setSelectedId(null);
+    (async () => {
+      try {
+        const docs = await api.cases.listDocuments(caseId);
+        if (!cancelled) setDocuments(docs);
+      } catch {
+        if (!cancelled) setDocuments([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeCase?.id]);
 
   // Al seleccionar, trae el documento completo (con secciones).
   useEffect(() => {
@@ -109,7 +134,7 @@ export function DocumentsPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeCase, selectedId]);
+  }, [activeCase?.id, selectedId]);
 
   const matches = useCallback(
     (d: DocumentMeta) => {
@@ -261,9 +286,22 @@ export function DocumentsPage() {
       />
 
       <div className="mitre-context">
-        <span>
-          Caso activo: <strong>{activeCase.name}</strong> · {activeCase.examiner}
-          {activeCase.os_profile ? ` · perfil ${activeCase.os_profile}` : ""}
+        <span className="case-picker-row">
+          <span className="case-picker-label">Caso activo</span>
+          <select
+            className="case-picker"
+            aria-label="Caso activo"
+            value={activeCase.id}
+            onChange={(e) => setActiveCaseId(e.target.value)}
+          >
+            {cases.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+                {c.os_profile ? ` · ${c.os_profile}` : ""}
+              </option>
+            ))}
+          </select>
+          <span>· {activeCase.examiner}</span>
         </span>
         <span className="docs-context-actions">
           <button

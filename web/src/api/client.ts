@@ -241,6 +241,11 @@ export const api = {
       post<Case>(`/api/cases/${encodeURIComponent(caseId)}/reopen`, {}),
     update: (caseId: string, body: UpdateCaseRequest) =>
       post<Case>(`/api/cases/${encodeURIComponent(caseId)}/update`, body),
+    // Anclaje MANUAL del os_profile por el operador (RULE 2: acción explícita,
+    // nunca adivinada) — cuando el triage quedó ambiguo/sin determinar. Devuelve
+    // el caso actualizado; queda registrado en el audit log del caso.
+    anchorProfile: (caseId: string, os_profile: "unix" | "windows") =>
+      post<Case>(`/api/cases/${encodeURIComponent(caseId)}/os-profile`, { os_profile }),
     registerEvidence: (caseId: string, source_path: string) =>
       post<EvidenceHandle>(`/api/cases/${encodeURIComponent(caseId)}/evidence`, {
         source_path,

@@ -12,6 +12,7 @@ import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { EmptyState } from "../ui/EmptyState";
 import { PageHeader } from "../ui/PageHeader";
+import { useActiveCase, useActiveCaseFrom } from "../state/activeCase";
 
 // Matriz ATT&CK del caso. Dos ejes que NUNCA se funden:
 //
@@ -44,7 +45,11 @@ interface Selection {
 export function MitreAttackPage() {
   const [catalog, setCatalog] = useState<MitreCatalog | null>(null);
   const [cases, setCases] = useState<Case[]>([]);
-  const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
+  // Caso activo GLOBAL, más un modo local "Sin caso" (exploración de la matriz)
+  // que NO toca el caso global — así explorar aquí no deja sin caso a las demás
+  // vistas.
+  const { setActiveCaseId } = useActiveCase();
+  const [explore, setExplore] = useState(false);
   const [coverage, setCoverage] = useState<MitreCoverageEntry[]>([]);
   const [findings, setFindings] = useState<AgentFinding[]>([]);
   const [phase, setPhase] = useState<Phase>("loading");
@@ -61,21 +66,19 @@ export function MitreAttackPage() {
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState("");
 
-  const activeCase = useMemo(
-    () => cases.find((c) => c.id === activeCaseId) ?? null,
-    [cases, activeCaseId],
-  );
+  // Caso activo global resuelto (reconcilia el guardado contra la lista; cae al
+  // más reciente si ya no existe). En modo exploración lo ignoramos.
+  const globalCase = useActiveCaseFrom(cases);
+  const activeCase = explore ? null : globalCase;
+  const activeCaseId = activeCase?.id ?? null;
   const caseMode = activeCase !== null;
-  // El caso activo de la app (el más reciente, como en la Investigación). El
-  // selector solo ofrece este + "Sin caso"; no es un conmutador de casos.
-  const appActiveCase = cases.length > 0 ? cases[0] : null;
 
   const refreshCoverage = useCallback(async (caseId: string) => {
     setCoverage(await api.cases.listMitreCoverage(caseId));
   }, []);
 
-  // Carga inicial: catálogo + lista de casos. Auto-selecciona el primer caso si
-  // lo hay (útil por defecto); "Sin caso" = modo exploración.
+  // Carga inicial: catálogo + lista de casos. El caso activo lo resuelve el
+  // estado GLOBAL (useActiveCaseFrom); "Sin caso" = modo exploración local.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -90,7 +93,6 @@ export function MitreAttackPage() {
         const list = await api.cases.list();
         if (cancelled) return;
         setCases(list);
-        setActiveCaseId(list.length > 0 ? list[0].id : null);
         setPhase("ready");
       } catch (err) {
         if (cancelled) return;
@@ -313,31 +315,41 @@ export function MitreAttackPage() {
           </span>
         </div>
 
-        {/* Selector: "Sin caso" (exploración) + SOLO el caso activo de la app
-            (el caso más reciente, el mismo que usa la Investigación). No es un
-            conmutador de casos: la matriz sigue al caso activo. */}
+        {/* Selector: "Sin caso" (exploración local) + un selector del CASO
+            ACTIVO GLOBAL sobre todos los casos. Elegir un caso aquí lo fija como
+            activo en TODAS las vistas (Investigación / Timeline / Documentos). */}
         <div className="mitre-seg" role="group" aria-label="Caso activo">
           <button
             className={`mitre-seg-btn${!caseMode ? " is-active" : ""}`}
-            onClick={() => setActiveCaseId(null)}
+            onClick={() => setExplore(true)}
             title="Explorar la matriz sin caso"
           >
             <span className="mitre-seg-label">Sin caso</span>
             <span className="mitre-seg-sub">exploración</span>
           </button>
-          {appActiveCase && (
-            <button
-              className={`mitre-seg-btn${activeCaseId === appActiveCase.id ? " is-active" : ""}`}
-              onClick={() => setActiveCaseId(appActiveCase.id)}
-              title={appActiveCase.name}
+          {cases.length > 0 && (
+            <select
+              className="case-picker"
+              aria-label="Caso activo"
+              value={caseMode && activeCase ? activeCase.id : ""}
+              onChange={(e) => {
+                const id = e.target.value;
+                if (!id) {
+                  setExplore(true);
+                  return;
+                }
+                setExplore(false);
+                setActiveCaseId(id);
+              }}
             >
-              <span className="mitre-seg-label">{appActiveCase.name}</span>
-              <span className="mitre-seg-sub">
-                {appActiveCase.os_profile
-                  ? `perfil ${appActiveCase.os_profile}`
-                  : appActiveCase.id.slice(0, 8)}
-              </span>
-            </button>
+              {!caseMode && <option value="">Selecciona un caso…</option>}
+              {cases.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                  {c.os_profile ? ` · ${c.os_profile}` : ""}
+                </option>
+              ))}
+            </select>
           )}
         </div>
 

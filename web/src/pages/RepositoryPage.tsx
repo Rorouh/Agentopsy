@@ -8,6 +8,7 @@ import type {
   EvidenceSource,
 } from "../api/types";
 import type { ViewId } from "../navigation/navItems";
+import { useActiveCase } from "../state/activeCase";
 import { ActiveCaseHeader } from "../components/ActiveCaseHeader";
 import { CaseSearchModal } from "../components/CaseSearchModal";
 import { EvidenceInbox } from "../components/EvidenceInbox";
@@ -57,7 +58,9 @@ const EMPTY_FORM: FormState = {
 // lateral. Toda la carga/persistencia vive aquí; components/ es presentacional.
 export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
   const [cases, setCases] = useState<Case[]>([]);
-  const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
+  // Caso activo GLOBAL (compartido con Investigación / Timeline / Documentos /
+  // MITRE). Cambiarlo aquí — o desde cualquier otra vista — sincroniza a todas.
+  const { activeCaseId, setActiveCaseId } = useActiveCase();
   const [evidence, setEvidence] = useState<EvidenceHandle[]>([]);
   const [phase, setPhase] = useState<LoadingPhase>("loading");
   const [error, setError] = useState<string | null>(null);
@@ -136,7 +139,11 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
     try {
       const list = await api.cases.list();
       setCases(list);
-      setActiveCaseId((prev) => prev ?? (list.length > 0 ? list[0].id : null));
+      // Conserva el caso activo global si sigue existiendo; si el guardado ya no
+      // está (o no hay ninguno), cae al más reciente (list[0]).
+      setActiveCaseId((prev) =>
+        prev && list.some((c) => c.id === prev) ? prev : list[0]?.id ?? null,
+      );
       setPhase("ready");
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));

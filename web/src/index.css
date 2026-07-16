@@ -181,6 +181,14 @@ html, body, #root {
 }
 .agent-badge-dot--ok { background: var(--success, #4ade80); }
 .agent-badge-dot--warn { background: var(--warning, #f59e0b); }
+
+/* Anclaje manual del os_profile (RULE 2) cuando el triage no lo determinó:
+   mensaje + botones [unix] [windows], apilados dentro del agent-badge. */
+.agent-anchor { display: flex; flex-direction: column; gap: 8px; }
+.agent-anchor-msg { display: inline-flex; align-items: baseline; gap: 8px; }
+.agent-anchor-actions { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.agent-anchor-label { color: var(--text-primary); font-weight: 600; }
+.agent-anchor-error { color: var(--critical, #ef4444); }
 .quick-chips {
   display: flex;
   gap: 10px;
@@ -2279,6 +2287,22 @@ details.agent-activity > summary::-webkit-details-marker { display: none; }
 .docs-sortbtn {
   background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
   color: var(--text-secondary); padding: 5px 9px; font-size: 12px; cursor: pointer; white-space: nowrap;
+}
+
+/* Selector de caso activo GLOBAL, compartido por Timeline / Documentos /
+   Investigación / MITRE. Cambiarlo escribe el caso activo global (useActiveCase)
+   y todas las vistas lo siguen. */
+.case-picker {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text-primary); font-size: 12px; font-weight: 600;
+  padding: 5px 9px; outline: none; cursor: pointer; max-width: 260px;
+}
+.case-picker:hover { border-color: var(--accent); }
+.case-picker:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.case-picker:disabled { opacity: .55; cursor: default; }
+.case-picker-row { display: inline-flex; align-items: center; gap: 6px; }
+.case-picker-label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted);
 }
 .docs-sortbtn:hover { border-color: var(--accent); color: var(--accent-text); }
 .docs-count {

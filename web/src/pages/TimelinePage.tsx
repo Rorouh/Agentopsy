@@ -9,6 +9,7 @@ import type {
 } from "../api/types";
 import { EmptyState } from "../ui/EmptyState";
 import { PageHeader } from "../ui/PageHeader";
+import { useActiveCase, useActiveCaseFrom } from "../state/activeCase";
 
 // Timeline forense del caso — DOS capas REALES (sin datos inventados, RULE 2):
 //   1) Investigación: cada ejecución de herramienta del audit log + cada hallazgo,
@@ -73,8 +74,14 @@ export function TimelinePage() {
   const [starting, setStarting] = useState(false);
   const pollRef = useRef<number | null>(null);
 
-  const activeCase = cases[0] ?? null;
+  // Caso activo GLOBAL (compartido con las demás vistas). El selector de abajo
+  // lo cambia y todas convergen.
+  const { setActiveCaseId } = useActiveCase();
+  const activeCase = useActiveCaseFrom(cases);
 
+  // Carga la LISTA de casos una vez. La timeline/evidencias del caso activo las
+  // gobierna el efecto de abajo (keyed en activeCase.id) para que cambiar de
+  // caso — aquí o en otra vista — refetchee uniformemente.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -82,20 +89,7 @@ export function TimelinePage() {
         const list = await api.cases.list();
         if (cancelled) return;
         setCases(list);
-        if (list.length === 0) {
-          setPhase("no-case");
-          return;
-        }
-        const caseId = list[0].id;
-        const [tl, evs] = await Promise.all([
-          api.cases.timeline(caseId),
-          api.cases.listEvidence(caseId).catch(() => [] as EvidenceHandle[]),
-        ]);
-        if (cancelled) return;
-        setEvents(tl.events);
-        setEvidences(evs);
-        if (evs.length > 0) setSelectedEvidence(evs[0].evidence_id);
-        setPhase("ready");
+        setPhase(list.length === 0 ? "no-case" : "ready");
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : String(err));
@@ -107,6 +101,42 @@ export function TimelinePage() {
       cancelled = true;
     };
   }, []);
+
+  // Timeline + evidencias del caso activo. Se recarga al cambiar de caso (desde
+  // aquí o desde cualquier otra vista), limpiando el estado de la capa 2.
+  useEffect(() => {
+    const caseId = activeCase?.id;
+    if (!caseId) {
+      setEvents([]);
+      setEvidences([]);
+      setSelectedEvidence("");
+      return;
+    }
+    let cancelled = false;
+    setFsJob(null);
+    setFsError("");
+    if (pollRef.current !== null) window.clearTimeout(pollRef.current);
+    (async () => {
+      try {
+        const [tl, evs] = await Promise.all([
+          api.cases.timeline(caseId),
+          api.cases.listEvidence(caseId).catch(() => [] as EvidenceHandle[]),
+        ]);
+        if (cancelled) return;
+        setEvents(tl.events);
+        setEvidences(evs);
+        setSelectedEvidence(evs.length > 0 ? evs[0].evidence_id : "");
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : String(err));
+          setPhase("error");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeCase?.id]);
 
   // Limpia el sondeo al desmontar.
   useEffect(() => {
@@ -235,9 +265,22 @@ export function TimelinePage() {
       />
 
       <div className="mitre-context">
-        <span>
-          Caso activo: <strong>{activeCase.name}</strong> · {activeCase.examiner}
-          {activeCase.os_profile ? ` · perfil ${activeCase.os_profile}` : ""}
+        <span className="case-picker-row">
+          <span className="case-picker-label">Caso activo</span>
+          <select
+            className="case-picker"
+            aria-label="Caso activo"
+            value={activeCase.id}
+            onChange={(e) => setActiveCaseId(e.target.value)}
+          >
+            {cases.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+                {c.os_profile ? ` · ${c.os_profile}` : ""}
+              </option>
+            ))}
+          </select>
+          <span>· {activeCase.examiner}</span>
         </span>
         <span className="tl-tz">Zona horaria: UTC</span>
       </div>

@@ -236,6 +236,9 @@ interface ChatPageProps {
   onTurnComplete?: () => void;
   // Refresca capabilities en App tras conectar un ejecutor CLI desde el selector.
   onCapsRefresh?: () => Promise<void> | void;
+  // Propaga el caso actualizado tras anclar su os_profile manualmente, para que
+  // la página contenedora repinte el perfil sin recargar.
+  onCaseUpdated?: (updated: Case) => void;
 }
 
 export function ChatPage({
@@ -244,6 +247,7 @@ export function ChatPage({
   activeEvidence,
   onTurnComplete,
   onCapsRefresh,
+  onCaseUpdated,
 }: ChatPageProps) {
   const [msgs, setMsgs] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -256,6 +260,12 @@ export function ChatPage({
   const [consents, setConsents] = useState<Record<string, boolean>>({});
   const [consentBusy, setConsentBusy] = useState(false);
   const [consentError, setConsentError] = useState<string | null>(null);
+
+  // Anclaje MANUAL del os_profile del caso (RULE 2: acción explícita del
+  // operador) cuando el triage no lo determinó. `anchoring` marca cuál se está
+  // fijando para deshabilitar los botones mientras.
+  const [anchoring, setAnchoring] = useState<"unix" | "windows" | null>(null);
+  const [anchorError, setAnchorError] = useState<string | null>(null);
 
   // Composer option menus (proveedor / modelo) y el modelo elegido para Ollama.
   const [openMenu, setOpenMenu] = useState<null | "provider" | "model">(null);
@@ -458,6 +468,27 @@ export function ChatPage({
       );
     } finally {
       setConsentBusy(false);
+    }
+  };
+
+  // Ancla el os_profile del caso a mano (unix/windows) cuando el triage no lo
+  // determinó. RULE 2: no se adivina el perfil; lo elige el operador. Tras
+  // anclar, refresca el caso (para que el aviso desaparezca) y capabilities
+  // (para que el agente del perfil pase a estar disponible) — sin recargar.
+  const anchorProfile = async (profile: "unix" | "windows") => {
+    if (!activeCase || anchoring) return;
+    setAnchoring(profile);
+    setAnchorError(null);
+    try {
+      const updated = await api.cases.anchorProfile(activeCase.id, profile);
+      if (onCaseUpdated) onCaseUpdated(updated);
+      if (onCapsRefresh) await onCapsRefresh();
+    } catch (err) {
+      setAnchorError(
+        err instanceof ApiError ? err.detail : String(err instanceof Error ? err.message : err),
+      );
+    } finally {
+      setAnchoring(null);
     }
   };
 
@@ -1057,11 +1088,36 @@ export function ChatPage({
                 </span>
               </>
             ) : activeProfile === null ? (
-              <>
-                <span className="agent-badge-dot agent-badge-dot--warn" />
-                El sistema operativo de este caso aún no está determinado —
-                regístrale una evidencia para que el orquestador lo derive.
-              </>
+              <span className="agent-anchor">
+                <span className="agent-anchor-msg">
+                  <span className="agent-badge-dot agent-badge-dot--warn" />
+                  El sistema operativo de este caso aún no está determinado —
+                  regístrale una evidencia para que el orquestador lo derive, o
+                  ánclalo manualmente:
+                </span>
+                <span className="agent-anchor-actions">
+                  <span className="agent-anchor-label">Anclar perfil:</span>
+                  <Button
+                    variant="chip"
+                    disabled={!!anchoring}
+                    onClick={() => anchorProfile("unix")}
+                  >
+                    {anchoring === "unix" ? "Anclando…" : "unix"}
+                  </Button>
+                  <Button
+                    variant="chip"
+                    disabled={!!anchoring}
+                    onClick={() => anchorProfile("windows")}
+                  >
+                    {anchoring === "windows" ? "Anclando…" : "windows"}
+                  </Button>
+                </span>
+                {anchorError && (
+                  <span className="agent-anchor-error">
+                    No se pudo anclar: {anchorError}
+                  </span>
+                )}
+              </span>
             ) : (
               <>
                 <span className="agent-badge-dot agent-badge-dot--warn" />

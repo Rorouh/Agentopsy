@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "./api/client";
 import type { Capabilities } from "./api/types";
 import { ThemeProvider } from "./ThemeProvider";
+import { ActiveCaseProvider } from "./state/activeCase";
 import { AppShell } from "./layout/AppShell";
 import { DEFAULT_VIEW, NAV_ITEMS, type ViewId } from "./navigation/navItems";
 
@@ -67,6 +68,7 @@ export function App() {
 
   return (
     <ThemeProvider>
+      <ActiveCaseProvider>
       <AppShell activeView={activeView} onViewChange={setActiveView} error={error}>
         {/* Demo visual con mock data — ver src/mocks/frontendPreviewData.ts.
             Cuando exista backend real, cada página recibirá sus props desde
@@ -93,6 +95,7 @@ export function App() {
           />
         )}
       </AppShell>
+      </ActiveCaseProvider>
     </ThemeProvider>
   );
 }

@@ -9,6 +9,7 @@ import type {
   ToolUsage,
 } from "../api/types";
 import type { ViewId } from "../navigation/navItems";
+import { useActiveCase, useActiveCaseFrom } from "../state/activeCase";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { ChatPage } from "./ChatPage";
@@ -41,7 +42,10 @@ const SEVERITY_LABEL: Record<AgentFinding["severity"], string> = {
 // lateral de hallazgos que el agente persiste vía `record_finding`. El panel se
 // refresca tras cada turno del chat (ChatPage llama onTurnComplete en finally).
 export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: InvestigationPageProps) {
-  const [activeCase, setActiveCase] = useState<Case | null>(null);
+  const [cases, setCases] = useState<Case[]>([]);
+  // Caso activo GLOBAL (compartido con Casos / Timeline / Documentos / MITRE).
+  const { setActiveCaseId } = useActiveCase();
+  const activeCase = useActiveCaseFrom(cases);
   const [activeEvidence, setActiveEvidence] = useState<EvidenceHandle | null>(null);
   const [findings, setFindings] = useState<AgentFinding[]>([]);
   const [toolUsage, setToolUsage] = useState<ToolUsage[]>([]);
@@ -73,27 +77,18 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
     }
   }, []);
 
+  // Carga la LISTA de casos una vez. El contexto del caso activo (evidencia,
+  // hallazgos, tools, coste) lo gobierna el efecto de abajo, keyed en
+  // activeCase.id, para que cambiar de caso — aquí o en otra vista — recargue
+  // todo uniformemente (incluido el chat, que recarga su historial por prop).
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const list = await api.cases.list();
         if (cancelled) return;
-        if (list.length === 0) {
-          setPhase("no-case");
-          return;
-        }
-        const newest = list[0];
-        setActiveCase(newest);
-        const evidences = await api.cases.listEvidence(newest.id);
-        if (cancelled) return;
-        if (evidences.length > 0) {
-          setActiveEvidence(evidences[0]);
-        }
-        await refreshFindings(newest.id);
-        await refreshToolUsage(newest.id);
-        if (cancelled) return;
-        setPhase("ready");
+        setCases(list);
+        setPhase(list.length === 0 ? "no-case" : "ready");
       } catch (err) {
         if (cancelled) return;
         setError(String(err instanceof Error ? err.message : err));
@@ -103,7 +98,37 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
     return () => {
       cancelled = true;
     };
-  }, [refreshFindings, refreshToolUsage]);
+  }, []);
+
+  // Contexto del caso activo: evidencia + hallazgos + tools + coste. Se recarga
+  // al cambiar de caso (desde esta vista o cualquier otra).
+  useEffect(() => {
+    const caseId = activeCase?.id;
+    if (!caseId) {
+      setActiveEvidence(null);
+      setFindings([]);
+      setToolUsage([]);
+      setExecutorCost([]);
+      return;
+    }
+    let cancelled = false;
+    setActiveEvidence(null);
+    (async () => {
+      try {
+        const evidences = await api.cases.listEvidence(caseId);
+        if (!cancelled) setActiveEvidence(evidences.length > 0 ? evidences[0] : null);
+      } catch {
+        if (!cancelled) setActiveEvidence(null);
+      }
+      if (cancelled) return;
+      await refreshFindings(caseId);
+      if (cancelled) return;
+      await refreshToolUsage(caseId);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeCase?.id, refreshFindings, refreshToolUsage]);
 
   const onTurnComplete = useCallback(() => {
     if (activeCase) {
@@ -111,6 +136,12 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
       refreshToolUsage(activeCase.id);
     }
   }, [activeCase, refreshFindings, refreshToolUsage]);
+
+  // El chat ancla un os_profile antes ambiguo; refrescamos el caso en la lista
+  // para que la UI pase a "perfil unix/windows" sin recargar.
+  const onCaseUpdated = useCallback((updated: Case) => {
+    setCases((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+  }, []);
 
   if (phase === "loading") {
     return (
@@ -203,6 +234,7 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
           activeEvidence={activeEvidence}
           onTurnComplete={onTurnComplete}
           onCapsRefresh={onCapsRefresh}
+          onCaseUpdated={onCaseUpdated}
         />
 
         <div className="investigation-sidebar">
@@ -226,6 +258,22 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
               padding: "4px 2px",
             }}
           >
+            {cases.length > 1 && (
+              <select
+                className="case-picker"
+                aria-label="Caso activo"
+                style={{ maxWidth: "100%", marginBottom: 2 }}
+                value={activeCase.id}
+                onChange={(e) => setActiveCaseId(e.target.value)}
+              >
+                {cases.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                    {c.os_profile ? ` · ${c.os_profile}` : ""}
+                  </option>
+                ))}
+              </select>
+            )}
             <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)" }}>
               {activeCase.name}
             </div>
