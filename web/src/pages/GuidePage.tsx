@@ -1,15 +1,14 @@
-import type { GuideStep } from "../types/domain";
 import type { ViewId } from "../navigation/navItems";
 import { Card } from "../ui/Card";
 import { PageHeader } from "../ui/PageHeader";
 import { Button } from "../ui/Button";
+import { WorkflowGraph } from "../components/WorkflowGraph";
 
 interface GuidePageProps {
-  steps: GuideStep[];
   onNavigate?: (view: ViewId) => void;
 }
 
-export function GuidePage({ steps, onNavigate }: GuidePageProps) {
+export function GuidePage({ onNavigate }: GuidePageProps) {
   return (
     <div>
       <PageHeader
@@ -25,18 +24,18 @@ export function GuidePage({ steps, onNavigate }: GuidePageProps) {
       />
 
       <Card fullWidth>
-        <h3>Flujo de trabajo</h3>
-        <div className="guide-steps">
-          {steps.map((s) => (
-            <div className="guide-step" key={s.step}>
-              <div className="guide-step-number">{s.step}</div>
-              <div>
-                <div className="guide-step-title">{s.title}</div>
-                <div className="guide-step-desc">{s.description}</div>
-              </div>
-            </div>
-          ))}
+        <div className="wf-card-head">
+          <h3>Flujo de trabajo</h3>
+          <span className="wf-legend">
+            <span className="wf-legend-item"><i className="wf-swatch wf-swatch--done" />Hecho</span>
+            <span className="wf-legend-item"><i className="wf-swatch wf-swatch--current" />En curso</span>
+            <span className="wf-legend-item"><i className="wf-swatch wf-swatch--pending" />Pendiente</span>
+          </span>
         </div>
+        <p className="wf-card-note">
+          El estado de cada paso refleja el caso activo. Pulsa un nodo para ir a su vista.
+        </p>
+        <WorkflowGraph onNavigate={onNavigate} />
       </Card>
 
       <div style={{ height: 16 }} />

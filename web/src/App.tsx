@@ -15,8 +15,6 @@ import { MitreAttackPage } from "./pages/MitreAttackPage";
 import { SystemStatusPage } from "./pages/SystemStatusPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
-import { guideSteps } from "./mocks/frontendPreviewData";
-
 // Recuerda la vista activa entre recargas: si no, un F5 desde el Chat vuelve a
 // "Casos y evidencias" y parece que se perdió la conversación (los mensajes SÍ
 // están persistidos en el store; sólo se había reseteado la vista).
@@ -73,7 +71,7 @@ export function App() {
         {/* Demo visual con mock data — ver src/mocks/frontendPreviewData.ts.
             Cuando exista backend real, cada página recibirá sus props desde
             llamadas a forensia/routers/* en lugar de los arrays mock. */}
-        {activeView === "guide" && <GuidePage steps={guideSteps} onNavigate={setActiveView} />}
+        {activeView === "guide" && <GuidePage onNavigate={setActiveView} />}
         {activeView === "repository" && <RepositoryPage onNavigate={setActiveView} />}
         {activeView === "document-viewer" && <DocumentsPage />}
         {activeView === "timeline" && <TimelinePage />}

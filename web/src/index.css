@@ -1440,41 +1440,212 @@ details.agent-activity > summary::-webkit-details-marker { display: none; }
 }
 
 /* ── Guía de uso ─────────────────────────────────────────────────────────── */
-.guide-steps {
+/* ── Guía: grafo de nodos del flujo de trabajo (estética ElevenLabs) ──────── */
+.wf-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.wf-legend {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.wf-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.wf-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  display: inline-block;
+}
+.wf-swatch--done { background: var(--success); }
+.wf-swatch--current { background: var(--accent); }
+.wf-swatch--pending { background: var(--border); border: 1px solid var(--text-secondary); }
+.wf-card-note {
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  margin: 4px 0 14px;
+}
+
+.wf-canvas {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 6.4;
+  min-height: 320px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background-color: var(--surface);
+  /* Rejilla de puntos muy tenue, al estilo de un lienzo de nodos. */
+  background-image: radial-gradient(circle, var(--border) 1px, transparent 1px);
+  background-size: 22px 22px;
+  overflow: hidden;
+}
+
+/* Capa de aristas (curvas bezier SVG) por debajo de los nodos. */
+.wf-edges {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+.wf-edge {
+  fill: none;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+}
+.wf-edge--active { stroke: var(--accent); opacity: 0.9; }
+.wf-edge--muted { stroke: var(--border); opacity: 0.9; }
+.wf-arrowhead { stroke: none; }
+.wf-arrowhead--active { fill: var(--accent); }
+.wf-arrowhead--muted { fill: var(--text-secondary); opacity: 0.55; }
+
+/* Nodo-tarjeta. Posicionado en % del lienzo (layout horizontal). */
+.wf-node {
+  position: absolute;
+  z-index: 1;
+  width: clamp(150px, 17%, 200px);
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 5px;
+  text-align: left;
+  padding: 12px 13px;
+  border-radius: 12px;
+  border: 1.5px solid var(--border);
+  background: var(--bg);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.06);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
 }
-.guide-step {
+.wf-node:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.12);
+}
+.wf-node:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.wf-node-head {
   display: flex;
-  gap: 16px;
-  align-items: flex-start;
+  align-items: center;
+  justify-content: space-between;
 }
-.guide-step-number {
-  flex-shrink: 0;
-  width: 30px;
-  height: 30px;
+.wf-node-num {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+}
+.wf-node-dot {
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
-  background: var(--accent-bg);
-  color: var(--accent-text);
   display: grid;
   place-items: center;
-  font-family: var(--font-sans);
-  font-weight: 700;
-  font-size: 13px;
+  font-size: 10px;
+  font-weight: 800;
+  color: #fff;
+  flex-shrink: 0;
 }
-.guide-step-title {
-  font-family: var(--font-sans);
-  font-size: 14px;
-  font-weight: 600;
+.wf-node-dot--done { background: var(--success); }
+.wf-node-dot--current {
+  background: var(--accent);
+  box-shadow: 0 0 0 0 var(--accent);
+  animation: wf-pulse 1.8s ease-out infinite;
+}
+.wf-node-dot--pending,
+.wf-node-dot--blocked {
+  background: transparent;
+  border: 2px solid var(--border);
+}
+.wf-node-title {
+  font-size: 13.5px;
+  font-weight: 650;
   color: var(--text-primary);
-  margin-bottom: 2px;
+  line-height: 1.25;
 }
-.guide-step-desc {
-  font-family: var(--font-sans);
-  font-size: 13px;
+.wf-node-sub {
+  font-size: 11.5px;
   color: var(--text-secondary);
-  line-height: 1.5;
+  line-height: 1.35;
+}
+.wf-node-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+.wf-node-badge {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  border: 1px solid transparent;
+}
+.wf-node-badge--done { background: var(--accent-bg); color: var(--success); }
+.wf-node-badge--current { background: var(--accent-bg); color: var(--accent-text); }
+.wf-node-badge--pending,
+.wf-node-badge--blocked {
+  background: var(--surface);
+  color: var(--text-secondary);
+  border-color: var(--border);
+}
+.wf-node-hint {
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+/* Estados por nodo: borde/anillo diferenciados. */
+.wf-node--done { border-color: var(--success); }
+.wf-node--current {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bg), 0 2px 6px rgba(15, 23, 42, 0.06);
+}
+.wf-node--pending,
+.wf-node--blocked {
+  opacity: 0.72;
+}
+.wf-node--blocked { border-style: dashed; }
+
+@keyframes wf-pulse {
+  0% { box-shadow: 0 0 0 0 var(--accent-bg); }
+  70% { box-shadow: 0 0 0 7px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wf-node-dot--current { animation: none; }
+}
+
+/* Responsive: en pantallas estrechas el lienzo apila los nodos en vertical y
+   las aristas (medidas en el DOM) los siguen automáticamente. */
+@media (max-width: 760px) {
+  .wf-canvas {
+    aspect-ratio: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 30px;
+    padding: 22px 12px;
+    min-height: 0;
+  }
+  .wf-node {
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
+    width: min(320px, 92%);
+  }
 }
 
 /* ── Investigación: layout chat + panel de hallazgos ───────────────────── */
