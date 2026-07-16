@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { ApiError, api } from "../api/client";
 import type {
   AgentSummary,
@@ -273,6 +273,14 @@ export function ChatPage({
   // iteraciones/tokens/coste/tiempo con supuestos declarados, ANTES de lanzar.
   const [estimate, setEstimate] = useState<AnalysisEstimate | null>(null);
   const [estimateError, setEstimateError] = useState<string | null>(null);
+  // Los avisos (consentimiento cloud / estimación) se pueden cerrar con la ✕ y
+  // se REABREN al cambiar de proveedor o de modelo (para re-verlos con el nuevo).
+  const [dismissCloud, setDismissCloud] = useState(false);
+  const [dismissEstimate, setDismissEstimate] = useState(false);
+  const reopenNotices = () => {
+    setDismissCloud(false);
+    setDismissEstimate(false);
+  };
 
   const logRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -380,6 +388,7 @@ export function ChatPage({
         return next;
       });
       setOpenMenu(null);
+      reopenNotices();
     } catch {
       /* el backend degrada (id inválido, etc.); se deja el menú abierto */
     } finally {
@@ -393,6 +402,7 @@ export function ChatPage({
   const selectExecutor = (id: ExecutorId) => {
     setExecutor(id);
     setOpenMenu(null);
+    reopenNotices();
     api.config.set("DEFAULT_EXECUTOR", id).catch(() => {
       /* persistencia best-effort */
     });
@@ -606,7 +616,11 @@ export function ChatPage({
 
   const send = async () => {
     const text = input.trim();
-    if (!text || busy || sendBlockedByConsent || !activeCase) return;
+    if (!text || busy || !activeCase) return;
+    if (sendBlockedByConsent) {
+      setDismissCloud(false); // reabre el aviso cloud para que el operador consienta
+      return;
+    }
     const caseId = activeCase.id;
     setInput("");
     setBusy(true);
@@ -667,7 +681,20 @@ export function ChatPage({
   // Los no disponibles se deshabilitan y el tooltip lleva la razón accionable
   // que reporta capabilities (RULE 2: degradación explícita, nunca sustituto).
 
-  const cloudNotice = isCloud && (
+  const bannerCloseStyle: CSSProperties = {
+    alignSelf: "flex-start",
+    background: "none",
+    border: "none",
+    color: "inherit",
+    cursor: "pointer",
+    fontSize: 18,
+    lineHeight: 1,
+    opacity: 0.55,
+    padding: "0 2px",
+    marginLeft: 4,
+  };
+
+  const cloudNotice = isCloud && !dismissCloud && (
     <div
       className="profile-mismatch-banner"
       style={{ marginBottom: 8 }}
@@ -709,6 +736,15 @@ export function ChatPage({
           )}
         </div>
       </div>
+      <button
+        type="button"
+        aria-label="Cerrar aviso"
+        title="Cerrar · reaparece al cambiar de proveedor o modelo"
+        onClick={() => setDismissCloud(true)}
+        style={bannerCloseStyle}
+      >
+        ×
+      </button>
     </div>
   );
 
@@ -725,7 +761,7 @@ export function ChatPage({
         ? estimate.cost_usd.label ?? "0 USD"
         : `${estimate.cost_usd.min?.toFixed(4)}–${estimate.cost_usd.max?.toFixed(4)} USD`
     : "";
-  const estimateNotice = estimate && (
+  const estimateNotice = estimate && !dismissEstimate && (
     <div className="profile-mismatch-banner" style={{ marginBottom: 8 }}>
       <span className="profile-mismatch-banner-icon" aria-hidden="true">≈</span>
       <div className="profile-mismatch-banner-body">
@@ -754,6 +790,15 @@ export function ChatPage({
           <div style={{ marginTop: 4, opacity: 0.8 }}>{estimate.disclaimer}</div>
         </div>
       </div>
+      <button
+        type="button"
+        aria-label="Cerrar aviso"
+        title="Cerrar · reaparece al cambiar de proveedor o modelo"
+        onClick={() => setDismissEstimate(true)}
+        style={bannerCloseStyle}
+      >
+        ×
+      </button>
     </div>
   );
   const estimateErrorNotice = estimateError && (
@@ -996,6 +1041,9 @@ export function ChatPage({
       {msgs.length === 0 ? (
         // Welcome / empty state
         <div className="chat-welcome">
+          {cloudNotice}
+          {estimateNotice}
+          {estimateErrorNotice}
           <div className="welcome-title">¿Qué analizamos hoy?</div>
 
           <div className="agent-badge" title={activeAgent?.path ?? ""}>
@@ -1025,9 +1073,6 @@ export function ChatPage({
 
           {/* Composer inside welcome */}
           <div className="composer-wrapper" style={{ width: "100%" }}>
-            {cloudNotice}
-            {estimateNotice}
-            {estimateErrorNotice}
             <div className="composer">
               <textarea
                 ref={inputRef}
@@ -1057,6 +1102,9 @@ export function ChatPage({
       ) : (
         // Conversation Flow
         <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+          {cloudNotice}
+          {estimateNotice}
+          {estimateErrorNotice}
           <div className="chat-messages" ref={logRef}>
             {msgs.map((msg, i) => (
               <div key={i} className={`msg-wrapper ${msg.role}`}>
@@ -1079,9 +1127,6 @@ export function ChatPage({
           </div>
 
           <div className="composer-wrapper">
-            {cloudNotice}
-            {estimateNotice}
-            {estimateErrorNotice}
             <div className="composer">
               <textarea
                 ref={inputRef}
