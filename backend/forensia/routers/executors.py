@@ -3,7 +3,7 @@
 Thin adapter over ``forensia.executors.login`` (CLAUDE.md RULE 3). Every
 side-effecting route is POST and token-gated (SECURITY INVARIANT 3 — the
 app-wide CORS allowlist + Host-header middleware cover the anti-rebinding /
-cross-origin part, exactly as the case/consent routes rely on). The executor id
+cross-origin part, exactly as the case routes rely on). The executor id
 is confined to the closed cloud enum by ``forensia.executors.login`` (RULE 2):
 an unknown / non-cloud id is a 422, never a silent default.
 

@@ -8,10 +8,12 @@ request. RULE 2 — nothing is inferred:
 - no ``executor`` in the request and no ``DEFAULT_EXECUTOR`` explicitly set by
   the user in Settings → 422 listing the valid executors,
 - executor selected but unusable (binary missing, no session, Ollama
-  unreachable) → 503 with the actionable reason — never a substitute,
-- cloud-backed executor selected without recorded consent for this case →
-  403 (SECURITY INVARIANT 7 / RGPD): the UI warns and records consent, and this
-  gate makes an API client unable to bypass that warning.
+  unreachable) → 503 with the actionable reason — never a substitute.
+
+Selecting a cloud-backed executor sends case-derived content to that vendor under
+the operator's own account (SECURITY INVARIANT 7 / RGPD); the UI warns about this
+in the Guía page, but FORENSIA no longer requires or records a separate consent
+step (removed 2026-07-16).
 
 The old keyword demo loop and the listing-skeleton fallback are gone: both were
 silent degradations that RULE 2 forbids.
@@ -41,7 +43,6 @@ from forensia.cases.manager import (
     resolve_os_profile,
 )
 from forensia.config import config
-from forensia.consent import get_cloud_consent, record_cloud_consent
 from forensia.evidence import evidence_manager
 from forensia.executors import EXECUTOR_IDS, MODEL_CONFIG_KEY, get_executor
 from forensia.models.base import ExecutorBackend
@@ -104,12 +105,11 @@ def _prepare_run(req: QueryRequest) -> tuple[ForensicAgent, str, list, str | Non
     """Validate the request and build the agent (shared by /query and /query/stream).
 
     Returns ``(agent, prompt, prior_messages, consent_ref, meta)``; raises
-    ``HTTPException`` with the actionable reason on any RULE-2 / consent /
-    availability failure — identical checks for both surfaces so the streaming
-    path can't bypass them (SECURITY INVARIANT 7). ``consent_ref`` is the
-    ``entry_hash`` of the recorded consent for a cloud executor (``None`` for a
-    local one): ``ForensicAgent.run`` refuses a cloud run without it, so the
-    ref MUST reach the ``agent.run`` call."""
+    ``HTTPException`` with the actionable reason on any RULE-2 / availability
+    failure — identical checks for both surfaces so the streaming path can't
+    bypass them. Cloud egress no longer requires a recorded consent (removed
+    2026-07-16), so ``consent_ref`` is always ``None`` here; it stays in the
+    tuple only as an optional audit label threaded into ``agent.run``."""
     prompt = (req.prompt or "").strip()
     if not prompt:
         raise HTTPException(status_code=422, detail="prompt is empty")
@@ -172,25 +172,10 @@ def _prepare_run(req: QueryRequest) -> tuple[ForensicAgent, str, list, str | Non
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    # Cloud egress no longer requires a recorded consent (removed 2026-07-16):
+    # a cloud executor proceeds without one. The executor stays explicitly
+    # operator-selected (RULE 2) and the UI warns about egress in the Guía page.
     consent_ref: str | None = None
-    if not executor.is_local:
-        consent = get_cloud_consent(audit, req.case_id, executor.id)
-        if consent is None:
-            raise HTTPException(
-                status_code=403,
-                detail=(
-                    f"El ejecutor '{executor.id}' está respaldado por cloud: enviará "
-                    "contenido derivado del caso (posibles datos personales) a su "
-                    "proveedor bajo tu cuenta. Falta el consentimiento registrado para "
-                    "este caso. Regístralo con POST /api/agent/cloud-consent "
-                    f'{{"case_id": "{req.case_id}", "executor": "{executor.id}"}} '
-                    "(la UI lo hace al confirmar el aviso de privacidad) antes de "
-                    "consultar — SECURITY INVARIANT 7."
-                ),
-            )
-        # The entry_hash anchors the run to the exact audit line that recorded
-        # the consent; ForensicAgent.run refuses a cloud run without it.
-        consent_ref = consent.get("entry_hash")
 
     run_context: dict = {
         "audit": audit,
@@ -390,44 +375,4 @@ def list_agents() -> dict:
     return {
         "root": str(agent_registry.root),
         "agents": [pkg.summary() for pkg in agent_registry.list()],
-    }
-
-
-class CloudConsentRequest(BaseModel):
-    case_id: str
-    executor: str
-
-
-@router.post("/api/agent/cloud-consent", dependencies=[Depends(require_token)])
-def cloud_consent(req: CloudConsentRequest) -> dict:
-    """Registra en el audit del caso que el operador aceptó que contenido
-    derivado del caso salga al proveedor del ejecutor cloud elegido (SECURITY
-    INVARIANT 7: la UI avisa, el audit lo registra — la evidencia puede
-    contener datos personales reales → RGPD). La UI llama aquí cuando el
-    operador confirma el aviso, ANTES del primer query con ese ejecutor."""
-    if not req.case_id:
-        raise HTTPException(status_code=422, detail="case_id is required")
-    try:
-        executor = get_executor(req.executor)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    if executor.is_local:
-        raise HTTPException(
-            status_code=422,
-            detail=f"{executor.id} es 100 % local: el contenido del caso no sale "
-                   "de la máquina y no hay consentimiento que registrar.",
-        )
-    try:
-        audit = AuditLog(case_manager.case_dir(req.case_id) / "audit.jsonl")
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    entry = record_cloud_consent(audit, req.case_id, executor.id, executor.name)
-    return {
-        "recorded": True,
-        "case_id": req.case_id,
-        "executor": executor.id,
-        "ts_utc": entry["ts_utc"],
     }

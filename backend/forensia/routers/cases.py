@@ -48,10 +48,6 @@ class UpdateCaseRequest(BaseModel):
     notes: str | None = None
 
 
-class GrantConsentRequest(BaseModel):
-    by: str
-
-
 def _case_dict(case: Any) -> dict[str, Any]:
     return asdict(case)
 
@@ -144,23 +140,6 @@ def update_case(case_id: str, req: UpdateCaseRequest) -> dict[str, Any]:
         case = case_manager.update(
             case_id, name=req.name, examiner=req.examiner, notes=req.notes
         )
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return _case_dict(case)
-
-
-@router.post("/api/cases/{case_id}/consent", dependencies=[Depends(require_token)])
-def grant_consent(case_id: str, req: GrantConsentRequest) -> dict[str, Any]:
-    """Record per-case opt-in to cloud egress (F2 / THREAT_MODEL gate 9).
-
-    Side-effecting + token-gated (the app-wide Host-header middleware covers the
-    anti-rebinding check). Until this is called, ``/api/agent/query`` refuses the
-    cloud path and no evidence-derived byte leaves the host.
-    """
-    try:
-        case = case_manager.grant_cloud_consent(case_id, req.by)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:

@@ -12,12 +12,10 @@ Covers:
 - ``/api/evidence/upload`` (subida del perito): deposita el fichero en la
   bandeja; rechaza formato no soportado (422), traversal en el nombre (422) y
   sobrescritura de evidencia existente (409); exige token.
-- ``/api/agent/cloud-consent``: registra el evento en el audit del caso
-  (SECURITY INVARIANT 7); rechaza ejecutores locales y desconocidos.
-- ``/api/agent/query``: ENFORCEMENT del consentimiento cloud en el backend —
-  un ejecutor cloud sin consent registrado para el caso → 403 accionable; con
-  consent pasa la puerta; ollama (local) nunca lo requiere. El gate no vive
-  solo en la UI (un cliente API no puede saltárselo).
+- ``/api/agent/query``: un ejecutor cloud disponible ya NO exige consentimiento
+  (el consent de egress cloud se eliminó 2026-07-16) — pasa la validación de
+  ejecutor; un ``os_profile`` sin resolver → 409 accionable (RULE 2 enmendada,
+  el operador ancla).
 - Cadena de custodia (forensic invariant 4): registrar evidencia y verificarla
   escriben ``evidence_register`` / ``evidence_verify`` en el audit del caso.
 """
@@ -223,9 +221,6 @@ def test_upload_requires_token(client: TestClient) -> None:
     assert r.status_code == 401
 
 
-# ---- /api/agent/cloud-consent ---------------------------------------------------
-
-
 def _create_case(client: TestClient, auth: dict) -> str:
     r = client.post(
         "/api/cases",
@@ -236,69 +231,7 @@ def _create_case(client: TestClient, auth: dict) -> str:
     return r.json()["id"]
 
 
-def test_cloud_consent_is_recorded_in_the_case_audit(
-    client: TestClient, auth: dict, isolated_cases: CaseManager
-) -> None:
-    case_id = _create_case(client, auth)
-    r = client.post(
-        "/api/agent/cloud-consent",
-        headers=auth,
-        json={"case_id": case_id, "executor": "claude-code"},
-    )
-    assert r.status_code == 200
-    body = r.json()
-    assert body["recorded"] is True
-    assert body["executor"] == "claude-code"
-
-    audit_path = isolated_cases.case_dir(case_id) / "audit.jsonl"
-    entries = [json.loads(line) for line in audit_path.read_text().splitlines() if line.strip()]
-    consent = [e for e in entries if e.get("action") == "cloud_executor_consent"]
-    assert len(consent) == 1
-    assert consent[0]["executor"] == "claude-code"
-    assert consent[0]["case_id"] == case_id
-
-
-def test_cloud_consent_rejects_local_executor(client: TestClient, auth: dict) -> None:
-    case_id = _create_case(client, auth)
-    r = client.post(
-        "/api/agent/cloud-consent",
-        headers=auth,
-        json={"case_id": case_id, "executor": "ollama"},
-    )
-    assert r.status_code == 422
-    assert "local" in r.json()["detail"]
-
-
-def test_cloud_consent_rejects_unknown_executor(client: TestClient, auth: dict) -> None:
-    case_id = _create_case(client, auth)
-    r = client.post(
-        "/api/agent/cloud-consent",
-        headers=auth,
-        json={"case_id": case_id, "executor": "gpt-4o"},
-    )
-    assert r.status_code == 422
-
-
-def test_cloud_consent_unknown_case_is_404(client: TestClient, auth: dict) -> None:
-    r = client.post(
-        "/api/agent/cloud-consent",
-        headers=auth,
-        # UUID4 bien formado pero inexistente → 404 (uno malformado sería 422).
-        json={"case_id": "11111111-1111-4111-8111-111111111111", "executor": "gemini"},
-    )
-    assert r.status_code == 404
-
-
-def test_cloud_consent_malformed_case_is_422(client: TestClient, auth: dict) -> None:
-    r = client.post(
-        "/api/agent/cloud-consent",
-        headers=auth,
-        json={"case_id": "no-such-case", "executor": "gemini"},
-    )
-    assert r.status_code == 422
-
-
-# ---- /api/agent/query: enforcement del consentimiento cloud (backend) ----------
+# ---- /api/agent/query: validación de ejecutor / os_profile (backend) -----------
 
 
 def _query(client: TestClient, auth: dict, case_id: str, executor: str) -> object:
@@ -365,48 +298,27 @@ def test_anchor_os_profile_rejects_invalid(
     assert r.status_code == 422
 
 
-def test_cloud_query_without_consent_is_403(
+def test_cloud_query_no_longer_requires_consent(
     client: TestClient, auth: dict, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Ejecutor cloud disponible pero SIN consent registrado para el caso → 403.
-    # (Sin este gate el bloqueo vivía solo en la UI y un cliente API lo saltaba.)
+    # El consentimiento de egress cloud se eliminó (2026-07-16): un ejecutor cloud
+    # disponible ya NO exige consentimiento registrado. La petición pasa la
+    # validación de ejecutor y falla más adelante por el evidence_id inválido
+    # (422), NUNCA 403 — no queda ninguna puerta de consent que atravesar.
     monkeypatch.setattr(
         ClaudeCodeExecutor, "is_available", lambda self: ExecutorAvailability(available=True)
     )
     case_id = _create_case(client, auth)
     r = _query(client, auth, case_id, "claude-code")
-    assert r.status_code == 403
-    detail = r.json()["detail"]
-    assert "cloud-consent" in detail
-    assert "claude-code" in detail
-
-
-def test_cloud_query_with_consent_passes_the_gate(
-    client: TestClient, auth: dict, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(
-        ClaudeCodeExecutor, "is_available", lambda self: ExecutorAvailability(available=True)
-    )
-    case_id = _create_case(client, auth)
-    # Registrar consent para ese caso + ejecutor.
-    ok = client.post(
-        "/api/agent/cloud-consent",
-        headers=auth,
-        json={"case_id": case_id, "executor": "claude-code"},
-    )
-    assert ok.status_code == 200
-    r = _query(client, auth, case_id, "claude-code")
-    # La puerta de consent se abre; falla más adelante por el evidence_id inválido
-    # (422), NUNCA 403 — eso prueba que pasó el gate.
     assert r.status_code != 403
     assert r.status_code == 422
 
 
-def test_local_executor_never_requires_consent(
+def test_local_executor_query_reaches_evidence_validation(
     client: TestClient, auth: dict, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # ollama es 100 % local: sin consent alguno, la petición pasa el gate
-    # (falla luego por el evidence_id inválido → 422, jamás 403).
+    # ollama es 100 % local: la petición pasa la validación de ejecutor y falla
+    # luego por el evidence_id inválido → 422, jamás 403.
     monkeypatch.setattr(
         OllamaExecutor, "is_available", lambda self: ExecutorAvailability(available=True)
     )

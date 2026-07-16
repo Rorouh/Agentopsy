@@ -550,7 +550,7 @@ def test_stream_endpoint_requires_executor_like_query(
     client: TestClient, clean_config: None
 ) -> None:
     """/query/stream aplica la MISMA validación RULE-2 que /query (no se puede
-    saltar los checks de ejecutor/consentimiento por la vía de streaming)."""
+    saltar los checks de ejecutor por la vía de streaming)."""
     token = client.app.state.token
     r = client.post(
         "/api/agent/query/stream",

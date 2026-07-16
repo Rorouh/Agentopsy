@@ -76,9 +76,9 @@ class AuditLog:
     def entries(self) -> list[dict[str, Any]]:
         """Parsed entries in append order.
 
-        Read-only view for policy lookups (e.g. the cloud-consent gate in
-        ``forensia.consent``). It does NOT re-check the hash chain — call
-        ``verify()`` for tamper-evidence. Missing log → empty list.
+        Read-only view for policy lookups and cost aggregation. It does NOT
+        re-check the hash chain — call ``verify()`` for tamper-evidence.
+        Missing log → empty list.
         """
         if not self.path.exists():
             return []
