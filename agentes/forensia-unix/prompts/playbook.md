@@ -28,16 +28,26 @@ Antes de cualquier herramienta, confirma que la evidencia está **verificada**
 
 ## A. Imagen de disco (`.raw`, `.dd`, `.img`, `.E01`, `.vmdk`)
 
-1. **Contenedor.** `ewf_info` si es `.E01` → tamaño, hash interno, metadatos de
-   adquisición. Confirma que el hash interno cuadra con el baseline del caso.
+1. **Contenedor.** `ewf_info` si es `.E01` → tamaño, metadatos de adquisición
+   (examiner, fechas) y hashes internos del contenedor. Es **informativo**: la
+   verificación de integridad contra el baseline del caso la certifica
+   `EvidenceManager`, no tú — **nunca** afirmes que «cuadra con el baseline» (no
+   tienes el baseline).
 2. **Particiones.** `tsk_mmls` → tabla de particiones, offsets (en sectores) y
    tipos. Apunta el `partition_offset` de cada partición de interés: lo necesitas
    como `params.partition_offset` en los pasos siguientes.
 3. **Sistema de ficheros (sin montar).** Por cada partición relevante:
+   - **Paso 0 — huso horario (antes de la timeline).** Determina y **declara** el huso
+     de la evidencia ANTES de construir cualquier línea temporal: localiza y extrae
+     (`tsk_fls`→`tsk_icat`) `/etc/timezone` o el destino de `/etc/localtime` (y, en
+     macOS, la preferencia de zona horaria del sistema) y registra el huso hallado como
+     dato de contexto. Sin esa declaración, las marcas MAC(b) son ambiguas.
    - `tsk_fls` con `recursive: true` → árbol de ficheros, incluidos borrados
      (`*`); vuelve como artefacto (puede ser enorme).
    - `tsk_mactime` sobre el bodyfile (`tsk_fls` con `body_format: true`) →
-     **línea temporal MAC(b)**. Esta es tu columna vertebral cronológica.
+     **línea temporal MAC(b)**. Esta es tu columna vertebral cronológica. Pasa
+     **siempre** `timezone: UTC` explícito para normalizar, y en cada marca del informe
+     exige el offset o la referencia a UTC (nunca una hora «desnuda» sin huso).
 4. **Extracción quirúrgica.** Cuando identifiques un inodo de interés en el árbol,
    `tsk_icat` con su `inode` → recupera el fichero concreto (log, binario,
    config) como artefacto, sin montar el FS.

@@ -49,13 +49,22 @@ presente, síguelo tal cual; esta sección no lo contradice, solo lo traduce a A
 
 ## A. Imagen de disco Windows (`.raw`, `.E01`, `.vmdk`)
 
-1. **Contenedor.** `ewf_info` si es `.E01` → metadatos y hash interno; cuádralo
-   con el baseline del caso.
+1. **Contenedor.** `ewf_info` si es `.E01` → metadatos de adquisición del contenedor
+   (examiner, fechas, hashes internos). Es **informativo**: la verificación de
+   integridad contra el baseline del caso la certifica `EvidenceManager`, no tú —
+   **nunca** afirmes que «cuadra con el baseline» (no tienes el baseline).
 2. **Particiones.** `tsk_mmls` → offsets y tipos. Apunta el `partition_offset` de
    la partición del sistema (NTFS).
 3. **Sistema de ficheros (sin montar).**
+   - **Paso 0 — huso horario (antes de la timeline).** Determina y **declara** el huso
+     de la evidencia ANTES de construir cualquier línea temporal: extrae el hive
+     `SYSTEM` (`tsk_fls`→`tsk_icat`) y córrelo con `regripper` `plugin: timezone`
+     (clave `TimeZoneInformation`). Registra el huso hallado como dato de contexto. Sin
+     esa declaración, las marcas MAC(b) son ambiguas.
    - `tsk_fls` con `recursive: true` → árbol completo, incluidos borrados.
-   - `tsk_mactime` (bodyfile) → línea temporal MAC(b): tu columna vertebral.
+   - `tsk_mactime` (bodyfile) → línea temporal MAC(b): tu columna vertebral. Pasa
+     **siempre** `timezone: UTC` explícito para normalizar, y en cada marca del informe
+     exige el offset o la referencia a UTC (nunca una hora «desnuda» sin huso).
 4. **`$MFT`.** Localiza la `$MFT` con `tsk_fls`, extráela con `tsk_icat`, y
    procésala con `mftecmd` → CSV de creación/modificación/acceso. Cruza con la
    timeline para detectar *timestomping* (creación posterior a modificación, o
@@ -134,7 +143,7 @@ presente, síguelo tal cual; esta sección no lo contradice, solo lo traduce a A
      informe; continúa el análisis sobre `PsScan`/`PsXView` sin citar `T1055`.
      No anclas conclusiones de intrusión en un artefacto de entorno.
 3. **Inyección.** `windows.malfind.Malfind` (regiones RWX/anómalas),
-   `windows.hollowprocesses` cuando sospeches *process hollowing*.
+   `windows.hollowprocesses.HollowProcesses` cuando sospeches *process hollowing*.
 4. **Red.** `windows.netscan.NetScan` → conexiones y puertos (C2, shells inversas).
    Si devuelve sockets **sin `Owner`/PID** (frecuente en volcados con símbolos
    parciales), intenta la atribución por la vía alternativa
