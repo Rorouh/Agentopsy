@@ -18,6 +18,12 @@ Lógica pura (RULE 3): no imprime, no pide por stdin, no toca la red. Devuelve e
 fino que llama aquí y crea el documento. Un caso sin hallazgos produce un informe
 HONESTO que lo dice —nunca uno vacío falso—; un caso inexistente falla fuerte
 (``KeyError``), igual que ``CaseManager.load``.
+
+Además, ``generate_draft_report`` es el helper compartido que deja/actualiza un
+BORRADOR automático al CERRAR un análisis (identificado por un título reservado,
+refrescado sin apilar, sin tocar nunca un documento firmado). A diferencia de
+``build_pericial_report`` sí persiste (crea/borra en ``DocumentStore``), pero sigue
+sin tocar la red ni la E/S de las superficies.
 """
 
 from __future__ import annotations
@@ -33,7 +39,15 @@ from forensia.evidence import EvidenceManager, evidence_manager
 from forensia.findings.store import FindingStore, finding_store
 from forensia.mitre import catalog
 from forensia.mitre.coverage import CoverageStore, coverage_store
+from forensia.reports.store import Document, DocumentStore, document_store
 from forensia.toolkit.usage import tool_usage
+
+#: Título reservado que identifica el BORRADOR generado AUTOMÁTICAMENTE al cerrar
+#: un análisis (a diferencia del que crea el operador con «Generar informe»). Es el
+#: ancla para refrescarlo sin apilar: ``generate_draft_report`` borra el borrador
+#: anterior con este título antes de crear el nuevo — pero NUNCA un documento
+#: firmado (``final``), aunque lleve este título (cadena de custodia).
+AUTO_DRAFT_TITLE = "Informe pericial (borrador automático)"
 
 #: Orden de severidad de mayor a menor y su etiqueta en español para los grupos.
 _SEV_ORDER: tuple[str, ...] = ("critical", "high", "medium", "low")
@@ -126,6 +140,63 @@ def build_pericial_report(
         "author": perito_name,
         "sections": sections,
     }
+
+
+def generate_draft_report(
+    case_id: str,
+    perito: dict[str, Any] | None = None,
+    *,
+    documents: DocumentStore = document_store,
+    cases: CaseManager = case_manager,
+    evidence: EvidenceManager = evidence_manager,
+    findings: FindingStore = finding_store,
+    coverage: CoverageStore = coverage_store,
+    usage_fn: Callable[[str], list[dict[str, Any]]] = tool_usage,
+) -> Document | None:
+    """Deja/actualiza el BORRADOR automático del informe pericial del caso.
+
+    Pensado para engancharse al CIERRE de un análisis: si el caso tiene ≥1
+    hallazgo registrado, sintetiza el informe (``build_pericial_report``) y lo
+    persiste como documento en estado ``draft``; si NO hay ninguno, devuelve
+    ``None`` sin crear nada (RULE 2: no se fabrica un informe que no sostiene
+    ningún hallazgo).
+
+    **Refresco sin apilar:** el borrador auto se identifica por un TÍTULO
+    reservado (``AUTO_DRAFT_TITLE``) — no por un campo nuevo en el schema del
+    documento. Antes de crear el nuevo, borra el borrador auto ANTERIOR del caso
+    (solo documentos ``draft`` con ese título), de modo que siempre hay como
+    mucho UN borrador auto, al día. **Un documento ``final`` (firmado) NUNCA se
+    borra**, aunque lleve el título reservado — cadena de custodia (el store lo
+    haría fallar; aquí ni se intenta).
+
+    Las dependencias son inyectables para los tests; en producción son los
+    singletons (los mismos que cablea ``POST …/documents/generate``). Falla fuerte
+    (``KeyError`` / ``ValueError``) si el caso no existe — igual que el resto de
+    ``forensia.reports``.
+    """
+    if not findings.list(case_id):
+        return None
+
+    data = build_pericial_report(
+        case_id,
+        perito,
+        cases=cases,
+        evidence=evidence,
+        findings=findings,
+        coverage=coverage,
+        usage_fn=usage_fn,
+    )
+    # El título reservado es el ancla del refresco: sobreescribe el título normal
+    # del informe (``… — <nombre del caso>``) para poder reconocer el borrador auto.
+    data["title"] = AUTO_DRAFT_TITLE
+
+    # Refresco sin apilar: borra SOLO borradores auto previos (mismo título), nunca
+    # un final firmado — cadena de custodia (FORENSIC INVARIANT 2).
+    for doc in documents.list(case_id):
+        if doc.title == AUTO_DRAFT_TITLE and doc.status == "draft":
+            documents.delete(case_id, doc.id)
+
+    return documents.create(case_id, data)
 
 
 # ── secciones ─────────────────────────────────────────────────────────────────

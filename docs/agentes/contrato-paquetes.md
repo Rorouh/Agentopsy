@@ -117,6 +117,24 @@ los agentes de nivel 1 en los tres entregables de la propuesta:
    No inventa nada (RULE 2): un caso sin hallazgos produce un informe honesto que
    lo dice. La exponen el endpoint `POST /api/cases/{case_id}/documents/generate`
    y el botón «Generar informe pericial» de la página Documentos.
+
+   **Borrador automático al cerrar un análisis (2026-07-16).** Para que la vista
+   Documentos no quede vacía tras un análisis, al CERRAR un análisis
+   (`/api/agent/analyze` → `_work`, y también `/api/agent/query` y
+   `/api/agent/query/stream`) se llama, best-effort, al helper compartido
+   `forensia.reports.generate_draft_report(case_id)`: si el caso tiene ≥1
+   hallazgo, sintetiza el informe con `build_pericial_report` y lo persiste como
+   `draft`; si no hay ninguno, devuelve `None` sin crear nada (RULE 2). El
+   borrador auto se identifica por un **título reservado** constante
+   (`AUTO_DRAFT_TITLE = "Informe pericial (borrador automático)"`), no por un
+   campo nuevo en el schema del documento. Se **refresca sin apilar**: antes de
+   crear el nuevo, borra el borrador auto anterior (solo documentos `draft` con
+   ese título) — así siempre hay como mucho UNO, al día. Un documento `final`
+   (firmado) **nunca se borra**, aunque lleve el título reservado (cadena de
+   custodia, FORENSIC INVARIANT 2), ni se tocan los documentos del operador con
+   otro título. El fallo de la síntesis/persistencia no tumba el análisis (los
+   hallazgos ya se persistieron en caliente); cuando crea el borrador, se emite un
+   evento `{"type":"report_draft","doc_id","title"}` al chat/job.
 2. **Línea temporal** (`timeline.md`) → `TimelineEvent[]`.
 3. **Correlación MITRE ATT&CK** (`mitre.md` + `knowledge/`) → `MitreTechniqueMatch[]`.
 

@@ -15,12 +15,18 @@ un informe honesto que lo dice.
 
 from __future__ import annotations
 
-from forensia.reports.generator import build_pericial_report
+from forensia.reports.generator import (
+    AUTO_DRAFT_TITLE,
+    build_pericial_report,
+    generate_draft_report,
+)
 from forensia.reports.store import Document, DocumentStore, document_store
 
 __all__ = [
+    "AUTO_DRAFT_TITLE",
     "Document",
     "DocumentStore",
     "build_pericial_report",
     "document_store",
+    "generate_draft_report",
 ]

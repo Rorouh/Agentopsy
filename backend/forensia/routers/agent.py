@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import threading
 from typing import Any
 
@@ -44,9 +45,36 @@ from forensia.consent import get_cloud_consent, record_cloud_consent
 from forensia.evidence import evidence_manager
 from forensia.executors import EXECUTOR_IDS, MODEL_CONFIG_KEY, get_executor
 from forensia.models.base import ExecutorBackend
+from forensia.reports import generate_draft_report
 from forensia.security import require_token
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+
+def _maybe_auto_draft(
+    case_id: str, emit: Any = None
+) -> dict[str, Any] | None:
+    """Al CERRAR un análisis, deja/actualiza el BORRADOR automático del informe
+    pericial si el caso tiene ≥1 hallazgo (``forensia.reports.generate_draft_report``).
+
+    Best-effort a propósito: un fallo de la síntesis/persistencia NO debe tumbar
+    el análisis (los hallazgos ya se persistieron en caliente durante el run), así
+    que se traga la excepción y la registra. Devuelve el descriptor del borrador
+    (``{"type":"report_draft","doc_id","title"}``) — y lo emite al job si hay
+    ``emit`` — o ``None`` si no se creó ninguno (sin hallazgos o fallo)."""
+    try:
+        doc = generate_draft_report(case_id)
+    except Exception:  # noqa: BLE001 — best-effort: nunca tumba el análisis
+        logger.exception("auto-draft report generation failed for case %s", case_id)
+        return None
+    if doc is None:
+        return None
+    info = {"type": "report_draft", "doc_id": doc.id, "title": doc.title}
+    if emit is not None:
+        emit(info)
+    return info
 
 
 class QueryRequest(BaseModel):
@@ -208,11 +236,16 @@ def query(req: QueryRequest) -> dict:
     except (KeyError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    # Best-effort: al cerrar la consulta, deja/actualiza el borrador auto del
+    # informe si hay hallazgos (mismo helper que /analyze; no tumba la respuesta).
+    draft = _maybe_auto_draft(req.case_id)
+
     return {
         "status": "llm-loop",
         "reply": result.get("reply", ""),
         "iterations": result.get("iterations"),
         "tool_calls": result.get("tool_calls", []),
+        "report_draft": draft,
         **meta,
     }
 
@@ -239,6 +272,9 @@ def analyze(req: QueryRequest) -> dict:
             prior_messages=prior_messages,
             on_event=emit,  # los eventos (tool_call/tool_result/finding) → al job
         )
+        # Al cerrar el análisis, deja/actualiza el borrador auto del informe si hay
+        # hallazgos, y anúncialo en el chat (best-effort; no tumba el job).
+        _maybe_auto_draft(req.case_id, emit)
         return {
             "reply": result.get("reply", ""),
             "iterations": result.get("iterations"),
@@ -316,6 +352,9 @@ async def query_stream(req: QueryRequest) -> StreamingResponse:
                 prior_messages=prior_messages,
                 on_event=push,
             )
+            # Al cerrar, deja/actualiza el borrador auto del informe si hay
+            # hallazgos y emítelo al stream (best-effort; no tumba el chat).
+            _maybe_auto_draft(req.case_id, push)
             push({
                 "type": "done",
                 "reply": result.get("reply", ""),
