@@ -56,6 +56,19 @@ def keep_last_tool_results_default() -> int:
         return 4
 
 
+def _embedded_json(text: str) -> Any:
+    """Best-effort: parse the outermost ``{...}`` object embedded in ``text`` (a tool
+    result wrapped in NO-trust spotlighting delimiters). ``None`` if none parses."""
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end <= start:
+        return None
+    try:
+        return json.loads(text[start : end + 1])
+    except (ValueError, json.JSONDecodeError):
+        return None
+
+
 def _stub_for(content: Any) -> str:
     """One-line replacement for an elided tool-result body. Best-effort extracts
     ``tool_id`` / ``exit_code`` / ``run_id`` from the JSON so the stub still points
@@ -67,7 +80,10 @@ def _stub_for(content: Any) -> str:
         try:
             body = json.loads(content)
         except (ValueError, json.JSONDecodeError):
-            body = None
+            # A real tool result is wrapped in NO-trust spotlighting delimiters
+            # (agent._UNTRUSTED_OPEN/CLOSE around the JSON). Recover the embedded
+            # object so the stub can still name tool_id/exit_code/run_id.
+            body = _embedded_json(content)
         if isinstance(body, dict):
             tool_id = body.get("tool_id")
             exit_code = body.get("exit_code")

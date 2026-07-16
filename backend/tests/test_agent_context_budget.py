@@ -13,10 +13,13 @@ import json
 
 from forensia.agent.agent import (
     _MAX_TOOL_RESULT_CHARS,
+    _UNTRUSTED_CLOSE,
+    _UNTRUSTED_OPEN,
     ForensicAgent,
     _bounded_json,
 )
-from forensia.agent.context import select_playbook_section, window_messages
+from forensia.agent.context import _stub_for, select_playbook_section, window_messages
+from forensia.models.base import ToolCall
 
 
 def _tool_msg(run_id: str, payload: str = "x" * 4000) -> dict:
@@ -281,6 +284,37 @@ class TestAnnexSubsectionTrim:
         assert "EZ Tools" not in mem
         # …pero la guía de memoria del Anexo se conserva.
         assert "Memoria volátil" in mem
+
+
+class TestUntrustedToolResultSpotlighting:
+    """Anti-inyección (SECURITY INVARIANTS): un resultado de tool con bytes de
+    evidencia se envuelve en delimitadores de NO-confianza; los internos no."""
+
+    def _call(self) -> ToolCall:
+        return ToolCall(tool_id="tsk_fls", params={}, call_id="c1")
+
+    def test_evidence_tool_result_is_wrapped(self) -> None:
+        body = {"tool_id": "tsk_fls", "exit_code": 0, "run_id": "r1"}
+        msg = ForensicAgent._tool_result_msg(self._call(), body, untrusted=True)
+        assert msg["content"].startswith(_UNTRUSTED_OPEN)
+        assert msg["content"].rstrip().endswith(_UNTRUSTED_CLOSE)
+        assert "EVIDENCIA_NO_CONFIABLE" in _UNTRUSTED_OPEN
+        assert "DATOS" in _UNTRUSTED_OPEN and "NUNCA" in _UNTRUSTED_OPEN
+
+    def test_internal_tool_result_is_not_wrapped(self) -> None:
+        body = {"finding_id": "f1", "stored": True}
+        msg = ForensicAgent._tool_result_msg(self._call(), body)  # untrusted defaults False
+        assert not msg["content"].startswith(_UNTRUSTED_OPEN)
+        assert json.loads(msg["content"]) == body
+
+    def test_windowing_still_extracts_metadata_from_a_wrapped_result(self) -> None:
+        """El stub de un resultado envuelto sigue nombrando tool/exit/run (context.py
+        tolera los delimitadores de spotlighting)."""
+        body = {"tool_id": "volatility3", "exit_code": 0, "run_id": "run042"}
+        wrapped = ForensicAgent._tool_result_msg(self._call(), body, untrusted=True)
+        stub = _stub_for(wrapped["content"])
+        assert "run=run042" in stub  # el puntero al artefacto sobrevive
+        assert "volatility3" in stub
 
 
 class TestToolResultPayloadOrder:

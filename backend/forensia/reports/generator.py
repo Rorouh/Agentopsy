@@ -109,7 +109,7 @@ def build_pericial_report(
         _cadena_custodia(case_id, evidence_handles, cases=cases, evidence=evidence),
         _metodologia(usage),
         _hallazgos(finding_list),
-        _correlacion_mitre(coverage_entries),
+        _correlacion_mitre(coverage_entries, finding_list),
         _conclusiones(case, finding_list, coverage_entries),
     ]
 
@@ -356,18 +356,69 @@ def _hallazgos(finding_list: list[Any]) -> dict[str, Any]:
             if f.tool_id:
                 tags.append(str(f.tool_id))
             tags.extend(f.mitre_hints)
-            blocks.append({
+            block: dict[str, Any] = {
                 "t": "finding",
                 "sev": sev,
                 "title": f.title,
                 "text": f.summary,
                 "tags": tags,
-            })
+            }
+            meta = _finding_provenance(f)
+            if meta:
+                block["meta"] = meta
+            blocks.append(block)
 
     return {"num": "5", "title": "Hallazgos", "blocks": blocks}
 
 
-def _correlacion_mitre(coverage_entries: list[dict[str, Any]]) -> dict[str, Any]:
+def _finding_provenance(f: Any) -> str:
+    """Línea de confianza + procedencia de un hallazgo para el informe.
+
+    Confianza CALIBRADA (si el agente la dio), marca del artefacto (``observed_at``),
+    y la procedencia que ancla el hallazgo a la evidencia (``run_id`` del ArtifactRun,
+    SHA-256 del artefacto). Un hallazgo de descarte se etiqueta como tal. Vacío si no
+    hay ningún dato — el informe no fabrica procedencia (RULE 2)."""
+    parts: list[str] = []
+    if getattr(f, "finding_kind", "afirmacion") == "descarte":
+        parts.append("Descarte")
+    confidence = getattr(f, "confidence", None)
+    if confidence is not None:
+        parts.append(f"Confianza: {confidence:.2f}")
+    observed_at = getattr(f, "observed_at", None)
+    if observed_at:
+        parts.append(f"Observado: {observed_at}")
+    if f.run_id:
+        parts.append(f"Run: {f.run_id[:8]}")
+    artifact_sha256 = getattr(f, "artifact_sha256", None)
+    if artifact_sha256:
+        parts.append(f"SHA-256 artefacto: {artifact_sha256[:12]}…")
+    return " · ".join(parts)
+
+
+def _supporting_findings_cell(
+    finding_ids: list[str], titles: dict[str, str]
+) -> str:
+    """Los hallazgos que sostienen una técnica, como ``{id8} título`` por línea.
+
+    Lista los `finding_id`/títulos que la proponen (no solo el recuento), para que el
+    perito vea SOBRE QUÉ se apoya la correlación. ``—`` si ninguno."""
+    if not finding_ids:
+        return "—"
+    lines: list[str] = []
+    for fid in finding_ids:
+        title = titles.get(fid, "")
+        short = fid[:8]
+        if title:
+            snippet = title if len(title) <= 60 else title[:57] + "…"
+            lines.append(f"{short} {snippet}")
+        else:
+            lines.append(short)
+    return "\n".join(lines)
+
+
+def _correlacion_mitre(
+    coverage_entries: list[dict[str, Any]], finding_list: list[Any]
+) -> dict[str, Any]:
     blocks: list[dict[str, Any]] = [{
         "t": "p",
         "text": (
@@ -389,6 +440,7 @@ def _correlacion_mitre(coverage_entries: list[dict[str, Any]]) -> dict[str, Any]
         return {"num": "6", "title": "Correlación MITRE ATT&CK", "blocks": blocks}
 
     tactic_names = _tactic_names()
+    titles = {f.id: f.title for f in finding_list}
     rows: list[list[str]] = []
     for entry in coverage_entries:
         tid = str(entry["technique_id"])
@@ -405,13 +457,15 @@ def _correlacion_mitre(coverage_entries: list[dict[str, Any]]) -> dict[str, Any]
             tid,
             name,
             tactic,
-            str(len(proposed)),
+            # Los hallazgos que la sostienen, por id + título (no solo el recuento):
+            # el perito ve SOBRE QUÉ se apoya cada técnica propuesta.
+            _supporting_findings_cell(proposed, titles),
             veredicto,
         ])
 
     blocks.append({
         "t": "table",
-        "headers": ["Técnica", "Nombre", "Táctica", "Hallazgos", "Veredicto"],
+        "headers": ["Técnica", "Nombre", "Táctica", "Hallazgos que la sostienen", "Veredicto"],
         "rows": rows,
     })
     return {"num": "6", "title": "Correlación MITRE ATT&CK", "blocks": blocks}

@@ -353,8 +353,13 @@ CATALOG: tuple[Tool, ...] = (
         returns="artifact",
         tier="core",
         toolkits=_WINDOWS,
+        # Derived handoff: the .evtx it parses is normally the byte-exact file a prior
+        # TSK `icat` run extracted, so `evtx_path` accepts an ArtifactRef the dispatcher
+        # resolves + re-hashes (custody of the derivative). A literal evidence path
+        # (or FORENSIA-injected evidence) still works when omitted.
+        input_artifact_params=("evtx_path",),
         path_parameters=(
-            _path("evtx_path", _E, PathKind.FILE_OR_DIRECTORY),
+            _path("evtx_path", _ED, PathKind.FILE_OR_DIRECTORY),
             _OUTPUT_DIR,
         ),
         allowed_flags=_evtxecmd.ALLOWED_FLAGS,
@@ -368,8 +373,11 @@ CATALOG: tuple[Tool, ...] = (
         returns="artifact",
         tier="core",
         toolkits=_WINDOWS,
+        # Derived handoff: the $MFT it parses is normally the file a prior TSK `icat`
+        # run extracted, so `mft_path` accepts an ArtifactRef (re-hashed before run).
+        input_artifact_params=("mft_path",),
         path_parameters=(
-            _path("mft_path", _E, PathKind.FILE),
+            _path("mft_path", _ED, PathKind.FILE),
             _OUTPUT_DIR,
         ),
         allowed_flags=_mftecmd.ALLOWED_FLAGS,
@@ -518,8 +526,11 @@ CATALOG: tuple[Tool, ...] = (
         ("windows",),
         returns="artifact",
         toolkits=_WINDOWS,
+        # Derived handoff: accepts the .lnk a prior TSK `icat` extracted as an
+        # ArtifactRef (re-hashed before run); a literal/injected evidence path when omitted.
+        input_artifact_params=("target_path",),
         path_parameters=(
-            _path("target_path", _E, PathKind.FILE_OR_DIRECTORY),
+            _path("target_path", _ED, PathKind.FILE_OR_DIRECTORY),
             _OUTPUT_DIR,
         ),
         allowed_flags=_lecmd.ALLOWED_FLAGS,
@@ -532,8 +543,11 @@ CATALOG: tuple[Tool, ...] = (
         ("windows",),
         returns="artifact",
         toolkits=_WINDOWS,
+        # Derived handoff: accepts the Jump List a prior TSK `icat` extracted as an
+        # ArtifactRef (re-hashed before run); a literal/injected evidence path when omitted.
+        input_artifact_params=("target_path",),
         path_parameters=(
-            _path("target_path", _E, PathKind.FILE_OR_DIRECTORY),
+            _path("target_path", _ED, PathKind.FILE_OR_DIRECTORY),
             _OUTPUT_DIR,
         ),
         allowed_flags=_jlecmd.ALLOWED_FLAGS,
@@ -575,8 +589,11 @@ CATALOG: tuple[Tool, ...] = (
         ("windows",),
         returns="artifact",
         toolkits=_WINDOWS,
+        # Derived handoff: accepts the SYSTEM hive a prior TSK `icat` extracted as an
+        # ArtifactRef (re-hashed before run); a literal/injected evidence path when omitted.
+        input_artifact_params=("hive_path",),
         path_parameters=(
-            _path("hive_path", _E, PathKind.FILE),
+            _path("hive_path", _ED, PathKind.FILE),
             _OUTPUT_DIR,
         ),
         allowed_flags=_appcompatcacheparser.ALLOWED_FLAGS,
@@ -589,8 +606,11 @@ CATALOG: tuple[Tool, ...] = (
         ("windows",),
         returns="artifact",
         toolkits=_WINDOWS,
+        # Derived handoff: accepts a directory of hives a prior TSK `icat`/carve run
+        # produced as an ArtifactRef (re-hashed before run); injected evidence when omitted.
+        input_artifact_params=("target_path",),
         path_parameters=(
-            _path("target_path", _E, PathKind.DIRECTORY),
+            _path("target_path", _ED, PathKind.DIRECTORY),
             _OUTPUT_DIR,
         ),
         allowed_flags=_sbecmd.ALLOWED_FLAGS,
@@ -603,8 +623,11 @@ CATALOG: tuple[Tool, ...] = (
         ("windows",),
         returns="artifact",
         toolkits=_WINDOWS,
+        # Derived handoff: accepts the ActivitiesCache.db a prior TSK `icat` extracted
+        # as an ArtifactRef (re-hashed before run); injected evidence when omitted.
+        input_artifact_params=("target_path",),
         path_parameters=(
-            _path("target_path", _E, PathKind.FILE),
+            _path("target_path", _ED, PathKind.FILE),
             _OUTPUT_DIR,
         ),
         allowed_flags=_wxtcmd.ALLOWED_FLAGS,

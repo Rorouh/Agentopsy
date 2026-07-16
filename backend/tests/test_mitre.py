@@ -21,6 +21,12 @@ from forensia.mitre import catalog
 from forensia.mitre.coverage import CoverageStore
 
 
+#: Procedencia válida para un hallazgo afirmativo: un run_id UUID4 cualquiera. El
+#: store exige `run_id` en un hallazgo afirmativo (anti-alucinación, RULE 2); estos
+#: tests ejercitan MITRE, no ese gate, así que anclan a un run ficticio pero válido.
+_RUN_ID = "11111111-1111-4111-8111-111111111111"
+
+
 @pytest.fixture
 def tmp_case(tmp_path) -> tuple[CaseManager, str]:
     cases = CaseManager(root=tmp_path / "cases")
@@ -112,6 +118,7 @@ def test_finding_accepts_mitre_hints_from_the_seed(tmp_case) -> None:
         "title": "Inyección de código en explorer.exe",
         "summary": "malfind encontró una región RWX con shellcode.",
         "severity": "high",
+        "run_id": _RUN_ID,
         "mitre_hints": ["T1055"],
     })
     assert finding.mitre_hints == ["T1055"]
@@ -126,6 +133,7 @@ def test_finding_rejects_a_hallucinated_technique_id(tmp_case) -> None:
             "title": "Hallazgo con técnica inventada",
             "summary": "El modelo se sacó un id de la manga.",
             "severity": "high",
+            "run_id": _RUN_ID,
             "mitre_hints": ["T9999"],
         })
     # Y no se ha persistido nada.
@@ -139,6 +147,7 @@ def test_finding_deduplicates_hints(tmp_case) -> None:
         "title": "Hallazgo",
         "summary": "Resumen.",
         "severity": "low",
+        "run_id": _RUN_ID,
         "mitre_hints": ["T1055", "T1055"],
     })
     assert f.mitre_hints == ["T1055"]
@@ -180,6 +189,7 @@ def test_agent_proposals_are_derived_from_real_findings(tmp_case) -> None:
         "title": "Inyección",
         "summary": "malfind: región RWX.",
         "severity": "high",
+        "run_id": _RUN_ID,
         "mitre_hints": ["T1055"],
     })
 
@@ -203,6 +213,7 @@ def test_annotate_anchors_techniques_to_an_existing_finding(tmp_case) -> None:
         "title": "sshd escuchando",
         "summary": "netscan: 22/tcp LISTENING.",
         "severity": "medium",
+        "run_id": _RUN_ID,
     })
     coverage.annotate(case_id, f.id, ["T1021", "T1543"])
     proposals = coverage.proposals(case_id)
@@ -216,6 +227,7 @@ def test_annotate_merges_with_record_time_hints_without_duplicates(tmp_case) -> 
     coverage = CoverageStore(cases, findings)
     f = findings.append(case_id, {
         "title": "malfind", "summary": "RWX.", "severity": "high",
+        "run_id": _RUN_ID,
         "mitre_hints": ["T1055"],
     })
     coverage.annotate(case_id, f.id, ["T1055", "T1547.001"])  # T1055 ya venía en el hint
@@ -230,7 +242,7 @@ def test_annotate_is_idempotent_last_call_replaces(tmp_case) -> None:
     cases, case_id = tmp_case
     findings = FindingStore(cases)
     coverage = CoverageStore(cases, findings)
-    f = findings.append(case_id, {"title": "x", "summary": "y", "severity": "low"})
+    f = findings.append(case_id, {"title": "x", "summary": "y", "severity": "low", "run_id": _RUN_ID})
     coverage.annotate(case_id, f.id, ["T1055"])
     coverage.annotate(case_id, f.id, ["T1543"])  # reemplaza
     proposals = coverage.proposals(case_id)
@@ -245,7 +257,7 @@ def test_annotate_rejects_unknown_finding_and_hallucinated_technique(tmp_case) -
     cases, case_id = tmp_case
     findings = FindingStore(cases)
     coverage = CoverageStore(cases, findings)
-    f = findings.append(case_id, {"title": "x", "summary": "y", "severity": "low"})
+    f = findings.append(case_id, {"title": "x", "summary": "y", "severity": "low", "run_id": _RUN_ID})
     with pytest.raises(ValueError, match="not found in case"):
         coverage.annotate(case_id, "00000000-0000-4000-8000-000000000000", ["T1055"])
     with pytest.raises(ValueError, match="not in the ATT&CK seed"):
@@ -257,7 +269,7 @@ def test_annotate_is_audited(tmp_case) -> None:
     cases, case_id = tmp_case
     findings = FindingStore(cases)
     coverage = CoverageStore(cases, findings)
-    f = findings.append(case_id, {"title": "x", "summary": "y", "severity": "low"})
+    f = findings.append(case_id, {"title": "x", "summary": "y", "severity": "low", "run_id": _RUN_ID})
     coverage.annotate(case_id, f.id, ["T1055"], note="malfind RWX")
     log = AuditLog(cases.case_dir(case_id) / "audit.jsonl")
     assert log.verify()
@@ -275,6 +287,7 @@ def test_a_proposal_never_counts_as_a_verdict(tmp_case) -> None:
         "title": "Pista",
         "summary": "Sugiere T1055.",
         "severity": "high",
+        "run_id": _RUN_ID,
         "mitre_hints": ["T1055"],
     })
     assert coverage.adjudications(case_id) == {}
@@ -369,6 +382,7 @@ def test_coverage_merges_both_axes_without_confusing_them(tmp_case) -> None:
         "title": "Inyección",
         "summary": "malfind.",
         "severity": "high",
+        "run_id": _RUN_ID,
         "mitre_hints": ["T1055"],
     })
     # Una técnica dictaminada SIN propuesta del agente (el perito la vio a mano).

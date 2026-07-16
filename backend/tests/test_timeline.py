@@ -174,7 +174,11 @@ def test_build_investigation_timeline_reads_audit_and_findings(
     )
     findings.append(
         case.id,
-        {"title": "t", "summary": "s", "severity": "low", "tool_id": "tsk_fls"},
+        {
+            "title": "t", "summary": "s", "severity": "low", "tool_id": "tsk_fls",
+            # Hallazgo afirmativo: el store exige procedencia (run_id) — RULE 2.
+            "run_id": "11111111-1111-4111-8111-111111111111",
+        },
     )
 
     events = build_investigation_timeline(case.id)

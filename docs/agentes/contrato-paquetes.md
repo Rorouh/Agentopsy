@@ -173,8 +173,34 @@ fundir los ejes), no el `MitreTechniqueMatch[]` con `confidence` y
 crudos de los hallazgos (propuesta con procedencia) y los dictámenes del perito.
 Son cosas distintas y la UI las distingue: ver §5.ter.
 
-Del esquema de hallazgo siguen huérfanos en el motor `confidence`, `provenance` y
-`observed_at` — mismo tipo de deuda, aún abierta.
+**Esquema de hallazgo completo en el motor (2026-07-16).** El resto del «Esquema
+de hallazgo» que los prompts prescribían y el motor descartaba (`confidence`,
+`observed_at`, la procedencia de artefacto) queda cerrado —el mismo bug que
+`mitre_hints`—:
+
+- **`record_finding` acepta y `Finding` persiste**: `confidence` (número en
+  `[0,1]`, calibrada, opcional), `observed_at` (marca ISO-8601 del ARTEFACTO que
+  sostiene el hallazgo —cuándo ocurrió el hecho en la evidencia, distinta de
+  `created_at`—, opcional) y `artifact_sha256` (SHA-256 del output del run que lo
+  respalda, procedencia a nivel de artefacto, opcional). El `run_id` (UUID4) ya
+  existía como ancla de procedencia.
+- **Procedencia OBLIGATORIA para afirmaciones (anti-alucinación, RULE 2 / SECURITY
+  INVARIANT 5).** Un hallazgo **afirmativo** (afirma algo sobre la evidencia) SIN
+  `run_id` se **rechaza** en `finding_store.append`: un hecho pericial sin el run
+  que lo sostiene es indistinguible de una alucinación. El campo opcional
+  `finding_kind` (`afirmacion` por defecto | `descarte`) gobierna la excepción: un
+  **`descarte`** —documentar que una vía NO aportó, p. ej. «el timeline no muestra
+  ejecución de X»— queda **exento**, porque es un resultado legítimo que puede no
+  tener un `ArtifactRun` con salida útil. El registro de descartes legítimos no se
+  rompe.
+- **El informe pericial los pinta** (`forensia.reports.generator`): cada hallazgo
+  lleva su línea de confianza + procedencia (`confidence`, `observed_at`, `run`,
+  `SHA-256 artefacto`), y la tabla MITRE lista los `finding_id`/títulos que
+  sostienen cada técnica (no sólo el recuento).
+
+Sigue sin producirse el `MitreTechniqueMatch[]` con `confidence` **sintetizado**
+por el orquestador (§5.bis arriba): el `confidence` que existe ahora es el que el
+agente calibra POR HALLAZGO, no una síntesis por técnica.
 
 ### 5.ter Propuesta del agente ≠ dictamen del perito
 

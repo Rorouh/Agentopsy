@@ -65,12 +65,17 @@ def test_full_report_is_well_formed_and_persists(wiring) -> None:
     case = w["cases"].create(name="Murciélago", examiner="ramos", os_profile="windows")
 
     ev_id = _register_evidence(w, case.id)
-    w["findings"].append(case.id, {
+    f1 = w["findings"].append(case.id, {
         "title": "Volcado de credenciales LSASS",
         "summary": "Se observa acceso a la memoria de lsass compatible con dumping.",
         "severity": "critical",
         "evidence_id": ev_id,
         "tool_id": "volatility3",
+        # Procedencia + confianza + marca del artefacto (esquema de hallazgo cerrado).
+        "run_id": "11111111-1111-4111-8111-111111111111",
+        "confidence": 0.9,
+        "observed_at": "2026-07-15T13:42:00Z",
+        "artifact_sha256": "a" * 64,
         "mitre_hints": ["T1003"],
     })
     w["findings"].append(case.id, {
@@ -79,6 +84,7 @@ def test_full_report_is_well_formed_and_persists(wiring) -> None:
         "severity": "high",
         "evidence_id": ev_id,
         "tool_id": "bulk_extractor",
+        "run_id": "22222222-2222-4222-8222-222222222222",
         "mitre_hints": ["T1048"],
     })
     # Dictamen del perito sobre una técnica (eje 2, persistido y auditado).
@@ -107,12 +113,26 @@ def test_full_report_is_well_formed_and_persists(wiring) -> None:
     assert {b["sev"] for b in findings_blocks} == {"critical", "high"}
     assert any("T1003" in b["tags"] for b in findings_blocks)
 
+    # El hallazgo con confianza + procedencia pinta su línea meta (confianza,
+    # observado, run, sha256 del artefacto).
+    lsass = next(b for b in findings_blocks if b["title"].startswith("Volcado"))
+    assert "Confianza: 0.90" in lsass["meta"]
+    assert "2026-07-15T13:42:00Z" in lsass["meta"]
+    assert f1.run_id[:8] in lsass["meta"]
+    assert "SHA-256 artefacto: aaaaaaaaaaaa" in lsass["meta"]
+
     # La correlación MITRE lleva una tabla con la técnica dictaminada.
     mitre = next(s for s in data["sections"] if s["num"] == "6")
     table = next(b for b in mitre["blocks"] if b["t"] == "table")
+    assert "Hallazgos que la sostienen" in table["headers"]
     flat = [cell for row in table["rows"] for cell in row]
     assert "T1003" in flat
     assert "Confirmada" in flat
+    # La columna de hallazgos LISTA el finding que la sostiene (id + título), no
+    # sólo el recuento.
+    supporting = "\n".join(flat)
+    assert f1.id[:8] in supporting
+    assert "Volcado de credenciales LSASS" in supporting
 
     # Custodia: aparece el SHA-256 baseline de la evidencia registrada.
     custodia = next(s for s in data["sections"] if s["num"] == "3")

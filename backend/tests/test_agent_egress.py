@@ -243,7 +243,11 @@ class TestAudit:
         audit = AuditLog(cases.case_dir(anchored["case"].id) / "audit.jsonl")
         finding_call = ToolCall(
             tool_id="record_finding",
-            params={"title": "Hallazgo", "summary": "algo relevante", "severity": "low"},
+            params={
+                "title": "Hallazgo", "summary": "algo relevante", "severity": "low",
+                # Hallazgo afirmativo: el store exige procedencia (run_id) — RULE 2.
+                "run_id": "11111111-1111-4111-8111-111111111111",
+            },
             call_id="c1",
         )
         backend = ScriptedBackend(actions=[finding_call], is_local=False)

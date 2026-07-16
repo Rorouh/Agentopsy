@@ -15,6 +15,17 @@ from typing import Any
 
 from forensia.artifact_ref import artifact_ref_json_schema
 
+# Descripción común del input-de-artefacto derivado de las EZ Tools: como el
+# `hive_path` de regripper, aceptan la ArtifactRef {run_id, relpath} que produjo un
+# `tsk_icat` previo, para encadenar `tsk_icat.output → tool.input` con custodia del
+# derivado (el dispatcher re-hashea el artefacto antes de ejecutar). Omítelo y
+# FORENSIA inyecta el path de la evidencia directamente.
+_EZ_INPUT_DESC = (
+    "ArtifactRef {{run_id, relpath}} emitida por un `tsk_icat` previo que extrajo "
+    "{what}. Encadena tsk_icat.output → esta tool. Omítelo para correr sobre la "
+    "evidencia que FORENSIA inyecta."
+)
+
 # Schemas de parámetros por tool_id. Solo los params QUE EL LLM PUEDE ELEGIR.
 # Los auto-inyectados se omiten del schema (el LLM no debería decidirlos).
 TOOL_PARAM_SCHEMAS: dict[str, dict[str, Any]] = {
@@ -108,6 +119,49 @@ TOOL_PARAM_SCHEMAS: dict[str, dict[str, Any]] = {
                 "description": "Emit body file for mactime (-m).",
             },
         },
+        "additionalProperties": False,
+    },
+    "tsk_icat": {
+        "type": "object",
+        "properties": {
+            "inode": {
+                "type": ["integer", "string"],
+                "description": (
+                    "TSK metadata address (inode) of the file to extract, as located "
+                    "by tsk_fls. A number, optionally with -type[-id] suffixes "
+                    "(e.g. 13552 or 12-128-4)."
+                ),
+            },
+            "partition_offset": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Partition offset in sectors (-o).",
+            },
+            "filesystem": {
+                "type": "string",
+                "enum": [
+                    "ntfs", "fat", "fat12", "fat16", "fat32", "ext2", "ext3",
+                    "ext4", "hfs", "iso9660", "ufs", "yaffs2",
+                ],
+                "description": "Filesystem type hint (-f). Omit to auto-detect.",
+            },
+            "image_format": {
+                "type": "string",
+                "enum": ["raw", "ewf", "aff", "vmdk", "vhd"],
+                "description": "Image container format hint (-i). Omit to auto-detect.",
+            },
+            "recover": {
+                "type": "boolean",
+                "default": False,
+                "description": "Recover deleted content best-effort (-r).",
+            },
+            "slack": {
+                "type": "boolean",
+                "default": False,
+                "description": "Include slack space (-s).",
+            },
+        },
+        "required": ["inode"],
         "additionalProperties": False,
     },
     "tsk_mactime": {
@@ -218,22 +272,42 @@ TOOL_PARAM_SCHEMAS: dict[str, dict[str, Any]] = {
     },
     "evtxecmd": {
         "type": "object",
-        "properties": {},
+        "properties": {
+            "evtx_path": {
+                **artifact_ref_json_schema(),
+                "description": _EZ_INPUT_DESC.format(what="the .evtx file"),
+            },
+        },
         "additionalProperties": False,
     },
     "mftecmd": {
         "type": "object",
-        "properties": {},
+        "properties": {
+            "mft_path": {
+                **artifact_ref_json_schema(),
+                "description": _EZ_INPUT_DESC.format(what="the $MFT"),
+            },
+        },
         "additionalProperties": False,
     },
     "lecmd": {
         "type": "object",
-        "properties": {},
+        "properties": {
+            "target_path": {
+                **artifact_ref_json_schema(),
+                "description": _EZ_INPUT_DESC.format(what="the .lnk file"),
+            },
+        },
         "additionalProperties": False,
     },
     "jlecmd": {
         "type": "object",
-        "properties": {},
+        "properties": {
+            "target_path": {
+                **artifact_ref_json_schema(),
+                "description": _EZ_INPUT_DESC.format(what="the Jump List file"),
+            },
+        },
         "additionalProperties": False,
     },
     "recmd": {
@@ -269,17 +343,36 @@ TOOL_PARAM_SCHEMAS: dict[str, dict[str, Any]] = {
     },
     "appcompatcacheparser": {
         "type": "object",
-        "properties": {},
+        "properties": {
+            "hive_path": {
+                **artifact_ref_json_schema(),
+                "description": _EZ_INPUT_DESC.format(what="the SYSTEM hive"),
+            },
+        },
         "additionalProperties": False,
     },
     "sbecmd": {
         "type": "object",
-        "properties": {},
+        "properties": {
+            "target_path": {
+                **artifact_ref_json_schema(),
+                "description": _EZ_INPUT_DESC.format(
+                    what="the directory of UsrClass.dat/NTUSER.DAT hives"
+                ),
+            },
+        },
         "additionalProperties": False,
     },
     "wxtcmd": {
         "type": "object",
-        "properties": {},
+        "properties": {
+            "target_path": {
+                **artifact_ref_json_schema(),
+                "description": _EZ_INPUT_DESC.format(
+                    what="the ActivitiesCache.db"
+                ),
+            },
+        },
         "additionalProperties": False,
     },
     "rbcmd": {
@@ -317,9 +410,9 @@ TOOL_PARAM_SCHEMAS: dict[str, dict[str, Any]] = {
 
 # Descripciones humanas para que el LLM entienda qué hace cada tool.
 TOOL_DESCRIPTIONS: dict[str, str] = {
-    "file_info": "Identify what KIND of file the evidence actually is. ALWAYS run this FIRST. If it returns generic data, follow up with xxd_head and strings_head before invoking any forensic tool.",
+    "file_info": "Identify what KIND of file the evidence actually is. ALWAYS run this FIRST. If it returns generic data, follow up with strings_head before invoking any forensic tool.",
     "xxd_head": "Hex-dump the first bytes of the evidence to read its magic number directly. Use this when file_info returns 'data' (no signature) — most container formats are identifiable from bytes 0..32.",
-    "strings_head": "Extract printable strings from the evidence to look for vendor names, kernel banners, format markers (Linux version, LiME, EnCase, VMware, EVTX). Pair with xxd_head when file_info is non-diagnostic.",
+    "strings_head": "Extract printable strings from the evidence to look for vendor names, kernel banners, format markers (Linux version, LiME, EnCase, VMware, EVTX). Use it when file_info is non-diagnostic.",
     "tsk_mmls": "List partitions of the raw disk evidence. Run this first to discover the partition layout.",
     "tsk_fls": "List files in the partition. Useful for triaging the filesystem and producing bodyfiles for mactime.",
     "tsk_mactime": "Build a chronological timeline from a TSK bodyfile.",
@@ -330,6 +423,7 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "hayabusa": "Run Hayabusa with Sigma rules over a directory of pre-extracted EVTX files.",
     "chainsaw": "Hunt over EVTX or JSON files with Sigma rules.",
     "regripper": "Run RegRipper against a pre-extracted Windows registry hive.",
+    "tsk_icat": "Extract a file's raw bytes by inode (from tsk_fls) straight off the image without mounting — allocated or deleted. The extracted artifact can feed a downstream parser (regripper, mftecmd, evtxecmd…) as {run_id, relpath}.",
     "evtxecmd": "Parse a pre-extracted .evtx file (or directory) into CSV.",
     "mftecmd": "Parse a pre-extracted $MFT into CSV.",
     "lecmd": "Parse pre-extracted Windows shortcut .lnk files (file or directory) into CSV — target paths, timestamps, volume info.",
@@ -373,12 +467,54 @@ _INTERNAL_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             },
             "run_id": {
                 "type": "string",
-                "description": "UUID4 del ArtifactRun que respalda este hallazgo.",
+                "description": (
+                    "UUID4 del ArtifactRun que respalda este hallazgo. OBLIGATORIO "
+                    "para un hallazgo afirmativo (procedencia): sin él se rechaza el "
+                    "registro, salvo que marques finding_kind=\"descarte\"."
+                ),
             },
-            # Los prompts de los paquetes YA prescriben este campo («Esquema de
-            # hallazgo» en agentes/*/prompts/system.md). Sin él en el schema,
-            # `additionalProperties: False` impedía al modelo emitirlo y la
-            # correlación MITRE nunca llegaba al backend.
+            # Los prompts de los paquetes YA prescriben estos campos («Esquema de
+            # hallazgo» en agentes/*/prompts/system.md): confidence, observed_at y la
+            # procedencia de artefacto. Sin ellos en el schema,
+            # `additionalProperties: False` impedía al modelo emitirlos (mismo bug que
+            # `mitre_hints`) y el motor los descartaba en silencio.
+            "confidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": (
+                    "Confianza CALIBRADA (0..1) en el hallazgo. 1.0 = evidencia "
+                    "directa e inequívoca; valores bajos para inferencias. Opcional."
+                ),
+            },
+            "observed_at": {
+                "type": "string",
+                "description": (
+                    "Marca temporal del ARTEFACTO que sostiene el hallazgo (cuándo "
+                    "ocurrió el hecho en la evidencia), ISO-8601 con offset/UTC "
+                    "(p. ej. 2026-07-15T13:42:00Z). Distinta de cuándo registras el "
+                    "hallazgo. Opcional."
+                ),
+            },
+            "artifact_sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-fA-F]{64}$",
+                "description": (
+                    "SHA-256 (64 hex) del output del run que sostiene el hallazgo — "
+                    "procedencia a nivel de artefacto. Opcional; el ancla obligatoria "
+                    "es run_id."
+                ),
+            },
+            "finding_kind": {
+                "type": "string",
+                "enum": ["afirmacion", "descarte"],
+                "description": (
+                    "`afirmacion` (por defecto) afirma algo sobre la evidencia y EXIGE "
+                    "run_id. `descarte` documenta que una vía NO aportó (queda exento "
+                    "de procedencia). Úsalo solo para descartes reales, no para eludir "
+                    "el requisito de run_id de una afirmación."
+                ),
+            },
             "mitre_hints": {
                 "type": "array",
                 "items": {"type": "string"},
@@ -433,8 +569,13 @@ _INTERNAL_DESCRIPTIONS: dict[str, str] = {
         "final answer for EACH meaningful conclusion (file type identified, kernel "
         "version detected, IOC found, hypothesis confirmed/rejected, etc.). The "
         "findings panel in the UI reads these. severity: low for context, medium for "
-        "noteworthy, high for actionable, critical for clear compromise. Attach "
-        "mitre_hints when the finding supports an ATT&CK technique from the seed."
+        "noteworthy, high for actionable, critical for clear compromise. An "
+        "AFFIRMATIVE finding (something you assert about the evidence) REQUIRES "
+        "run_id (the ArtifactRun that backs it) — it is rejected without it; set "
+        "finding_kind=\"descarte\" when you document a ruled-out lead instead. Attach "
+        "confidence (0..1), observed_at (when it happened in the evidence) and "
+        "artifact_sha256 when you have them, and mitre_hints when the finding "
+        "supports an ATT&CK technique from the seed."
     ),
     "annotate_mitre": (
         "ANCHOR ATT&CK techniques to an ALREADY-recorded finding so they show up as "

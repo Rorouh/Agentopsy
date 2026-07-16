@@ -21,10 +21,19 @@ from forensia.mitre import catalog
 logger = logging.getLogger(__name__)
 
 _VALID_SEVERITIES = frozenset({"low", "medium", "high", "critical"})
+#: Naturaleza del hallazgo. Un ``afirmacion`` afirma algo sobre la evidencia y por
+#: tanto EXIGE procedencia (``run_id``): un hecho pericial sin el run que lo sostiene
+#: es indistinguible de una alucinación (RULE 2 / SECURITY INVARIANT 5). Un
+#: ``descarte`` documenta que una vía NO aportó (p. ej. «el timeline no muestra
+#: ejecución de X»); es un resultado legítimo que puede no tener un ArtifactRun con
+#: salida útil, así que queda EXENTO del requisito de procedencia.
+_VALID_FINDING_KINDS = frozenset({"afirmacion", "descarte"})
+_DEFAULT_FINDING_KIND = "afirmacion"
 _UUID4_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
     re.IGNORECASE,
 )
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$", re.IGNORECASE)
 
 
 def _utc_now_iso() -> str:
@@ -51,6 +60,22 @@ class Finding:
     #: campo sigan construyendo: sin él, ``Finding(**data)`` en ``list()`` lanzaría
     #: TypeError y los hallazgos antiguos desaparecerían de la UI en silencio.
     mitre_hints: list[str] = field(default_factory=list)
+    #: Confianza CALIBRADA del agente en el hallazgo (0..1), tal y como los prompts
+    #: del paquete la prescriben («Esquema de hallazgo»). El motor la descartaba
+    #: (`additionalProperties: false`) — mismo bug que `mitre_hints`. Opcional.
+    confidence: float | None = None
+    #: Marca temporal del ARTEFACTO que sostiene el hallazgo (cuándo ocurrió el hecho
+    #: en la evidencia), ISO-8601 — distinta de ``created_at`` (cuándo se registró el
+    #: hallazgo). Opcional; texto libre validado como string.
+    observed_at: str | None = None
+    #: Procedencia a nivel de artefacto: SHA-256 del output del ``run_id`` que
+    #: sostiene el hallazgo (cadena de custodia del derivado, FORENSIC INVARIANT 4).
+    #: Opcional; el ``run_id`` es el ancla obligatoria para un hallazgo afirmativo.
+    artifact_sha256: str | None = None
+    #: ``afirmacion`` (default) | ``descarte``. Gobierna el requisito de procedencia
+    #: (ver ``_VALID_FINDING_KINDS``). Lleva default para que los hallazgos previos al
+    #: campo sigan construyendo en ``list()``.
+    finding_kind: str = _DEFAULT_FINDING_KIND
 
 
 def _validate_mitre_hints(raw: Any) -> list[str]:
@@ -118,6 +143,46 @@ class FindingStore:
             if not isinstance(run_id, str) or not _UUID4_RE.match(run_id):
                 raise ValueError("finding.run_id must be a UUID4 or null")
 
+        confidence = data.get("confidence")
+        if confidence is not None:
+            if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
+                raise ValueError("finding.confidence must be a number in [0, 1] or null")
+            confidence = float(confidence)
+            if not 0.0 <= confidence <= 1.0:
+                raise ValueError("finding.confidence must be within [0, 1]")
+
+        observed_at = data.get("observed_at")
+        if observed_at is not None:
+            if not isinstance(observed_at, str) or not observed_at.strip():
+                raise ValueError("finding.observed_at must be a non-empty ISO-8601 string or null")
+            observed_at = observed_at.strip()
+
+        artifact_sha256 = data.get("artifact_sha256")
+        if artifact_sha256 is not None:
+            if not isinstance(artifact_sha256, str) or not _SHA256_RE.match(artifact_sha256):
+                raise ValueError("finding.artifact_sha256 must be a 64-char hex SHA-256 or null")
+            artifact_sha256 = artifact_sha256.lower()
+
+        finding_kind = (data.get("finding_kind") or _DEFAULT_FINDING_KIND)
+        if not isinstance(finding_kind, str) or finding_kind.strip().lower() not in _VALID_FINDING_KINDS:
+            raise ValueError(
+                f"finding.finding_kind must be one of {sorted(_VALID_FINDING_KINDS)}"
+            )
+        finding_kind = finding_kind.strip().lower()
+
+        # Anti-alucinación (RULE 2 / SECURITY INVARIANT 5): un hallazgo AFIRMATIVO
+        # (algo que se afirma sobre la evidencia) DEBE anclarse a la procedencia del
+        # run que lo sostiene — sin `run_id` no es distinguible de una alucinación.
+        # Un `descarte` (una vía que NO aportó) queda exento: es un resultado legítimo
+        # que puede no tener un ArtifactRun con salida útil.
+        if finding_kind != "descarte" and not run_id:
+            raise ValueError(
+                "finding afirmativo requiere procedencia: pasa `run_id` con el "
+                "ArtifactRun que lo sostiene, o marca `finding_kind=\"descarte\"` si "
+                "documentas una vía descartada (RULE 2 — sin procedencia no se registra "
+                "una afirmación sobre la evidencia)."
+            )
+
         finding = Finding(
             id=str(uuid.uuid4()),
             case_id=case_id,
@@ -129,6 +194,10 @@ class FindingStore:
             run_id=run_id,
             created_at=_utc_now_iso(),
             mitre_hints=_validate_mitre_hints(data.get("mitre_hints")),
+            confidence=confidence,
+            observed_at=observed_at,
+            artifact_sha256=artifact_sha256,
+            finding_kind=finding_kind,
         )
 
         path = case_dir / "findings.jsonl"

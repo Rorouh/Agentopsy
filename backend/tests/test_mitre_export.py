@@ -28,6 +28,11 @@ from forensia.mitre.export import (
 )
 
 
+#: Procedencia válida (UUID4) para hallazgos afirmativos — el store la exige
+#: (anti-alucinación, RULE 2); estos tests ejercitan la export MITRE, no ese gate.
+_RUN_ID = "11111111-1111-4111-8111-111111111111"
+
+
 @pytest.fixture
 def tmp_case(tmp_path) -> tuple[CaseManager, str]:
     cases = CaseManager(root=tmp_path / "cases")
@@ -58,6 +63,7 @@ def test_csv_row_for_an_agent_proposal(tmp_case) -> None:
         "title": "Inyección",
         "summary": "malfind: región RWX.",
         "severity": "high",
+        "run_id": _RUN_ID,
         "mitre_hints": ["T1055"],
     })
     rows = _rows(coverage_to_csv(coverage.coverage(case_id)))
@@ -81,6 +87,7 @@ def test_csv_carries_the_examiner_verdict_and_rationale(tmp_case) -> None:
     coverage = CoverageStore(cases, findings)
     f = findings.append(case_id, {
         "title": "Inyección", "summary": "malfind.", "severity": "high",
+        "run_id": _RUN_ID,
         "mitre_hints": ["T1055"],
     })
     coverage.adjudicate(
@@ -143,6 +150,7 @@ def test_navigator_layer_colors_by_axis(tmp_case) -> None:
     # Propuesta del agente sin dictaminar → color de propuesta.
     findings.append(case_id, {
         "title": "Persistencia", "summary": "run key.", "severity": "medium",
+        "run_id": _RUN_ID,
         "mitre_hints": ["T1547.001"],
     })
     # Dictamen del perito → color de veredicto.
@@ -167,6 +175,7 @@ def test_navigator_layer_verdict_wins_over_proposal_color(tmp_case) -> None:
     coverage = CoverageStore(cases, findings)
     findings.append(case_id, {
         "title": "Inyección", "summary": "malfind.", "severity": "high",
+        "run_id": _RUN_ID,
         "mitre_hints": ["T1055"],
     })
     coverage.adjudicate(case_id, "T1055", "sospechosa", "Indicio.")

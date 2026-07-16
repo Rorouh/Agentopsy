@@ -271,6 +271,11 @@ def _finding(pdf: _Report, b: dict[str, Any]) -> None:
     pdf.set_font("Helvetica", "", 9.5)
     pdf.set_text_color(*_BODY)
     pdf.multi_cell(0, 5, _s(b.get("text", "")), new_x="LMARGIN", new_y="NEXT")
+    meta = b.get("meta")
+    if meta:
+        pdf.set_font("Helvetica", "I", 8)
+        pdf.set_text_color(*_FAINT)
+        pdf.multi_cell(0, 4.6, _s(str(meta)), new_x="LMARGIN", new_y="NEXT")
     tags = b.get("tags", []) or []
     if tags:
         pdf.set_font("Courier", "", 8)
