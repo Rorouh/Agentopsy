@@ -359,7 +359,7 @@ def run_filesystem_timeline(
     # Persistir el resultado (acotado) por evidencia bajo el caso, para que la
     # super-timeline SOBREVIVA a recargas de la página y reinicios del api (el
     # job_registry es solo en memoria). La fuente forense sigue siendo el
-    # bodyfile anclado en artifacts/<run_id>/stdout.txt; esto es la vista
+    # bodyfile anclado en artifacts/<run_id>/out/stdout.bin; esto es la vista
     # materializada, regenerable en cualquier momento con «Generar».
     _persist_fs_timeline(case_id, evidence_context.evidence_id, result)
     return result
@@ -402,16 +402,19 @@ def load_filesystem_timeline(case_id: str, evidence_id: str) -> dict[str, Any] |
 
 
 def _read_run_stdout(case_id: str, run_id: str) -> str:
-    """Read the captured stdout (the ``fls -m`` bodyfile) of an anchored run.
+    """Read the ``fls -m`` bodyfile of an anchored run.
 
-    ``fls`` streams its bodyfile to stdout, which the artifact store persists (and
-    hashes) at ``<case_dir>/artifacts/<run_id>/stdout.txt``. Reading it is confined to
-    the case directory the dispatcher just wrote to.
+    In `-m` mode fls's stdout IS the bodyfile, and the dispatcher captures it (byte-exact,
+    hashed) as the run's ``out/stdout.bin`` output artifact — the same referenceable file
+    ``mactime`` consumes as a ``{run_id, relpath}`` input. Reading it is confined to the
+    case directory the dispatcher just wrote to.
     """
-    stdout_path = case_manager.case_dir(case_id) / "artifacts" / run_id / "stdout.txt"
-    if not stdout_path.is_file():
+    bodyfile_path = (
+        case_manager.case_dir(case_id) / "artifacts" / run_id / "out" / "stdout.bin"
+    )
+    if not bodyfile_path.is_file():
         raise RuntimeError(
-            f"no se encontró el bodyfile de tsk_fls en {stdout_path} — el run "
-            f"{run_id} no persistió su stdout."
+            f"no se encontró el bodyfile de tsk_fls en {bodyfile_path} — el run "
+            f"{run_id} no materializó su artefacto de bodyfile."
         )
-    return stdout_path.read_text(encoding="utf-8", errors="replace")
+    return bodyfile_path.read_text(encoding="utf-8", errors="replace")

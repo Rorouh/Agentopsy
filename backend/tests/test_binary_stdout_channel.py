@@ -155,6 +155,89 @@ def test_dispatcher_binary_stdout_requires_case(wired_dispatcher, monkeypatch) -
 
 
 # --------------------------------------------------------------------------- #
+# 3.bis) DUAL-MODE tool: TSK `fls -m` bodyfile → hashed out/ artifact (the
+#        fls→mactime chain regression). Its stdout IS the bodyfile mactime
+#        consumes as {run_id, relpath}; without materialising it to out/ the
+#        chain had no resolvable input (KeyError: produced no output file).
+# --------------------------------------------------------------------------- #
+_BODYFILE = "0|/etc/passwd|389|r/rrw-|0|0|4096|1706188200|1706188200|1706188200|1706188200\n"
+
+
+def test_fls_body_mode_materialises_referenceable_bodyfile(
+    wired_dispatcher, monkeypatch, cases, anchored, store
+) -> None:
+    """`tsk_fls` with body_format=True streams its bodyfile to a hashed out/stdout.bin
+    that mactime can resolve as {run_id, relpath} — the fix for the broken chain."""
+    case, handle, ctx = anchored["case"], anchored["handle"], anchored["ctx"]
+    monkeypatch.setattr(wired_dispatcher, "resolve", lambda _binary: None)
+
+    seen: dict[str, str] = {}
+
+    def fake_maletin(service, argv, *, timeout=None, stdout_path=None):
+        # The conditional stdout-artifact capture MUST have triggered for body mode.
+        assert stdout_path is not None, "fls -m must receive a stdout_path (Bug 1)"
+        seen["stdout_path"] = stdout_path
+        Path(stdout_path).write_text(_BODYFILE, encoding="utf-8")
+        return 0, "", ""
+
+    monkeypatch.setattr(wired_dispatcher.maletin, "run_argv_in_maletin", fake_maletin)
+
+    result = wired_dispatcher.execute(
+        "tsk_fls",
+        {"image_path": str(handle.original_path), "body_format": True, "recursive": True},
+        case_id=case.id,
+        os_profile="unix",
+        evidence_context=ctx,
+    )
+
+    # The bodyfile landed as a hashed output file (not lost to an unreferenceable stdout).
+    output_files = result["artifact_run"]["output_files"]
+    bodyfile = [f for f in output_files if f["relpath"] == "stdout.bin"]
+    assert len(bodyfile) == 1
+    expected_sha = hashlib.sha256(_BODYFILE.encode("utf-8")).hexdigest()
+    assert bodyfile[0]["sha256"] == expected_sha
+
+    # The result surfaces the artifact REFERENCE the agent hands to mactime.
+    ref = result["parsed"]["artifact"]
+    assert ref["relpath"] == "stdout.bin" and ref["run_id"] == result["run_id"]
+
+    # And that reference RESOLVES against the store (custody re-hash) — the chain works.
+    path, sha256, _ = store.resolve_output_file(case.id, result["run_id"], "stdout.bin")
+    assert sha256 == expected_sha
+    assert path.read_text(encoding="utf-8") == _BODYFILE
+
+
+def test_fls_listing_mode_stays_inline_no_stdout_artifact(
+    wired_dispatcher, monkeypatch, cases, anchored
+) -> None:
+    """Without body_format, fls lists files inline (parsed entries) and does NOT divert
+    stdout to an artifact — the dual mode is preserved, only `-m` is redirected."""
+    case, handle, ctx = anchored["case"], anchored["handle"], anchored["ctx"]
+    monkeypatch.setattr(wired_dispatcher, "resolve", lambda _binary: None)
+
+    def fake_maletin(service, argv, *, timeout=None, stdout_path=None):
+        assert stdout_path is None, "listing-mode fls must NOT capture stdout to a file"
+        return 0, "r/r 389:\t/etc/passwd\nd/d 12:\t/etc\n", ""
+
+    monkeypatch.setattr(wired_dispatcher.maletin, "run_argv_in_maletin", fake_maletin)
+
+    result = wired_dispatcher.execute(
+        "tsk_fls",
+        {"image_path": str(handle.original_path), "recursive": True},
+        case_id=case.id,
+        os_profile="unix",
+        evidence_context=ctx,
+    )
+
+    # Inline entries were parsed; no stdout.bin artifact was produced.
+    assert result["parsed"]["format"] == "list"
+    assert result["parsed"]["entries_count"] == 2
+    assert all(
+        f["relpath"] != "stdout.bin" for f in result["artifact_run"]["output_files"]
+    )
+
+
+# --------------------------------------------------------------------------- #
 # 4) the exec-agent itself (infra, cross-lane): real loopback HTTP round-trip
 # --------------------------------------------------------------------------- #
 def _load_exec_agent():

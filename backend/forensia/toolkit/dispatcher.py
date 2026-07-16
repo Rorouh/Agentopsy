@@ -120,14 +120,15 @@ def execute(
     if tool is None:
         raise ToolExecutionError(f"unknown tool id: {tool_id!r}")
 
-    # A ``binary_stdout`` tool streams raw bytes; those bytes must land in a hashed
-    # artifact file, which only exists for an anchored run. Refuse loudly rather than
-    # fall back to a lossy text capture (RULE 2, FORENSIC INVARIANT 4).
-    if tool.binary_stdout and case_id is None:
+    # A tool whose stdout IS its consumable artifact (``binary_stdout`` always; a dual-mode
+    # tool like TSK ``fls -m`` only in that mode) must land those bytes in a hashed artifact
+    # file, which only exists for an anchored run. Refuse loudly rather than fall back to a
+    # lossy text capture (RULE 2, FORENSIC INVARIANT 4).
+    if _stdout_to_artifact(tool, params) and case_id is None:
         raise ToolExecutionError(
-            f"tool {tool_id!r} emite stdout binario y debe ejecutarse anclado a un caso "
-            "(case_id) para que su salida se guarde y hashee como artefacto; no hay "
-            "captura en texto para binario (RULE 2 / FORENSIC INVARIANT 4)."
+            f"tool {tool_id!r} entrega su salida principal como artefacto y debe ejecutarse "
+            "anclado a un caso (case_id) para que se guarde y hashee; no hay captura en "
+            "texto equivalente (RULE 2 / FORENSIC INVARIANT 4)."
         )
 
     # ---- Verified evidence context: REQUIRED for every anchored run ------------------
@@ -235,7 +236,7 @@ def execute(
             tool_version=tool_version,
         )
         _inject_run_outputs(tool, effective_params, out_dir)
-        if tool.binary_stdout:
+        if _stdout_to_artifact(tool, effective_params):
             binary_stdout_path = str(out_dir / _BINARY_STDOUT_FILENAME)
 
     try:
@@ -274,7 +275,14 @@ def execute(
             exit_code, stdout, stderr = _invoke_prepared(prepared, timeout=timeout)
         except maletin.MaletinExecError as exc:
             raise ToolExecutionError(str(exc)) from exc
-        return _build_result(tool, prepared.argv, exit_code, stdout, stderr)
+        return _build_result(
+            tool,
+            prepared.argv,
+            exit_code,
+            stdout,
+            stderr,
+            stdout_is_artifact=_stdout_to_artifact(tool, effective_params),
+        )
 
     # The literal command and its venue are fixed. Persist the start before crossing
     # the runner boundary so transport/exec-agent/process failures remain auditable.
@@ -423,7 +431,13 @@ def execute(
     )
 
     result = _build_result(
-        tool, prepared.argv, exit_code, stdout, stderr, artifact_run=artifact_run
+        tool,
+        prepared.argv,
+        exit_code,
+        stdout,
+        stderr,
+        artifact_run=artifact_run,
+        stdout_is_artifact=_stdout_to_artifact(tool, effective_params),
     )
     result["case_id"] = case_id
     result["run_id"] = run_id
@@ -687,6 +701,17 @@ def _resolve_artifact_ref(
         "size": size,
         "resolved_path": str(path),
     }
+
+
+def _stdout_to_artifact(tool: Tool, params: dict[str, Any]) -> bool:
+    """Whether THIS invocation streams stdout to a hashed ``out/`` artifact instead of
+    decoding it inline. Always for a ``binary_stdout`` tool; for a dual-mode tool (TSK
+    ``fls``: inline listing vs. ``-m`` bodyfile) only when the param named by
+    ``stdout_artifact_param`` is truthy."""
+    if tool.binary_stdout:
+        return True
+    param = tool.stdout_artifact_param
+    return bool(param and params.get(param))
 
 
 def _inject_run_outputs(tool: Tool, params: dict[str, Any], out_dir: Path) -> None:
@@ -968,13 +993,15 @@ def _build_result(
     stderr: str,
     *,
     artifact_run: Any | None = None,
+    stdout_is_artifact: bool = False,
 ) -> dict[str, Any]:
     parsed: Any | None = None
-    if tool.binary_stdout:
-        # A binary_stdout tool streamed its RAW bytes to a hashed artifact file, so
-        # ``stdout`` is "" here. Surface the artifact REFERENCE — never ``parse("")``,
-        # which (e.g. icat) reports ``content_length: 0`` and misreads as "the tool
-        # returned nothing". Only on success: a non-zero exit is a real failure.
+    if stdout_is_artifact:
+        # This invocation streamed its stdout to a hashed artifact file, so ``stdout`` is
+        # "" here. Surface the artifact REFERENCE — never ``parse("")``, which (e.g. icat)
+        # reports ``content_length: 0`` and misreads as "the tool returned nothing", and
+        # (fls -m) would drop the bodyfile pointer mactime needs. Only on success: a
+        # non-zero exit is a real failure.
         if exit_code == 0:
             parsed = _binary_artifact_ref(artifact_run)
     elif exit_code == 0:

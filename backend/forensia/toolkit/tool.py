@@ -75,6 +75,15 @@ class Tool:
     # the run's ``out/`` directory (hashed there, FORENSIC INVARIANT 4) instead of carrying
     # it as a (lossy) string. Text tools keep the default and are unaffected.
     binary_stdout: bool = False
+    # Name of a param whose truthiness makes THIS invocation stream stdout to the same
+    # hashed ``out/`` artifact file as ``binary_stdout`` — for DUAL-MODE tools whose stdout
+    # is an inline result in one mode and a consumable artifact in another. TSK ``fls``
+    # lists files inline normally, but with ``-m`` (``body_format``) its stdout IS the
+    # bodyfile that ``mactime`` consumes as a ``{run_id, relpath}`` input; captured to
+    # ``out/`` it becomes referenceable and hash-verified (FORENSIC INVARIANTS 1-2, 4)
+    # instead of living only in the lossy text ``stdout_sample``. ``None`` → stdout capture
+    # is decided solely by ``binary_stdout`` (default, unchanged).
+    stdout_artifact_param: str | None = None
     # Name of the param that carries the RAW DISK IMAGE path this tool reads (TSK
     # `mmls`/`fls`/`icat` → ``"image_path"``). When that path is an EWF container
     # (`.E01`/`.ExNN`), the dispatcher asks the maletín's exec-agent to expose it as a raw

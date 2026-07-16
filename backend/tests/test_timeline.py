@@ -284,9 +284,9 @@ def test_run_filesystem_timeline_runs_fls_and_parses_bodyfile(
         assert tool_id == "tsk_fls"
         assert params["body_format"] is True and params["recursive"] is True
         run_id = "run-abc"
-        run_dir = cases.case_dir(case_id) / "artifacts" / run_id
-        run_dir.mkdir(parents=True, exist_ok=True)
-        (run_dir / "stdout.txt").write_text(body, encoding="utf-8")
+        out_dir = cases.case_dir(case_id) / "artifacts" / run_id / "out"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "stdout.bin").write_text(body, encoding="utf-8")
         return {"exit_code": 0, "run_id": run_id, "stderr_sample": ""}
 
     monkeypatch.setattr(builder.dispatcher, "execute", fake_execute)
@@ -319,9 +319,9 @@ def test_run_filesystem_timeline_persists_result_and_is_loadable(
 
     def fake_execute(tool_id, params, *, case_id, os_profile, evidence_context):
         run_id = "run-abc"
-        run_dir = cases.case_dir(case_id) / "artifacts" / run_id
-        run_dir.mkdir(parents=True, exist_ok=True)
-        (run_dir / "stdout.txt").write_text(body, encoding="utf-8")
+        out_dir = cases.case_dir(case_id) / "artifacts" / run_id / "out"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "stdout.bin").write_text(body, encoding="utf-8")
         return {"exit_code": 0, "run_id": run_id, "stderr_sample": ""}
 
     monkeypatch.setattr(builder.dispatcher, "execute", fake_execute)

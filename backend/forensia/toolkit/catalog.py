@@ -230,6 +230,10 @@ CATALOG: tuple[Tool, ...] = (
         tier="core",
         toolkits=_BOTH,
         image_param="image_path",
+        # In `-m` (body_format) mode fls's stdout IS the bodyfile mactime consumes; capture
+        # it to a hashed out/ artifact so it is referenceable as {run_id, relpath} (else the
+        # fls→mactime chain has no resolvable input). Inline listing mode is unaffected.
+        stdout_artifact_param="body_format",
         path_parameters=(_path("image_path", _E, PathKind.FILE),),
         allowed_flags=_tsk_fls.ALLOWED_FLAGS,
         build_argv=_tsk_fls.build_argv,
