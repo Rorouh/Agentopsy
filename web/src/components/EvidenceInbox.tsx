@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { EvidenceSource } from "../api/types";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
@@ -16,17 +16,26 @@ interface EvidenceInboxProps {
   registerError: string | null;
   // Flash de 2 s tras un registro exitoso (lo gobierna la página).
   registerSuccess: boolean;
+  // Subida (drag-and-drop / examinar): la gobierna la página.
+  uploading: boolean;
+  uploadProgress: number; // 0..1
+  uploadError: string | null;
   onSelectSource: (path: string) => void;
   onLoadSources: () => void;
   onRegister: () => void;
+  onUploadFile: (file: File) => void;
 }
 
 const FORMATS_HINT = SUPPORTED_EXTENSIONS.join(" · ");
+const FILE_INPUT_ACCEPT = SUPPORTED_EXTENSIONS.join(",");
 
-// Zona de registro de evidencia. OJO: aquí NO hay upload HTTP ni File API —
-// la evidencia llega por la bandeja server-side (./evidence en el host). El
-// "drag-and-drop" es solo affordance visual: si el usuario suelta un fichero
-// del SO, se le indica el camino real (copiar a ./evidence) sin leer el File.
+// Zona de registro de evidencia. El perito puede DEPOSITAR evidencia en la
+// bandeja de dos formas: copiándola a ./evidence en el host, o SUBIÉNDOLA desde
+// aquí (drag-and-drop o «Examinar»). La subida escribe en la bandeja (el api la
+// monta rw — cadena de custodia: el agente/maletines la ven ro y nunca mutan la
+// imagen); subir NO registra: deja el fichero listo para que el operador lo
+// ELIJA y pulse «Registrar», donde ocurre el hash-gate. El backend re-valida
+// nombre y formato (RULE 2).
 export function EvidenceInbox({
   caseClosed,
   sources,
@@ -35,11 +44,19 @@ export function EvidenceInbox({
   registering,
   registerError,
   registerSuccess,
+  uploading,
+  uploadProgress,
+  uploadError,
   onSelectSource,
   onLoadSources,
   onRegister,
+  onUploadFile,
 }: EvidenceInboxProps) {
-  const [dndHint, setDndHint] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
+  // Mensaje local si el usuario suelta/elige un fichero con formato no soportado
+  // (feedback inmediato; el backend re-valida igualmente).
+  const [rejectHint, setRejectHint] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const selectedSource = sources?.find((s) => s.path === selectedSourcePath) ?? null;
   const selectedCompatible =
@@ -58,18 +75,83 @@ export function EvidenceInbox({
     );
   }
 
+  const handleFiles = (files: FileList | null) => {
+    setRejectHint(null);
+    const file = files?.[0];
+    if (!file) return;
+    if (!isSupportedEvidence(file.name)) {
+      setRejectHint(
+        `«${file.name}» no es un formato soportado. Formatos válidos: ${FORMATS_HINT}.`,
+      );
+      return;
+    }
+    onUploadFile(file);
+  };
+
+  const openFileDialog = () => fileInputRef.current?.click();
+
+  const browseButton = (
+    <Button variant="chip" disabled={uploading} onClick={openFileDialog}>
+      Examinar…
+    </Button>
+  );
+
   return (
     <>
       <div
-        className="dropzone"
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => {
-          // Nunca leemos el File object: el flujo real es la bandeja.
+        className={`dropzone${dragActive ? " dropzone--active" : ""}`}
+        onDragEnter={(e) => {
           e.preventDefault();
-          setDndHint(true);
+          if (!uploading && !registering) setDragActive(true);
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (!uploading && !registering) setDragActive(true);
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault();
+          setDragActive(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragActive(false);
+          if (uploading || registering) return;
+          handleFiles(e.dataTransfer.files);
         }}
       >
-        {registering ? (
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={FILE_INPUT_ACCEPT}
+          style={{ display: "none" }}
+          onChange={(e) => {
+            handleFiles(e.target.files);
+            // Permite volver a elegir el MISMO fichero (onChange no dispara si
+            // el value no cambia).
+            e.target.value = "";
+          }}
+        />
+
+        {uploading ? (
+          // Estado I — subiendo a la bandeja: progreso real (XHR upload.onprogress).
+          <div className="loading-state" aria-live="polite">
+            <span className="spinner" aria-hidden="true" />
+            <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
+              <div>
+                Subiendo evidencia a la bandeja… {Math.round(uploadProgress * 100)}%
+              </div>
+              <div className="upload-progress" aria-hidden="true">
+                <div
+                  className="upload-progress-bar"
+                  style={{ width: `${Math.round(uploadProgress * 100)}%` }}
+                />
+              </div>
+              <div className="dropzone-hint">
+                No cierres esta ventana hasta que termine.
+              </div>
+            </div>
+          </div>
+        ) : registering ? (
           // Estado G — registrando: indeterminado (no hay progreso ni
           // cancelación en el backend, a propósito — hash gate atómico).
           <>
@@ -88,11 +170,12 @@ export function EvidenceInbox({
           // Estado C — bandeja no consultada todavía.
           <>
             <div className="dropzone-title">
-              Copia el archivo (.E01 · .raw · .vmdk · volcado de memoria) a la carpeta{" "}
-              <code>./evidence</code> en el host y haz clic en «Buscar en la bandeja».
+              Arrastra aquí la imagen forense (.E01 · .raw · .vmdk · volcado de memoria)
+              para subirla, o cópiala a la carpeta <code>./evidence</code> del host.
             </div>
             <div className="dropzone-hint">Formatos soportados: {FORMATS_HINT}</div>
             <div className="cta-row" style={{ justifyContent: "center" }}>
+              {browseButton}
               <Button variant="chip" disabled={loadingSources} onClick={onLoadSources}>
                 {loadingSources ? "Buscando…" : "Buscar en la bandeja"}
               </Button>
@@ -107,13 +190,16 @@ export function EvidenceInbox({
         ) : sources.length === 0 ? (
           // Estado E — bandeja vacía.
           <>
-            <div className="dropzone-title">La bandeja está vacía.</div>
+            <div className="dropzone-title">
+              La bandeja está vacía. Arrastra la imagen forense aquí para subirla.
+            </div>
             <div className="dropzone-hint">
-              Copia la imagen forense a <code>./evidence</code> en el host.
+              También puedes copiarla a <code>./evidence</code> en el host.
               <br />
               Formatos soportados: {FORMATS_HINT}
             </div>
             <div className="cta-row" style={{ justifyContent: "center" }}>
+              {browseButton}
               <Button variant="chip" onClick={onLoadSources}>
                 Actualizar bandeja
               </Button>
@@ -124,6 +210,9 @@ export function EvidenceInbox({
           <>
             <div className="dropzone-title">
               Elige la imagen forense desde la bandeja de evidencias
+            </div>
+            <div className="dropzone-hint">
+              …o arrastra otra imagen aquí para subirla.
             </div>
             <div className="file-list" style={{ marginTop: 10, textAlign: "left" }}>
               {sources.map((s) => {
@@ -163,6 +252,7 @@ export function EvidenceInbox({
               })}
             </div>
             <div className="cta-row" style={{ justifyContent: "center" }}>
+              {browseButton}
               <Button variant="chip" disabled={loadingSources} onClick={onLoadSources}>
                 Actualizar bandeja
               </Button>
@@ -173,10 +263,9 @@ export function EvidenceInbox({
           </>
         )}
 
-        {dndHint && (
+        {rejectHint && !uploading && (
           <div className="dropzone-hint" aria-live="polite" style={{ marginTop: 10 }}>
-            Copia el archivo a <code>./evidence</code> y haz clic en «Actualizar bandeja»
-            para verlo aquí.
+            {rejectHint}
           </div>
         )}
       </div>
@@ -184,6 +273,13 @@ export function EvidenceInbox({
       {registerSuccess && (
         <div className="register-feedback register-feedback--success" aria-live="polite">
           ✓ Evidencia registrada
+        </div>
+      )}
+
+      {uploadError && !uploading && (
+        // Estado J — error de subida, inline y accionable.
+        <div className="error-state" aria-live="polite" style={{ marginTop: 8 }}>
+          <strong>No se pudo subir la evidencia:</strong> {uploadError}
         </div>
       )}
 

@@ -937,6 +937,26 @@ details.agent-activity > summary::-webkit-details-marker { display: none; }
   border-color: var(--accent);
   background: var(--accent-bg);
 }
+/* Arrastrando un fichero sobre la zona: resalte más marcado que :hover. */
+.dropzone--active {
+  border-color: var(--accent);
+  border-style: solid;
+  background: var(--accent-bg);
+}
+/* Barra de progreso de subida (XHR upload.onprogress). */
+.upload-progress {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+  margin: 8px 0;
+}
+.upload-progress-bar {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 0.15s ease;
+}
 .dropzone-title {
   font-family: var(--font-sans);
   font-size: 14px;

@@ -8,10 +8,10 @@ it, so it is gone.
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from forensia.custody import build_custody_act
-from forensia.evidence import evidence_manager, list_source_files
+from forensia.evidence import evidence_manager, list_source_files, save_uploaded_source
 from forensia.security import require_token
 
 router = APIRouter()
@@ -20,12 +20,32 @@ router = APIRouter()
 @router.get("/api/evidence/sources", dependencies=[Depends(require_token)])
 def sources() -> dict:
     """Bandeja de entrada de evidencias (``FORENSIA_EVIDENCE_DIR`` — en el
-    compose, ``./evidence`` del repo montado read-only en ``/evidence``). La UI
-    web la presenta como selector; el operador elige el fichero explícitamente
-    (RULE 2: nunca se registra "el único" ni "el más reciente"). Sin la
-    variable definida → 503 accionable."""
+    compose, ``./evidence`` del repo). La UI web la presenta como selector; el
+    operador elige el fichero explícitamente (RULE 2: nunca se registra "el
+    único" ni "el más reciente"). Sin la variable definida → 503 accionable."""
     try:
         return {"sources": list_source_files()}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/api/evidence/upload", dependencies=[Depends(require_token)])
+def upload_source(file: UploadFile = File(...)) -> dict:
+    """Sube una evidencia a la bandeja (``save_uploaded_source``). Camino de
+    ESCRITURA del perito: la bandeja se monta ``rw`` para el api (los maletines/
+    agente la ven ``ro`` — cadena de custodia). Subir NO registra: deja el
+    fichero en la bandeja para que el operador lo elija y pulse «Registrar»
+    (ahí ocurre el hash-gate). Ruta ``def`` a propósito: Starlette la corre en
+    un threadpool, así que copiar una imagen multi-GB no bloquea el event loop.
+
+    Nombre inválido / formato no soportado → 422; nombre ya presente en la
+    bandeja → 409 (nunca se sobrescribe evidencia); bandeja no configurada → 503."""
+    try:
+        return save_uploaded_source(file.filename or "", file.file)
+    except FileExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 

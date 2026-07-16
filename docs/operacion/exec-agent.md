@@ -180,10 +180,11 @@ sigue siendo un gap pendiente de una decisión separada.
 - **Token opcional**: si defines `FORENSIA_EXEC_AGENT_TOKEN` en el `api` y en ambos
   maletines, el agente exige la cabecera `X-Forensia-Exec-Token`. Por defecto va sin auth,
   apoyándose en el aislamiento de red interna.
-- **Evidencia read-only**: el compose monta `./evidence:/evidence:ro` también en los
-  maletines; un `POST /exec` que lea `/evidence/…` respeta la cadena de custodia. Las
-  herramientas TSK/Volatility leen la imagen sin montar el sistema de ficheros
-  (soundness-forense.md).
+- **Evidencia read-only**: el compose monta `./evidence:/evidence:ro` en los maletines
+  (el `rw` de la bandeja es exclusivo del servicio `api`, para la subida del perito —
+  soundness-forense.md §7); un `POST /exec` que lea `/evidence/…` respeta la cadena de
+  custodia. Las herramientas TSK/Volatility leen la imagen sin montar el sistema de
+  ficheros (soundness-forense.md).
 
 ## Operación
 

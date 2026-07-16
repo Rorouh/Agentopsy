@@ -268,7 +268,14 @@ baseline y de verificación, y la cadena del audit log. Sin esto no hay informe 
 
 En el modelo compose **todas** las herramientas corren dentro de los maletines
 (`toolkit-windows`, `toolkit-unix`), y la evidencia les llega como **bind-mount de solo
-lectura** (`/evidence:ro`) gobernado por `EvidenceManager`. La regla dura se conserva
+lectura** (`/evidence:ro`) gobernado por `EvidenceManager`. Ese `ro` es para el
+AGENTE/maletines: nunca mutan la imagen. El servicio `api` monta la MISMA bandeja en
+lectura-escritura (`/evidence:rw`) porque es el camino del **perito** para SUBIR evidencia
+desde la web (`POST /api/evidence/upload`, drag-and-drop). Subir solo deposita el fichero en
+la bandeja (`forensia.evidence.save_uploaded_source`: valida nombre y formato, rechaza
+traversal y sobrescritura, escribe a un temporal oculto y renombra atómicamente); el
+hash-gate y la copia inmutable ocurren después, al **registrar**, exactamente como cuando el
+fichero se copia a mano a `./evidence`. La regla dura se conserva
 intacta: **ningún contenedor monta la imagen raw como filesystem**. Las herramientas
 prioritarias (TSK `fls/icat/mmls`, Volatility3) leen los bytes de la imagen directamente
 como fichero — sin montar FS no hay journal replay posible (§1); el montaje de FS queda

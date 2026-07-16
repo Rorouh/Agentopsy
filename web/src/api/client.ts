@@ -135,6 +135,60 @@ async function download(path: string, fallback: string): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
+// Subida multipart con PROGRESO. Se usa XHR y no fetch porque solo XHR expone
+// `upload.onprogress` (fetch no reporta el progreso de subida). Reintenta UNA
+// vez si el token rotó (401), igual que `request`.
+function upload<T>(
+  path: string,
+  file: File,
+  onProgress?: (fraction: number) => void,
+): Promise<T> {
+  const attempt = (token: string) =>
+    new Promise<T>((resolve, reject) => {
+      const form = new FormData();
+      // El navegador fija el Content-Type multipart (con boundary) solo; nunca
+      // lo ponemos a mano.
+      form.append("file", file, file.name);
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", path);
+      xhr.setRequestHeader("X-Forensia-Token", token);
+      xhr.upload.onprogress = (e) => {
+        if (onProgress && e.lengthComputable) onProgress(e.loaded / e.total);
+      };
+      xhr.onload = () => {
+        const text = xhr.responseText;
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            resolve(JSON.parse(text) as T);
+          } catch {
+            reject(new ApiError(xhr.status, "Respuesta no válida del servidor."));
+          }
+          return;
+        }
+        let detail = xhr.statusText;
+        try {
+          const body = JSON.parse(text);
+          if (body && typeof body.detail === "string") detail = body.detail;
+        } catch {
+          if (text) detail = text;
+        }
+        reject(new ApiError(xhr.status, detail));
+      };
+      xhr.onerror = () => reject(new ApiError(0, "Error de red durante la subida."));
+      xhr.send(form);
+    });
+
+  return getToken()
+    .then(attempt)
+    .catch(async (err) => {
+      if (err instanceof ApiError && err.status === 401) {
+        tokenPromise = null;
+        return attempt(await getToken());
+      }
+      throw err;
+    });
+}
+
 export const api = {
   // Sin token a propósito: es el "¿está vivo el api?" que App usa para pintar
   // el estado de conexión; no debe depender del bootstrap del token.
@@ -399,6 +453,10 @@ export const api = {
     // operador ELIGE el fichero — la web no tiene diálogo nativo (RULE 2:
     // nunca "el único" ni "el más reciente").
     listSources: () => request<{ sources: EvidenceSource[] }>("/api/evidence/sources"),
+    // Subida del perito: deposita el fichero en la bandeja (NO lo registra —
+    // eso es un paso aparte, con el hash-gate). `onProgress` va de 0 a 1.
+    uploadSource: (file: File, onProgress?: (fraction: number) => void) =>
+      upload<EvidenceSource>("/api/evidence/upload", file, onProgress),
   },
 
   config: {

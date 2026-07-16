@@ -103,7 +103,10 @@ docker compose up -d
 ## Uso básico
 
 1. Apunta `FORENSIA_EVIDENCE_DIR` a la carpeta de evidencia del caso (o copia
-   la evidencia a `./evidence/`). Se monta en `/evidence` en **solo lectura**.
+   la evidencia a `./evidence/`; desde la web también puedes ARRASTRARLA/subirla).
+   Se monta en `/evidence` en **solo lectura** para los maletines/agente; el
+   servicio `api` la monta en lectura-escritura (camino de subida del perito —
+   ver soundness-forense.md §7).
 2. Verifica integridad (cadena de custodia):
 
    ```bash

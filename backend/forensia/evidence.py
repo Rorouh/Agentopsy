@@ -39,6 +39,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import BinaryIO
 
 from forensia.audit.log import AuditLog
 from forensia.cases import CaseManager, case_manager
@@ -505,31 +506,28 @@ class EvidenceManager:
         return data
 
 
-def list_source_files() -> list[dict]:
-    """Enumera las evidencias disponibles en la bandeja de entrada
-    (``FORENSIA_EVIDENCE_DIR`` — en el compose, ``./evidence`` del repo montado
-    read-only en ``/evidence``).
+# Extensiones que la bandeja acepta al SUBIR evidencia (drag-and-drop del
+# perito). Espejo de web/src/utils/evidence.ts SUPPORTED_EXTENSIONS; la fuente
+# real de los formatos es toolkit/catalog.py + triage.py. Validación en minúsculas.
+SUPPORTED_EVIDENCE_EXTENSIONS: frozenset[str] = frozenset(
+    {".raw", ".dd", ".img", ".vmdk", ".vmem", ".e01", ".aff", ".vhd", ".mem", ".lime", ".dmp"}
+)
 
-    La UI web no puede abrir rutas arbitrarias del host (no hay diálogo nativo
-    de archivos), así que el operador deja el fichero
-    en la bandeja y lo ELIGE aquí (agencia del operador — RULE 2: nunca se
-    registra "el único" ni "el más reciente").
+# Tamaño de bloque al escribir un upload en la bandeja (imágenes multi-GB).
+_UPLOAD_CHUNK = 1024 * 1024  # 1 MiB
 
-    Se listan los ficheros regulares bajo la bandeja de forma **recursiva** (``rglob``),
-    con la ruta relativa como ``name`` (p. ej. ``metasploitable2-linux/…vmdk``), para
-    poder organizar la bandeja en subcarpetas por máquina/fuente. Se omiten los ficheros
-    y carpetas ocultos (cualquier parte que empiece por ``.``) y los symlinks (``register()``
-    los rechaza, SECURITY INVARIANT 6).
 
-    Sin ``FORENSIA_EVIDENCE_DIR`` no hay bandeja que listar: error accionable,
-    jamás un directorio adivinado (RULE 2).
-    """
+def _inbox_root() -> Path:
+    """Resuelve la bandeja de entrada (``FORENSIA_EVIDENCE_DIR``) o lanza un
+    ``RuntimeError`` accionable. En el compose es ``/evidence`` (montado desde
+    ``./evidence`` del repo); en standalone la exporta el operador. RULE 2:
+    nunca un directorio adivinado."""
     root_env = os.environ.get("FORENSIA_EVIDENCE_DIR")
     if not root_env:
         raise RuntimeError(
-            "FORENSIA_EVIDENCE_DIR no está definido: no hay bandeja de evidencias "
-            "que listar. En el compose la fija el servicio api (/evidence, montado "
-            "desde ./evidence del repo). En modo standalone, exporta la variable "
+            "FORENSIA_EVIDENCE_DIR no está definido: no hay bandeja de evidencias. "
+            "En el compose la fija el servicio api (/evidence, montado desde "
+            "./evidence del repo). En modo standalone, exporta la variable "
             "apuntando a tu carpeta de evidencias."
         )
     root = Path(root_env).resolve()
@@ -539,6 +537,91 @@ def list_source_files() -> list[dict]:
             "directorio. Crea la carpeta (./evidence en el repo, si usas el "
             "compose) y deja dentro las imágenes a registrar."
         )
+    return root
+
+
+def save_uploaded_source(filename: str, stream: BinaryIO) -> dict:
+    """Deposita una evidencia SUBIDA por el perito en la raíz de la bandeja
+    (``FORENSIA_EVIDENCE_DIR``) y devuelve su entrada ``{name, path, size}``.
+
+    Este es el camino de ESCRITURA del perito: la bandeja se monta ``rw`` para
+    el servicio ``api`` (nunca para los maletines/agente, que la ven ``ro`` —
+    cadena de custodia). Subir NO registra: solo deja el fichero en la bandeja;
+    el hash-gate y la copia inmutable siguen ocurriendo después, al pulsar
+    «Registrar» (``EvidenceManager.register``, invariante forense 2).
+
+    Guardas (RULE 2 — fallar alto, nunca sanear en silencio; SECURITY INVARIANT 6):
+
+    - ``filename`` debe ser un basename limpio: sin separadores de ruta, sin
+      ``..``, sin punto inicial (los ocultos no se listan). Se rechaza, no se
+      recorta.
+    - la extensión debe estar en ``SUPPORTED_EVIDENCE_EXTENSIONS``.
+    - el destino queda confinado a la raíz de la bandeja.
+    - si ya existe un fichero con ese nombre → ``FileExistsError`` (nunca se
+      sobrescribe evidencia; el operador resuelve el conflicto).
+
+    Se escribe primero a un temporal OCULTO (``.subiendo-…`` — que la bandeja no
+    lista) y se renombra atómicamente al terminar, de modo que una subida a
+    medias jamás aparece como fuente registrable.
+    """
+    root = _inbox_root()
+
+    name = (filename or "").strip()
+    if not name:
+        raise ValueError("El fichero subido no tiene nombre.")
+    if name.startswith(".") or "/" in name or "\\" in name or ".." in name:
+        raise ValueError(
+            f"Nombre de fichero no válido: {name!r}. Debe ser un nombre simple, "
+            "sin rutas, sin '..' y sin punto inicial."
+        )
+    ext = Path(name).suffix.lower()
+    if ext not in SUPPORTED_EVIDENCE_EXTENSIONS:
+        raise ValueError(
+            f"Formato no soportado: {ext or '(sin extensión)'}. Formatos válidos: "
+            + ", ".join(sorted(SUPPORTED_EVIDENCE_EXTENSIONS))
+        )
+
+    dest = (root / name).resolve()
+    if dest.parent != root:
+        raise ValueError(f"Ruta de destino fuera de la bandeja: {name!r}.")
+    if dest.exists():
+        raise FileExistsError(
+            f"Ya hay una evidencia llamada {name!r} en la bandeja. Renómbrala o "
+            "elimínala antes de volver a subirla (nunca se sobrescribe evidencia)."
+        )
+
+    partial = root / f".subiendo-{uuid.uuid4().hex}-{name}"
+    try:
+        with partial.open("wb") as out:
+            shutil.copyfileobj(stream, out, _UPLOAD_CHUNK)
+        os.replace(partial, dest)
+    except BaseException:
+        partial.unlink(missing_ok=True)
+        raise
+
+    return {"name": name, "path": str(dest), "size": dest.stat().st_size}
+
+
+def list_source_files() -> list[dict]:
+    """Enumera las evidencias disponibles en la bandeja de entrada
+    (``FORENSIA_EVIDENCE_DIR`` — en el compose, ``./evidence`` del repo).
+
+    El perito puede depositar evidencia de dos formas: copiándola a
+    ``./evidence`` en el host, o SUBIÉNDOLA desde la web (drag-and-drop →
+    ``save_uploaded_source``). En ambos casos el fichero aparece aquí y el
+    operador lo ELIGE explícitamente (agencia del operador — RULE 2: nunca se
+    registra "el único" ni "el más reciente").
+
+    Se listan los ficheros regulares bajo la bandeja de forma **recursiva** (``rglob``),
+    con la ruta relativa como ``name`` (p. ej. ``metasploitable2-linux/…vmdk``), para
+    poder organizar la bandeja en subcarpetas por máquina/fuente. Se omiten los ficheros
+    y carpetas ocultos (cualquier parte que empiece por ``.`` — incluye los temporales
+    de subida a medias) y los symlinks (``register()`` los rechaza, SECURITY INVARIANT 6).
+
+    Sin ``FORENSIA_EVIDENCE_DIR`` no hay bandeja que listar: error accionable,
+    jamás un directorio adivinado (RULE 2).
+    """
+    root = _inbox_root()
 
     sources: list[dict] = []
     for path in sorted(root.rglob("*")):

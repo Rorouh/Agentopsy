@@ -329,7 +329,12 @@ last Windows tools into the maletín Dockerfiles, and drop the now-unused legacy
 through
 `web/src/api/client.ts` (token from `GET /api/session`, memory-only), carries the
 executor selector + audited cloud-consent flow, and registers evidence from the
-`./evidence` inbox. **MITRE ATT&CK is wired end to end (2026-07-14)**
+`./evidence` inbox — into which the analyst can now DROP or upload a file directly
+(`POST /api/evidence/upload` → `forensia.evidence.save_uploaded_source`, 2026-07-16):
+the `api` service mounts the inbox `rw` (the perito's write path) while the
+toolkits/agent keep it `ro` (chain of custody — they never mutate the image); upload
+only deposits the file (name/format validated, no traversal, never overwrites, atomic
+via a hidden temp), the hash-gate still runs at *register* time. **MITRE ATT&CK is wired end to end (2026-07-14)**
 (`backend/forensia/mitre/`): `record_finding` now accepts the `mitre_hints` the
 package prompts had been prescribing all along (the engine's `additionalProperties:
 false` was silently blocking them), validated server-side against a **closed enum

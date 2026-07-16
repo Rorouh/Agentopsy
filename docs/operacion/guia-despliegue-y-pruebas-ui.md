@@ -161,11 +161,16 @@ audit**.
 
 ### 5.2 Registrar evidencia (aquí se ve la cadena de custodia)
 
-1. **Copia** un fichero de evidencia a la bandeja `./evidence` del repo (o a tu
-   `FORENSIA_EVIDENCE_DIR`). Formatos: `.E01`, `.raw`/`.dd`, `.vmdk`, volcados de RAM/`.mem`.
-   *No hay diálogo nativo de subida en una web: el fichero se deja en la carpeta y se ELIGE en
-   la UI.*
-2. En **Registrar evidencia**, carga la bandeja, **selecciona** el fichero y pulsa
+1. Lleva el fichero de evidencia a la bandeja de una de estas dos formas (formatos: `.E01`,
+   `.raw`/`.dd`, `.vmdk`, volcados de RAM/`.mem`):
+   - **Arrástralo** a la zona *Registrar evidencia* (o pulsa **Examinar…**): se SUBE a la
+     bandeja (`POST /api/evidence/upload`) y queda auto-seleccionado. Subir no registra; solo
+     deposita el fichero para que lo registres en el paso 2.
+   - O **cópialo** a la carpeta `./evidence` del repo (o a tu `FORENSIA_EVIDENCE_DIR`) y pulsa
+     **Buscar en la bandeja**.
+   *El api monta la bandeja en lectura-escritura solo para esta subida del perito; el
+   agente/maletines la ven en solo lectura (cadena de custodia).*
+2. En **Registrar evidencia**, con el fichero **seleccionado** pulsa
    **Registrar**. FORENSIA ejecuta el **hash gate**: calcula el **SHA-256 baseline**, copia la
    evidencia a una copia inmutable (solo lectura), corre el **triage** (deriva `os_profile` y
    tipo) y registra el evento en el audit. La fila aparece en *Evidencias del caso*.
@@ -268,8 +273,8 @@ hallazgos/tools) es la vista amable de este mismo registro.
   caso real, todavía.
 - **Generación de informes** (court-style / export PDF-DOCX-JSON) y la pestaña *Operador y
   reportes*: **vista previa**, aún no persiste ni genera.
-- **Adjuntar evidencia desde el chat**: icono maqueta; la vía real de evidencia es la bandeja
-  `./evidence` + *Registrar evidencia*.
+- **Adjuntar evidencia desde el chat**: icono maqueta; la vía real de evidencia es *Registrar
+  evidencia* — arrastra/sube el fichero a la bandeja o cópialo a `./evidence`.
 
 El ciclo **sólido y demostrable hoy** es: crear caso → registrar/verificar evidencia (hash
 gate, triage, custodia) → investigar con el sub-agente (herramientas reales del maletín por el

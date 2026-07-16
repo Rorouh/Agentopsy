@@ -18,6 +18,9 @@ dependencies = [
     # PDF real de los documentos del caso (forensia.reports.pdf). Pure-python: no
     # arrastra libs de sistema (a diferencia de weasyprint), así la imagen no crece.
     "fpdf2>=2.7.6",
+    # Parseo de multipart/form-data: lo exige FastAPI para UploadFile (subida de
+    # evidencia a la bandeja, /api/evidence/upload).
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]

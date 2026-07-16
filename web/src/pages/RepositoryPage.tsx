@@ -95,6 +95,11 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
   const [loadingSources, setLoadingSources] = useState(false);
   const [selectedSourcePath, setSelectedSourcePath] = useState("");
   const [verifyingIds, setVerifyingIds] = useState<Set<string>>(new Set());
+  // Subida de evidencia a la bandeja (drag-and-drop / examinar). Deposita el
+  // fichero; el registro (hash-gate) es un paso aparte.
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   // Acta de adquisición: modal por evidencia con la metadata de custodia + el
   // acta estructurada (cadena hash-encadenada), ambas del backend.
@@ -250,6 +255,26 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
       setLoadingSources(false);
     }
   }, []);
+
+  const uploadSource = useCallback(
+    async (file: File) => {
+      setUploading(true);
+      setUploadProgress(0);
+      setUploadError(null);
+      try {
+        const src = await api.evidence.uploadSource(file, setUploadProgress);
+        // Refresca la bandeja (ahora incluye lo subido) y autoselecciona el
+        // fichero recién subido, listo para «Registrar».
+        await loadSources();
+        setSelectedSourcePath(src.path);
+      } catch (err) {
+        setUploadError(String(err instanceof Error ? err.message : err));
+      } finally {
+        setUploading(false);
+      }
+    },
+    [loadSources],
+  );
 
   const registerSelectedSource = useCallback(async () => {
     // Snapshot the case at the moment the user CLICKED "Registrar": hashing a
@@ -618,9 +643,13 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
                       evidenceError?.kind === "register" ? evidenceError.message : null
                     }
                     registerSuccess={registerSuccess}
+                    uploading={uploading}
+                    uploadProgress={uploadProgress}
+                    uploadError={uploadError}
                     onSelectSource={setSelectedSourcePath}
                     onLoadSources={loadSources}
                     onRegister={registerSelectedSource}
+                    onUploadFile={uploadSource}
                   />
                 </PageSection>
               </div>

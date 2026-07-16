@@ -9,6 +9,9 @@ Covers:
 - ``/api/evidence/sources``: sin ``FORENSIA_EVIDENCE_DIR`` → 503 accionable
   (RULE 2 — jamás se adivina una bandeja); con la bandeja montada lista solo
   ficheros regulares no ocultos.
+- ``/api/evidence/upload`` (subida del perito): deposita el fichero en la
+  bandeja; rechaza formato no soportado (422), traversal en el nombre (422) y
+  sobrescritura de evidencia existente (409); exige token.
 - ``/api/agent/cloud-consent``: registra el evento en el audit del caso
   (SECURITY INVARIANT 7); rechaza ejecutores locales y desconocidos.
 - ``/api/agent/query``: ENFORCEMENT del consentimiento cloud en el backend —
@@ -133,6 +136,91 @@ def test_sources_lists_only_regular_visible_files(
 
 def test_sources_requires_token(client: TestClient) -> None:
     assert client.get("/api/evidence/sources").status_code == 401
+
+
+# ---- /api/evidence/upload ------------------------------------------------------
+
+
+def test_upload_deposits_file_in_inbox(
+    client: TestClient, auth: dict, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    monkeypatch.setenv("FORENSIA_EVIDENCE_DIR", str(inbox))
+
+    r = client.post(
+        "/api/evidence/upload",
+        headers=auth,
+        files={"file": ("disco.raw", b"D" * 32, "application/octet-stream")},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["name"] == "disco.raw"
+    assert body["size"] == 32
+    # El fichero quedó en la bandeja y ahora lo lista /sources.
+    assert (inbox / "disco.raw").read_bytes() == b"D" * 32
+    listed = client.get("/api/evidence/sources", headers=auth).json()["sources"]
+    assert "disco.raw" in [s["name"] for s in listed]
+    # Ningún temporal de subida oculto sobrevive.
+    assert not list(inbox.glob(".subiendo-*"))
+
+
+def test_upload_rejects_unsupported_format(
+    client: TestClient, auth: dict, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    monkeypatch.setenv("FORENSIA_EVIDENCE_DIR", str(inbox))
+
+    r = client.post(
+        "/api/evidence/upload",
+        headers=auth,
+        files={"file": ("notas.txt", b"nope", "text/plain")},
+    )
+    assert r.status_code == 422
+    assert not list(inbox.iterdir())
+
+
+def test_upload_rejects_path_traversal(
+    client: TestClient, auth: dict, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    monkeypatch.setenv("FORENSIA_EVIDENCE_DIR", str(inbox))
+
+    r = client.post(
+        "/api/evidence/upload",
+        headers=auth,
+        files={"file": ("../escape.raw", b"x", "application/octet-stream")},
+    )
+    assert r.status_code == 422
+    assert not (tmp_path / "escape.raw").exists()
+
+
+def test_upload_never_overwrites_existing_evidence(
+    client: TestClient, auth: dict, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "disco.raw").write_bytes(b"original")
+    monkeypatch.setenv("FORENSIA_EVIDENCE_DIR", str(inbox))
+
+    r = client.post(
+        "/api/evidence/upload",
+        headers=auth,
+        files={"file": ("disco.raw", b"nuevo", "application/octet-stream")},
+    )
+    assert r.status_code == 409
+    # El original intacto — nunca se sobrescribe evidencia.
+    assert (inbox / "disco.raw").read_bytes() == b"original"
+
+
+def test_upload_requires_token(client: TestClient) -> None:
+    r = client.post(
+        "/api/evidence/upload",
+        files={"file": ("disco.raw", b"x", "application/octet-stream")},
+    )
+    assert r.status_code == 401
 
 
 # ---- /api/agent/cloud-consent ---------------------------------------------------

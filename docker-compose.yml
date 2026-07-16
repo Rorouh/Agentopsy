@@ -14,8 +14,12 @@
 # nunca 0.0.0.0. Lo que el navegador no necesita (ollama, maletines) se queda
 # en la red interna del compose, sin puerto publicado.
 #
-# Cadena de custodia: las evidencias (./evidence) se montan en SOLO LECTURA
-# en todos los servicios que las ven; los casos/salidas van a ./projects.
+# Cadena de custodia: los maletines (toolkit-*) y por tanto el AGENTE ven las
+# evidencias (./evidence) en SOLO LECTURA — nunca mutan la imagen. El servicio
+# `api` las monta en LECTURA-ESCRITURA porque es el camino del PERITO: la UI
+# permite SUBIR evidencia a la bandeja (drag-and-drop → /api/evidence/upload).
+# Subir solo deposita el fichero; el hash-gate y la copia inmutable ocurren
+# después, al registrar. Los casos/salidas van a ./projects.
 #
 # Sin API keys (SECURITY INVARIANT 7): los CLIs de la capa de ejecución
 # (claude / codex / gemini) viven en la imagen `api` y se autentican con la
@@ -121,8 +125,10 @@ services:
       # forensia.executors.ollama vía forensia.config.
       OLLAMA_HOST: http://ollama:11434
       # Bandeja de entrada de evidencias que la UI lista en "Registrar
-      # evidencia" (el operador deja el fichero en ./evidence del host y lo
-      # elige en el navegador — no hay diálogo nativo en una web).
+      # evidencia". El perito deja el fichero en ./evidence del host o lo SUBE
+      # desde el navegador (drag-and-drop) — por eso el api la monta rw (ver más
+      # abajo). El operador siempre ELIGE el fichero (no hay diálogo nativo en
+      # una web).
       FORENSIA_EVIDENCE_DIR: /evidence
       # Orígenes EXACTOS de la UI web (allowlist de CORS + Host-header check;
       # SECURITY INVARIANT 2 — nunca un regex sobre localhost). El nginx del
@@ -138,7 +144,11 @@ services:
     volumes:
       # Mismas carpetas del host que los maletines (interpolación al parsear el
       # compose): api y toolkits deben ver la MISMA evidencia y los MISMOS casos.
-      - ${FORENSIA_EVIDENCE_DIR:-./evidence}:/evidence:ro  # evidencias en SOLO LECTURA
+      # OJO al :rw — a diferencia de los maletines (ro), el api monta la bandeja
+      # en LECTURA-ESCRITURA: es el camino del perito para SUBIR evidencia desde
+      # la web (/api/evidence/upload). El agente sigue viéndola ro. Custodia: el
+      # hash-gate y la copia inmutable ocurren al registrar, no al subir.
+      - ${FORENSIA_EVIDENCE_DIR:-./evidence}:/evidence:rw  # bandeja RW (subida del perito)
       - ${FORENSIA_CASES_DIR:-./projects}:/cases           # casos, artefactos, audit log, informes
       - ./agentes:/opt/forensia/agentes:ro
       # HOME del contenedor en un volumen local del stack: aquí viven las
