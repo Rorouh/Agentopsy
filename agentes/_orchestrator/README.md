@@ -5,14 +5,20 @@ Este directorio **no es un sub-agente de investigación** y la registry lo
 que los ficheros ocultos — ver `backend/forensia/agent/registry.py`). No tiene
 `agent.yaml`: no se carga como agente con `os_profile`.
 
-Es el **paquete declarativo del orquestador**: los prompts y el conocimiento con
-los que la capa de síntesis (`forensia.reports`, pendiente de implementar)
-convierte los hallazgos recopilados por los sub-agentes en los tres entregables
-de la propuesta:
+Es el **paquete declarativo del orquestador**: los prompts y el conocimiento que
+definen el **contrato** de los tres entregables de la propuesta. La consolidación
+que hoy los produce es **determinista** (`forensia.reports.generator`,
+`forensia.mitre.coverage`, `forensia.timeline`), **no un LLM**: estos prompts son el
+esquema objetivo que esa síntesis —o un futuro LLM de síntesis— debe cumplir, no un
+modelo que se invoque hoy para consolidar. Cada prompt lleva ese banner en cabecera.
 
-1. **Informe pericial** (`reporter.md`) → `ReportDocument`.
-2. **Línea temporal** (`timeline.md`) → `TimelineEvent[]`.
-3. **Correlación MITRE ATT&CK** (`mitre.md` + `knowledge/`) → `MitreTechniqueMatch[]`.
+1. **Informe pericial** (`reporter.md`) → `ReportDocument` (informe pericial PDF,
+   `forensia.reports.build_pericial_report`).
+2. **Línea temporal** (`timeline.md`) → `TimelineEvent[]` (ver `web/src/api/types.ts`).
+3. **Correlación MITRE ATT&CK** (`mitre.md` + `knowledge/`) → doble eje
+   propuesta/veredicto (`MitreCoverageEntry`); el `MitreTechniqueMatch[]` con
+   `confidence` **sintetizado** sigue sin producirse (ver
+   `docs/agentes/contrato-paquetes.md` §5.bis).
 
 ## Por qué vive aquí y no como tercer agente `os_profile`
 
