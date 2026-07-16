@@ -377,5 +377,101 @@ def test_run_filesystem_timeline_fails_loud_on_nonzero_exit(
         run_filesystem_timeline("case-1", _Handle(tmp_path / "img.raw"), _Ctx(), "unix")
 
 
+# --------------------------------------------------------------------------- #
+# Layer 2 — query_filesystem_timeline (mapa vivo: consulta sobre la timeline
+#           persistida SIN re-ejecutar fls)
+# --------------------------------------------------------------------------- #
+# Tres eventos, todos el 2024-01-25 (UTC): una credencial, un artefacto web y un
+# fichero sin categoría. Epochs sobre 2024-01-25T13:10:00Z (1706188200).
+_QUERY_BODY = "\n".join(
+    [
+        "0|/etc/passwd|5|r/r|0|0|4096|1706188200|1706188200|1706188200|1706188200",
+        "0|/var/www/html/shell.php|6|r/r|0|0|128|1706188300|1706188300|1706188300|1706188300",
+        "0|/home/user/notes.txt|7|r/r|0|0|64|1706188400|1706188400|1706188400|1706188400",
+    ]
+)
+
+
+def _persist_query_timeline(monkeypatch, tmp_path):
+    """Genera y persiste una super-timeline con `_QUERY_BODY` y devuelve `cases`."""
+    cases = _fake_cases(tmp_path)
+    monkeypatch.setattr(builder, "case_manager", cases)
+
+    def fake_execute(tool_id, params, *, case_id, os_profile, evidence_context):
+        run_id = "run-query"
+        out_dir = cases.case_dir(case_id) / "artifacts" / run_id / "out"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "stdout.bin").write_text(_QUERY_BODY, encoding="utf-8")
+        return {"exit_code": 0, "run_id": run_id, "stderr_sample": ""}
+
+    monkeypatch.setattr(builder.dispatcher, "execute", fake_execute)
+    run_filesystem_timeline("case-1", _Handle(tmp_path / "img.raw"), _Ctx(), "unix")
+    return cases
+
+
+def test_query_no_timeline_is_actionable_not_empty(monkeypatch, tmp_path) -> None:
+    cases = _fake_cases(tmp_path)
+    monkeypatch.setattr(builder, "case_manager", cases)
+    res = builder.query_filesystem_timeline("case-1", _EVIDENCE_ID)
+    assert res["status"] == "no_timeline"
+    assert "Genérala" in res["message"] or "genera" in res["message"].lower()
+
+
+def test_query_date_range_matches_all_events_that_day(monkeypatch, tmp_path) -> None:
+    _persist_query_timeline(monkeypatch, tmp_path)
+    res = builder.query_filesystem_timeline(
+        "case-1", _EVIDENCE_ID, date_from="2024-01-25", date_to="2024-01-25"
+    )
+    assert res["status"] == "ok"
+    assert res["matched"] == 3
+    assert res["total_events"] == 3
+    assert res["fls_run_id"] == "run-query"
+
+
+def test_query_empty_date_is_materialised_zero_not_inferred(monkeypatch, tmp_path) -> None:
+    """El caso del transcript: preguntar por una fecha sin eventos devuelve 0 filas
+    verificadas sobre el bodyfile real, no una inferencia."""
+    _persist_query_timeline(monkeypatch, tmp_path)
+    res = builder.query_filesystem_timeline(
+        "case-1", _EVIDENCE_ID, date_from="2007-02-11", date_to="2007-02-11"
+    )
+    assert res["status"] == "ok"
+    assert res["matched"] == 0
+    assert res["events"] == []
+    # La timeline íntegra sigue ahí (3 eventos), solo que ninguno cae en esa fecha.
+    assert res["total_events"] == 3
+
+
+def test_query_by_category_web_and_credentials(monkeypatch, tmp_path) -> None:
+    _persist_query_timeline(monkeypatch, tmp_path)
+    web = builder.query_filesystem_timeline("case-1", _EVIDENCE_ID, category="web")
+    assert web["matched"] == 1
+    assert web["events"][0]["path"] == "/var/www/html/shell.php"
+    assert web["events"][0]["category"] == "web"
+    cred = builder.query_filesystem_timeline("case-1", _EVIDENCE_ID, category="credenciales")
+    assert cred["matched"] == 1
+    assert cred["events"][0]["path"] == "/etc/passwd"
+
+
+def test_query_by_path_substring(monkeypatch, tmp_path) -> None:
+    _persist_query_timeline(monkeypatch, tmp_path)
+    res = builder.query_filesystem_timeline("case-1", _EVIDENCE_ID, path_contains="www")
+    assert res["matched"] == 1
+    assert res["events"][0]["path"] == "/var/www/html/shell.php"
+
+
+def test_query_unknown_category_rejected(monkeypatch, tmp_path) -> None:
+    _persist_query_timeline(monkeypatch, tmp_path)
+    with pytest.raises(ValueError, match="categoría desconocida"):
+        builder.query_filesystem_timeline("case-1", _EVIDENCE_ID, category="inventada")
+
+
+def test_query_rejects_malformed_evidence_id(monkeypatch, tmp_path) -> None:
+    cases = _fake_cases(tmp_path)
+    monkeypatch.setattr(builder, "case_manager", cases)
+    with pytest.raises(ValueError, match="evidence_id"):
+        builder.query_filesystem_timeline("case-1", "../escape")
+
+
 def _id(event: dict) -> str:
     return event.get("run_id") or event.get("finding_id")

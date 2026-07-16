@@ -106,6 +106,12 @@ _RULES: tuple[_Rule, ...] = (
 )
 
 
+#: Closed set of relevance categories, derived from the rules (single source of truth —
+#: never a hand-typed second list). Consumers that let a caller FILTER by category
+#: validate against this (RULE 2: reject an unknown value, don't silently match nothing).
+KNOWN_CATEGORIES: frozenset[str] = frozenset(rule.category for rule in _RULES)
+
+
 def classify(path: str, macb: str) -> dict[str, Any] | None:
     """Return ``{category, reason, weight}`` for a relevant event, or ``None``.
 

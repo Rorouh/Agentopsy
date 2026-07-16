@@ -442,6 +442,38 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
 # to a binary). They get exposed to the LLM in the same `tools=[…]` list so
 # the model can call them naturally.
 _INTERNAL_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
+    "consultar_actividad": {
+        "type": "object",
+        "properties": {
+            "date_from": {
+                "type": "string",
+                "description": "Inicio del rango (inclusive): `YYYY-MM-DD` o ISO-8601 UTC.",
+            },
+            "date_to": {
+                "type": "string",
+                "description": "Fin del rango (inclusive): `YYYY-MM-DD` o ISO-8601 UTC.",
+            },
+            "category": {
+                "type": "string",
+                "enum": [
+                    "credenciales", "ssh", "historial", "persistencia",
+                    "ejecutable_temporal", "web", "logs", "binario_sistema",
+                ],
+                "description": "Filtra por categoría de relevancia (p. ej. `web` = artefactos web).",
+            },
+            "path_contains": {
+                "type": "string",
+                "description": "Subcadena a buscar en la ruta del evento (case-insensitive).",
+            },
+            "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 500,
+                "description": "Máximo de eventos a devolver (por defecto 100).",
+            },
+        },
+        "additionalProperties": False,
+    },
     "record_finding": {
         "type": "object",
         "properties": {
@@ -564,6 +596,16 @@ _INTERNAL_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
 }
 
 _INTERNAL_DESCRIPTIONS: dict[str, str] = {
+    "consultar_actividad": (
+        "CONSULTA la super-timeline del sistema de ficheros YA generada de la evidencia "
+        "activa, sin re-ejecutar tsk_fls. Úsala para responder «¿qué actividad hubo entre "
+        "X e Y?», «¿hubo algún registro el <fecha>?» o «enséñame los artefactos web»: lee "
+        "el bodyfile hasheado del run de fls y filtra TODOS sus eventos MACB por rango de "
+        "fechas, categoría de relevancia y/o subcadena de ruta. Es una proyección "
+        "determinista y exhaustiva — no infiere. Si la super-timeline aún no existe, te lo "
+        "dice (status=no_timeline) para que la generes primero en vez de adivinar. Prefiere "
+        "esto a re-lanzar tsk_fls/tsk_mactime cuando la timeline ya está construida."
+    ),
     "record_finding": (
         "PERSIST a structured finding for this case. Call this BEFORE composing your "
         "final answer for EACH meaningful conclusion (file type identified, kernel "

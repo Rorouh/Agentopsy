@@ -25,7 +25,11 @@ from typing import Any
 from forensia.cases.manager import case_manager
 from forensia.evidence_context import EvidenceContext
 from forensia.findings.store import Finding, finding_store
-from forensia.timeline.relevance import select_relevant_events
+from forensia.timeline.relevance import (
+    KNOWN_CATEGORIES,
+    classify,
+    select_relevant_events,
+)
 from forensia.toolkit import dispatcher
 
 #: The single timezone every timeline timestamp is expressed in. Surfaced to the UI so
@@ -399,6 +403,123 @@ def load_filesystem_timeline(case_id: str, evidence_id: str) -> dict[str, Any] |
         # Un JSON corrupto no es una super-timeline: se trata como "no hay",
         # regenerable con «Generar» (RULE 2: nunca una línea temporal a medias).
         return None
+
+
+def _parse_query_bound(value: str, *, end: bool) -> datetime:
+    """Parse a query date/datetime bound to an aware UTC ``datetime``.
+
+    Accepts a plain ``YYYY-MM-DD`` (expanded to start- or end-of-day depending on
+    ``end``) or a full ISO-8601 timestamp (``Z`` or offset). Raises ``ValueError`` on
+    anything else — the caller surfaces it as an actionable error (RULE 2)."""
+    raw = value.strip()
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
+        suffix = "T23:59:59.999999+00:00" if end else "T00:00:00+00:00"
+        return datetime.fromisoformat(raw + suffix)
+    dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
+def query_filesystem_timeline(
+    case_id: str,
+    evidence_id: str,
+    *,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    category: str | None = None,
+    path_contains: str | None = None,
+    limit: int = 100,
+) -> dict[str, Any]:
+    """Query the persisted filesystem super-timeline of an evidence WITHOUT re-running fls.
+
+    The deterministic projection the agent uses to answer «¿qué actividad hubo entre X e
+    Y?» or «¿hubo algún registro el <fecha>?» without re-scanning the image. It reads the
+    HASHED bodyfile artifact the super-timeline was built from (``out/stdout.bin`` of the
+    ``fls -m`` run), expands its FULL MACB event set and filters it — so the answer is
+    exhaustive over the real timeline, not over a capped view.
+
+    Requires the super-timeline to have been generated first: if it has not, returns a
+    structured ``status='no_timeline'`` telling the caller to generate it — never a silent
+    empty result that reads as «nothing happened» (RULE 2). ``category`` must be one of
+    ``relevance.KNOWN_CATEGORIES``; an unknown value is rejected, not matched to nothing.
+
+    Returns ``{status, evidence_id, timezone, fls_run_id, total_events, matched, returned,
+    truncated, query, events, by_category}``.
+    """
+    persisted = load_filesystem_timeline(case_id, evidence_id)  # ValueError on bad id
+    if persisted is None:
+        return {
+            "status": "no_timeline",
+            "evidence_id": evidence_id,
+            "message": (
+                "La super-timeline de esta evidencia aún no está generada. Genérala "
+                "primero (tsk_fls -m sobre la evidencia, o el botón «Generar» de la "
+                "vista Timeline) y vuelve a consultar; no infiero actividad sin ella."
+            ),
+        }
+    run_id = persisted.get("fls_run_id")
+    if not isinstance(run_id, str):
+        return {
+            "status": "no_timeline",
+            "evidence_id": evidence_id,
+            "message": (
+                "La super-timeline persistida no referencia el run de tsk_fls que la "
+                "produjo; regenérala antes de consultarla."
+            ),
+        }
+
+    cat = category.strip() if isinstance(category, str) and category.strip() else None
+    if cat is not None and cat not in KNOWN_CATEGORIES:
+        raise ValueError(
+            f"categoría desconocida: {cat!r}. Válidas: {sorted(KNOWN_CATEGORIES)}"
+        )
+    lo = _parse_query_bound(date_from, end=False) if date_from else None
+    hi = _parse_query_bound(date_to, end=True) if date_to else None
+    needle = path_contains.replace("\\", "/").lower() if path_contains else None
+    if not isinstance(limit, int) or limit <= 0:
+        limit = 100
+
+    all_events = _bodyfile_to_all_events(_read_run_stdout(case_id, run_id))
+
+    matched: list[dict[str, Any]] = []
+    by_category: dict[str, int] = {}
+    for ev in all_events:
+        if lo is not None or hi is not None:
+            ts = ev.get("ts")
+            if not ts:
+                continue
+            when = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+            if lo is not None and when < lo:
+                continue
+            if hi is not None and when > hi:
+                continue
+        if needle is not None and needle not in ev.get("path", "").replace("\\", "/").lower():
+            continue
+        hit = classify(ev.get("path", ""), ev.get("macb", ""))
+        if cat is not None and (hit is None or hit["category"] != cat):
+            continue
+        enriched = {**ev, **hit} if hit else ev
+        if hit:
+            by_category[hit["category"]] = by_category.get(hit["category"], 0) + 1
+        matched.append(enriched)
+
+    return {
+        "status": "ok",
+        "evidence_id": evidence_id,
+        "timezone": TIMEZONE,
+        "fls_run_id": run_id,
+        "total_events": len(all_events),
+        "matched": len(matched),
+        "returned": min(len(matched), limit),
+        "truncated": len(matched) > limit,
+        "query": {
+            "date_from": date_from,
+            "date_to": date_to,
+            "category": cat,
+            "path_contains": path_contains,
+        },
+        "events": matched[:limit],
+        "by_category": by_category,
+    }
 
 
 def _read_run_stdout(case_id: str, run_id: str) -> str:

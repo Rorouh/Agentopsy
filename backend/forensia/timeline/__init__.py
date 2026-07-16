@@ -33,6 +33,7 @@ from forensia.timeline.builder import (
     bodyfile_to_fs_events,
     build_investigation_timeline,
     load_filesystem_timeline,
+    query_filesystem_timeline,
     run_filesystem_timeline,
 )
 
@@ -42,5 +43,6 @@ __all__ = [
     "bodyfile_to_fs_events",
     "build_investigation_timeline",
     "load_filesystem_timeline",
+    "query_filesystem_timeline",
     "run_filesystem_timeline",
 ]
