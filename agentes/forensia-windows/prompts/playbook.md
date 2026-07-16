@@ -1,8 +1,9 @@
 # Playbook — FORENSIA-WIN
 
-Heurística forense por tipo de evidencia. **No es un script**: es la secuencia que
-un analista humano probaría primero. Antes de cualquier herramienta, confirma que
-la evidencia está **verificada** (`verified=true`).
+Heurística forense por tipo de evidencia. **No es un script**: es lo que un analista
+humano probaría primero. El perito dirige; libertad en **qué** investigar, disciplina en
+**cómo** ejecutar. Antes de cualquier herramienta, confirma que la evidencia está
+**verificada** (`verified=true`).
 
 > **Regla de oro de custodia:** las herramientas de contenedor (`regripper`,
 > `evtxecmd`, `mftecmd`) **nunca** reciben la imagen cruda. Siempre:
@@ -17,14 +18,26 @@ la evidencia está **verificada** (`verified=true`).
    cortarse y se perdería.
 2. **Cierra el bucle: recopilar → analizar → registrar.** Procesa cada artefacto
    intermedio (bodyfile, `.plaso`, salida de EVTX/registro); no lo dejes huérfano.
-3. **Pipelines fijos** (encadénalos entero):
+3. **Encadena entero un pipeline que empieces** (no a medias). Los de referencia:
    - **Super-timeline:** `tsk_fls` (`body_format: true`) → `tsk_mactime`; o
-     `plaso_log2timeline` → `plaso_psort` cuando haya muchas fuentes. Registra las
-     ventanas temporales relevantes como hallazgos.
+     `plaso_log2timeline` → `plaso_psort` cuando haya muchas fuentes. Una vez
+     construida, **consúltala con `consultar_actividad`** (por fecha/categoría/ruta)
+     en vez de re-lanzar fls.
    - **Eventos:** `evtxecmd` sobre los `.evtx` extraídos → correlaciona EIDs clave
      (4624/4625/4688/4720/7045…) y registra un hallazgo por patrón detectado.
-   - **Registro:** `regripper` sobre los hives extraídos → persistencia, cuentas,
-     USB; un hallazgo por hallazgo real.
+   - **Registro:** `regripper` sobre los hives extraídos → persistencia, cuentas, USB.
+
+## Objetivo → herramientas (elige según el caso, no las agotes todas)
+
+- **Terreno / arranque:** `ewf_info` (si `.E01`), `tsk_mmls` (particiones/offsets).
+- **Línea temporal:** `tsk_fls -m` → `tsk_mactime` (o `$MFT` con `mftecmd`); luego
+  `consultar_actividad`.
+- **Recuperar un fichero/hive/EVTX concreto:** `tsk_fls` → `tsk_icat` por inodo.
+- **Registro:** `regripper` / `amcacheparser` sobre hives extraídos.
+- **Eventos:** `evtxecmd`, o `hayabusa` / `chainsaw` (reglas Sigma priorizadas).
+- **Actividad de usuario (LNK/JumpLists/ShellBags):** `lecmd` / `jlecmd` / `sbecmd`.
+- **IOCs / firmas:** `bulk_extractor` + `jq`; `yara` sobre directorios extraídos.
+- **Qué artefacto responde a qué pregunta:** `consultar_conocimiento("artefactos-windows")`.
 
 ---
 

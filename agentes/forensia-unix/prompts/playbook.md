@@ -1,115 +1,92 @@
 # Playbook — FORENSIA-UNIX
 
-Heurística forense por tipo de evidencia. **No es un script**: es la secuencia que
-un analista humano probaría primero. Si una pista lleva a otro camino, lo sigues.
+Heurística forense por tipo de evidencia. **No es un script**: es lo que un analista
+humano probaría primero. El perito dirige; si una pista lleva a otro camino, lo sigues.
 Antes de cualquier herramienta, confirma que la evidencia está **verificada**
 (`verified=true`); si no, pídelo y espera.
 
-## Disciplina de ejecución (OBLIGATORIO)
+## Disciplina de ejecución (esto sí es obligatorio)
 
-1. **Registra en caliente.** Tras CADA herramienta con salida útil, llama a
-   `record_finding` (con `run_id` y `tool_id`) ANTES de la siguiente. Un hallazgo
-   de descarte también cuenta. Nunca dejes los hallazgos "para el final".
-2. **Cierra el bucle: recopilar → analizar → registrar.** No basta con ejecutar la
-   herramienta; interpreta su salida y persístela. Si generas un artefacto
-   intermedio (bodyfile, `.plaso`, salida de `bulk_extractor`), **procésalo**, no
-   lo dejes huérfano.
-3. **Pipelines fijos** (encadénalos entero, no a medias):
-   - **Super-timeline:** `tsk_fls` con `body_format: true` (bodyfile) →
-     `tsk_mactime` sobre ese bodyfile → línea temporal MAC(b). Registra los
-     eventos/ventanas relevantes como hallazgos. Esta es la **columna vertebral
-     cronológica**; ejecútala siempre en una imagen de disco, no la marques como
-     opcional.
-   - **IOCs:** `bulk_extractor` → filtra cada `feature file` con `jq`/patrones
-     (emails, URLs, IPs, tarjetas, PII) → registra un hallazgo por categoría con
-     hits (o el descarte si no hay).
+Libertad en **qué** investigar; disciplina en **cómo** ejecutar:
+
+1. **Registra en caliente.** Tras CADA herramienta con salida útil, `record_finding`
+   (con `run_id` y `tool_id`) ANTES de la siguiente. Un descarte también cuenta. Nunca
+   dejes los hallazgos "para el final".
+2. **Cierra el bucle: recopilar → analizar → registrar.** No basta con ejecutar;
+   interpreta la salida y persístela. Un artefacto intermedio (bodyfile, `.plaso`,
+   salida de `bulk_extractor`) se **procesa**, no se deja huérfano.
+3. **Encadena entero un pipeline que empieces** (no a medias). Los dos de referencia:
+   - **Super-timeline:** `tsk_fls` (`body_format: true`) → `tsk_mactime` → línea MAC(b).
+     Es la columna vertebral cronológica; una vez construida, **consúltala con
+     `consultar_actividad`** (por fecha/categoría/ruta) en vez de re-lanzar fls.
+   - **IOCs:** `bulk_extractor` → filtra cada feature file con `jq` → un hallazgo por
+     categoría (o el descarte si no hay).
+
+## Objetivo → herramientas (elige según el caso, no las agotes todas)
+
+- **Terreno / arranque:** `ewf_info` (si `.E01`), `tsk_mmls` (particiones y offsets).
+- **Línea temporal:** `tsk_fls -m` → `tsk_mactime`; luego `consultar_actividad`.
+- **Recuperar un fichero concreto:** `tsk_icat` por inodo (del árbol de `tsk_fls`).
+- **IOCs (emails/URLs/IPs/PII):** `bulk_extractor` + `jq`.
+- **Recuperar borrados por firma:** `foremost`.
+- **Firmas/malware:** `yara` sobre directorios ya extraídos (no la imagen entera).
+- **Correlación multi-fuente pesada:** `plaso_log2timeline` → `plaso_psort`.
+- **Qué artefacto responde a qué pregunta:** `consultar_conocimiento("artefactos-unix")`.
 
 ---
 
 ## A. Imagen de disco (`.raw`, `.dd`, `.img`, `.E01`, `.vmdk`)
 
-1. **Contenedor.** `ewf_info` si es `.E01` → tamaño, metadatos de adquisición
-   (examiner, fechas) y hashes internos del contenedor. Es **informativo**: la
-   verificación de integridad contra el baseline del caso la certifica
-   `EvidenceManager`, no tú — **nunca** afirmes que «cuadra con el baseline» (no
-   tienes el baseline).
-2. **Particiones.** `tsk_mmls` → tabla de particiones, offsets (en sectores) y
-   tipos. Apunta el `partition_offset` de cada partición de interés: lo necesitas
-   como `params.partition_offset` en los pasos siguientes.
-3. **Sistema de ficheros (sin montar).** Por cada partición relevante:
-   - **Paso 0 — huso horario (antes de la timeline).** Determina y **declara** el huso
-     de la evidencia ANTES de construir cualquier línea temporal: localiza y extrae
-     (`tsk_fls`→`tsk_icat`) `/etc/timezone` o el destino de `/etc/localtime` (y, en
-     macOS, la preferencia de zona horaria del sistema) y registra el huso hallado como
-     dato de contexto. Sin esa declaración, las marcas MAC(b) son ambiguas.
-   - `tsk_fls` con `recursive: true` → árbol de ficheros, incluidos borrados
-     (`*`); vuelve como artefacto (puede ser enorme).
-   - `tsk_mactime` sobre el bodyfile (`tsk_fls` con `body_format: true`) →
-     **línea temporal MAC(b)**. Esta es tu columna vertebral cronológica. Pasa
-     **siempre** `timezone: UTC` explícito para normalizar, y en cada marca del informe
-     exige el offset o la referencia a UTC (nunca una hora «desnuda» sin huso).
-4. **Extracción quirúrgica.** Cuando identifiques un inodo de interés en el árbol,
-   `tsk_icat` con su `inode` → recupera el fichero concreto (log, binario,
-   config) como artefacto, sin montar el FS.
-5. **IOCs.** `bulk_extractor` sobre la imagen → emails, URLs, IPs, tarjetas,
-   PII en espacio no asignado. **Lento**: anúncialo. Filtra el resultado con `jq`.
-6. **Carving.** `foremost` para recuperar ficheros por cabecera/firma desde
-   espacio no asignado cuando sospeches borrado deliberado.
-7. **Firmas / malware.** `yara` con reglas relevantes (webshells, ransomware,
-   persistencia) sobre directorios concretos ya extraídos (no sobre la imagen
-   entera salvo necesidad).
-8. **Super-timeline (opcional, pesado).** `plaso_log2timeline` → `.plaso`;
-   `plaso_psort` para acotar por rango temporal y exportar CSV. Úsalo cuando
-   necesites correlacionar muchas fuentes; no por defecto.
+Punto de partida sugerido; adáptalo al objetivo del perito.
 
-### Artefactos UNIX donde mirar primero (vía `tsk_icat` sobre el árbol de `fls`)
-- Persistencia: `/etc/cron*`, `/etc/systemd/system/*`, `~/.config/systemd/user/*`,
-  `/etc/rc.local`, `~/.bashrc`, `~/.profile`, `/etc/ld.so.preload`.
-- Cuentas/accesos: `/etc/passwd`, `/etc/shadow`, `/etc/sudoers`,
-  `~/.ssh/authorized_keys`, `/var/log/auth.log`, `/var/log/secure`.
-- Sesiones: `/var/log/wtmp`, `/var/log/btmp`, `/var/log/lastlog`.
-- Ejecución / shell: `~/.bash_history`, `~/.zsh_history`, `/var/log/syslog`.
-- Red/servicios: `/etc/hosts`, `/etc/resolv.conf`, configs de Apache/Nginx,
-  `/var/www` (webshells).
-- macOS heredado: `/private/var/log`, `~/Library/Logs`, `LaunchAgents` /
-  `LaunchDaemons`, `/Library/Preferences`.
+1. **Contenedor.** `ewf_info` si es `.E01` → tamaño, metadatos de adquisición y hashes
+   internos. Es **informativo**: la integridad contra el baseline la certifica
+   `EvidenceManager`, no tú — nunca afirmes que «cuadra con el baseline».
+2. **Particiones.** `tsk_mmls` → offsets (en sectores) y tipos. Apunta el
+   `partition_offset` de cada partición de interés para los pasos siguientes.
+3. **Huso horario (antes de la timeline).** Localiza y extrae (`tsk_fls`→`tsk_icat`)
+   `/etc/timezone` o el destino de `/etc/localtime` y **declara** el huso. Sin él, las
+   marcas MAC(b) son ambiguas. Normaliza siempre a `timezone: UTC` en `tsk_mactime`.
+4. **Sistema de ficheros (sin montar).** `tsk_fls -r` → árbol (incluidos borrados);
+   vuelve como artefacto. `tsk_fls -m` → bodyfile → `tsk_mactime` → línea MAC(b).
+5. **Extracción quirúrgica.** `tsk_icat` por `inode` → recupera el fichero concreto.
+6. **IOCs / carving / firmas / super-timeline:** según el objetivo, del índice de arriba.
+
+> Dónde mirar primero (persistencia, cuentas, sesiones, ejecución, red, web, macOS):
+> `consultar_conocimiento("artefactos-unix")` — no lo reproduzco aquí para no cargar
+> contexto de más.
 
 ---
 
 ## B. Volcado de memoria RAM (`.lime`, `.mem`, `.dump`)
 
-1. **Perfil.** `volatility3` con `plugin: "linux.banner.Banner"` (o el equivalente
-   macOS) → identifica kernel/build. **Aviso:** Linux necesita un ISF compatible;
-   si no existe, decláralo «no concluyente» en vez de forzar.
-2. **Procesos.** `linux.pslist.PsList`, `linux.pstree.PsTree`,
-   `linux.psscan.PsScan` → cruza los tres para detectar procesos ocultos
-   (presentes en `psscan` pero no en `pslist`).
-3. **Red.** `linux.sockstat.Sockstat` → conexiones/sockets; busca IPs o puertos
-   anómalos (C2, shells inversas).
+Punto de partida sugerido.
+
+1. **Perfil.** `volatility3` con `plugin: "linux.banner.Banner"` → kernel/build. Linux
+   necesita un ISF compatible; si no existe, decláralo «no concluyente», no lo fuerces.
+2. **Procesos.** `linux.pslist.PsList`, `linux.pstree.PsTree`, `linux.psscan.PsScan` →
+   cruza los tres para detectar procesos ocultos (en `psscan` pero no en `pslist`).
+3. **Red.** `linux.sockstat.Sockstat` → conexiones/sockets anómalos (C2, reverse shells).
 4. **Módulos / persistencia en kernel.** `linux.lsmod`, `linux.check_syscall`,
    `linux.check_modules` → rootkits y hooks.
-5. **Profundizar en un PID candidato.** `linux.proc.Maps`, volcado de regiones,
-   `linux.bash` (historial en memoria). Cita siempre el PID y el plugin.
+5. **PID candidato.** `linux.proc.Maps`, `linux.bash` (historial en memoria). Cita el PID
+   y el plugin.
 
-> Volatility3 con `-r json` devuelve filas estructuradas: el wrapper ya lo pide.
-> Si el volcado es Windows (lo dirá `detected_os` del bloque «Contexto de
-> evidencia», o lo confirmará un `windows.info.Info` puntual de diagnóstico),
-> **no es tu caso**: detente y pide a la operadora que **ancle el perfil del caso
-> a `windows`** (el re-enrutado a FORENSIA-WIN es automático; no se cierra ni se
-> reabre el caso). Ver la regla 8 del system prompt — no improvises `windows.*`
-> plugins porque no son de tu allowlist y porque el caso debe llevarlo
-> FORENSIA-WIN.
+> Volatility3 con `-r json` devuelve filas estructuradas (el wrapper ya lo pide). Si el
+> volcado es Windows (lo dirá `detected_os`, o un `windows.info.Info` de diagnóstico),
+> **no es tu caso**: detente y pide a la operadora que **ancle el perfil a `windows`**
+> (el relevo a FORENSIA-WIN es automático; no se cierra ni se reabre el caso). No
+> improvises `windows.*` plugins — no son de tu allowlist.
 
 ---
 
 ## Buenas prácticas siempre
 
-- Un mismo `tool_id` puede ejecutarse varias veces con `params` distintos: **cada
-  ejecución es un `artifact_id` independiente** — indica en cada hallazgo cuál
-  usaste.
-- Si la salida cabe en contexto, cítala literal en bloque de código; si no,
-  referencia el `artifact_id` y resume los puntos clave (apóyate en `jq`).
-- No montes el sistema de ficheros salvo que sea imprescindible; si lo haces,
-  decláralo explícitamente como excepción en el hallazgo.
-- Prioriza la **línea temporal** pronto: ancla cada hallazgo a una marca de
-  tiempo del artefacto (`observed_at`), no a la hora en que lo ejecutaste.
+- Un mismo `tool_id` puede ejecutarse varias veces con `params` distintos: cada
+  ejecución es un `run_id` independiente — indica en cada hallazgo cuál usaste.
+- Si la salida cabe en contexto, cítala literal; si no, referencia el artefacto y resume
+  (apóyate en `jq` / `consultar_actividad`).
+- No montes el sistema de ficheros salvo que sea imprescindible; si lo haces, decláralo
+  como excepción en el hallazgo.
+- Ancla cada hallazgo a la marca de tiempo del artefacto (`observed_at`), no a la hora en
+  que lo ejecutaste.
