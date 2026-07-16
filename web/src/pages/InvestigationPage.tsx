@@ -177,60 +177,6 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
         overflow: "hidden",
       }}
     >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          gap: 12,
-          marginBottom: 4,
-          flexShrink: 0,
-        }}
-      >
-        <div style={{ flex: 1 }}>
-          <div className="context-banner">
-            <div className="context-banner-main">
-              Caso activo: <strong>{activeCase.name}</strong>
-              <span className="context-banner-evidence">
-                {" · "}
-                {activeCase.examiner}
-                {" · perfil "}
-                <strong>{activeCase.os_profile ?? "sin determinar"}</strong>
-                {" · evidencia: "}
-                <strong>{evidenceLabel}</strong>
-                {activeEvidence && (
-                  <>
-                    {" · SHA-256 "}
-                    <code>{activeEvidence.sha256.slice(0, 8)}…</code>
-                    {activeEvidence.detected_os !== "unknown" && (
-                      <>
-                        {" · detectado "}
-                        <strong>{activeEvidence.detected_os}</strong>
-                        {activeEvidence.detected_kind !== "unknown" && (
-                          <> / <strong>{activeEvidence.detected_kind}</strong></>
-                        )}
-                      </>
-                    )}
-                  </>
-                )}
-              </span>
-            </div>
-            <Badge variant={activeCase.status === "active" ? "low" : "neutral"}>
-              {activeCase.status === "active" ? "Abierto" : "Cerrado"}
-            </Badge>
-          </div>
-        </div>
-        {onNavigate && (
-          <Button
-            variant="chip"
-            onClick={() => onNavigate("timeline")}
-            style={{ flexShrink: 0 }}
-          >
-            Ver Timeline →
-          </Button>
-        )}
-      </div>
-
       {profileMismatch && (
         <div className="profile-mismatch-banner">
           <span className="profile-mismatch-banner-icon" aria-hidden="true">⚠</span>
@@ -260,6 +206,51 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
         />
 
         <div className="investigation-sidebar">
+        <div className="findings-panel case-panel">
+          <div
+            className="findings-panel-title"
+            style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}
+          >
+            <span>Caso activo</span>
+            <Badge variant={activeCase.status === "active" ? "low" : "neutral"}>
+              {activeCase.status === "active" ? "Abierto" : "Cerrado"}
+            </Badge>
+          </div>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+              fontSize: 12,
+              color: "var(--text-muted)",
+              padding: "4px 2px",
+            }}
+          >
+            <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)" }}>
+              {activeCase.name}
+            </div>
+            <div>{activeCase.examiner}</div>
+            <div>
+              perfil <strong>{activeCase.os_profile ?? "sin determinar"}</strong>
+            </div>
+            <div>
+              evidencia <strong>{evidenceLabel}</strong>
+            </div>
+            {activeEvidence && (
+              <div>
+                SHA-256 <code>{activeEvidence.sha256.slice(0, 8)}…</code>
+              </div>
+            )}
+            {activeEvidence && activeEvidence.detected_os !== "unknown" && (
+              <div>
+                detectado <strong>{activeEvidence.detected_os}</strong>
+                {activeEvidence.detected_kind !== "unknown" && (
+                  <> / <strong>{activeEvidence.detected_kind}</strong></>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
         <div className="findings-panel">
           <div className="findings-panel-title">
             Hallazgos del caso ({findings.length})
