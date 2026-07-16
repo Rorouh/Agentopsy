@@ -442,6 +442,20 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
 # to a binary). They get exposed to the LLM in the same `tools=[…]` list so
 # the model can call them naturally.
 _INTERNAL_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
+    "consultar_conocimiento": {
+        "type": "object",
+        "properties": {
+            "doc_id": {
+                "type": "string",
+                "description": (
+                    "Id de un documento del «Mapa de memoria» del system prompt "
+                    "(p. ej. `artefactos-unix`). Devuelve su contenido completo."
+                ),
+            },
+        },
+        "required": ["doc_id"],
+        "additionalProperties": False,
+    },
     "consultar_actividad": {
         "type": "object",
         "properties": {
@@ -596,6 +610,13 @@ _INTERNAL_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
 }
 
 _INTERNAL_DESCRIPTIONS: dict[str, str] = {
+    "consultar_conocimiento": (
+        "LEE bajo demanda un documento de referencia del «Mapa de memoria» (system "
+        "prompt): detalle por-herramienta, catálogo de artefactos por SO, etc. NO "
+        "cargues todo de antemano — consulta solo el doc que necesites para la tarea "
+        "en curso (economía de contexto). `doc_id` debe ser uno de los ids listados en "
+        "el Mapa de memoria; un id desconocido se rechaza con la lista de ids válidos."
+    ),
     "consultar_actividad": (
         "CONSULTA la super-timeline del sistema de ficheros YA generada de la evidencia "
         "activa, sin re-ejecutar tsk_fls. Úsala para responder «¿qué actividad hubo entre "

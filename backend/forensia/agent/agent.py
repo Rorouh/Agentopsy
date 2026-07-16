@@ -188,6 +188,28 @@ def _bounded_json(body: dict[str, Any], limit: int) -> str:
     if len(text) <= limit:
         return text
 
+    # A top-level ``events`` list (consultar_actividad) is the heavy field: shed it
+    # PROGRESSIVELY, keeping the summary (status/matched/by_category) and as many events
+    # as fit, rather than falling to the all-null skeleton — which would read as "no
+    # activity" when the query actually matched (RULE 2: never hide a real result).
+    events = trimmed.get("events")
+    if isinstance(events, list) and events:
+        keep = len(events)
+        while keep > 0:
+            trimmed["events"] = events[:keep]
+            trimmed["events_returned"] = keep
+            trimmed["events_truncated_for_context"] = keep < len(events)
+            text = json.dumps(trimmed, ensure_ascii=False, default=str)
+            if len(text) <= limit:
+                return text
+            keep //= 2
+        trimmed["events"] = []
+        trimmed["events_returned"] = 0
+        trimmed["events_truncated_for_context"] = True
+        text = json.dumps(trimmed, ensure_ascii=False, default=str)
+        if len(text) <= limit:
+            return text
+
     skeleton = {
         "tool_id": body.get("tool_id"),
         "exit_code": body.get("exit_code"),
@@ -300,6 +322,12 @@ class ForensicAgent:
             "temperature": float(self.package.model.temperature or 0.2),
         }
         specs = tool_specs(list(allowed)) + internal_tool_specs()
+        # RULE 2: don't offer consultar_conocimiento to a package with no knowledge
+        # docs — there would be nothing to serve.
+        if not self.package.knowledge:
+            specs = [
+                s for s in specs if s["function"]["name"] != "consultar_conocimiento"
+            ]
 
         max_iter = max(1, int(self.package.model.max_iterations or 8))
         tool_calls_log: list[dict[str, Any]] = []
@@ -449,6 +477,39 @@ class ForensicAgent:
                     })
                     continue
 
+                if action.tool_id == "consultar_conocimiento":
+                    # Mapa de memoria: sirve un doc de referencia por id desde el
+                    # paquete (cargado y path-confinado al arrancar). Contenido de
+                    # CONFIANZA (autoría nuestra), no evidencia — sin spotlighting.
+                    doc_id = (dict(action.params).get("doc_id") or "").strip()
+                    doc = next(
+                        (d for d in self.package.knowledge if d.id == doc_id), None
+                    )
+                    if doc is None:
+                        valid = [d.id for d in self.package.knowledge]
+                        body = {
+                            "error": (
+                                f"doc_id {doc_id!r} no existe en el mapa de memoria. "
+                                f"Ids válidos: {valid}"
+                            )
+                        }
+                    else:
+                        body = {"doc_id": doc.id, "title": doc.title, "content": doc.content}
+                    messages.append(self._tool_result_msg(action, body))
+                    tool_calls_log.append({
+                        "tool_id": "consultar_conocimiento",
+                        "doc_id": doc_id,
+                        "error": body.get("error"),
+                    })
+                    emit({
+                        "type": "tool_result",
+                        "iteration": iteration + 1,
+                        "tool_id": "consultar_conocimiento",
+                        "status": "ok" if not body.get("error") else "error",
+                        "summary": (doc.title if doc else body.get("error", ""))[:120],
+                    })
+                    continue
+
                 if action.tool_id == "consultar_actividad":
                     # Read-only projection over the evidence's persisted super-timeline —
                     # answers date-range / category / path queries WITHOUT re-running fls
@@ -464,7 +525,7 @@ class ForensicAgent:
                             path_contains=params.get("path_contains"),
                             limit=params.get("limit", 100),
                         )
-                    except (KeyError, ValueError, RuntimeError) as exc:
+                    except (KeyError, ValueError, RuntimeError, OSError) as exc:
                         body = {"error": f"consultar_actividad rejected: {exc}"}
                     messages.append(
                         self._tool_result_msg(action, body, untrusted=True)
@@ -704,6 +765,22 @@ class ForensicAgent:
         # playbook and burns iterations on tsk_mmls/tsk_fls failures before
         # pivoting to section B (memory) — even when the evidence is clearly
         # a memdump.
+        # Mapa de memoria (híbrido): un índice compacto SIEMPRE presente que dice qué
+        # referencia existe y cuándo consultarla; el contenido pesado viaja solo cuando
+        # el agente llama a consultar_conocimiento(doc_id). Vacío si el paquete no trae
+        # docs (y entonces la tool ni se ofrece).
+        memory_map = ""
+        if self.package.knowledge:
+            docs = "\n".join(
+                f"- `{d.id}` — {d.description}" for d in self.package.knowledge
+            )
+            memory_map = (
+                "\n## Mapa de memoria (consulta bajo demanda)\n"
+                "No arrastres la referencia pesada en cada turno: consúltala SOLO cuando "
+                "la necesites con `consultar_conocimiento(doc_id)`. Documentos:\n"
+                f"{docs}\n"
+            )
+
         kind_routing = ""
         if detected_kind == "memory":
             kind_routing = (
@@ -762,7 +839,8 @@ class ForensicAgent:
             "el <fecha>?» o «artefactos web» (`category=web`). Si devuelve "
             "`status=no_timeline`, genera antes la super-timeline (`tsk_fls -m`). NO "
             "repitas `tsk_fls`/`tsk_mactime` para una consulta que esta tool ya "
-            "resuelve sobre lo construido.\n\n"
+            "resuelve sobre lo construido.\n"
+            f"{memory_map}\n"
             "## Postura por defecto: AGÉNTICA, NO CONVERSACIONAL\n"
             "El caso y la evidencia YA están anclados al request — no preguntes "
             "\"¿es esta la evidencia?\" ni pidas confirmación. Si el prompt es "

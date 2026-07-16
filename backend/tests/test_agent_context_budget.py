@@ -107,6 +107,30 @@ class TestBoundedJson:
         assert decoded["parsed"]["sample"] == []
         assert decoded["parsed"]["row_count"] == 5000
 
+    def test_events_list_is_shed_progressively_not_skeleton(self) -> None:
+        # consultar_actividad: the heavy field is a top-level `events` list. It must be
+        # trimmed to fit, PRESERVING the summary (status/matched/by_category) — never the
+        # all-null skeleton, which would read as "no activity" for a matched query.
+        body = {
+            "status": "ok",
+            "evidence_id": "e1",
+            "matched": 240,
+            "by_category": {"web": 4, "credenciales": 1},
+            "events": [
+                {"ts": f"2024-01-25T00:{i // 60:02d}:{i % 60:02d}Z",
+                 "path": "/var/www/html/" + "a" * 40, "macb": "macb"}
+                for i in range(240)
+            ],
+        }
+        out = _bounded_json(body, 2000)
+        decoded = json.loads(out)  # valid JSON
+        assert decoded["status"] == "ok"           # summary survived (not null skeleton)
+        assert decoded["matched"] == 240
+        assert decoded["by_category"] == {"web": 4, "credenciales": 1}
+        assert decoded["events_truncated_for_context"] is True
+        assert 0 <= len(decoded["events"]) < 240   # trimmed to fit
+        assert len(out) <= 2000
+
     def test_pathological_body_falls_back_to_valid_skeleton(self) -> None:
         # No sheddable sample, but a giant stdout that can't fit even trimmed.
         body = {

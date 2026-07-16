@@ -48,6 +48,18 @@ def test_forensia_windows_package_loads() -> None:
     assert pkg.id == "forensia-windows"
     assert pkg.os_profile == "windows"
     assert "regripper" in pkg.policy.allowed_tools
+
+
+def test_real_packages_ship_knowledge_docs() -> None:
+    """El mapa de memoria: ambos paquetes traen su catálogo de artefactos, cargado
+    y por debajo del cap de contexto (8000) para que quepa en un resultado de tool."""
+    for prof, doc_id in (("unix", "artefactos-unix"), ("windows", "artefactos-windows")):
+        pkg = load_package(AGENTES_DIR / f"forensia-{prof}")
+        ids = [d.id for d in pkg.knowledge]
+        assert doc_id in ids, f"{prof}: falta el doc {doc_id}"
+        doc = next(d for d in pkg.knowledge if d.id == doc_id)
+        assert doc.content.strip() and len(doc.content) < 8000
+        assert doc.description  # viaja en el índice del system prompt
     # The Windows agent uses the Windows-only tools.
     assert "hayabusa" in pkg.policy.allowed_tools
 
@@ -136,6 +148,78 @@ def test_absolute_prompt_path_rejected(tmp_path: Path) -> None:
     m["prompts"]["system"] = str(tmp_path / "outside.md")
     _write_manifest(tmp_path, m)
     with pytest.raises(AgentPackageError, match="RELATIVE"):
+        load_package(tmp_path)
+
+
+def _manifest_with_knowledge(knowledge: object) -> dict:
+    m = _valid_manifest()
+    m["knowledge"] = knowledge
+    return m
+
+
+def test_knowledge_docs_parsed(tmp_path: Path) -> None:
+    _write_manifest(
+        tmp_path,
+        _manifest_with_knowledge(
+            [
+                {
+                    "id": "artefactos-unix",
+                    "title": "Artefactos",
+                    "description": "Dónde mirar",
+                    "path": "knowledge/artefactos-unix.md",
+                }
+            ]
+        ),
+    )
+    (tmp_path / "knowledge").mkdir()
+    (tmp_path / "knowledge" / "artefactos-unix.md").write_text(
+        "# Artefactos\ncontenido de referencia", encoding="utf-8"
+    )
+    pkg = load_package(tmp_path)
+    assert [d.id for d in pkg.knowledge] == ["artefactos-unix"]
+    assert "contenido de referencia" in pkg.knowledge[0].content
+    assert pkg.summary()["knowledge"][0]["description"] == "Dónde mirar"
+
+
+def test_knowledge_absent_is_empty(tmp_path: Path) -> None:
+    _write_manifest(tmp_path, _valid_manifest())  # no knowledge key
+    assert load_package(tmp_path).knowledge == ()
+
+
+def test_knowledge_duplicate_id_rejected(tmp_path: Path) -> None:
+    entry = {"id": "dup", "title": "t", "description": "d", "path": "knowledge/a.md"}
+    _write_manifest(tmp_path, _manifest_with_knowledge([entry, dict(entry)]))
+    (tmp_path / "knowledge").mkdir()
+    (tmp_path / "knowledge" / "a.md").write_text("x", encoding="utf-8")
+    with pytest.raises(AgentPackageError, match="duplicate knowledge id"):
+        load_package(tmp_path)
+
+
+def test_knowledge_bad_id_rejected(tmp_path: Path) -> None:
+    _write_manifest(
+        tmp_path,
+        _manifest_with_knowledge(
+            [{"id": "Not Kebab", "title": "t", "description": "d", "path": "knowledge/a.md"}]
+        ),
+    )
+    with pytest.raises(AgentPackageError, match="kebab-case"):
+        load_package(tmp_path)
+
+
+def test_knowledge_path_escape_rejected(tmp_path: Path) -> None:
+    _write_manifest(
+        tmp_path,
+        _manifest_with_knowledge(
+            [{"id": "esc", "title": "t", "description": "d", "path": "../escape.md"}]
+        ),
+    )
+    with pytest.raises(AgentPackageError, match="outside the agent directory"):
+        load_package(tmp_path)
+
+
+def test_knowledge_not_a_list_rejected(tmp_path: Path) -> None:
+    _write_manifest(tmp_path, _manifest_with_knowledge({"id": "x"}))
+    with pytest.raises(AgentPackageError, match="'knowledge' must be a list"):
         load_package(tmp_path)
 
 

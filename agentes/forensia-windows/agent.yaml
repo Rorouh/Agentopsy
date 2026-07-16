@@ -25,3 +25,12 @@ prompts:
 policy:
   tools: policy/tools.yaml
   redaction: policy/redaction.yaml
+
+# Mapa de memoria híbrido: referencia consultada bajo demanda con
+# `consultar_conocimiento(doc_id)`. La `description` viaja siempre en el índice del
+# system prompt; el `content` solo cuando el agente lo pide (economía de contexto).
+knowledge:
+  - id: artefactos-windows
+    title: "Artefactos Windows — dónde mirar y con qué"
+    description: "Catálogo de artefactos forenses Windows (registro, ejecución, eventos EVTX, $MFT, actividad de usuario, persistencia, web) y la herramienta/parser para cada uno."
+    path: knowledge/artefactos-windows.md

@@ -33,6 +33,21 @@ class AgentPackagePrompts:
 
 
 @dataclass(frozen=True)
+class KnowledgeDoc:
+    """Un documento de referencia que el agente consulta BAJO DEMANDA (mapa de
+    memoria híbrido). El contenido se lee UNA vez al cargar el paquete —el loader
+    confina el path bajo ``agentes/<id>/`` (SECURITY INVARIANT 6)— y en runtime la
+    tool ``consultar_conocimiento`` lo sirve por ``id`` desde memoria, sin I/O ni
+    riesgo de traversal. ``description`` es la línea del índice ("cuándo consultarlo")
+    que viaja SIEMPRE en el system prompt; ``content`` solo viaja cuando se pide."""
+
+    id: str
+    title: str
+    description: str
+    content: str
+
+
+@dataclass(frozen=True)
 class RedactionPattern:
     name: str
     regex: str
@@ -64,6 +79,10 @@ class AgentPackage:
     model: AgentPackageModel
     prompts: AgentPackagePrompts
     policy: AgentPackagePolicy
+    # Documentos de referencia del mapa de memoria híbrido (opcional). Un paquete
+    # sin `knowledge:` en su manifiesto los tiene vacíos y el agente no ofrece
+    # `consultar_conocimiento` (RULE 2: sin índice no hay tool que prometa nada).
+    knowledge: tuple[KnowledgeDoc, ...] = ()
 
     def summary(self) -> dict:
         """Vista JSON-friendly para ``/api/agents`` y ``/api/capabilities``. No
@@ -80,5 +99,9 @@ class AgentPackage:
                 "max_iterations": self.model.max_iterations,
             },
             "allowed_tools": list(self.policy.allowed_tools),
+            "knowledge": [
+                {"id": d.id, "title": d.title, "description": d.description}
+                for d in self.knowledge
+            ],
             "path": str(self.path),
         }

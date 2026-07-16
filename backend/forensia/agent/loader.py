@@ -22,9 +22,10 @@ import yaml
 
 from forensia.agent.package import (
     AgentPackage,
+    AgentPackageModel,
     AgentPackagePolicy,
     AgentPackagePrompts,
-    AgentPackageModel,
+    KnowledgeDoc,
     RedactionPattern,
 )
 from forensia.toolkit.catalog import BY_ID as TOOL_BY_ID
@@ -88,6 +89,7 @@ def load_package(agent_dir: Path) -> AgentPackage:
     model = _parse_model(raw.get("model"), manifest_path)
     prompts = _parse_prompts(raw.get("prompts"), agent_dir, manifest_path)
     policy = _parse_policy(raw.get("policy"), agent_dir, os_profile, manifest_path)
+    knowledge = _parse_knowledge(raw.get("knowledge"), agent_dir, manifest_path)
 
     return AgentPackage(
         id=pkg_id,
@@ -99,6 +101,7 @@ def load_package(agent_dir: Path) -> AgentPackage:
         model=model,
         prompts=prompts,
         policy=policy,
+        knowledge=knowledge,
     )
 
 
@@ -163,6 +166,49 @@ def _parse_prompts(value: Any, agent_dir: Path, source: Path) -> AgentPackagePro
     identity = _read_relative_file(value.get("identity"), agent_dir, "prompts.identity", source)
     playbook = _read_relative_file(value.get("playbook"), agent_dir, "prompts.playbook", source)
     return AgentPackagePrompts(system=system, identity=identity, playbook=playbook)
+
+
+def _parse_knowledge(
+    value: Any, agent_dir: Path, source: Path
+) -> tuple[KnowledgeDoc, ...]:
+    """Parse the optional ``knowledge:`` list (mapa de memoria híbrido).
+
+    Each entry is a mapping ``{id, title, description, path}``. ``path`` is read and
+    confined under the agent dir at load time (SECURITY INVARIANT 6), so the runtime
+    tool serves content from memory by id with no further I/O. Absent → no docs."""
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise AgentPackageError(
+            f"{source}: 'knowledge' must be a list of {{id, title, description, path}} "
+            f"mappings, got {type(value).__name__}"
+        )
+    docs: list[KnowledgeDoc] = []
+    seen: set[str] = set()
+    for i, entry in enumerate(value):
+        if not isinstance(entry, dict):
+            raise AgentPackageError(
+                f"{source}: knowledge[{i}] must be a mapping, got {type(entry).__name__}"
+            )
+        doc_id = _require_str(entry, "id", source)
+        if not _ID_RE.match(doc_id):
+            raise AgentPackageError(
+                f"{source}: knowledge[{i}].id={doc_id!r} must be kebab-case ([a-z0-9-])"
+            )
+        if doc_id in seen:
+            raise AgentPackageError(
+                f"{source}: duplicate knowledge id {doc_id!r} — ids must be unique"
+            )
+        seen.add(doc_id)
+        title = _require_str(entry, "title", source)
+        description = _require_str(entry, "description", source)
+        content = _read_relative_file(
+            entry.get("path"), agent_dir, f"knowledge[{doc_id}].path", source
+        )
+        docs.append(
+            KnowledgeDoc(id=doc_id, title=title, description=description, content=content)
+        )
+    return tuple(docs)
 
 
 def _parse_policy(
