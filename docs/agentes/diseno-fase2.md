@@ -417,8 +417,9 @@ Implicaciones para el entrenamiento:
   debe ser robusto en el *camino degradado*: para modelos sin tool-use nativo, el
   loop usa prompt estructurado + parser + allowlist + reintentos. Los prompts
   incluyen un formato de salida `{tool_id, params}` parseable de forma estricta.
-- **Ejecutor cloud = advertencia + consentimiento registrado** en el audit log y
-  **redacción previa** (`policy/redaction.yaml`). Los CLIs con tool-use robusto
+- **Ejecutor cloud = advertencia** en la Guía y **redacción previa**
+  (`policy/redaction.yaml`); el consentimiento por caso que antes se registraba se
+  eliminó el 2026-07-16 (ya no se exige ni se guarda). Los CLIs con tool-use robusto
   sirven de referencia durante el desarrollo; validar Ollama como camino local es
   parte del experimento del TFM.
 - Un mismo paquete puede evaluarse con los cuatro ejecutores cambiando solo la
@@ -508,11 +509,11 @@ entrenamiento o del loop:
   dispatcher.
 - **Gate 7 (evidencia = datos):** regla explícita en `system.md` + caso de eval
   dedicado a prompt-injection desde un artefacto.
-- **Gate 9 (ejecutor explícito; cloud → consentimiento + redacción):**
-  `redaction.yaml` por agente; sin ejecutor seleccionado no hay análisis, y sin
-  consentimiento 0 bytes salen hacia un ejecutor cloud — `/api/agent/query`
-  devuelve 403 si no hay `cloud_executor_consent` para el caso + ejecutor
-  (`forensia.consent`), no es solo un aviso de la UI.
+- **Gate 9 (ejecutor explícito; cloud → advertencia + redacción):**
+  `redaction.yaml` por agente; sin ejecutor seleccionado no hay análisis. El
+  consentimiento por caso para egreso cloud se eliminó el 2026-07-16:
+  `/api/agent/query` ya no exige `cloud_executor_consent` ni devuelve 403 por su
+  ausencia (`forensia.consent` retirado); la advertencia vive en la Guía.
 - **Custodia (audit encadenado):** cada finding cita `audit_seq`; el loop registra
   el `argv` literal, no la intención del modelo.
 - **Contenedores:** un sub-agente Windows que necesite `regripper`/`evtxecmd`

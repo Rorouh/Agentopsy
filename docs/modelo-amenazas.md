@@ -66,14 +66,17 @@ token y lo mandan fuera), fuga por logs, exposición accidental por la API. Miti
   compose) todo queda en la máquina. Elegir **Claude Code / Codex CLI / Gemini CLI** manda
   contenido derivado del caso al proveedor del CLI bajo la cuenta del operador —
   transferencia de datos personales a un tercero (RGPD; cadena de custodia). →
-  **Advertencia explícita** al seleccionarlo, **consentimiento registrado** en el audit
-  log, **redacción/minimización** previa y **Ollama como vía 100 % local**. Sin ejecutor
-  seleccionado no hay análisis (RULE 2) — jamás un default silencioso.
-- **Enforcement en el backend, no solo en la UI**: `/api/agent/query` **rechaza con 403**
-  cualquier ejecutor cloud (claude-code, codex, gemini) si no existe una entrada
-  `cloud_executor_consent` para ese caso + ejecutor en el audit log. El aviso de la SPA
-  es la vía normal para registrarlo, pero un cliente API que se salte la UI también choca
-  con el gate (`forensia.consent.has_cloud_consent`). Ollama es local → nunca lo requiere.
+  **Advertencia explícita** en la Guía al seleccionarlo, **redacción/minimización** previa
+  y **Ollama como vía 100 % local**. Sin ejecutor seleccionado no hay análisis (RULE 2) —
+  jamás un default silencioso.
+- **Consentimiento por caso: eliminado (2026-07-16).** El egreso cloud ya **no** exige un
+  consentimiento registrado: `/api/agent/query` no comprueba ninguna entrada
+  `cloud_executor_consent` ni devuelve 403 por su ausencia, y `ForensicAgent.run` ya no
+  rechaza el run sin `consent_ref`. Se retiraron `forensia.consent`, `POST
+  /api/agent/cloud-consent` y `POST /api/cases/{id}/consent`, y el campo `cloud_consent` de
+  `case.json`. El ejecutor sigue siendo elección explícita del operador (RULE 2). (La
+  frontera de egreso del servidor MCP con cliente cloud externo — gate 14 — es
+  independiente y se mantiene.)
 - **Redacción en el único punto de egreso (implementado).** La redacción declarada por
   paquete (`policy/redaction.yaml`) se aplica en el egreso del loop
   (`forensia.agent.redaction.redact_messages` ← `ForensicAgent.run`) a todo lo que cruza a
@@ -152,7 +155,7 @@ de panel de expertos en 2026-06-29.
 | 6 | LLM elige id de tool de enum cerrada + params; backend resuelve argv desde allowlist | test: tool/flag fuera de catálogo → rechazo |
 | 7 | Evidencia = datos: payload de prompt-injection en un artefacto NO dispara tool | test |
 | 8 | Confinamiento a `evidenceRoot` (anti-traversal; excluye `~/.ssh,.aws,keychains`) | test |
-| 9 | Ejecutor elegido explícitamente (sin default silencioso); ejecutor cloud → advertencia + consentimiento en audit, **enforced en el backend** (`/api/agent/query` → 403 sin consent) | test: sin ejecutor → 422; ejecutor cloud sin consent → 403; con consent → pasa; ollama → nunca lo pide |
+| 9 | Ejecutor elegido explícitamente (sin default silencioso); ejecutor cloud → advertencia en la Guía (el consentimiento por caso se eliminó 2026-07-16 — ya no se exige ni registra) | test: sin ejecutor → 422; ejecutor cloud disponible sin consentimiento → pasa la validación de ejecutor (nunca 403) |
 | 10 | Audit log append-only encadenado por hash | test |
 | 11 | UI web hardened (CSP estricta); evidencia renderizada como `textContent`, nunca HTML | grep + test |
 | 12 | Token solo en memoria/no en disco world-readable ni en argv | revisión + grep |

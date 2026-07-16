@@ -100,6 +100,12 @@ del payload redactado.
 `case.json` (`CaseManager.grant_cloud_consent` / `POST /api/cases/{id}/consent`);
 sin él `/api/agent/query` devuelve `consent_required` y no se instancia el backend.
 El preview de bytes en la UI queda pendiente (no bloquea el gate de egreso).
+> **Actualización 2026-07-16:** el consentimiento por caso para egreso cloud se
+> **eliminó**. `forensia.consent`, el campo `cloud_consent` de `case.json`,
+> `grant_cloud_consent`, `POST /api/cases/{id}/consent` y `POST /api/agent/cloud-consent`
+> ya no existen; `/api/agent/query` no exige consentimiento ni devuelve 403 por su
+> ausencia, y `ForensicAgent.run` ya no rechaza un run cloud sin `consent_ref`. La
+> redacción en el punto de egreso y la auditoría del egreso (F3) se mantienen.
 
 ### F3 — Alta · El egreso cloud y las decisiones del agente no entran al audit encadenado
 **Evidencia.** `agent.py:90` recibe `audit` pero no lo usa; solo el dispatcher

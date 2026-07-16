@@ -140,10 +140,11 @@ error accionable; jamás un default silencioso:
 - **`ollama`** — HTTP contra el servicio `ollama` del compose: la vía 100 % local. Camino
   degradado para tool-use: prompt estructurado + parser + allowlist + reintentos.
 
-Elegir un ejecutor respaldado por cloud dispara la advertencia explícita y el registro de
-consentimiento en el audit log; ese consentimiento se **exige en el backend**
-(`/api/agent/query` devuelve 403 si no hay entrada `cloud_executor_consent` para el
-caso + ejecutor — `forensia.consent`), de modo que el gate no vive solo en la UI (ver
+Elegir un ejecutor respaldado por cloud muestra una advertencia explícita en la Guía; el
+consentimiento por caso que antes se exigía y registraba en el audit log **se eliminó el
+2026-07-16** (`/api/agent/query` ya no devuelve 403 por falta de consentimiento; el módulo
+`forensia.consent` y los endpoints `cloud-consent` / `/api/cases/{id}/consent` se retiraron).
+El ejecutor sigue siendo elección explícita del operador (RULE 2; ver
 [`modelo-amenazas.md`](modelo-amenazas.md)). Un
 **harness de evaluación** común mide la tasa de invocación correcta de tools y la calidad
 del informe con los cuatro ejecutores — esa tabla comparativa es la contribución
@@ -198,6 +199,6 @@ harness de evals entre ejecutores, y la absorción de las imágenes por-herramie
 capa de ejecución (`PromptExecutor` + los cuatro ejecutores, 2026-07-02), el loop de
 razonamiento, los wrappers del catálogo, el compose raíz de cinco servicios y la SPA
 React en `web/` (servida por nginx con proxy `/api`+`/ws` al servicio `api`; token vía
-`GET /api/session`; selector de ejecutor + consentimiento cloud auditado) ya están
-implementados. El modelo de entrega anterior (Electron en `desktop/`, `vendor/`,
+`GET /api/session`; selector de ejecutor — el consentimiento cloud auditado se eliminó
+el 2026-07-16) ya están implementados. El modelo de entrega anterior (Electron en `desktop/`, `vendor/`,
 `docker/agent/`, PyInstaller) quedó desmontado el 2026-07-02.

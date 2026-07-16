@@ -50,9 +50,9 @@ pendiente, en la rama `feature/compose-y-cli-executors`:
       hacia `ForensicAgent`. Cada ejecución se registra en el audit log con el
       argv literal. `/api/agent/query` exige `executor` en la petición (o
       `DEFAULT_EXECUTOR` fijado explícitamente por el usuario) — sin selección →
-      422 accionable; seleccionado pero inutilizable → 503 con la razón;
-      ejecutor cloud sin consentimiento registrado para el caso → **403**
-      (`forensia.consent`, gate no solo-UI; ollama nunca lo requiere). El demo
+      422 accionable; seleccionado pero inutilizable → 503 con la razón. (El gate de
+      consentimiento por caso para ejecutores cloud — `forensia.consent`, 403 sin
+      consentimiento — se eliminó el 2026-07-16: ya no se exige ni registra.) El demo
       loop por keywords y la respuesta skeleton se eliminaron (eran degradaciones
       silenciosas contrarias a RULE 2).
 - [ ] Volumen `forensia-cli-auth` + staging ro de credenciales CLI + exclusión del
@@ -76,10 +76,10 @@ pendiente, en la rama `feature/compose-y-cli-executors`:
       tipado (`web/src/api/client.ts`) con token de sesión obtenido de
       `GET /api/session` (solo memoria, mismo-origen; nuevo
       `forensia/routers/session.py` + `FORENSIA_UI_ORIGINS` en el Host-check).
-      La UI añade el selector de ejecutor con razones accionables, el aviso +
-      consentimiento cloud auditado (`POST /api/agent/cloud-consent`) y la bandeja
-      de evidencias (`GET /api/evidence/sources`, `./evidence` del host) en lugar
-      del diálogo nativo. `docker/web/` pasa de placeholder a build real
+      La UI añade el selector de ejecutor con razones accionables, el aviso de
+      egreso cloud (el consentimiento auditado `POST /api/agent/cloud-consent` se
+      eliminó el 2026-07-16) y la bandeja de evidencias (`GET /api/evidence/sources`,
+      `./evidence` del host) en lugar del diálogo nativo. `docker/web/` pasa de placeholder a build real
       (node → nginx con proxy). Tests en `backend/tests/test_web_surface.py`.
 - [x] Desmontar el modelo antiguo — hecho el 2026-07-02: eliminados `desktop/`
       (Electron main/preload, electron-builder), `docker/agent/` (`forensia_agent`
@@ -432,7 +432,7 @@ playbook**. Todos viven en `agentes/forensia-windows/prompts/playbook.md` y
 | **Qué** | Implementar la capa de ejecución del pivote 2026-07-02: interfaz `PromptExecutor` + cuatro ejecutores — Claude Code (`claude -p`), Codex CLI (`codex exec`) y Gemini CLI (`gemini -p`) como subprocesos `shell=False` dentro del servicio `api`, y Ollama por HTTP al servicio del compose con el camino degradado (prompt estructurado + parser + allowlist + reintentos, porque el tool-calling nativo en modelos open es frágil). |
 | **Por qué** | Sin API keys en el proyecto: el operador usa su propia suscripción (CLIs con la sesión del volumen `forensia-cli-auth`, seeded del host o login en el contenedor) u Ollama como vía 100 % local. La comparativa entre los cuatro ejecutores es la contribución experimental del TFM. RULE 2: sin ejecutor seleccionado → 503 accionable, jamás un default. |
 | **Dónde toca** | `backend/forensia/` (nueva capa que reemplaza `models/local.py` y `models/cloud.py`), routers, capabilities, y limpieza de `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` en `routers/config.py` + tests. Diseño en `arquitectura.md` §5 y `diseno-fase2.md` §8. |
-| **Estimación** | 2-4 días + tests (incluye la advertencia + consentimiento auditado para ejecutores respaldados por cloud — gate 9). |
+| **Estimación** | 2-4 días + tests (incluye la advertencia para ejecutores respaldados por cloud — gate 9; el consentimiento por caso se eliminó el 2026-07-16). |
 
 Los antiguos ítems `models.local` (Ollama `NotImplementedError`) y `models.anthropic`
 (clave aceptada sin uso) quedan absorbidos aquí: el primero se convierte en el ejecutor
@@ -499,8 +499,8 @@ estimación HONESTA con **rangos y supuestos declarados**, NUNCA un número fing
   puede ser 0. Ejecutor ausente/ inválido → 422 (RULE 2: no se elige «el local»).
 - **UI:** `ChatPage` pide la estimación al elegir caso + ejecutor y pinta un aviso
   con los rangos + `basis` + `disclaimer` ANTES de lanzar (reusa el estilo del
-  aviso de consentimiento cloud). El envío sigue siendo la confirmación; para cloud
-  se mantiene además el consentimiento auditado. Tests: `tests/test_estimate.py`.
+  aviso de egreso cloud). El envío sigue siendo la confirmación; el consentimiento
+  por caso auditado para cloud se eliminó el 2026-07-16. Tests: `tests/test_estimate.py`.
 
 **Nivel 1 — apretar los mandos existentes (ahora sí, con el Nivel 0 midiendo).**
 

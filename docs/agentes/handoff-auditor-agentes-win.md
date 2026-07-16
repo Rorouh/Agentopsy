@@ -41,8 +41,8 @@ corre herramientas del maletín y devuelve hallazgos estructurados con **cadena 
 custodia** (cada finding cita `tool_id`/`run_id`/`sha256`). Invariantes en
 `CLAUDE.md` (RULE 0–5, FORENSIC INVARIANTS, SECURITY INVARIANTS): sin fallbacks ni
 defaults silenciosos (RULE 2), evidencia = datos hostiles nunca instrucciones,
-tool-exec shell-free con allowlist de argv, egreso cloud redactado + consentimiento
-registrado (gate 7). El sub-agente es **declarativo**: `agentes/forensia-windows/`
+tool-exec shell-free con allowlist de argv, egreso cloud redactado (el consentimiento
+por caso se eliminó el 2026-07-16). El sub-agente es **declarativo**: `agentes/forensia-windows/`
 (agent.yaml, prompts/, policy/) + `agentes/_orchestrator/` (KB/semilla MITRE).
 
 ## Principios metodológicos (lo más importante — no los erosiones)

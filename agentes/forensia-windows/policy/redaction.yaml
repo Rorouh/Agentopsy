@@ -6,8 +6,8 @@
 #   y forensia.mcp.redaction para el servidor MCP). Se aplica a todo lo que cruza a un
 #   backend con `capabilities().is_local == False`. Con backend LOCAL (Ollama, por
 #   defecto) NO se redacta porque **nada sale del host** (modelo-amenazas §C, gate 9).
-#   Cloud es opt-in por caso con consentimiento registrado; sin consentimiento, 0 bytes
-#   salen y ni se construye el backend. La redacción es defensa en profundidad sobre eso.
+#   El ejecutor cloud es elección explícita del operador (el consentimiento por caso se
+#   eliminó el 2026-07-16). La redacción es la defensa en profundidad sobre ese egreso.
 #   Regla de diseño: ante la duda, sobre-redactar es el fallo SEGURO (un falso positivo
 #   solo empobrece lo que ve el LLM cloud; un falso negativo filtra datos personales).
 #

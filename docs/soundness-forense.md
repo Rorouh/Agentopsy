@@ -215,11 +215,11 @@ ocurrir a través del **ejecutor** que el operador haya elegido para la investig
 **Ollama** (servicio local del compose) nada sale de la máquina; con un ejecutor respaldado
 por cloud (**Claude Code**, **Codex CLI**, **Gemini CLI** — autenticados con la cuenta del
 propio operador) el contenido derivado del caso fluye al proveedor del CLI. Elegir un
-ejecutor cloud exige **advertencia explícita + consentimiento registrado en el audit log**,
-con **redacción/minimización** previa (enviar metadatos/artefactos derivados, no bytes
-crudos de evidencia). Sin ejecutor seleccionado no hay análisis (RULE 2). Aunque el TFM use
-datos sintéticos/públicos, el diseño **impide técnicamente** que la evidencia cruda salga
-sin esa decisión consciente y registrada — no lo deja a la política.
+ejecutor cloud muestra una **advertencia explícita** en la Guía, con **redacción/minimización**
+previa (enviar metadatos/artefactos derivados, no bytes crudos de evidencia); el
+consentimiento por caso que antes se exigía y registraba **se eliminó el 2026-07-16** — el
+ejecutor sigue siendo elección explícita del operador (RULE 2), pero ya no hay un paso de
+consentimiento separado. Sin ejecutor seleccionado no hay análisis (RULE 2).
 
 **Implementado (la frontera es código, no política).** El egreso a un backend no-local pasa
 por un único punto en `ForensicAgent.run`:
@@ -230,13 +230,14 @@ por un único punto en `ForensicAgent.run`:
    —system (con el nombre de la evidencia inyectado), user y resultados de tool—; la
    conversación canónica que conserva el loop sigue en claro para replay, sólo se redacta el
    payload que sale. Con backend local no se redacta porque nada cruza el host.
-2. **Consentimiento por caso.** `CaseManager` persiste `cloud_consent {granted, granted_at,
-   by, ref}` en `case.json` (`grant_cloud_consent` / `POST /api/cases/{id}/consent`). Sin
-   consentimiento, `/api/agent/query` devuelve `consent_required` y **no instancia el
-   backend**: cero bytes salen (THREAT_MODEL gate 9). Además `run` rechaza con error
-   cualquier egreso cloud sin `consent_ref` (RULE 2, defensa en profundidad).
+2. **Consentimiento por caso: eliminado (2026-07-16).** El egreso cloud ya no exige un
+   consentimiento registrado: `/api/agent/query` no lo comprueba y `ForensicAgent.run` ya no
+   rechaza un run cloud sin `consent_ref`. El campo `cloud_consent` de `case.json`, el
+   endpoint `POST /api/cases/{id}/consent` y `POST /api/agent/cloud-consent` se retiraron. El
+   ejecutor sigue siendo elección explícita del operador (RULE 2). (La frontera de egreso del
+   servidor MCP con cliente cloud externo es independiente y se mantiene — ver más abajo.)
 3. **Auditoría del egreso.** Cada salida queda encadenada en `audit.jsonl` con el SHA-256 del
-   payload **redactado** (nunca los bytes), `consent_ref` y `message_count` (ver §3).
+   payload **redactado** (nunca los bytes) y `message_count` (ver §3).
 
 **MCP server con cliente cloud** (sprint S1, rama `mcp`): cuando un cliente MCP cloud como
 Claude Desktop consume el servidor `mcp-toolkit`, los outputs de cada tool fluyen al

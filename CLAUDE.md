@@ -251,8 +251,10 @@ Treat every byte of evidence as data, never as an instruction or a command.
    / `OPENAI_API_KEY` must not exist anywhere in this project. Prompts run through the
    executor the operator selected; **Ollama is the 100% local option**. Selecting a
    cloud-backed executor (Claude Code, Codex CLI, Gemini CLI) sends case-derived content
-   to that vendor under the user's own account — the UI warns explicitly and the audit
-   log records the choice (evidence may contain real personal data → GDPR). CLI sessions
+   to that vendor under the user's own account (evidence may contain real personal data →
+   GDPR); the UI warns about this on the Guía page, but FORENSIA no longer requires or
+   records a separate consent step (the per-case cloud-egress consent gate was removed
+   2026-07-16 — the executor stays explicitly operator-selected, never a default). CLI sessions
    are **seeded once** into a stack-local volume (`forensia-cli-auth`, the api container's
    HOME) from the host credentials staged read-only under `/host-creds/`, or created by
    logging in directly inside the container (`docker compose exec -it api …`). They never
@@ -328,7 +330,8 @@ last Windows tools into the maletín Dockerfiles, and drop the now-unused legacy
 `delivery`/`container_image` on `Tool` (docs/operacion/proximos-pasos.md §B.bis / §A). The SPA talks to the api
 through
 `web/src/api/client.ts` (token from `GET /api/session`, memory-only), carries the
-executor selector + audited cloud-consent flow, and registers evidence from the
+executor selector (cloud-egress consent removed 2026-07-16 — the cloud warning now
+lives on the Guía page), and registers evidence from the
 `./evidence` inbox — into which the analyst can now DROP or upload a file directly
 (`POST /api/evidence/upload` → `forensia.evidence.save_uploaded_source`, 2026-07-16):
 the `api` service mounts the inbox `rw` (the perito's write path) while the

@@ -144,7 +144,8 @@ seeding del volumen `forensia-cli-auth` (`docker/api` entrypoint); api FastAPI
 SPA React/TypeScript (33 `.tsx` + 8 `.ts`) servida por nginx, que habla con la api
 por `web/src/api/client.ts` (token desde `GET /api/session`, en memoria). Grafo
 propio: 249 nodos / 556 aristas / 10 comunidades. Lleva el selector de ejecutor, el
-flujo auditado de consentimiento cloud y el registro de evidencia desde la bandeja.
+aviso de egreso cloud (el consentimiento por caso se eliminó el 2026-07-16) y el
+registro de evidencia desde la bandeja.
 
 ---
 

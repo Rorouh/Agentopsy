@@ -124,9 +124,9 @@ no lo están, **la razón accionable** (p. ej. "inicia sesión con…", "Ollama 
 **Actualizar estado** tras loguearte o descargar el modelo. (Equivale a `GET /api/capabilities`.)
 
 > **Privacidad (RGPD).** Elegir un ejecutor **cloud** envía contenido derivado de la evidencia
-> a ese proveedor bajo tu cuenta; la UI lo advierte y, con un caso abierto, **bloquea el envío
-> hasta que aceptas** — y registra el consentimiento en el audit del caso. Ollama no sale de tu
-> máquina.
+> a ese proveedor bajo tu cuenta; la Guía lo advierte. El paso de consentimiento por caso que
+> antes bloqueaba el envío se eliminó el 2026-07-16 — el ejecutor sigue siendo elección
+> explícita del operador. Ollama no sale de tu máquina.
 
 ---
 
@@ -186,8 +186,9 @@ audit**.
 ### 5.3 Investigar (el agente conduciendo herramientas)
 
 **Investigación**: la cabecera muestra el caso activo, la evidencia y el **agente activo**
-(según el `os_profile` detectado). En el composer elige **Proveedor** (ejecutor) y **Modelo**;
-si es cloud y hay caso, acepta el aviso de consentimiento. Escribe una consulta, p. ej.:
+(según el `os_profile` detectado). En el composer elige **Proveedor** (ejecutor) y **Modelo**
+(si es cloud, la Guía te advierte del egreso; ya no hay un paso de consentimiento que aceptar).
+Escribe una consulta, p. ej.:
 
 - “¿Qué herramientas tengo disponibles para esta evidencia?”
 - “Lista las particiones y el árbol de ficheros de la imagen.”
