@@ -10,7 +10,6 @@ import type {
   AdjudicateRequest,
   AgentFinding,
   AgentJob,
-  AnalysisEstimate,
   MitreCatalog,
   MitreCoverageEntry,
   ExecutorCost,
@@ -214,17 +213,6 @@ export const api = {
   listCaseJobs: (caseId: string) =>
     request<AgentJob[]>(`/api/cases/${encodeURIComponent(caseId)}/agent/jobs`),
 
-  // Estimación HONESTA (rangos + supuestos) del coste de lanzar un análisis
-  // ANTES de lanzarlo (hallazgo E). `executor` es obligatorio (RULE 2); un id
-  // desconocido → 422. `evidenceId` es opcional (enriquece con el tamaño).
-  analyzeEstimate: (caseId: string, executor: ExecutorId, evidenceId?: string) => {
-    const qs = new URLSearchParams({ executor });
-    if (evidenceId) qs.set("evidence_id", evidenceId);
-    return request<AnalysisEstimate>(
-      `/api/cases/${encodeURIComponent(caseId)}/analyze/estimate?${qs.toString()}`,
-    );
-  },
-
   // Igual que query() pero recibe el progreso del agente en vivo: llama a
   // `onEvent` por cada evento NDJSON (reasoning / tool_call / tool_result /
   // finding / final) y termina con el evento `done`.
@@ -272,14 +260,6 @@ export const api = {
     }
     flush(buffer);
   },
-
-  // Consentimiento explícito del operador para un ejecutor cloud-backed:
-  // queda registrado en el audit.jsonl del caso (SECURITY INVARIANT 7 / RGPD).
-  consentCloud: (caseId: string, executor: ExecutorId) =>
-    post<{ recorded: boolean; case_id: string; executor: ExecutorId; ts_utc: string }>(
-      "/api/agent/cloud-consent",
-      { case_id: caseId, executor },
-    ),
 
   // Catálogo ATT&CK (enum cerrada derivada de la semilla del orquestador).
   // Global, no por caso: es dato de referencia, no evidencia.

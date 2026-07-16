@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, api } from "../api/client";
 import type {
   AgentSummary,
-  AnalysisEstimate,
   Capabilities,
   Case,
   EvidenceHandle,
@@ -210,19 +209,6 @@ const MODEL_CONFIG_KEY: Record<ExecutorId, string> = {
   ollama: "OLLAMA_MODEL",
 };
 
-// Recordatorio UX de consentimientos ya registrados (la VERDAD está en el
-// audit.jsonl del caso, donde /api/agent/cloud-consent lo apendó).
-const consentStorageKey = (caseId: string, executor: string) =>
-  `forensia-cloud-consent:${caseId}:${executor}`;
-
-function hasStoredConsent(caseId: string, executor: string): boolean {
-  try {
-    return localStorage.getItem(consentStorageKey(caseId, executor)) === "1";
-  } catch {
-    return false;
-  }
-}
-
 interface ChatPageProps {
   caps: Capabilities | null;
   // Optional case context. When provided, the chat anchors queries to the
@@ -257,9 +243,6 @@ export function ChatPage({
   // DEFAULT_EXECUTOR solo si el usuario lo fijó EXPLÍCITAMENTE en Settings
   // (agencia del operador — RULE 2); nunca se inventa uno.
   const [executor, setExecutor] = useState<ExecutorId | "">("");
-  const [consents, setConsents] = useState<Record<string, boolean>>({});
-  const [consentBusy, setConsentBusy] = useState(false);
-  const [consentError, setConsentError] = useState<string | null>(null);
 
   // Anclaje MANUAL del os_profile del caso (RULE 2: acción explícita del
   // operador) cuando el triage no lo determinó. `anchoring` marca cuál se está
@@ -278,19 +261,6 @@ export function ChatPage({
   // Modelos que ofrece el ejecutor elegido (Ollama: lista real; cloud: nota).
   const [providerModels, setProviderModels] = useState<ExecutorModels | null>(null);
   const [modelsLoading, setModelsLoading] = useState(false);
-
-  // Estimación PRE-VUELO del análisis (hallazgo E): rangos honestos de
-  // iteraciones/tokens/coste/tiempo con supuestos declarados, ANTES de lanzar.
-  const [estimate, setEstimate] = useState<AnalysisEstimate | null>(null);
-  const [estimateError, setEstimateError] = useState<string | null>(null);
-  // Los avisos (consentimiento cloud / estimación) se pueden cerrar con la ✕ y
-  // se REABREN al cambiar de proveedor o de modelo (para re-verlos con el nuevo).
-  const [dismissCloud, setDismissCloud] = useState(false);
-  const [dismissEstimate, setDismissEstimate] = useState(false);
-  const reopenNotices = () => {
-    setDismissCloud(false);
-    setDismissEstimate(false);
-  };
 
   const logRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -342,33 +312,6 @@ export function ChatPage({
     };
   }, [executor]);
 
-  // Estimación pre-vuelo: al elegir caso + ejecutor (y opcionalmente evidencia)
-  // pedimos el rango honesto de tokens/coste/tiempo para avisar ANTES de lanzar.
-  useEffect(() => {
-    if (!activeCase || !executor) {
-      setEstimate(null);
-      setEstimateError(null);
-      return;
-    }
-    let alive = true;
-    setEstimateError(null);
-    api
-      .analyzeEstimate(activeCase.id, executor as ExecutorId, activeEvidence?.evidence_id)
-      .then((e) => {
-        if (alive) setEstimate(e);
-      })
-      .catch((err) => {
-        if (!alive) return;
-        setEstimate(null);
-        setEstimateError(
-          err instanceof ApiError ? err.detail : "No se pudo estimar el coste.",
-        );
-      });
-    return () => {
-      alive = false;
-    };
-  }, [activeCase?.id, executor, activeEvidence?.evidence_id]);
-
   // Cerrar el menú abierto al hacer clic fuera del grupo de acciones.
   useEffect(() => {
     if (!openMenu) return;
@@ -398,7 +341,6 @@ export function ChatPage({
         return next;
       });
       setOpenMenu(null);
-      reopenNotices();
     } catch {
       /* el backend degrada (id inválido, etc.); se deja el menú abierto */
     } finally {
@@ -412,7 +354,6 @@ export function ChatPage({
   const selectExecutor = (id: ExecutorId) => {
     setExecutor(id);
     setOpenMenu(null);
-    reopenNotices();
     api.config.set("DEFAULT_EXECUTOR", id).catch(() => {
       /* persistencia best-effort */
     });
@@ -439,37 +380,6 @@ export function ChatPage({
     : [];
   const executorStatus: ExecutorStatus | null =
     executor && caps ? caps.executors[executor] ?? null : null;
-  const isCloud = executorStatus !== null && !executorStatus.local;
-  const consentGiven =
-    !isCloud ||
-    !activeCase ||
-    !executor ||
-    consents[consentStorageKey(activeCase.id, executor)] === true ||
-    hasStoredConsent(activeCase.id, executor);
-  // Con caso + ejecutor cloud, el envío queda bloqueado hasta que el operador
-  // confirme el aviso (el consentimiento se registra en el audit del caso).
-  const sendBlockedByConsent = isCloud && !!activeCase && !consentGiven;
-
-  const acceptCloudConsent = async () => {
-    if (!activeCase || !executor) return;
-    setConsentBusy(true);
-    setConsentError(null);
-    try {
-      await api.consentCloud(activeCase.id, executor as ExecutorId);
-      try {
-        localStorage.setItem(consentStorageKey(activeCase.id, executor), "1");
-      } catch {
-        /* el registro real ya está en el audit */
-      }
-      setConsents((prev) => ({ ...prev, [consentStorageKey(activeCase.id, executor)]: true }));
-    } catch (err) {
-      setConsentError(
-        err instanceof ApiError ? err.detail : String(err instanceof Error ? err.message : err)
-      );
-    } finally {
-      setConsentBusy(false);
-    }
-  };
 
   // Ancla el os_profile del caso a mano (unix/windows) cuando el triage no lo
   // determinó. RULE 2: no se adivina el perfil; lo elige el operador. Tras
@@ -648,10 +558,6 @@ export function ChatPage({
   const send = async () => {
     const text = input.trim();
     if (!text || busy || !activeCase) return;
-    if (sendBlockedByConsent) {
-      setDismissCloud(false); // reabre el aviso cloud para que el operador consienta
-      return;
-    }
     const caseId = activeCase.id;
     setInput("");
     setBusy(true);
@@ -684,7 +590,7 @@ export function ChatPage({
       });
       await drivePoll(caseId, job_id);
     } catch (e) {
-      // Falló el ARRANQUE (validación: ejecutor/evidencia/consentimiento). El
+      // Falló el ARRANQUE (validación: ejecutor/evidencia/perfil). El
       // backend responde con detail accionable (RULE 2); se muestra tal cual.
       const friendly =
         e instanceof ApiError
@@ -712,142 +618,7 @@ export function ChatPage({
   // Los no disponibles se deshabilitan y el tooltip lleva la razón accionable
   // que reporta capabilities (RULE 2: degradación explícita, nunca sustituto).
 
-  const bannerCloseStyle: CSSProperties = {
-    alignSelf: "flex-start",
-    background: "none",
-    border: "none",
-    color: "inherit",
-    cursor: "pointer",
-    fontSize: 18,
-    lineHeight: 1,
-    opacity: 0.55,
-    padding: "0 2px",
-    marginLeft: 4,
-  };
-
-  const cloudNotice = isCloud && !dismissCloud && (
-    <div
-      className="profile-mismatch-banner"
-      style={{ marginBottom: 8 }}
-    >
-      <span className="profile-mismatch-banner-icon" aria-hidden="true">⚠</span>
-      <div className="profile-mismatch-banner-body">
-        <div className="profile-mismatch-banner-title">
-          Ejecutor cloud: {executorStatus?.name} — el contenido derivado del caso saldrá al proveedor
-        </div>
-        <div>
-          Los prompts incluyen contenido derivado de la evidencia (que puede contener
-          datos personales reales → RGPD) y se envían bajo tu propia suscripción.
-          La alternativa 100 % local es <code>ollama</code>.
-          {activeCase ? (
-            consentGiven ? (
-              <> Consentimiento registrado en el audit de <strong>{activeCase.name}</strong>.</>
-            ) : (
-              <>
-                {" "}
-                <Button
-                  variant="chip"
-                  disabled={consentBusy}
-                  onClick={acceptCloudConsent}
-                  style={{ marginTop: 6 }}
-                >
-                  {consentBusy
-                    ? "Registrando…"
-                    : "Acepto — registrar consentimiento en el audit del caso"}
-                </Button>
-              </>
-            )
-          ) : (
-            <> Abre un caso para registrar el consentimiento y poder consultar.</>
-          )}
-          {consentError && (
-            <div style={{ marginTop: 6 }}>
-              <strong>No se pudo registrar:</strong> {consentError}
-            </div>
-          )}
-        </div>
-      </div>
-      <button
-        type="button"
-        aria-label="Cerrar aviso"
-        title="Cerrar · reaparece al cambiar de proveedor o modelo"
-        onClick={() => setDismissCloud(true)}
-        style={bannerCloseStyle}
-      >
-        ×
-      </button>
-    </div>
-  );
-
-  // Aviso PRE-VUELO (hallazgo E): rango orientativo de tokens/coste/tiempo con
-  // supuestos declarados, para que el operador sepa a qué se compromete ANTES de
-  // lanzar. No es un presupuesto; el envío sigue siendo la confirmación (y para
-  // cloud, además, el consentimiento de arriba).
-  const fmtTime = (s: number) =>
-    s < 90 ? `${s} s` : `${Math.round(s / 60)} min`;
-  const costText = estimate
-    ? !estimate.cost_usd.available
-      ? "no disponible"
-      : estimate.cost_usd.tariff === null
-        ? estimate.cost_usd.label ?? "0 USD"
-        : `${estimate.cost_usd.min?.toFixed(4)}–${estimate.cost_usd.max?.toFixed(4)} USD`
-    : "";
-  const estimateNotice = estimate && !dismissEstimate && (
-    <div className="profile-mismatch-banner" style={{ marginBottom: 8 }}>
-      <span className="profile-mismatch-banner-icon" aria-hidden="true">≈</span>
-      <div className="profile-mismatch-banner-body">
-        <div className="profile-mismatch-banner-title">
-          Estimación previa · {estimate.executor.name}
-          {estimate.evidence_size_human
-            ? ` · evidencia ${estimate.evidence_size_human}`
-            : ""}
-        </div>
-        <div>
-          <strong>Iteraciones</strong> {estimate.iterations.min}–
-          {estimate.iterations.max} · <strong>Tokens</strong>{" "}
-          {estimate.tokens.min.toLocaleString()}–
-          {estimate.tokens.max.toLocaleString()} · <strong>Tiempo</strong>{" "}
-          {fmtTime(estimate.time_seconds.min)}–{fmtTime(estimate.time_seconds.max)} ·{" "}
-          <strong>Coste</strong> {costText}
-          <div style={{ marginTop: 4, opacity: 0.8 }}>
-            Base: {estimate.basis}
-            {estimate.cost_usd.tariff
-              ? ` Tarifa: ${estimate.cost_usd.tariff.source}`
-              : ""}
-          </div>
-          {estimate.cost_usd.note && (
-            <div style={{ marginTop: 4 }}>{estimate.cost_usd.note}</div>
-          )}
-          <div style={{ marginTop: 4, opacity: 0.8 }}>{estimate.disclaimer}</div>
-        </div>
-      </div>
-      <button
-        type="button"
-        aria-label="Cerrar aviso"
-        title="Cerrar · reaparece al cambiar de proveedor o modelo"
-        onClick={() => setDismissEstimate(true)}
-        style={bannerCloseStyle}
-      >
-        ×
-      </button>
-    </div>
-  );
-  const estimateErrorNotice = estimateError && (
-    <div className="profile-mismatch-banner" style={{ marginBottom: 8 }}>
-      <span className="profile-mismatch-banner-icon" aria-hidden="true">⚠</span>
-      <div className="profile-mismatch-banner-body">
-        <div className="profile-mismatch-banner-title">
-          No se pudo estimar el coste
-        </div>
-        <div>{estimateError}</div>
-      </div>
-    </div>
-  );
-
-  const sendDisabled = !input.trim() || busy || sendBlockedByConsent;
-  const sendTitle = sendBlockedByConsent
-    ? "Confirma el aviso del ejecutor cloud para poder enviar"
-    : undefined;
+  const sendDisabled = !input.trim() || busy;
 
   const providerLabel = executor ? executorStatus?.name ?? executor : "Proveedor";
   // El modelo recomendado del paquete solo aplica a Ollama (modelo local).
@@ -1048,7 +819,7 @@ export function ChatPage({
         </div>
 
         {/* Enviar */}
-        <Button variant="icon" onClick={send} disabled={sendDisabled} title={sendTitle}>
+        <Button variant="icon" onClick={send} disabled={sendDisabled}>
           <svg
             width="16"
             height="16"
@@ -1072,9 +843,6 @@ export function ChatPage({
       {msgs.length === 0 ? (
         // Welcome / empty state
         <div className="chat-welcome">
-          {cloudNotice}
-          {estimateNotice}
-          {estimateErrorNotice}
           <div className="welcome-title">¿Qué analizamos hoy?</div>
 
           <div className="agent-badge" title={activeAgent?.path ?? ""}>
@@ -1158,9 +926,6 @@ export function ChatPage({
       ) : (
         // Conversation Flow
         <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-          {cloudNotice}
-          {estimateNotice}
-          {estimateErrorNotice}
           <div className="chat-messages" ref={logRef}>
             {msgs.map((msg, i) => (
               <div key={i} className={`msg-wrapper ${msg.role}`}>

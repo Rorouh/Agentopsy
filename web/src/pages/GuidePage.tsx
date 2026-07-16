@@ -56,11 +56,31 @@ docker compose exec -it -e NO_BROWSER=true api gemini  # Gemini CLI (URL + códi
           </pre>
           <p style={{ marginBottom: 0 }}>
             Comprueba el estado en <strong>Configuración → Ejecutores / IA</strong>. Para revocar la sesión:
-            <code> docker compose down -v</code>. Elegir un ejecutor cloud envía contenido derivado del caso a
-            ese proveedor bajo tu cuenta; la aplicación lo advierte y lo registra en el audit log.
+            <code> docker compose down -v</code>.
           </p>
         </div>
       </Card>
+
+      <div style={{ height: 16 }} />
+
+      <div className="status-grid">
+        <Card>
+          <h3>Ejecutor cloud y privacidad (RGPD)</h3>
+          <div className="status-card-body" style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6 }}>
+            Al elegir un ejecutor cloud (Claude Code, Codex CLI o Gemini CLI), los prompts incluyen contenido
+            derivado de la evidencia —posibles datos personales reales— y salen a ese proveedor bajo tu propia
+            suscripción. La alternativa 100 % local es <code>ollama</code>, que nunca envía nada fuera del equipo.
+          </div>
+        </Card>
+        <Card>
+          <h3>Coste y tiempo del análisis</h3>
+          <div className="status-card-body" style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6 }}>
+            Las iteraciones, tokens, tiempo y coste de un análisis son <strong>orientativos</strong>, no un
+            presupuesto: salen del histórico del caso o de una heurística. FORENSIA no inventa tarifas; con una
+            suscripción de CLI el coste marginal puede ser 0. Un disco real grande puede tardar varios minutos.
+          </div>
+        </Card>
+      </div>
 
       <div style={{ height: 16 }} />
 
