@@ -31,8 +31,9 @@ Egress border (THREAT_MODEL gate 9 / FORENSIC_SOUNDNESS §5):
 - When the backend is NOT local, the conversation handed to ``next_action`` is
   redacted with the package's ``redaction_patterns`` at a single point — the raw
   conversation is kept internally for replay, only the wire payload is minimized.
-- A cloud run REFUSES to start without a ``consent_ref`` (recorded per-case
-  consent); local runs never leave the host and need none.
+- A cloud run no longer requires a recorded consent (removed 2026-07-16); the
+  optional ``consent_ref`` is only threaded into the audit as a label when a
+  caller provides one. Local runs never leave the host.
 - The agent chains run-start, each cloud egress (hash of the redacted payload),
   and each finding into the case ``audit.jsonl`` — metadata/hashes only.
 """
@@ -58,6 +59,7 @@ from forensia.evidence import EvidenceManager
 from forensia.evidence_context import EvidenceContext
 from forensia.findings.store import finding_store
 from forensia.mitre.coverage import coverage_store
+from forensia.timeline import query_filesystem_timeline
 from forensia.models.base import FinalAnswer, ModelBackend, ToolCall
 from forensia.path_policy import inject_evidence_path
 from forensia.toolkit.catalog import BY_ID as TOOL_BY_ID
@@ -127,6 +129,17 @@ def _result_summary(result: dict[str, Any]) -> str:
             if key != "raw" and isinstance(value, (int, str)):
                 return f"{key}={str(value)[:60]}"
     return f"exit {result.get('exit_code')}"
+
+
+def _consulta_summary(body: dict[str, Any]) -> str:
+    """One-line summary of a ``consultar_actividad`` result for the activity log."""
+    if body.get("error"):
+        return str(body["error"])[:120]
+    if body.get("status") == "no_timeline":
+        return "super-timeline no generada aún"
+    matched = body.get("matched", 0)
+    total = body.get("total_events", 0)
+    return f"{matched} eventos coinciden (de {total})"
 
 
 # Hard cap on the chars of ONE tool-result message that reach the executor's
@@ -240,18 +253,14 @@ class ForensicAgent:
         if not evidence_id:
             raise ValueError("evidence_id is required for an LLM-driven run")
 
-        # Egress posture (THREAT_MODEL gate 9 / FORENSIC_SOUNDNESS §5): a non-local
-        # backend means evidence-derived content crosses to a third party. Redact
-        # at the single egress point and REFUSE without a recorded per-case
-        # consent_ref (RULE 2 — no silent egress). Local backends never leave the
-        # host, so there is nothing to redact or consent to.
+        # Egress posture (FORENSIC_SOUNDNESS §5): a non-local backend means
+        # evidence-derived content crosses to a third party. Redact at the single
+        # egress point. Cloud egress no longer requires a recorded consent (the
+        # UI warns; consent is not enforced/recorded — removed 2026-07-16); the
+        # optional ``consent_ref`` is threaded into the audit only as a label when
+        # a caller supplies one. Local backends never leave the host, so there is
+        # nothing to redact.
         is_cloud = not self.model.capabilities().is_local
-        if is_cloud and not consent_ref:
-            raise ValueError(
-                "cloud egress requires a recorded consent_ref for this case "
-                "(THREAT_MODEL gate 9): refusing to send evidence-derived content "
-                "to a third party without registered consent."
-            )
         model_name = getattr(self.model, "model_name", self.model.name)
 
         handle = self.evidence.get(case_id, evidence_id)
@@ -437,6 +446,41 @@ class ForensicAgent:
                         "tool_id": "annotate_mitre",
                         "finding_id": body.get("finding_id"),
                         "error": body.get("error"),
+                    })
+                    continue
+
+                if action.tool_id == "consultar_actividad":
+                    # Read-only projection over the evidence's persisted super-timeline —
+                    # answers date-range / category / path queries WITHOUT re-running fls
+                    # (the mapa vivo). In-process side-channel like record_finding.
+                    try:
+                        params = dict(action.params)
+                        body = query_filesystem_timeline(
+                            case_id,
+                            evidence_id,
+                            date_from=params.get("date_from"),
+                            date_to=params.get("date_to"),
+                            category=params.get("category"),
+                            path_contains=params.get("path_contains"),
+                            limit=params.get("limit", 100),
+                        )
+                    except (KeyError, ValueError, RuntimeError) as exc:
+                        body = {"error": f"consultar_actividad rejected: {exc}"}
+                    messages.append(
+                        self._tool_result_msg(action, body, untrusted=True)
+                    )
+                    tool_calls_log.append({
+                        "tool_id": "consultar_actividad",
+                        "matched": body.get("matched"),
+                        "status": body.get("status"),
+                        "error": body.get("error"),
+                    })
+                    emit({
+                        "type": "tool_result",
+                        "iteration": iteration + 1,
+                        "tool_id": "consultar_actividad",
+                        "status": "ok" if not body.get("error") else "error",
+                        "summary": _consulta_summary(body),
                     })
                     continue
 
@@ -710,6 +754,15 @@ class ForensicAgent:
             "automáticamente. Los outputs (CSV, body files) van a un directorio "
             "que también te inyecta el dispatcher — no lo pongas tú.\n\n"
             "Allowlist (tool ids): " + ", ".join(f"`{t}`" for t in allowed) + "\n\n"
+            "## Consulta la timeline en vez de re-escanear\n"
+            "Tienes `consultar_actividad(date_from?, date_to?, category?, "
+            "path_contains?, limit?)`: consulta la super-timeline YA generada de la "
+            "evidencia y filtra sus eventos MACB por fecha/categoría/ruta SIN "
+            "re-ejecutar tsk_fls. Úsala para «¿qué pasó entre X e Y?», «¿hubo algo "
+            "el <fecha>?» o «artefactos web» (`category=web`). Si devuelve "
+            "`status=no_timeline`, genera antes la super-timeline (`tsk_fls -m`). NO "
+            "repitas `tsk_fls`/`tsk_mactime` para una consulta que esta tool ya "
+            "resuelve sobre lo construido.\n\n"
             "## Postura por defecto: AGÉNTICA, NO CONVERSACIONAL\n"
             "El caso y la evidencia YA están anclados al request — no preguntes "
             "\"¿es esta la evidencia?\" ni pidas confirmación. Si el prompt es "
