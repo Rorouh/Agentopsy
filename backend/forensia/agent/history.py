@@ -165,7 +165,10 @@ def _tool_runs_ledger(messages: list[ChatMessage]) -> str:
                 rows.append(f"- T{turn_no} {tool_id} ERROR: {err_short}")
             else:
                 tag = f"exit={exit_code}" if exit_code is not None else "exit=?"
-                rows.append(f"- T{turn_no} {tool_id} {tag} run={run_id[:8]}")
+                # Full run_id, never a prefix: the agent re-uses it as the {run_id, relpath}
+                # ArtifactRef for a downstream tool (fls→mactime), and the ArtifactStore
+                # rejects anything but a full UUID4. A truncated id is not round-trippable.
+                rows.append(f"- T{turn_no} {tool_id} {tag} run={run_id}")
             if len(rows) >= MAX_LEDGER_ENTRIES:
                 rows.append(f"- (older entries omitted — kept last {MAX_LEDGER_ENTRIES})")
                 break

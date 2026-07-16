@@ -95,7 +95,9 @@ def _stub_for(content: Any) -> str:
         for part in (
             f"tool={tool_id}" if tool_id else "",
             f"exit={exit_code}" if exit_code is not None else "",
-            f"run={str(run_id)[:8]}" if run_id else "",
+            # Full run_id, never a prefix — it is the agent's recovery key for the run's
+            # artifacts ({run_id, relpath}); a truncated id is rejected by the ArtifactStore.
+            f"run={run_id}" if run_id else "",
         )
         if part
     )
