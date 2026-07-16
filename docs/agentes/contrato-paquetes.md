@@ -36,12 +36,14 @@ ficheros legibles que el loader valida.
 agentes/<id>/
 ├── agent.yaml          # manifiesto
 ├── prompts/
-│   ├── system.md
-│   ├── identity.md
-│   └── playbook.md
+│   ├── system.md       # reglas de operación (no repite la identidad)
+│   ├── identity.md     # persona/voz (quién eres y cómo hablas)
+│   └── playbook.md     # heurística por tipo de evidencia (no un script)
 ├── policy/
 │   ├── tools.yaml
 │   └── redaction.yaml
+├── knowledge/          # opcional: docs de referencia del mapa de memoria (ver §3.bis)
+│   └── <doc>.md
 └── evals/              # opcional, casos de prueba (formato pendiente)
 ```
 
@@ -72,9 +74,37 @@ es estricto:
 | `prompts.{system,identity,playbook}` | string | path RELATIVO al directorio del agente; no se permite `..` ni absolutos |
 | `policy.tools` | string | path RELATIVO a un YAML con clave `allowed: [tool_id, …]` |
 | `policy.redaction` | string | path RELATIVO a un YAML con clave `patterns: [{name, regex, replacement}]` |
+| `knowledge` | list | opcional; cada entrada `{id, title, description, path}` (ver §3.bis) |
+| `knowledge[].id` | string | kebab-case, único dentro del paquete |
+| `knowledge[].title` / `description` | string | no vacíos; `description` es la línea del índice del system prompt |
+| `knowledge[].path` | string | path RELATIVO a un `.md`; su contenido **debe medir < 7000 chars** (cabe entero en un resultado de tool) |
 
 Cualquier desviación falla **en seco** con un mensaje que apunta al fichero y
 campo concretos (CLAUDE.md RULE 2 — sin fallbacks).
+
+## 3.bis Mapa de memoria y tools internas (2026-07-17)
+
+El agente dispone de tres tools **internas** (no van en `policy/tools.yaml`; las
+maneja el loop en proceso, no el dispatcher): `record_finding`, `annotate_mitre`
+y las dos del rediseño de memoria:
+
+- **`consultar_conocimiento(doc_id)`** — el **mapa de memoria híbrido**. El paquete
+  declara en `knowledge:` documentos de referencia (catálogo de artefactos, detalle
+  por-herramienta…). Su `description` viaja **siempre** en un bloque compacto
+  «## Mapa de memoria» del system prompt (el índice: *qué existe y cuándo
+  consultarlo*); el `content` **solo** cuando el agente llama a la tool con ese `id`
+  — así la referencia pesada no se arrastra en cada turno (economía de contexto,
+  clave para el ejecutor local 8B). El contenido se lee y **path-confina bajo el
+  directorio del agente al arrancar** (SECURITY INVARIANT 6) y se sirve por `id`
+  desde memoria en runtime (sin I/O ni traversal). Un paquete sin `knowledge:` no
+  ofrece la tool (RULE 2: sin índice, nada que prometer). Un doc que exceda el
+  límite de tamaño se **rechaza en carga** (fail-loud), no se trunca en silencio.
+- **`consultar_actividad(date_from?, date_to?, category?, path_contains?, limit?)`**
+  — proyección determinista sobre la **super-timeline ya persistida** de la
+  evidencia: filtra sus eventos MAC(b) por fecha/categoría/ruta **sin re-ejecutar
+  `tsk_fls`**. Responde «¿qué actividad hubo entre X e Y?», «¿hubo algo el
+  \<fecha\>?», «artefactos web». Si la timeline no existe aún, devuelve
+  `status=no_timeline` (nunca un vacío que se lea como «no pasó nada», RULE 2).
 
 ## 4. Cómo lo descubre FORENSIA
 

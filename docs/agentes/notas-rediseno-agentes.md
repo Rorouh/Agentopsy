@@ -154,9 +154,25 @@ tocar el backend.
 
 ---
 
-## Pendiente de decidir
+## Estado de implementación (2026-07-17)
 
-- Ubicación definitiva de las **reglas no negociables** (¿`system.md`?).
-- Estructura concreta de ficheros del **mapa de memoria** y del **mapa de hallazgos**.
-- Cómo se **actualiza** el mapa de hallazgos conforme avanza el análisis.
-- Redacción final de `identity.md`, `system.md` y el nuevo esquema de playbook.
+El rediseño se implementó de principio a fin, en hitos, con verificación adversarial por
+hito y tests. Decisiones tomadas con el perito: mapa de memoria **híbrido**, mapa vivo
+como **tool de consulta backend** (no `.md` del LLM), playbook **conservador**.
+
+1. **`identity.md`** (unix + windows) — reescrito como persona/voz, separado de reglas.
+   Reglas no negociables: **se quedan en `system.md`**, cuya apertura ya no da una
+   "segunda identidad".
+2. **Mapa de memoria (híbrido)** — `knowledge:` declarativo en `agent.yaml`, cargado y
+   path-confinado por el loader; tool interna `consultar_conocimiento(doc_id)` que sirve
+   por id desde memoria; bloque compacto «## Mapa de memoria» en el system prompt. Docs
+   iniciales: `knowledge/artefactos-{unix,windows}.md`. Ver `contrato-paquetes.md` §3.bis.
+3. **Mapa vivo de hallazgos/actividad** — tool interna `consultar_actividad(...)`:
+   proyección determinista sobre la super-timeline persistida (filtro por fecha/categoría/
+   ruta) **sin re-ejecutar `tsk_fls`**. Resuelve los fallos del transcript.
+4. **Playbook conservador** — pipelines fijos → «puntos de partida sugeridos» + índice
+   «objetivo → herramientas»; el catálogo de artefactos sale del prompt siempre-cargado y
+   pasa a `knowledge/` (consultado bajo demanda).
+
+Bugs de backend: **1 y 2 arreglados** (ver arriba). **Bug 3 (Codex)** sigue pendiente de
+repro en vivo — es el único punto abierto del registro original.
