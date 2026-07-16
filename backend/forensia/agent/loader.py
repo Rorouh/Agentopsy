@@ -31,6 +31,12 @@ from forensia.agent.package import (
 from forensia.toolkit.catalog import BY_ID as TOOL_BY_ID
 
 _VALID_OS_PROFILES = frozenset({"unix", "windows"})
+
+# Un doc de knowledge se sirve ENTERO como resultado de la tool consultar_conocimiento,
+# que el loop acota a ~8000 chars (agent._MAX_TOOL_RESULT_CHARS). Un doc mayor se
+# descartaría en runtime dejando un puntero vacío/engañoso, así que se RECHAZA en carga
+# (fail-loud en la frontera correcta, RULE 2) con margen para el envoltorio JSON.
+_MAX_KNOWLEDGE_DOC_CHARS = 7000
 _ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")  # kebab-case
 _SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$")
 
@@ -205,6 +211,13 @@ def _parse_knowledge(
         content = _read_relative_file(
             entry.get("path"), agent_dir, f"knowledge[{doc_id}].path", source
         )
+        if len(content) > _MAX_KNOWLEDGE_DOC_CHARS:
+            raise AgentPackageError(
+                f"{source}: knowledge[{doc_id}] tiene {len(content)} chars; el máximo es "
+                f"{_MAX_KNOWLEDGE_DOC_CHARS} para que quepa entero en un resultado de "
+                "tool (consultar_conocimiento no puede servir un doc que no cabe en "
+                "contexto). Divídelo en documentos más enfocados."
+            )
         docs.append(
             KnowledgeDoc(id=doc_id, title=title, description=description, content=content)
         )

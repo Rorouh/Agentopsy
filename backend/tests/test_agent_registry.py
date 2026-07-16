@@ -223,6 +223,21 @@ def test_knowledge_not_a_list_rejected(tmp_path: Path) -> None:
         load_package(tmp_path)
 
 
+def test_knowledge_doc_too_big_rejected(tmp_path: Path) -> None:
+    """Un doc que no cabe en un resultado de tool se rechaza EN CARGA (fail-loud),
+    en vez de descartarse en silencio en runtime dejando un puntero vacío."""
+    _write_manifest(
+        tmp_path,
+        _manifest_with_knowledge(
+            [{"id": "big", "title": "t", "description": "d", "path": "knowledge/big.md"}]
+        ),
+    )
+    (tmp_path / "knowledge").mkdir()
+    (tmp_path / "knowledge" / "big.md").write_text("A" * 8000, encoding="utf-8")
+    with pytest.raises(AgentPackageError, match="el máximo es"):
+        load_package(tmp_path)
+
+
 def test_tool_outside_catalog_rejected(tmp_path: Path) -> None:
     _write_manifest(tmp_path, _valid_manifest())
     (tmp_path / "policy" / "tools.yaml").write_text(

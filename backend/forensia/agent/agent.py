@@ -481,20 +481,28 @@ class ForensicAgent:
                     # Mapa de memoria: sirve un doc de referencia por id desde el
                     # paquete (cargado y path-confinado al arrancar). Contenido de
                     # CONFIANZA (autoría nuestra), no evidencia — sin spotlighting.
-                    doc_id = (dict(action.params).get("doc_id") or "").strip()
-                    doc = next(
-                        (d for d in self.package.knowledge if d.id == doc_id), None
-                    )
-                    if doc is None:
-                        valid = [d.id for d in self.package.knowledge]
-                        body = {
-                            "error": (
-                                f"doc_id {doc_id!r} no existe en el mapa de memoria. "
-                                f"Ids válidos: {valid}"
-                            )
-                        }
-                    else:
-                        body = {"doc_id": doc.id, "title": doc.title, "content": doc.content}
+                    doc = None
+                    try:
+                        # str(): el modelo podría emitir doc_id no-string (Ollama texto);
+                        # coerciona sin crashear el run (simetría con los otros handlers).
+                        doc_id = str(dict(action.params).get("doc_id") or "").strip()
+                        doc = next(
+                            (d for d in self.package.knowledge if d.id == doc_id), None
+                        )
+                        if doc is None:
+                            valid = [d.id for d in self.package.knowledge]
+                            body = {
+                                "error": (
+                                    f"doc_id {doc_id!r} no existe en el mapa de memoria. "
+                                    f"Ids válidos: {valid}"
+                                )
+                            }
+                        else:
+                            body = {
+                                "doc_id": doc.id, "title": doc.title, "content": doc.content
+                            }
+                    except (KeyError, ValueError, TypeError, AttributeError) as exc:
+                        body = {"error": f"consultar_conocimiento rejected: {exc}"}
                     messages.append(self._tool_result_msg(action, body))
                     tool_calls_log.append({
                         "tool_id": "consultar_conocimiento",
