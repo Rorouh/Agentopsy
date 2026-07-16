@@ -6,7 +6,12 @@ Two layers:
   (audit tool runs + findings), always available, no tool executed.
 - ``POST /api/cases/{case_id}/timeline/filesystem`` — start the on-demand *filesystem
   super-timeline* (``tsk_fls -m`` over the selected evidence) as a background job, then
-  poll it at ``GET …/timeline/filesystem/jobs/{job_id}``.
+  poll it at ``GET …/timeline/filesystem/jobs/{job_id}``. The completed result is
+  materialized under the case (``timeline/<evidence_id>.json``) so it survives page
+  reloads and api restarts (the job registry is in-memory only).
+- ``GET /api/cases/{case_id}/timeline/filesystem?evidence_id=…`` — the last PERSISTED
+  filesystem super-timeline for that evidence (``{result: … | null}``), used to rehydrate
+  the view without re-running ``fls``.
 
 RULE 2 — nothing is inferred: no ``evidence_id`` → 422; an unresolved ``os_profile``
 (unknown / low confidence / conflict) → 409 the operator must anchor; ``fls`` failure →
@@ -32,6 +37,7 @@ from forensia.security import require_token
 from forensia.timeline import (
     TIMEZONE,
     build_investigation_timeline,
+    load_filesystem_timeline,
     run_filesystem_timeline,
 )
 from forensia.timeline.export import timeline_to_csv
@@ -83,6 +89,41 @@ class FilesystemTimelineRequest(BaseModel):
     # The evidence to build the filesystem super-timeline from. REQUIRED — FORENSIA
     # never assumes "the only" / "the most recent" evidence (RULE 2).
     evidence_id: str | None = None
+
+
+@router.get(
+    "/api/cases/{case_id}/timeline/filesystem",
+    dependencies=[Depends(require_token)],
+)
+def get_persisted_filesystem_timeline(
+    case_id: str, evidence_id: str | None = None
+) -> dict[str, Any]:
+    """Última super-timeline PERSISTIDA de una evidencia (``{result: … | null}``).
+
+    Rehidrata la vista tras recargar la página o reiniciar el api sin re-ejecutar
+    ``tsk_fls`` (el ``job_registry`` es solo en memoria; el resultado acotado se
+    materializa en ``<case_dir>/timeline/<evidence_id>.json`` al generarlo).
+    ``result`` es ``null`` si nunca se generó — el operador ve «Pulsa Generar».
+
+    Sin ``evidence_id`` → 422 (RULE 2: no se asume 'la única' ni 'la última');
+    evidencia inexistente → 404; id malformado → 422."""
+    if not evidence_id:
+        raise HTTPException(
+            status_code=422,
+            detail="evidence_id is required: indica la evidencia cuya super-timeline "
+                   "quieres recuperar (FORENSIA no asume 'la única' ni 'la última' — RULE 2).",
+        )
+    try:
+        evidence_manager.get(case_id, evidence_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
+        result = load_filesystem_timeline(case_id, evidence_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"case_id": case_id, "timezone": TIMEZONE, "result": result}
 
 
 @router.post(

@@ -1,10 +1,15 @@
 # Timeline forense del caso
 
-FORENSIA ofrece **dos capas** de línea temporal, ambas deterministas y con marcas de
+FORENSIA ofrece **tres capas** de línea temporal, todas deterministas y con marcas de
 tiempo en **UTC explícito** (ISO-8601 con `Z`; la UI etiqueta la zona y nunca convierte a
 hora local — hallazgo F). La lógica vive en `backend/forensia/timeline/` (RULE 3) y se
 expone por el router fino `backend/forensia/routers/timeline.py`; la UI la consume en
 `web/src/pages/TimelinePage.tsx`.
+
+Las tres pestañas son: **Investigación** (capa 1), **Sistema de ficheros (MACB)** (capa 2,
+cronológica) y **Eventos relevantes** (capa 3, la capa 2 filtrada a lo forensemente
+importante). Las capas 2 y 3 comparten datos (una sola generación de `tsk_fls`) y se
+**paginan** en cliente (`FS_PAGE_SIZE = 200` filas/página).
 
 ## Capa 1 — Timeline de investigación (siempre disponible)
 
@@ -84,15 +89,58 @@ GET /api/cases/{case_id}/timeline/filesystem/jobs/{job_id}?since=0
         "events": [{ "type": "status", "stage": "fls|mactime|done", "message": "..." }],
         "result": {                      // presente cuando status == "done"
           "timezone": "UTC", "evidence_id", "os_profile", "fls_run_id",
-          "total_events", "returned", "truncated",
+          "total_events", "returned", "truncated", "generated_at",
           "events": [{ "kind": "fs", "ts": "1970-01-01T00:00:00Z", "path": "/etc/passwd",
-                       "macb": "m.c.", "size": 4096, "inode": "128-1-1" }] } }
+                       "macb": "m.c.", "size": 4096, "inode": "128-1-1" }],
+          // Capa 3 — eventos relevantes (ver abajo), con su porqué:
+          "total_relevant", "relevant_returned", "relevant_truncated",
+          "relevant_events": [{ "kind": "fs", "ts", "path", "macb", "size", "inode",
+                                "category": "credenciales", "reason": "...", "weight": 5 }] } }
 ```
 
 Un `exit != 0` de `tsk_fls` hace **fallar el job en alto** con el stderr de la
 herramienta; nunca se construye una super-timeline parcial (RULE 2). Los eventos se
 recortan a `DEFAULT_FS_EVENT_LIMIT` (5000) y el recorte se reporta (`total_events` /
 `truncated`), nunca se oculta.
+
+## Capa 3 — Eventos relevantes (triage forense determinista)
+
+Una super-timeline real tiene miles/millones de filas MACB; solo un puñado importa. La
+capa 3 (`forensia.timeline.relevance`) etiqueta esas filas — **credenciales**
+(`/etc/shadow`, `passwd`, `sudoers`, hives `SAM`/`SECURITY`/`NTDS.dit`), **material SSH**,
+**historial de shell**, **persistencia/autoarranque** (cron, systemd `.service`,
+`.bashrc`, Startup, `System32\Tasks`), **logs** de autenticación/sistema (`auth.log`,
+`secure`, `wtmp`/`btmp`), **ejecutables en directorios temporales** (`/tmp`, `/dev/shm`,
+`%TEMP%` con extensión ejecutable), **artefactos web** (`.php`/`.jsp`/`.aspx` bajo
+`www`/`wwwroot`) y **binarios de sistema creados o modificados** (gate MACB `m`/`b`: un
+mero acceso no se marca). Es puro y determinista (RULE 2: cada evento «relevante» es un
+evento MACB REAL con `category`/`reason`/`weight` — nunca dato inventado), calculado sobre
+**todos** los eventos (no solo la ventana recortada de la capa 2) y ordenado por
+importancia (`weight` desc, luego cronológico), acotado a `DEFAULT_RELEVANT_LIMIT` (500)
+con el excedente reportado. Es un triage, no un veredicto: el perito sigue leyendo la
+evidencia. La UI lo pinta en la pestaña **Eventos relevantes** con la categoría como badge
+y el motivo en claro.
+
+### Persistencia (sobrevive a recargas y reinicios)
+
+El `JobRegistry` es **solo en memoria**: al terminar, `run_filesystem_timeline`
+**materializa** el resultado (acotado, con `generated_at`) en
+`<case_dir>/timeline/<evidence_id>.json` (escritura atómica tmp+replace). Así la
+super-timeline sigue ahí tras recargar la página, cambiar de vista o reiniciar el `api`,
+sin re-ejecutar `fls`. La fuente forense sigue siendo el bodyfile anclado en
+`artifacts/<run_id>/stdout.txt`; este JSON es la vista materializada, regenerable en
+cualquier momento con «Generar» (last-write-wins por evidencia).
+
+```
+GET /api/cases/{case_id}/timeline/filesystem?evidence_id=...
+→ 200 { "case_id", "timezone": "UTC", "result": { ... } | null }
+# result == null  → nunca se generó (la UI muestra «Pulsa Generar»).
+# Sin evidence_id → 422; evidencia inexistente → 404; id malformado → 422.
+```
+
+La UI (`TimelinePage`) llama a este GET al cargar el caso y al cambiar de evidencia para
+**rehidratar** la capa 2; un job activo (generando) gobierna la vista por encima del
+resultado persistido.
 
 ### Supuesto de implementación (mactime)
 

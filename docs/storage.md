@@ -35,6 +35,9 @@ auxiliares.
         │       └── out/           # los ficheros que generó la tool (CSVs, body files, etc.)
         ├── chats/
         │   └── <session-id>.jsonl # 1 línea por mensaje { role, content, ts, tool_calls? }
+        ├── timeline/
+        │   └── <evidence-id>.json # super-timeline MACB materializada por evidencia
+        │                          # (vista regenerable; el JobRegistry es solo en memoria)
         ├── audit.jsonl            # AuditLog real anclado AQUÍ (uno por caso)
         └── reports/
             └── <report-id>.{md,pdf}

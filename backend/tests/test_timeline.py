@@ -20,6 +20,7 @@ from forensia.timeline.builder import (
     assemble_investigation_timeline,
     bodyfile_to_fs_events,
     build_investigation_timeline,
+    load_filesystem_timeline,
     run_filesystem_timeline,
 )
 
@@ -254,8 +255,11 @@ class _Handle:
         self.original_path = path
 
 
+_EVIDENCE_ID = "11111111-1111-4111-8111-111111111111"
+
+
 class _Ctx:
-    evidence_id = "e-1"
+    evidence_id = _EVIDENCE_ID
 
 
 def _fake_cases(tmp_path):
@@ -295,7 +299,67 @@ def test_run_filesystem_timeline_runs_fls_and_parses_bodyfile(
     assert result["total_events"] == 1
     assert result["events"][0]["macb"] == "macb"
     assert result["fls_run_id"] == "run-abc"
+    assert result["generated_at"].endswith("Z")
+    # /etc/passwd es credencial → aparece en los eventos relevantes con su porqué.
+    assert result["total_relevant"] == 1
+    assert result["relevant_events"][0]["category"] == "credenciales"
+    assert result["relevant_events"][0]["reason"]
     assert any(e.get("stage") == "done" for e in emitted)
+
+
+def test_run_filesystem_timeline_persists_result_and_is_loadable(
+    monkeypatch, tmp_path
+) -> None:
+    """La super-timeline generada se materializa bajo el caso y se puede recuperar
+    después sin re-ejecutar fls (persistencia — sobrevive a recargas/reinicios)."""
+    cases = _fake_cases(tmp_path)
+    monkeypatch.setattr(builder, "case_manager", cases)
+
+    body = "0|/etc/passwd|5|r/r|0|0|4096|100|100|100|100"
+
+    def fake_execute(tool_id, params, *, case_id, os_profile, evidence_context):
+        run_id = "run-abc"
+        run_dir = cases.case_dir(case_id) / "artifacts" / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "stdout.txt").write_text(body, encoding="utf-8")
+        return {"exit_code": 0, "run_id": run_id, "stderr_sample": ""}
+
+    monkeypatch.setattr(builder.dispatcher, "execute", fake_execute)
+
+    run_filesystem_timeline("case-1", _Handle(tmp_path / "img.raw"), _Ctx(), "unix")
+
+    # El fichero materializado existe bajo el caso.
+    persisted = cases.case_dir("case-1") / "timeline" / f"{_EVIDENCE_ID}.json"
+    assert persisted.is_file()
+
+    # Y load_filesystem_timeline lo devuelve intacto — sin tocar el dispatcher.
+    monkeypatch.setattr(
+        builder.dispatcher,
+        "execute",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no debe re-ejecutar fls")),
+    )
+    loaded = load_filesystem_timeline("case-1", _EVIDENCE_ID)
+    assert loaded is not None
+    assert loaded["total_events"] == 1
+    assert loaded["events"][0]["path"] == "/etc/passwd"
+    assert loaded["fls_run_id"] == "run-abc"
+
+
+def test_load_filesystem_timeline_none_when_never_generated(
+    monkeypatch, tmp_path
+) -> None:
+    cases = _fake_cases(tmp_path)
+    monkeypatch.setattr(builder, "case_manager", cases)
+    assert load_filesystem_timeline("case-1", _EVIDENCE_ID) is None
+
+
+def test_load_filesystem_timeline_rejects_malformed_evidence_id(
+    monkeypatch, tmp_path
+) -> None:
+    cases = _fake_cases(tmp_path)
+    monkeypatch.setattr(builder, "case_manager", cases)
+    with pytest.raises(ValueError, match="evidence_id"):
+        load_filesystem_timeline("case-1", "../escape")
 
 
 def test_run_filesystem_timeline_fails_loud_on_nonzero_exit(

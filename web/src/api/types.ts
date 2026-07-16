@@ -578,6 +578,13 @@ export interface FsTimelineEvent {
   size: number;
   inode: string;
 }
+// Un evento MACB que el clasificador determinista marcó como relevante, con el
+// porqué (category/reason) y su peso de importancia (1..5).
+export interface FsRelevantEvent extends FsTimelineEvent {
+  category: string;
+  reason: string;
+  weight: number;
+}
 export interface FsTimelineResult {
   timezone: string;
   evidence_id: string;
@@ -587,6 +594,14 @@ export interface FsTimelineResult {
   returned: number;
   truncated: boolean;
   events: FsTimelineEvent[];
+  // Eventos relevantes (triage forense determinista). Ausentes en super-timelines
+  // persistidas antes de esta función → la UI pide regenerar.
+  relevant_events?: FsRelevantEvent[];
+  total_relevant?: number;
+  relevant_returned?: number;
+  relevant_truncated?: boolean;
+  // Presente en resultados persistidos (cuándo se generó la super-timeline).
+  generated_at?: string;
 }
 // Evento de progreso que el job acumula (`fls` → `mactime` → `done`).
 export interface TimelineJobProgress {

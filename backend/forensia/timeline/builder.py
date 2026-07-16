@@ -17,12 +17,15 @@ Timestamps: the audit log emits ISO-8601 UTC (``…+00:00``), findings emit ``�
 
 from __future__ import annotations
 
+import json
+import re
 from datetime import datetime, timezone
 from typing import Any
 
 from forensia.cases.manager import case_manager
 from forensia.evidence_context import EvidenceContext
 from forensia.findings.store import Finding, finding_store
+from forensia.timeline.relevance import select_relevant_events
 from forensia.toolkit import dispatcher
 
 #: The single timezone every timeline timestamp is expressed in. Surfaced to the UI so
@@ -43,6 +46,13 @@ _MACB_ORDER: tuple[tuple[str, str], ...] = (
 )
 
 _FAR_FUTURE = datetime.max.replace(tzinfo=timezone.utc)
+
+#: Evidence ids are UUID4 (``EvidenceManager``); we use them as the filename of the
+#: persisted super-timeline, so reject anything else before touching the filesystem
+#: (SECURITY INVARIANT 6: no traversal via a crafted id).
+_EVIDENCE_ID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -206,6 +216,20 @@ def bodyfile_to_fs_events(
     ``limit`` and ``total`` is how many events existed before the cap (so the caller can
     report truncation — RULE 2: never hide the elision).
     """
+    events = _bodyfile_to_all_events(bodyfile_text)
+    total = len(events)
+    if limit is not None and total > limit:
+        return events[:limit], total
+    return events, total
+
+
+def _bodyfile_to_all_events(bodyfile_text: str) -> list[dict[str, Any]]:
+    """Parse a TSK bodyfile into the FULL chronologically-sorted MACB event list (no cap).
+
+    Shared by ``bodyfile_to_fs_events`` (which caps it) and ``run_filesystem_timeline``
+    (which also needs the uncapped list to select the relevant events over EVERYTHING, not
+    just the capped window).
+    """
     events: list[dict[str, Any]] = []
     for line in bodyfile_text.splitlines():
         if not line.strip():
@@ -243,10 +267,7 @@ def bodyfile_to_fs_events(
                 }
             )
     events.sort(key=lambda e: (e["ts"], e["path"]))
-    total = len(events)
-    if limit is not None and total > limit:
-        return events[:limit], total
-    return events, total
+    return events
 
 
 def _safe_int(value: str) -> int:
@@ -306,13 +327,21 @@ def run_filesystem_timeline(
 
     _emit({"type": "status", "stage": "mactime", "message": "Generando la super-timeline MACB…"})
     bodyfile_text = _read_run_stdout(case_id, run_id)
-    events, total = bodyfile_to_fs_events(bodyfile_text, limit=limit)
+    all_events = _bodyfile_to_all_events(bodyfile_text)
+    total = len(all_events)
+    events = all_events[:limit] if (limit is not None and total > limit) else all_events
+    # Relevancia calculada sobre TODOS los eventos, no solo la ventana recortada:
+    # los eventos importantes suelen quedar fuera del corte cronológico.
+    relevant, total_relevant = select_relevant_events(all_events)
     _emit({
         "type": "status",
         "stage": "done",
-        "message": f"Super-timeline lista: {len(events)} eventos (de {total}).",
+        "message": (
+            f"Super-timeline lista: {len(events)} eventos (de {total}); "
+            f"{total_relevant} relevantes."
+        ),
     })
-    return {
+    result = {
         "timezone": TIMEZONE,
         "evidence_id": evidence_context.evidence_id,
         "os_profile": os_profile,
@@ -321,7 +350,55 @@ def run_filesystem_timeline(
         "returned": len(events),
         "truncated": total > len(events),
         "events": events,
+        "relevant_events": relevant,
+        "total_relevant": total_relevant,
+        "relevant_returned": len(relevant),
+        "relevant_truncated": total_relevant > len(relevant),
+        "generated_at": _dt_to_z(datetime.now(timezone.utc)),
     }
+    # Persistir el resultado (acotado) por evidencia bajo el caso, para que la
+    # super-timeline SOBREVIVA a recargas de la página y reinicios del api (el
+    # job_registry es solo en memoria). La fuente forense sigue siendo el
+    # bodyfile anclado en artifacts/<run_id>/stdout.txt; esto es la vista
+    # materializada, regenerable en cualquier momento con «Generar».
+    _persist_fs_timeline(case_id, evidence_context.evidence_id, result)
+    return result
+
+
+def _fs_timeline_path(case_id: str, evidence_id: str) -> Any:
+    """Ruta del resultado persistido de la super-timeline de una evidencia,
+    ``<case_dir>/timeline/<evidence_id>.json``. Valida el ``evidence_id`` (UUID4)
+    antes de construir la ruta — nunca un id con separadores/traversal."""
+    if not _EVIDENCE_ID_RE.match(evidence_id):
+        raise ValueError(f"evidence_id inválido: {evidence_id!r}")
+    return case_manager.case_dir(case_id) / "timeline" / f"{evidence_id}.json"
+
+
+def _persist_fs_timeline(case_id: str, evidence_id: str, result: dict[str, Any]) -> None:
+    path = _fs_timeline_path(case_id, evidence_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Escritura atómica: tmp + replace, para no dejar un JSON a medias si el
+    # proceso muere mientras escribe una super-timeline grande.
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(path)
+
+
+def load_filesystem_timeline(case_id: str, evidence_id: str) -> dict[str, Any] | None:
+    """Carga la última super-timeline persistida de una evidencia, o ``None`` si
+    nunca se generó (el operador verá el estado «Pulsa Generar»). Determinista y
+    sin ejecutar herramientas — solo lee el JSON materializado.
+
+    ``ValueError`` si el ``evidence_id`` está malformado (lo mapea el router a 422)."""
+    path = _fs_timeline_path(case_id, evidence_id)
+    if not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        # Un JSON corrupto no es una super-timeline: se trata como "no hay",
+        # regenerable con «Generar» (RULE 2: nunca una línea temporal a medias).
+        return None
 
 
 def _read_run_stdout(case_id: str, run_id: str) -> str:

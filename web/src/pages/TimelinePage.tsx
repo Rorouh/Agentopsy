@@ -3,8 +3,10 @@ import { api, ApiError } from "../api/client";
 import type {
   Case,
   EvidenceHandle,
+  FsRelevantEvent,
   FsTimelineEvent,
   FsTimelineJob,
+  FsTimelineResult,
   TimelineEvent,
 } from "../api/types";
 import { EmptyState } from "../ui/EmptyState";
@@ -20,13 +22,29 @@ import { useActiveCase, useActiveCaseFrom } from "../state/activeCase";
 // (hallazgo F): NUNCA se convierten a la hora local del navegador.
 
 type Phase = "loading" | "ready" | "no-case" | "error";
-type Layer = "investigation" | "filesystem";
+type Layer = "investigation" | "filesystem" | "relevant";
 
 const SEV_LABEL: Record<string, string> = {
   low: "Baja",
   medium: "Media",
   high: "Alta",
   critical: "Crítica",
+};
+
+// Filas por página en las tablas del sistema de ficheros (paginación client-side).
+const FS_PAGE_SIZE = 200;
+
+// Etiqueta legible de cada categoría de relevancia (clasificador determinista del
+// backend, forensia.timeline.relevance). Fuente única de las etiquetas de la UI.
+const CATEGORY_LABEL: Record<string, string> = {
+  credenciales: "Credenciales",
+  ssh: "SSH",
+  historial: "Historial de shell",
+  persistencia: "Persistencia",
+  ejecutable_temporal: "Ejecutable en temporal",
+  web: "Artefacto web",
+  logs: "Logs",
+  binario_sistema: "Binario de sistema",
 };
 
 function fmtUtc(ts: string | null): { date: string; time: string } {
@@ -55,12 +73,70 @@ function evidenceName(e: EvidenceHandle): string {
   return parts[parts.length - 1] || e.evidence_id;
 }
 
+// Controles de paginación de las tablas del sistema de ficheros. `page` es 0-based.
+function Pager({
+  page,
+  pageCount,
+  total,
+  noun,
+  onPage,
+}: {
+  page: number;
+  pageCount: number;
+  total: number;
+  noun: string;
+  onPage: (p: number) => void;
+}) {
+  if (total === 0) return null;
+  return (
+    <div className="tl-pager">
+      <button
+        className="tl-pager-btn"
+        onClick={() => onPage(0)}
+        disabled={page <= 0}
+        aria-label="Primera página"
+      >
+        «
+      </button>
+      <button
+        className="tl-pager-btn"
+        onClick={() => onPage(page - 1)}
+        disabled={page <= 0}
+        aria-label="Página anterior"
+      >
+        ‹
+      </button>
+      <span className="tl-pager-info">
+        Página {page + 1} de {pageCount} · {total.toLocaleString("es-ES")} {noun}
+      </span>
+      <button
+        className="tl-pager-btn"
+        onClick={() => onPage(page + 1)}
+        disabled={page >= pageCount - 1}
+        aria-label="Página siguiente"
+      >
+        ›
+      </button>
+      <button
+        className="tl-pager-btn"
+        onClick={() => onPage(pageCount - 1)}
+        disabled={page >= pageCount - 1}
+        aria-label="Última página"
+      >
+        »
+      </button>
+    </div>
+  );
+}
+
 export function TimelinePage() {
   const [cases, setCases] = useState<Case[]>([]);
   const [phase, setPhase] = useState<Phase>("loading");
   const [error, setError] = useState("");
   const [layer, setLayer] = useState<Layer>("investigation");
   const [search, setSearch] = useState("");
+  // Página actual de las tablas del sistema de ficheros (capas 2 y 3).
+  const [fsPage, setFsPage] = useState(0);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState("");
 
@@ -70,6 +146,9 @@ export function TimelinePage() {
   const [evidences, setEvidences] = useState<EvidenceHandle[]>([]);
   const [selectedEvidence, setSelectedEvidence] = useState("");
   const [fsJob, setFsJob] = useState<FsTimelineJob | null>(null);
+  // Super-timeline PERSISTIDA de la evidencia seleccionada (rehidrata la vista
+  // tras recargar/cambiar de caso sin re-ejecutar fls). null = nunca generada.
+  const [loadedFsResult, setLoadedFsResult] = useState<FsTimelineResult | null>(null);
   const [fsError, setFsError] = useState("");
   const [starting, setStarting] = useState(false);
   const pollRef = useRef<number | null>(null);
@@ -113,9 +192,6 @@ export function TimelinePage() {
       return;
     }
     let cancelled = false;
-    setFsJob(null);
-    setFsError("");
-    if (pollRef.current !== null) window.clearTimeout(pollRef.current);
     (async () => {
       try {
         const [tl, evs] = await Promise.all([
@@ -137,6 +213,39 @@ export function TimelinePage() {
       cancelled = true;
     };
   }, [activeCase?.id]);
+
+  // Rehidrata la capa 2 al cambiar de caso o de evidencia seleccionada: cancela
+  // cualquier job/sondeo en curso y carga la super-timeline PERSISTIDA de esa
+  // evidencia (si nunca se generó, queda null → estado «Pulsa Generar»). Así la
+  // super-timeline sobrevive a recargas y cambios de vista sin re-ejecutar fls.
+  useEffect(() => {
+    const caseId = activeCase?.id;
+    const evidenceId = selectedEvidence;
+    if (pollRef.current !== null) window.clearTimeout(pollRef.current);
+    setFsJob(null);
+    setFsError("");
+    setLoadedFsResult(null);
+    if (!caseId || !evidenceId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { result } = await api.cases.getPersistedFsTimeline(caseId, evidenceId);
+        if (!cancelled) setLoadedFsResult(result);
+      } catch {
+        // Silencioso: sin persistido (o fallo puntual) se muestra el estado vacío.
+        if (!cancelled) setLoadedFsResult(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeCase?.id, selectedEvidence]);
+
+  // Vuelve a la primera página cuando cambia el conjunto mostrado (capa,
+  // búsqueda, evidencia o caso) o al recibir un nuevo resultado.
+  useEffect(() => {
+    setFsPage(0);
+  }, [layer, search, selectedEvidence, activeCase?.id, fsJob?.status]);
 
   // Limpia el sondeo al desmontar.
   useEffect(() => {
@@ -218,7 +327,13 @@ export function TimelinePage() {
     return { toolRuns, findings, total: events.length };
   }, [events]);
 
-  const fsResult = fsJob?.status === "done" ? fsJob.result : null;
+  // Un job activo (running/done/error) gobierna la vista; sin job, se muestra la
+  // super-timeline persistida de la evidencia.
+  const fsResult = fsJob
+    ? fsJob.status === "done"
+      ? fsJob.result
+      : null
+    : loadedFsResult;
   const fsFiltered = useMemo(() => {
     if (!fsResult) return [] as FsTimelineEvent[];
     const q = search.trim().toLowerCase();
@@ -227,7 +342,33 @@ export function TimelinePage() {
       `${e.path} ${e.macb} ${e.inode}`.toLowerCase().includes(q),
     );
   }, [fsResult, search]);
-  const fsDays = useMemo(() => groupByDay(fsFiltered, (e) => e.ts), [fsFiltered]);
+
+  // Capa 3 — eventos relevantes (triage forense determinista del backend).
+  const relevantFiltered = useMemo(() => {
+    const all = fsResult?.relevant_events ?? [];
+    const q = search.trim().toLowerCase();
+    if (!q) return all;
+    return all.filter((e) =>
+      `${e.path} ${e.macb} ${e.inode} ${e.reason} ${CATEGORY_LABEL[e.category] ?? e.category}`
+        .toLowerCase()
+        .includes(q),
+    );
+  }, [fsResult, search]);
+
+  // Paginación common a las capas 2 y 3.
+  const activeFsRows = layer === "relevant" ? relevantFiltered : fsFiltered;
+  const fsPageCount = Math.max(1, Math.ceil(activeFsRows.length / FS_PAGE_SIZE));
+  const safeFsPage = Math.min(fsPage, fsPageCount - 1);
+  const fsPageRows = useMemo(
+    () => activeFsRows.slice(safeFsPage * FS_PAGE_SIZE, safeFsPage * FS_PAGE_SIZE + FS_PAGE_SIZE),
+    [activeFsRows, safeFsPage],
+  );
+  // La capa 2 (cronológica) agrupa por día; la página ya viene acotada.
+  const fsDays = useMemo(
+    () => groupByDay(fsPageRows as FsTimelineEvent[], (e) => e.ts),
+    [fsPageRows],
+  );
+
   const fsProgress = fsJob?.events ?? [];
   const lastProgress = fsProgress[fsProgress.length - 1]?.message ?? "";
 
@@ -301,9 +442,19 @@ export function TimelinePage() {
           Sistema de ficheros (MACB)
           {fsResult && <span className="tl-layer-count">{fsResult.total_events}</span>}
         </button>
+        <button
+          className={`tl-layer${layer === "relevant" ? " is-active" : ""}`}
+          onClick={() => setLayer("relevant")}
+          title="Eventos del sistema de ficheros forensemente relevantes (credenciales, persistencia, historial, logs, ejecutables en temporales…)"
+        >
+          Eventos relevantes
+          {fsResult?.total_relevant !== undefined && (
+            <span className="tl-layer-count">{fsResult.total_relevant}</span>
+          )}
+        </button>
       </div>
 
-      {/* Buscador (común a ambas capas) */}
+      {/* Buscador (común a las tres capas) */}
       <div className="tl-toolbar">
         <input
           className="tl-search"
@@ -312,7 +463,9 @@ export function TimelinePage() {
           placeholder={
             layer === "investigation"
               ? "Buscar por herramienta, argv, hallazgo o técnica…"
-              : "Buscar por ruta, MACB o inode…"
+              : layer === "relevant"
+                ? "Buscar por ruta, motivo, categoría, MACB o inode…"
+                : "Buscar por ruta, MACB o inode…"
           }
         />
         {layer === "investigation" && (
@@ -466,7 +619,16 @@ export function TimelinePage() {
             <div className="tl-fserror">{fsJob.error ?? "El análisis falló."}</div>
           )}
 
-          {fsResult && (
+          {fsResult && fsResult.generated_at && !fsJob && (
+            <div className="docs-note">
+              Super-timeline generada el {fmtUtc(fsResult.generated_at).date} a las{" "}
+              {fmtUtc(fsResult.generated_at).time} UTC · {fsResult.total_events} eventos.
+              Vuelve a pulsar «Generar» para recalcularla.
+            </div>
+          )}
+
+          {/* Capa 2 — super-timeline cronológica (agrupada por día, paginada). */}
+          {fsResult && layer === "filesystem" && (
             <div className="tl-scroll">
               {fsResult.truncated && (
                 <div className="tl-truncated">
@@ -481,44 +643,122 @@ export function TimelinePage() {
                     : "No hay eventos que coincidan con la búsqueda."}
                 </div>
               ) : (
-                fsDays.map((day) => (
-                  <div className="tl-day" key={day.label}>
-                    <div className="tl-day-head">
-                      <span className="tl-day-label">{day.label} · UTC</span>
-                      <span className="tl-day-rule" />
-                      <span className="tl-day-count">{day.rows.length} eventos</span>
-                    </div>
-                    <table className="tl-fstable">
-                      <thead>
-                        <tr>
-                          <th>Hora (UTC)</th>
-                          <th>MACB</th>
-                          <th>Tamaño</th>
-                          <th>Inodo</th>
-                          <th>Ruta</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {day.rows.map((ev, i) => (
-                          <tr key={`${ev.inode}-${ev.ts}-${i}`}>
-                            <td className="tl-fs-time">{fmtUtc(ev.ts).time}</td>
-                            <td>
-                              <code className="tl-macb">{ev.macb}</code>
-                            </td>
-                            <td className="tl-fs-size">{ev.size.toLocaleString("es-ES")}</td>
-                            <td className="tl-fs-inode">{ev.inode}</td>
-                            <td className="tl-fs-path">{ev.path}</td>
+                <>
+                  {fsDays.map((day) => (
+                    <div className="tl-day" key={day.label}>
+                      <div className="tl-day-head">
+                        <span className="tl-day-label">{day.label} · UTC</span>
+                        <span className="tl-day-rule" />
+                        <span className="tl-day-count">{day.rows.length} eventos</span>
+                      </div>
+                      <table className="tl-fstable">
+                        <thead>
+                          <tr>
+                            <th>Hora (UTC)</th>
+                            <th>MACB</th>
+                            <th>Tamaño</th>
+                            <th>Inodo</th>
+                            <th>Ruta</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ))
+                        </thead>
+                        <tbody>
+                          {day.rows.map((ev, i) => (
+                            <tr key={`${ev.inode}-${ev.ts}-${i}`}>
+                              <td className="tl-fs-time">{fmtUtc(ev.ts).time}</td>
+                              <td>
+                                <code className="tl-macb">{ev.macb}</code>
+                              </td>
+                              <td className="tl-fs-size">{ev.size.toLocaleString("es-ES")}</td>
+                              <td className="tl-fs-inode">{ev.inode}</td>
+                              <td className="tl-fs-path">{ev.path}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ))}
+                  <Pager
+                    page={safeFsPage}
+                    pageCount={fsPageCount}
+                    total={fsFiltered.length}
+                    noun="eventos"
+                    onPage={setFsPage}
+                  />
+                </>
               )}
             </div>
           )}
 
-          {!fsJob && !fsError && evidences.length > 0 && (
+          {/* Capa 3 — eventos relevantes (ordenados por importancia, paginados). */}
+          {fsResult && layer === "relevant" && (
+            <div className="tl-scroll">
+              {fsResult.relevant_events === undefined ? (
+                <div className="docs-note">
+                  Esta super-timeline se generó con una versión anterior sin triage de
+                  relevancia. Vuelve a pulsar «Generar super-timeline» para calcular los
+                  eventos relevantes.
+                </div>
+              ) : (
+                <>
+                  {fsResult.relevant_truncated && (
+                    <div className="tl-truncated">
+                      Mostrando {fsResult.relevant_returned} de {fsResult.total_relevant} eventos
+                      relevantes (recortado). Afina con la búsqueda.
+                    </div>
+                  )}
+                  {relevantFiltered.length === 0 ? (
+                    <div className="tl-empty">
+                      {(fsResult.total_relevant ?? 0) === 0
+                        ? "El triage no marcó ningún evento del sistema de ficheros como relevante."
+                        : "No hay eventos relevantes que coincidan con la búsqueda."}
+                    </div>
+                  ) : (
+                    <>
+                      <table className="tl-fstable tl-reltable">
+                        <thead>
+                          <tr>
+                            <th>Fecha (UTC)</th>
+                            <th>Hora</th>
+                            <th>Categoría</th>
+                            <th>Motivo</th>
+                            <th>MACB</th>
+                            <th>Ruta</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(fsPageRows as FsRelevantEvent[]).map((ev, i) => (
+                            <tr key={`${ev.inode}-${ev.ts}-${ev.category}-${i}`}>
+                              <td className="tl-fs-time">{fmtUtc(ev.ts).date}</td>
+                              <td className="tl-fs-time">{fmtUtc(ev.ts).time}</td>
+                              <td>
+                                <span className={`tl-cat tl-cat--${ev.category}`}>
+                                  {CATEGORY_LABEL[ev.category] ?? ev.category}
+                                </span>
+                              </td>
+                              <td>{ev.reason}</td>
+                              <td>
+                                <code className="tl-macb">{ev.macb}</code>
+                              </td>
+                              <td className="tl-fs-path">{ev.path}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      <Pager
+                        page={safeFsPage}
+                        pageCount={fsPageCount}
+                        total={relevantFiltered.length}
+                        noun="eventos relevantes"
+                        onPage={setFsPage}
+                      />
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {!fsJob && !fsError && !fsResult && evidences.length > 0 && (
             <div className="tl-empty">
               Pulsa «Generar super-timeline» para construir la línea temporal MACB del sistema
               de ficheros a partir de la evidencia seleccionada.

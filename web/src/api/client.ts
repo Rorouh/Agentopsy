@@ -29,6 +29,7 @@ import type {
   EvidenceSource,
   ExecutorId,
   FsTimelineJob,
+  FsTimelineResult,
   InvestigationTimeline,
   ExecutorLoginCapability,
   ExecutorLoginStart,
@@ -345,6 +346,14 @@ export const api = {
         `/api/cases/${encodeURIComponent(caseId)}/timeline/filesystem/jobs/${encodeURIComponent(
           jobId,
         )}?since=${since}`,
+      ),
+    // Última super-timeline PERSISTIDA de una evidencia (rehidrata la vista tras
+    // recargar/reiniciar sin re-ejecutar fls). `result` es null si nunca se generó.
+    getPersistedFsTimeline: (caseId: string, evidenceId: string) =>
+      request<{ result: FsTimelineResult | null }>(
+        `/api/cases/${encodeURIComponent(caseId)}/timeline/filesystem?evidence_id=${encodeURIComponent(
+          evidenceId,
+        )}`,
       ),
     // Cobertura ATT&CK del caso: propuestas del agente + dictámenes del operador.
     listMitreCoverage: (caseId: string) =>
