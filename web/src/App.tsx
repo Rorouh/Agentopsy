@@ -3,7 +3,7 @@ import { api } from "./api/client";
 import type { Capabilities } from "./api/types";
 import { ThemeProvider } from "./ThemeProvider";
 import { AppShell } from "./layout/AppShell";
-import { DEFAULT_VIEW, type ViewId } from "./navigation/navItems";
+import { DEFAULT_VIEW, NAV_ITEMS, type ViewId } from "./navigation/navItems";
 
 import { GuidePage } from "./pages/GuidePage";
 import { RepositoryPage } from "./pages/RepositoryPage";
@@ -16,13 +16,37 @@ import { SettingsPage } from "./pages/SettingsPage";
 
 import { guideSteps } from "./mocks/frontendPreviewData";
 
+// Recuerda la vista activa entre recargas: si no, un F5 desde el Chat vuelve a
+// "Casos y evidencias" y parece que se perdió la conversación (los mensajes SÍ
+// están persistidos en el store; sólo se había reseteado la vista).
+const VIEW_STORAGE_KEY = "forensia-active-view";
+
+function initialView(): ViewId {
+  try {
+    const saved = localStorage.getItem(VIEW_STORAGE_KEY);
+    if (saved && NAV_ITEMS.some((n) => n.id === saved)) return saved as ViewId;
+  } catch {
+    /* localStorage no disponible: cae a la vista por defecto */
+  }
+  return DEFAULT_VIEW;
+}
+
 export function App() {
   const [caps, setCaps] = useState<Capabilities | null>(null);
   const [version, setVersion] = useState<string>("");
   const [error, setError] = useState<string>("");
-  const [activeView, setActiveView] = useState<ViewId>(DEFAULT_VIEW);
+  const [activeView, setActiveView] = useState<ViewId>(initialView);
 
   const isConnected = !error && !!version;
+
+  // Persiste la vista activa para que la recarga te devuelva donde estabas.
+  useEffect(() => {
+    try {
+      localStorage.setItem(VIEW_STORAGE_KEY, activeView);
+    } catch {
+      /* ignora si localStorage no está disponible */
+    }
+  }, [activeView]);
 
   const refreshCaps = async () => {
     try {
