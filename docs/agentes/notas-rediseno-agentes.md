@@ -91,7 +91,11 @@ Los ejes 1 y 4 los cubre el rediseño del agente (memoria/mapa vivo). Los ejes 2
 tocar el backend.
 
 > **Estado (2026-07-17):** Bugs 1 y 2 **ARREGLADOS** y con test de regresión; Bug 3
-> sigue pendiente de repro. Suite backend: 990 passed, 6 skipped; `ruff` limpio.
+> sigue pendiente de repro. **Bug 4 (desencapsulado de contenedor VMDK → TSK)** y
+> **Bug 5 (builder de super-timeline por particiones)** **ARREGLADOS Y VERIFICADOS EN
+> VIVO POR LA UI** (Playwright): un VMDK particionado lista su árbol de ficheros de
+> punta a punta (UI → api → dispatcher → maletín → exec-agent → qemu FUSE → mmls +
+> fls por partición). Suite backend: 1051 passed, 6 skipped; `ruff` limpio.
 
 ### Bug 1 — El bodyfile de `fls -m` nunca llega a ser artefacto referenciable (pipeline `tsk_fls → tsk_mactime` roto de raíz) — ARREGLADO
 
@@ -146,6 +150,209 @@ tocar el backend.
 - **NO clavado solo leyendo código** — necesita repro en vivo. Pendiente de reproducir, no
   es diagnóstico cerrado.
 
+### Bug 4 — La evidencia `.vmdk` no la puede abrir TSK (el maletín no trae libvmdk): ni se cablea el formato ni se desencapsula el contenedor (NUEVO — es el fallo de la prueba de `ftkimager`)
+
+> **CORRECCIÓN (2026-07-17, tras verificar el maletín).** La primera redacción de este
+> bug asumía que bastaba con «anclar `image_format=vmdk` (`-i vmdk`)». **Es falso para el
+> build real del maletín.** El TSK del maletín **NO** está compilado con libvmdk:
+> `mmls -i vmdk` → *"Unsupported image type"* (documentado en
+> `docs/pruebas/grupo-b/README.md:24` y `docs/pruebas/grupo-b/metasploitable2-linux/`).
+> `vmdkinfo`/`vmdkmount` (libvmdk-utils) **no están instalados**
+> (`docs/maletin/inventario-tools.md:45-46`). El `vmdk` que aparece en
+> `_VALID_IMG_FORMATS` de los wrappers es **aspiracional**, no refleja el binario que
+> corre. Ver «Arreglo» abajo, reescrito.
+
+> Diagnosticado a partir del transcript real de la prueba de `ftkimager` (2026-07-17,
+> caso `58fbf33c…`, evidencia `original.vmdk`). **No lo cubre ningún prompt ni el
+> rediseño de mapas** — es un defecto de enrutado en el backend, distinto de los
+> Bugs 1-3.
+
+**Qué pasó (del transcript).** El perito pidió *"utiliza FTKimager para listar el
+sistema de carpetas/ficheros"*. El agente:
+
+1. `ftkimager format=raw verify=true` → **OK**: desencapsula el VMDK y produce
+   `imagen.001` (40 GiB) con MD5+SHA1 en *Match*. El wrapper recién pusheado funciona.
+2. `tsk_mmls image_format=raw` → `mmls -i raw …` → **exit 1** (sin stdout/stderr).
+3. `tsk_fls image_format=raw filesystem=ntfs long_format=true` → `fls -f ntfs -i raw …`
+   → **exit 1**, stderr literal `Invalid magic value (Not a NTFS file system (magic))`.
+
+**Causa raíz (verificada en código).** La evidencia es un **VMDK sparse monolítico**
+(`original.vmdk`). En el offset 0 hay la cabecera del contenedor VMDK, no una tabla de
+particiones ni un boot sector NTFS. TSK con `-i raw` lee el fichero como `dd` plano →
+la cabecera del contenedor no es NTFS → *Invalid magic value*. **El bug es que a TSK se
+le pasa `image_format=raw` sobre un VMDK.** La cadena determinista para hacerlo bien ya
+existe, pero está **desconectada**:
+
+- **La triage YA sabe que es un VMDK.** `_classify_header`
+  (`backend/forensia/triage.py:330-331`) reconoce el magic `KDMV` y devuelve
+  `kind="container_disk"`, señal `vmdk_sparse`. Es una **determinación forense**
+  (contenido de la evidencia), no un guess.
+- **TSK del maletín NO abre el VMDK de ninguna forma.** Los wrappers declaran
+  `_VALID_IMG_FORMATS = {raw, ewf, aff, vmdk, vhd}` (`wrappers/tsk_fls.py:15`,
+  `wrappers/tsk_mmls.py:23`), pero **el binario no lo respalda**: `-i vmdk` →
+  *"Unsupported image type"* (sin libvmdk). Es el mismo patrón que el `.E01`: TSK
+  **tampoco** lee EWF nativo (`exec_agent.py:36`), y por eso el EWF se resuelve
+  exponiéndolo como bloque raw con `ewfmount` alrededor del run. Para VMDK **no existe el
+  equivalente**: no hay `vmdkmount` instalado, así que hoy no hay ninguna vía por la que
+  TSK reciba los bytes de dentro del VMDK.
+- **El puente que falta es doble.** (1) El `container_disk`/`vmdk_sparse` de la triage
+  nunca se traduce a nada operable, y (2) en `container.py:201-202` el reescritor de path
+  solo trata `.E01` (EWF → `ewfmount`); un `.vmdk` cae en *"non-EWF image (raw/vmdk) →
+  None, no change"* — se entrega tal cual y TSK lo lee como `dd`. Falta un
+  **desencapsulado del VMDK** análogo al de EWF, no un mero flag `-i`.
+
+**Por qué "sigue fallando" pese al rediseño.** El rediseño atacó *repetición* de tokens
+(mapas §2-4) y dos bugs de pipeline (1 y 2). Este es un eje **nuevo**: enrutado de
+**formato de contenedor**. No es falta de memoria (el mapa vivo §4 no evita un fallo
+estructural del primer intento), no es ninguno de los dos bugs arreglados. Es una
+determinación (`vmdk_sparse`) que se calcula y se tira.
+
+**Doble derroche de tokens (lo que ve el perito).** *"Gasta la mayor parte de los tokens
+en ejecutar cosas que fallan"* son dos capas encadenadas:
+
+1. Cada llamada TSK-con-`raw` está **estructuralmente condenada** → quema tokens.
+2. Al fallar, el agente propone el rodeo *ftkimager → re-anclar la evidencia a
+   `imagen.001`* — diagnóstico **correcto**, pero **callejón sin salida**: los tools no
+   aceptan un path de entrada del agente (SECURITY INVARIANT: `EvidenceManager` es el
+   único dueño; el LLM nunca nombra paths), así que el raw derivado **no puede
+   re-inyectarse** como nueva evidencia del caso sin un mecanismo de re-registro que hoy
+   no existe. El agente lo dice: *"no puedo redirigirlos yo al imagen.001"*.
+
+**Arreglo — reescrito tras el hallazgo del maletín (ninguna pieza implementada aún).**
+Como TSK no abre el VMDK, el arreglo NO es un flag: hay que **desencapsular el contenedor**
+y darle a TSK bytes raw. Dos vías reales:
+
+**VÍA ELEGIDA Y VERIFICADA EN VIVO (2026-07-17): A — desencapsulado FUSE tipo `ewfmount`,
+con `qemu-storage-daemon` (NO `vmdkmount`).**
+
+Al probar en el maletín corriendo se descubrió que **el PPA GIFT no empaqueta `vmdkmount`**
+(solo la librería `libvmdk`, sin tools; no hay `libvmdk-utils`). Pero **`qemu-storage-daemon`
+YA está en el maletín** (viene con `qemu-utils`, junto a `qemu-img`) y su **FUSE export**
+expone cualquier contenedor qemu (vmdk/vdi/qcow2/vhd/vhdx) como fichero **raw**, read-only a
+nivel de bloque, **sin copia**. Experimento reproducible (VMDK sintético con tabla de
+particiones):
+
+```
+qemu-storage-daemon \
+  --blockdev driver=file,filename=t.vmdk,node-name=f,read-only=on \
+  --blockdev driver=vmdk,file=f,node-name=v,read-only=on \
+  --export type=fuse,id=e,node-name=v,mountpoint=/tmp/exported.raw,writable=off &
+mmls -i raw /tmp/exported.raw     # -> lista la tabla de particiones (antes: fallo)
+md5sum t.raw /tmp/exported.raw    # -> IDÉNTICOS (byte-exacto, sound)
+```
+
+Resultado medido: `exported.raw` muestra el tamaño del disco completo (no del `.vmdk`
+sparse), `mmls -i raw` **lee la tabla de particiones**, y el md5 de la vista FUSE coincide
+con el raw original. **RULE 1 ya se cumple** (herramienta ya horneada; NO toca el Dockerfile)
+y es sound (FORENSIC INVARIANT 3: bloque RO, NO monta el FS de la evidencia).
+
+**Implementación (HECHA, 2026-07-17):**
+- **exec-agent** (`docker/docker/forensic-toolkit/exec_agent.py`): campos de payload
+  `qemu_image` (token exacto del argv, como `ewf_image`) + `qemu_format` (enum cerrado
+  `vmdk|vdi|qcow2|vpc|vhdx`, elegido por el api, no por el LLM). Helpers `qemu_mount`/
+  `qemu_unmount` + handler `_exec_with_qemu` espejo de `_exec_with_ewf`: arranca
+  `qemu-storage-daemon` con FUSE export (RO), espera (poll) a que el mountpoint esté
+  servido, reescribe el token del argv al raw `raw.img`, ejecuta y en `finally` para el
+  daemon + `fusermount -u` + rmtree. Mutuamente excluyente con `ewf_image`. `424` accionable
+  si el binario/FUSE falta o el daemon muere (RULE 2).
+- **api** (`toolkit/dispatcher.py`): `_qemu_format_for_path` (extensión → driver qemu) junto
+  a `_is_ewf_path`; `execute()` detecta el contenedor y pasa `qemu_image`/`qemu_format` por
+  `_prepare_execution`; `maletin.run_argv_in_maletin` los reenvía en el POST `/exec` y
+  `_verify_executed_argv` verifica la reescritura al basename `raw.img` (custodia,
+  FORENSIC INVARIANT 4). Venue api-PATH (dev): no soportado (igual que EWF) — el producto es
+  el maletín.
+- **anclaje de `image_format`:** al desencapsular, el `dispatcher` fuerza
+  `image_format=raw` (descarta un `image_format=vmdk` del modelo — daría "Unsupported image
+  type" sobre el bloque ya raw). RULE 2: cierra el guess del LLM.
+- **tests:** `backend/tests/test_vmdk_routing.py` (28, espejo de `test_ewf_routing.py`):
+  predicado de formato, decisión del dispatcher, anclaje de `image_format`, mecanismo del
+  exec-agent (reescritura + teardown + teardown-en-fallo), validación (enum, token del argv,
+  exclusión mutua), y prueba de custodia del cliente maletín. Suite backend: 1046 passed.
+- **verificado en vivo** en el `toolkit-unix` corriendo: VMDK sintético → `POST /exec` con
+  `qemu_image`/`qemu_format` → `executed_argv` reescrito a `…/raw.img` y `mmls -i raw` lista
+  la tabla de particiones; daemon y mount desmontados tras el run (sin zombies).
+
+> **(B) descartada como principal:** conversión `qemu-img convert -O raw` + re-anclaje de
+> evidencia (re-hash/custodia) — copia completa de 40 GiB y necesita un mecanismo de
+> re-registro que hoy no existe. Queda como puente manual ya documentado
+> (`docs/pruebas/grupo-b/metasploitable2-linux/tsk_mmls.md:45`), no como la vía del producto.
+>
+> La redacción original de este bug («basta `-i vmdk`») era **incorrecta**: el maletín no
+> trae libvmdk; el arreglo real es el desencapsulado FUSE de arriba.
+
+### Bug 5 — El builder de super-timeline corría `tsk_fls -m` en el offset 0: fallaba en cualquier disco particionado (ARREGLADO)
+
+> Detectado al re-probar el Bug 4 en la UI (2026-07-17): sobre un VMDK **particionado**
+> (el caso realista), el botón «Generar super-timeline» daba
+> `RuntimeError: tsk_fls terminó con exit_code 1 … stderr: Cannot determine file system type`.
+> Es un bug **pre-existente e independiente del cableado VMDK** (afecta a cualquier disco
+> particionado, raw o vmdk).
+
+**Causa.** `run_filesystem_timeline` (`backend/forensia/timeline/builder.py`) ejecutaba
+`tsk_fls -m -r` directamente sobre `image_path`, es decir en el **offset 0**. En un disco
+particionado el offset 0 es la tabla de particiones, no un sistema de ficheros → *"Cannot
+determine file system type"*. Solo funcionaba con imágenes que son un FS plano en offset 0
+(un volcado de partición), no con discos completos — que son casi todos los reales. (El
+desencapsulado VMDK del Bug 4 sí funcionaba: el error cambió de *"Unsupported image type"* a
+*"Cannot determine…"*, señal de que TSK ya leía los bytes; el fallo era el offset.)
+
+**Arreglo (verificado en vivo por la UI).** El builder ahora **enumera particiones con
+`tsk_mmls` primero** y corre `tsk_fls -m -r -o <offset>` por cada partición con sistema de
+ficheros, fusionando los bodyfiles en una única super-timeline (rutas prefijadas con
+`/p<slot>` por partición). Política acordada con el perito (**emitir lo legible + listar las
+saltadas**): una partición sin FS legible (swap, unallocated) se registra en
+`skipped_partitions` y **no aborta** — solo se falla fuerte si NINGUNA partición da FS. Una
+imagen **sin tabla de particiones** (mmls sale ≠0 → señal de FS plano, no error) mantiene el
+`fls` único en offset 0. Persistencia y re-query actualizados a **lista** de runs
+(`fls_run_ids`, con compat del `fls_run_id` único antiguo); `consultar_actividad` fusiona los
+bodyfiles de todas las particiones. mmls/fls van por el desencapsulado qemu del Bug 4 (ambos
+son tools de disco → el dispatcher los enruta). Regresión:
+`backend/tests/test_timeline.py` (+5 tests: merge por particiones, skip no-fatal, fallo si
+ninguna da FS, merge en la query, compat del id único). **Verificado en la UI:** un VMDK
+particionado ahora lista `/p2/secret.txt`, `/p2/home_evidencia`, `/p2/lost+found`.
+
+> Relación con Bug 001 (`docs/bugs/001-…`): aquel es el **agente** entrando en bucle por
+> prompt sobre un FS plano; esto es el **builder determinista** («Generar»), otro código.
+> Complementarios: el builder ahora es robusto a disco particionado Y a FS plano.
+
+### Nota de diseño — por qué los tools NUNCA aceptan un path del agente (a tener presente para el arreglo)
+
+> Recogido a petición del perito (2026-07-17). Es una **propiedad de diseño deliberada**,
+> no una limitación accidental — importa para decidir cómo re-anclar la evidencia (Bug 4,
+> arreglo *(b)*) y para cualquier solución que roce el path de la evidencia.
+
+Que el agente *"no pueda redirigir TSK al `imagen.001`"* no es un fallo: es exactamente lo
+que blinda la cadena de custodia y el modelo de amenaza. Tres invariantes lo imponen a la
+vez:
+
+- **`EvidenceManager` es el único dueño de la evidencia** (FORENSIC INVARIANT 1). Ningún
+  tool ni agente toca un path `.raw`/`.vmdk`/dump directamente; piden un **handle**
+  hash-verificado y read-only a nivel de bloque. El `image_path` que ve un wrapper lo
+  **inyecta FORENSIA** desde el handle del caso — el LLM no lo pone.
+- **El LLM emite un id de tool de enum cerrado + params tipados, nunca una cadena de
+  comando ni un path** (SECURITY INVARIANT 5). El backend resuelve el argv real desde un
+  allowlist. Un path arbitrario del modelo no tiene por dónde entrar.
+- **Todo path se canonicaliza en el backend y se confina a `evidenceRoot`** (SECURITY
+  INVARIANT 6): se rechazan traversal, symlink-escape y absolutos. Aunque el modelo
+  intentara colar un path, se rechazaría.
+
+**Por qué es así (el porqué que interesa):** la evidencia es **dato hostil** — un
+sospechoso puede sembrarla con payloads de prompt-injection. Si el agente pudiera nombrar
+paths, un byte de la evidencia que dijera *"analiza `/host/…/.ssh/id_rsa`"* o *"apunta a
+este otro fichero"* se convertiría en una acción sobre el host o en una salida de la
+cadena de custodia. Al obligar a que el path lo ponga solo `EvidenceManager` desde un
+handle hasheado, **ningún contenido de la evidencia puede desviar qué fichero se analiza**.
+
+**Consecuencia para el Bug 4 / re-anclaje:** por esto mismo, "convertir a raw y trabajar
+sobre el raw derivado" **no puede ser una acción del agente** — sería un path suministrado
+por el LLM, prohibido por diseño. Tiene que ser un **mecanismo de backend**: registrar el
+artefacto derivado (`imagen.001`) como nueva evidencia del caso, con re-hash y su entrada
+en el log de custodia, de modo que `EvidenceManager` pase a exponer *ese* handle. Es
+decir, el re-anclaje es una operación del operador/backend sobre el store de evidencia, no
+un argumento que el agente redirige. (Y aun así, el arreglo *(a)* — anclar `image_format`
+desde la triage para que TSK lea el VMDK nativo — evita necesitar el re-anclaje en este
+caso.)
+
 ### Eje 4 — Repetición / coste (lo cubre el rediseño)
 
 - tsk_fls ×15, 207.978 tok, $9.89, 36 ejecuciones re-descubriendo lo ya establecido.
@@ -174,5 +381,141 @@ como **tool de consulta backend** (no `.md` del LLM), playbook **conservador**.
    «objetivo → herramientas»; el catálogo de artefactos sale del prompt siempre-cargado y
    pasa a `knowledge/` (consultado bajo demanda).
 
-Bugs de backend: **1 y 2 arreglados** (ver arriba). **Bug 3 (Codex)** sigue pendiente de
-repro en vivo — es el único punto abierto del registro original.
+Bugs de backend: **1, 2, 4 y 5 arreglados** (ver arriba; Bug 4 = desencapsulado de
+contenedor VMDK vía FUSE export de `qemu-storage-daemon`; Bug 5 = builder de super-timeline
+por particiones — ambos verificados en vivo por la UI con Playwright). **Bug 3 (Codex)**
+sigue pendiente de repro en vivo — es el único punto abierto del registro original.
+
+---
+
+## 5. Bitácora de aciertos/fallos por herramienta+evidencia (PROPUESTA — solo anotado, sin implementar)
+
+> Idea del perito (2026-07-17), a raíz del transcript de `ftkimager`: *«un apartado
+> donde el agente anote un happy path y uno que no funciona, así aprende de lo que le
+> funciona y de lo que no»*. Ejemplos de la forma que tendría cada entrada:
+> - **happy:** *"`ftkimager` con un `.raw`/`.vmdk` funciona muy bien para verificar
+>   integridad (MD5+SHA1 Match)."*
+> - **fallo:** *"`tsk_fls`/`tsk_mmls` con `-i raw` sobre una evidencia `.vmdk` siempre
+>   falla (`Invalid magic value`) porque TSK no abre el VMDK (el maletín no trae libvmdk)
+>   — hay que desencapsular el contenedor primero (ver Bug 4, vías A/B)."*
+
+**Qué sería.** Un **cuarto mapa**, distinto de los tres del rediseño: no es catálogo
+estático de artefactos (§2 `knowledge/`) ni proyección de la timeline (§3-4 mapa vivo de
+actividad). Es una **bitácora de heurísticas de herramienta**: pares
+`(tool, forma-de-evidencia, formato) → resultado` que el agente **acumula a medida que
+ejecuta** (mapa vivo, como §4) y **consulta antes de lanzar** una herramienta, para no
+re-intentar caminos ya sabidos-que-fallan y para preferir los sabidos-que-funcionan.
+
+**Forma tentativa de una entrada** (a decidir en diseño):
+
+```
+- clave: { tool: "tsk_fls", evidence_kind: "container_disk/vmdk_sparse", image_format: "raw" }
+  veredicto: FALLA
+  motivo: "Invalid magic value (Not a NTFS); -i raw no desencapsula el contenedor VMDK"
+  remedio: "TSK no abre VMDK (sin libvmdk); desencapsular primero (vmdkmount/qemu-img)"
+  visto_en: [run_id...]     # evidencia real, no inventado
+```
+
+**Cómo encaja con lo ya decidido (mismos principios del rediseño):**
+
+- **Backend, no `.md` del LLM.** Como el mapa vivo §4, sería una **tool de consulta**
+  (`consultar_heuristicas(tool, evidence_kind)` o similar) sobre un store determinista,
+  no un prompt siempre-cargado. No infla el contexto: se consulta bajo demanda.
+- **Se construye a medida que avanza** (mapa vivo), no de golpe.
+- **Rigor forense:** una heurística NO es un hallazgo. Vive en su propio store; jamás se
+  mezcla con `record_finding`. Y una entrada "FALLA" debe anclarse a `run_id` reales
+  (verificable), no a una corazonada del modelo — coherente con RULE 2 y con no dejar que
+  el LLM invente estado.
+- **Alcance:** ¿bitácora **por caso** (aislada, chain-of-custody estricta) o **global
+  entre casos** (aprende de verdad, pero arrastra sesgos entre evidencias distintas)?
+  Sin decidir. La versión conservadora es **por caso**; una capa global de "lecciones
+  de herramienta" (independiente del contenido de la evidencia, p. ej. *"un VMDK hay que
+  desencapsularlo antes de dárselo a TSK"*) podría ser semilla estática en `knowledge/`.
+
+**Relación honesta con el Bug 4.** Esta bitácora **mitiga el síntoma** (dejar de requemar
+tokens re-intentando `-i raw` una vez que ya falló), pero **no es el arreglo**: el arreglo
+es cablear el formato determinado por la triage (Bug 4, arreglo *(a)*), que evita el primer
+fallo entero. La bitácora es **complementaria** — reduce el coste del error residual y de
+otros caminos que no podemos determinar a priori; no sustituye a corregir el enrutado.
+Con Bug 4 arreglado, la entrada de ejemplo de arriba ni llegaría a generarse.
+
+**Estado:** solo anotado. No se ha tocado código ni prompts para esto.
+
+### 5.bis — Refinamiento tras revisión de expertos (2026-07-17)
+
+Se sacaron tres análisis breves en paralelo (coste de tokens, solidez forense/seguridad,
+encaje arquitectónico). **Convergen** en las mismas correcciones. La idea del perito es la
+capa correcta para el **coste residual y la transparencia**, y encaja limpia sobre la
+infraestructura §2-4 — pero con tres correcciones **no negociables**. Se anotan como el
+diseño de referencia si se implementa; la forma tentativa de arriba (§5) queda **enmendada
+por esto**.
+
+**A) Coste de tokens — el ahorro depende de UN detalle: no añadir un turno por consulta.**
+
+- El coste no es *leer* la entrada (pequeña; además el windowing de `context.py:47-56`
+  la elide a stub tras `K=4` turnos). El coste es el **round-trip extra**: el ejecutor es
+  stateless y FORENSIA reenvía el transcript entero cada iteración (`context.py:4-8`), así
+  que cada consulta re-shippea todo el contexto una vez más (~5-8k tok de input) — O(N²)
+  sobre el caso.
+- **Bien diseñada** (consulta rara/condicional, filtrada en backend a 1-5 filas, que evita
+  una ejecución pesada condenada): ahorra ~5-20× por camino malo evitado → **decenas de
+  miles de tokens** en un caso como el del Eje 4.
+- **Mal diseñada** = el anti-patrón literal de §5 *"consulta antes de lanzar cada
+  herramienta"*: +1 turno completo × ~36 tools ≈ **+150-220k tok**, del mismo orden que
+  TODO el derroche que pretendía eliminar. **Ese texto de §5 queda descartado.**
+- **Matiz clave (gratis, ya en el código):** el **ledger de runs** (`history.py:140-188`)
+  ya lista cada ejecución con su exit code y le dice al agente que no reintente las
+  fallidas — sin tool nueva ni turnos extra. Dentro de una sesión, la no-repetición ya
+  está cubierta. El valor incremental *real* de la bitácora sobre el ledger es solo:
+  **persistencia entre sesiones/casos** y cargar el **remedio**, no solo el "falló".
+- **Regla de oro:** **no añadir un turno; pre-computar e inyectar.** El backend ya conoce
+  `evidence_kind` (triage) y el tool que se va a lanzar → **fundir las 0-3 heurísticas
+  aplicables dentro del ledger que el agente YA recibe** (`history.py`), no una tool que
+  gasta round-trips. Coste marginal ≈ 0 turnos. Es el patrón del anclaje de backend del
+  Bug 4: una determinación que se **ancla**, no que el LLM **pregunta**. (Si aun así se
+  quiere tool, que sea **condicional/post-fallo**, filtre en servidor, tope ~5 filas, sea
+  `role=="tool"` — cae bajo el windowing — y **nunca en el system prompt**.)
+
+**B) Solidez forense/seguridad — adoptar solo advisory, descriptiva y por caso.**
+
+- **Envenenamiento (riesgo estructural, el más grave):** un sospechoso puede sembrar la
+  evidencia para que un tool que le incrimina falle puntualmente; si el agente aprende "no
+  sirve" y deja de mirarlo → **falso negativo silencioso en la cadena probatoria**. Choca
+  con RULE 2 ("no try the other tool") y con "evidencia = dato hostil". → **La bitácora
+  NUNCA suprime ni reordena un tool. Es advisory/read-only para el perito.**
+- **El campo `remedio` viola RULE 2 se mire por donde se mire:** si lo infiere el LLM es un
+  *guess* prohibido; si es determinista, es un bug de enrutado que va en el código (Bug
+  4a), no una heurística aprendida. → **Solo registro DESCRIPTIVO** (tool+kind+format →
+  `exit`+`stderr` anclado a `run_id`); **se elimina el campo `remedio` prescriptivo** de
+  la forma de entrada de §5. El enrutado correcto se cablea, no se aprende.
+- **Auto-acción vs mostrar-al-perito:** **solo surfacear al operador**, nunca auto-cambiar
+  enrutado (coherente con cómo `os_profile` unknown/low-confidence escala al operador).
+- **Alcance: por caso**, dentro del audit log hash-encadenado del caso (FORENSIC INVARIANT
+  4). Global escrito en runtime = contaminación cruzada entre evidencias/personas. La única
+  capa global admisible son lecciones **deterministas independientes del contenido**
+  (p. ej. *"un VMDK se desencapsula antes de TSK"*), que **no son "aprendizaje" sino
+  semilla curada en `knowledge/`** o enrutado determinista en el backend.
+
+**C) Encaje arquitectónico — stores separados, escribe el dispatcher, reutiliza §2-4.**
+
+- **Frontera (stores separados):** `consultar_actividad` = lo que hizo el **sospechoso**
+  (contenido de evidencia, `untrusted=True` en `agent.py:539`); bitácora = lo que hicieron
+  las **herramientas** (meta de ejecución). Claves disjuntas. El `motivo`/stderr puede
+  arrastrar bytes hostiles → surfacearlo como **untrusted** aunque la clave
+  (tool/kind/format/exit) sea meta de confianza. Store propio (p. ej.
+  `case_dir/heuristics/<evidence_id>.jsonl`), no mezclado con `record_finding`.
+- **Quién escribe: el dispatcher, no el LLM.** El veredicto `PASA/FALLA` es función
+  determinista de datos que el dispatcher ya tiene al cerrar el run (`dispatcher.py`, junto
+  al audit log): `tool_id`, `image_format`, `exit_code`, `stderr`, `run_id`,
+  `evidence_kind`. Espeja el patrón del mapa de actividad (el builder materializa, el
+  agente solo lee). RULE 3 limpio.
+- **Reutilización alta:** store del timeline (`builder.py` — path confinado, escritura
+  atómica tmp+replace, lectura tolerante a corrupto→`None`), scaffolding de tool interna
+  (`agent.py`, `tool_schemas.py`) y el gating "no ofrezcas la tool si el store está vacío"
+  se copian casi directos. Implementación pequeña.
+
+**Orden recomendado.** La bitácora **mitiga síntoma, no sustituye enrutado**: si entra
+antes que el Bug 4 (vía A), corre el riesgo de **enmascarar** la ruta determinista que falta —
+el mismo motivo por el que cada fallback tuvo que deshacerse. → **Primero el Bug 4 (vía A)**
+(barato, quita la mayor fuente de derroche); la bitácora **después**, ya acotada a su
+nicho: lo genuinamente no-determinable a priori, advisory, descriptiva, por caso.
