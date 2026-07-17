@@ -74,6 +74,26 @@ ARG PIP_VERSION=26.1.2
 RUN pip3 install --no-cache-dir "pip==${PIP_VERSION}" \
  && pip3 install --no-cache-dir "volatility3==${VOLATILITY3_VERSION}"
 
+# --- FTK Imager CLI (AccessData/Exterro) — crear/convertir imágenes (Cross) ---
+# Binario freeware 3.1.1 ubuntu64 (ago-2012): el ÚLTIMO CLI publicado para Linux
+# (el 4.x actual es solo Windows). Se descarga del CDN oficial de AccessData
+# (CloudFront, la misma fuente que empaqueta el AUR `ftkimager`) y se verifica
+# por SHA-256. Convierte imágenes entre raw/E01/SMART con verificación MD5/SHA1
+# (round-trip raw→E01→raw byte-exacto validado el 2026-07-17 en Ubuntu 22.04:
+# solo enlaza libc/libstdc++, zlib/openssl van estáticos). Licencia: freeware de
+# Exterro sin redistribución — por eso se descarga en el build y no se vendoriza.
+ARG FTKIMAGER_SHA256=5b4ba5fd092c5970d8b02e223d92c25079f8c084833aff522e55de8f3c52178c
+RUN cd /tmp \
+ && wget -q "https://d1kpmuwb7gvu1i.cloudfront.net/ftkimager.3.1.1_ubuntu64.tar.gz" -O ftkimager.tgz \
+ && echo "${FTKIMAGER_SHA256}  ftkimager.tgz" | sha256sum -c - \
+ && mkdir -p /opt/ftkimager \
+ && tar -xzf ftkimager.tgz -C /opt/ftkimager \
+ && chmod +x /opt/ftkimager/ftkimager \
+ && ln -sf /opt/ftkimager/ftkimager /usr/local/bin/ftkimager \
+ && rm -f ftkimager.tgz \
+ # sanity: el binario carga y emite su banner (--help/--version salen con 1 en este CLI)
+ && ftkimager --help 2>&1 | grep -q "FTK Imager"
+
 # --- Layout de trabajo -------------------------------------------------------
 #   /evidence -> evidencias montadas en SOLO LECTURA (cadena de custodia)
 #   /cases    -> proyectos/casos y salidas del análisis
@@ -103,6 +123,7 @@ echo "  sleuthkit (fls/icat/mmls/mactime) : $(command -v fls || echo 'NO')"
 echo "  bulk_extractor                    : $(command -v bulk_extractor || echo 'NO')"
 echo "  foremost                          : $(command -v foremost || echo 'NO')"
 echo "  ewfmount (libewf)                 : $(command -v ewfmount || echo 'NO')"
+echo "  ftkimager (AccessData CLI)        : $(command -v ftkimager || echo 'NO')"
 echo "  qemu-nbd                          : $(command -v qemu-nbd || echo 'NO')"
 echo "  guestmount                        : $(command -v guestmount || echo 'NO')"
 echo "  hashdeep                          : $(command -v hashdeep || echo 'NO')"

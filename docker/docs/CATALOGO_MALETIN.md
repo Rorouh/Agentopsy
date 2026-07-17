@@ -28,6 +28,7 @@ Notas que aplican a los ejemplos:
 | Categoría | Herramienta | Comando(s) | Para qué |
 |---|---|---|---|
 | Imagen y montaje | libewf-tools (GIFT) | `ewfinfo`, `ewfmount` | Leer/montar imágenes E01 (EWF) |
+| Imagen y montaje | FTK Imager CLI (AccessData) | `ftkimager` | Crear/convertir imágenes raw↔E01/SMART con verificación MD5/SHA1 |
 | Imagen y montaje | QEMU | `qemu-nbd` | Exponer .vmdk/.qcow2/.raw como dispositivo de bloque |
 | Imagen y montaje | libguestfs | `guestmount` | Montar los sistemas de ficheros de la imagen en solo lectura |
 | Integridad / hashing | coreutils | `sha256sum` | Hash de integridad (cadena de custodia) |
@@ -46,6 +47,14 @@ docker compose exec toolkit-windows ewfinfo /evidence/disco.E01
 
 # ewfmount — montar una E01 como /cases/raw/ewf1 (solo lectura)
 docker compose exec toolkit-windows sh -c "mkdir -p /cases/raw && ewfmount /evidence/disco.E01 /cases/raw"
+
+# ftkimager — convertir una imagen E01 a raw (dd) con verificación de hash
+#   (la fuente puede ser dispositivo, imagen soportada o `-` para stdin; sin
+#    destino, el raw sale por stdout. --print-info muestra los metadatos.)
+docker compose exec toolkit-windows ftkimager /evidence/disco.E01 /cases/disco_raw --verify
+
+# ftkimager — empaquetar una imagen raw como E01 comprimido con metadatos de caso
+docker compose exec toolkit-windows ftkimager /evidence/disco.raw /cases/disco --e01 --compress 6 --case-number CASO-001 --evidence-number E-01 --examiner "Perito" --verify
 
 # qemu-nbd — exponer un .vmdk en solo lectura como /dev/nbd0
 docker compose exec toolkit-windows qemu-nbd --read-only --connect=/dev/nbd0 /evidence/disco.vmdk
@@ -280,6 +289,7 @@ docker compose exec toolkit-unix vol -f /evidence/memoria_linux.lime linux.pslis
 | chainsaw | 2.16.0 | release GitHub (WithSecureLabs) |
 | pip (dentro de la imagen) | 26.1.2 | PyPI (sustituye al 22.0.2 de Ubuntu) |
 | ccl_chromium_reader | commit `b51a01c` | repo git (cclgroupltd, sin tags) |
+| FTK Imager CLI | 3.1.1 ubuntu64 (último CLI publicado para Linux; freeware, se descarga en el build — sin redistribución) | CDN oficial AccessData (CloudFront), SHA-256 pinneado |
 | .NET runtime (stage `windows`) | canal 9.0 (`dotnet-install.sh`) | dot.net (Microsoft) |
 | EZ Tools (suite Eric Zimmerman, 11 tools) | 2026.5.0 (builds net9 «latest» del CDN; SHA-256 pinneado por `ARG` y registrado con la versión en `/opt/eztools/VERSIONS.txt`) | download.ericzimmermanstools.com |
 

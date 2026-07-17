@@ -23,7 +23,7 @@ contiene los Dockerfiles de los servicios (`api/`, `web/`,
 
 - Docker Engine 24+ y Docker Compose v2 (`docker compose`, no `docker-compose`).
 - Conexión a Internet en el primer build (descarga paquetes, hayabusa, chainsaw,
-  el runtime .NET y las EZ Tools de Eric Zimmerman).
+  el runtime .NET, las EZ Tools de Eric Zimmerman y el FTK Imager CLI).
 - Linux o Windows/macOS con Docker Desktop. En Windows usa WSL2 como backend.
 
 > **Arquitectura: los maletines son `linux/amd64`.** El compose fija
