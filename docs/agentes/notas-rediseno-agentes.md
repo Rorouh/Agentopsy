@@ -90,12 +90,14 @@ son defectos de backend. Si solo tocamos prompts, `record_finding` seguirá guar
 Los ejes 1 y 4 los cubre el rediseño del agente (memoria/mapa vivo). Los ejes 2 y 3 exigen
 tocar el backend.
 
-> **Estado (2026-07-17):** Bugs 1 y 2 **ARREGLADOS** y con test de regresión; Bug 3
-> sigue pendiente de repro. **Bug 4 (desencapsulado de contenedor VMDK → TSK)** y
+> **Estado (2026-07-17):** Bugs 1, 2 y **3 ARREGLADOS** con test de regresión (Bug 3
+> diagnosticado en vivo: el `stdin...` era ruido; el fallo de Codex va como evento JSONL
+> en stdout y ahora se surfacea). **Bug 4 (desencapsulado de contenedor VMDK → TSK)** y
 > **Bug 5 (builder de super-timeline por particiones)** **ARREGLADOS Y VERIFICADOS EN
 > VIVO POR LA UI** (Playwright): un VMDK particionado lista su árbol de ficheros de
 > punta a punta (UI → api → dispatcher → maletín → exec-agent → qemu FUSE → mmls +
-> fls por partición). Suite backend: 1051 passed, 6 skipped; `ruff` limpio.
+> fls por partición). **Todos los bugs del registro original cerrados.** Suite backend:
+> 1054 passed, 6 skipped; `ruff` limpio.
 
 ### Bug 1 — El bodyfile de `fls -m` nunca llega a ser artefacto referenciable (pipeline `tsk_fls → tsk_mactime` roto de raíz) — ARREGLADO
 
@@ -137,18 +139,28 @@ tocar el backend.
   tokens despreciable (~28 chars extra por entrada, tope 30) frente a que sea la clave de
   recuperación del artefacto.
 
-### Bug 3 — Fallo de Codex CLI (`Reading additional input from stdin...`, exit 1)
+### Bug 3 — Fallo de Codex CLI (`Reading additional input from stdin...`, exit 1) — DIAGNOSTICADO EN VIVO Y ARREGLADO
 
 - Real (aparece en el transcript), independiente de los prompts. El ejecutor pasa
-  `stdin=subprocess.DEVNULL` en el run real (`backend/forensia/executors/base.py:378`;
-  la `:282` es el probe de auth, no el run) y el prompt como argv posicional
-  (`backend/forensia/executors/codex.py:89`).
-- Como el prompt **sí** se pasa como posicional, la teoría "cae a stdin por falta de
-  prompt" se debilita: con prompt presente, `Reading additional input from stdin...` es
-  probablemente un mensaje informativo (stdin=DEVNULL) y el exit 1 vendría de otra causa
-  (sandbox `read-only`, versión de Codex).
-- **NO clavado solo leyendo código** — necesita repro en vivo. Pendiente de reproducir, no
-  es diagnóstico cerrado.
+  `stdin=subprocess.DEVNULL` en el run real (`backend/forensia/executors/base.py`) y el
+  prompt como argv posicional (`backend/forensia/executors/codex.py:89`).
+- **Repro en vivo (2026-07-17, codex-cli 0.142.5):** confirmado que `Reading additional
+  input from stdin...` es un **mensaje informativo inofensivo** (Codex lo imprime al leer de
+  `stdin=DEVNULL`), NO la causa. El `exit 1` real viene de un **fallo del turno que Codex
+  reporta como evento JSONL en STDOUT**: `{"type":"error","message":"…"}`. En la repro fue
+  un **límite de uso de la cuenta** (`"You've hit your usage limit… try again at Jul 19th"`)
+  — una condición de cuenta, no un bug de FORENSIA.
+- **El bug de FORENSIA (arreglado):** el manejo de exit≠0 solo mostraba el `stderr` (el
+  mensaje de stdin, ruido), ocultando la causa real del stdout. Además, como el turno falla,
+  el `--output-last-message` queda vacío y el `_extract_text` viejo daba *"Codex CLI no
+  escribió el fichero…"* — críptico. **Arreglo:** nuevo hook `_extract_error(stdout, stderr)`
+  en `executors/base.py` (default `None`), usado en la rama exit≠0 para preferir una causa
+  accionable sobre el stderr; `CodexExecutor._extract_error` parsea el evento
+  `{"type":"error"}` del JSONL y surfacea su `message`. Ahora el operador ve
+  *"Codex CLI terminó con exit code 1. You've hit your usage limit… try again at Jul 19th"*
+  (RULE 2: fallar fuerte con lo accionable). Regresión: `tests/test_executors.py` (+3:
+  surfacing en run, parseo del evento, y `None` sin evento de error). **Verificado en vivo**
+  invocando el executor en el contenedor `api` y por el reply de `/analyze` con `executor=codex`.
 
 ### Bug 4 — La evidencia `.vmdk` no la puede abrir TSK (el maletín no trae libvmdk): ni se cablea el formato ni se desencapsula el contenedor (NUEVO — es el fallo de la prueba de `ftkimager`)
 
@@ -381,10 +393,12 @@ como **tool de consulta backend** (no `.md` del LLM), playbook **conservador**.
    «objetivo → herramientas»; el catálogo de artefactos sale del prompt siempre-cargado y
    pasa a `knowledge/` (consultado bajo demanda).
 
-Bugs de backend: **1, 2, 4 y 5 arreglados** (ver arriba; Bug 4 = desencapsulado de
-contenedor VMDK vía FUSE export de `qemu-storage-daemon`; Bug 5 = builder de super-timeline
-por particiones — ambos verificados en vivo por la UI con Playwright). **Bug 3 (Codex)**
-sigue pendiente de repro en vivo — es el único punto abierto del registro original.
+Bugs de backend: **1, 2, 3, 4 y 5 arreglados** (Bug 4 = desencapsulado de contenedor VMDK
+vía FUSE export de `qemu-storage-daemon`; Bug 5 = builder de super-timeline por particiones
+—ambos verificados en vivo por la UI con Playwright—; Bug 3 = Codex surfacea su error real
+del JSONL en vez del ruido de stdin, diagnosticado y verificado en vivo). **Todo el registro
+original de bugs queda cerrado.** El único trabajo abierto de este documento es la
+implementación de la **bitácora** (§5, diseño cerrado, sin código aún).
 
 ---
 
