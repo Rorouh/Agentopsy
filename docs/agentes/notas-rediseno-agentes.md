@@ -490,11 +490,12 @@ por esto**.
   la forma de entrada de §5. El enrutado correcto se cablea, no se aprende.
 - **Auto-acción vs mostrar-al-perito:** **solo surfacear al operador**, nunca auto-cambiar
   enrutado (coherente con cómo `os_profile` unknown/low-confidence escala al operador).
-- **Alcance: por caso**, dentro del audit log hash-encadenado del caso (FORENSIC INVARIANT
-  4). Global escrito en runtime = contaminación cruzada entre evidencias/personas. La única
-  capa global admisible son lecciones **deterministas independientes del contenido**
-  (p. ej. *"un VMDK se desencapsula antes de TSK"*), que **no son "aprendizaje" sino
-  semilla curada en `knowledge/`** o enrutado determinista en el backend.
+- **Alcance:** ~~por caso~~ **GLOBAL de producto** — decisión del perito (2026-07-17), ver
+  **§5.ter**. La recomendación previa de «por caso» queda **anulada**: no cumple el objetivo
+  de que *FORENSIA entera* sea más inteligente. El riesgo de envenenamiento que motivaba «por
+  caso» se resuelve haciendo el store global **contenido-independiente y de aprendizaje
+  ADITIVO** (solo aprende recuperaciones que funcionan, nunca «evita X» — §5.ter/§5.quater),
+  no aislándolo por caso.
 
 **C) Encaje arquitectónico — stores separados, escribe el dispatcher, reutiliza §2-4.**
 
@@ -518,4 +519,107 @@ por esto**.
 antes que el Bug 4 (vía A), corre el riesgo de **enmascarar** la ruta determinista que falta —
 el mismo motivo por el que cada fallback tuvo que deshacerse. → **Primero el Bug 4 (vía A)**
 (barato, quita la mayor fuente de derroche); la bitácora **después**, ya acotada a su
-nicho: lo genuinamente no-determinable a priori, advisory, descriptiva, por caso.
+nicho: lo genuinamente no-determinable a priori, advisory, descriptiva. *(Bug 4 y 5 ya
+están hechos — la bitácora es el siguiente paso natural.)*
+
+### 5.ter — Decisión de alcance (perito, 2026-07-17): la bitácora es GLOBAL de producto, no per-usuario
+
+**Corrección** a la duda de alcance de §5 y a la recomendación «por caso» de §5.bis-B. La
+bitácora es para **FORENSIA entera**: un **activo del producto** que se versiona en el repo
+y viaja en la imagen (RULE 1), para que **cada despliegue sea más inteligente** con el
+tiempo. NO es estado que cada usuario acumula por separado en su máquina, ni un store
+per-caso aislado. El objetivo es que *FORENSIA aprenda* qué le funciona y qué no, y ese
+aprendizaje beneficie a todos, no solo al caso en curso.
+
+**Qué guarda: heurísticas GENERALES de herramienta**, independientes del contenido de una
+evidencia concreta — `(tool, forma-de-evidencia, formato) → happy/fail + porqué + remedio`.
+Ejemplos: *"un VMDK hay que desencapsularlo (qemu FUSE) antes de dárselo a TSK"*,
+*"`ftkimager` verifica bien la integridad de raw/E01 (MD5+SHA1)"*, *"`tsk_fls -m` en offset 0
+falla en disco particionado → `mmls` primero"*. Son verdades sobre las **herramientas y los
+formatos**, ciertas en cualquier caso — de hecho, los Bugs 4 y 5 de este documento SON
+justo esa clase de lección.
+
+**Reconciliación con el envenenamiento (§5.bis-B) — aprendizaje ADITIVO, sin gate humano
+(decisión del perito: autónomo).** El peligro era un store que aprende a *suprimir* («tool X
+no sirve») desde un fallo sembrado. Se elimina de raíz haciendo que **solo aprenda
+recuperaciones que FUNCIONAN**, nunca evitaciones:
+
+- La lección tiene forma `(tool, formato, failure_class) → acción Y que SÍ funcionó después`.
+  Captura el disparador (el fallo) **y** el remedio (lo que funciona), pero **solo puede
+  AÑADIR un paso válido, jamás quitar una herramienta**.
+- Consecuencia clave: un fallo sembrado **sin** recuperación válida **no genera lección** —
+  FORENSIA se comporta como hoy (lo intenta). **Nunca aprende a dejar de mirar** → imposible
+  de cegar. (Bugs 4 y 5 SON justo esta forma: «vmdk + fls-raw falla → desencapsular qemu →
+  funciona».)
+- Se consolida **sola, por corroboración**: una regla se activa cuando la misma firma
+  abstracta se repite en **M casos independientes** (un fluke no llega al umbral) y **se
+  auto-retira** si al aplicarla empieza a fallar (confianza sube con aciertos, baja con
+  fallos). **Sin cola de candidatos ni revisión humana.**
+- Las entradas son sobre **comportamiento de herramienta/formato**, nunca sobre los bytes de
+  una evidencia concreta.
+
+**NO lleva información sensible — solo «cosas que funcionan» (perito, 2026-07-17).** Como es
+un activo global que viaja en el repo y en la imagen, la bitácora contiene **únicamente
+lecciones generales de herramienta/formato**, jamás nada derivado de una evidencia real:
+- **Prohibido en el store global:** rutas o nombres de fichero de casos reales, hashes de
+  evidencias, `case_id`/`run_id` de casos reales, nombres de perito/examinador, y **stderr
+  verbatim** — puede arrastrar bytes derivados de evidencia hostil o datos personales (GDPR;
+  el producto no debe hornear datos de personas — coherente con SECURITY INVARIANT 7 y la
+  «untrusted stderr» de §5.bis-C).
+- **Permitido:** `tool`, forma-de-evidencia (`kind`/`format`), comportamiento (`exit`,
+  «funciona / falla»), el **porqué generalizado** y el **remedio** — todo redactado en
+  abstracto («un VMDK se desencapsula antes de TSK»), sin identificar caso ni persona.
+- **La parte cruda se queda per-caso:** el `run_id`/stderr real de un fallo vive en el
+  **audit log del caso** (per-caso, no global); lo que se guarda como regla es solo la
+  **firma abstracta saneada** (`tool, formato, failure_class → acción`), no el crudo. La
+  observación de runtime *dispara* la lección; no la copia tal cual.
+
+En una frase: **conocimiento de producto que crece de forma autónoma** (por corroboración de
+lo que FORENSIA observa que funciona), **sin datos sensibles ni de casos**, y **sin revisión
+humana por entrada**. Lo demás de §5.bis sigue en pie: **inyectar, no consultar por turno**
+(A, eficiencia), y **advisory, sin auto-skip** (B, rigor). Dónde vive: un fichero versionado
+del repo servido como `knowledge/` (candidato:
+`agentes/_orchestrator/knowledge/heuristicas-herramientas.md` o un data-file estructurado),
+horneado en la imagen — pendiente de decidir formato en implementación.
+
+### 5.quater — Convergencia: que aprenda sin crecer sin fin ni inundarnos (perito, 2026-07-17)
+
+Riesgo que plantea el perito: si FORENSIA «sigue aprendiendo y mandándonos info», ¿converge
+o crece/spamea sin parar? **Converge por construcción**, con cuatro piezas:
+
+1. **Firma canónica, no stderr crudo.** Cada observación se normaliza a una CLAVE
+   contenido-independiente: `(tool_id, kind/format, failure_class)`, donde `failure_class`
+   es uno de un **enum pequeño** de patrones conocidos (`unsupported-image-type`,
+   `cannot-determine-fs`, `invalid-magic`, …). El stderr real (rutas, offsets, ids) NO entra
+   en la clave — solo su clase. Mil fallos idénticos colapsan a **una** firma. (Además cuadra
+   con «sin datos sensibles»: la clave ya es abstracta.)
+2. **Espacio finito → techo natural.** El nº de firmas distintas está acotado: catálogo de
+   tools × puñado de formatos × puñado de clases de fallo = **decenas, no infinito**. La
+   bitácora tiene un punto fijo; no puede crecer sin límite.
+3. **Confianza por corroboración + auto-retiro (en vez de un gate humano).** Una firma se
+   **activa sola** cuando su regla se corrobora en **M casos independientes** (la confianza
+   sube con cada acierto). Y **se retira sola** si, al aplicarla, empieza a fallar (la
+   confianza baja con cada contradicción). No es acumulación monótona que se pueda fijar una
+   vez: se **autocorrige**. Las reglas sólidas persisten con confianza alta; el ruido nunca
+   se activa; lo que deja de funcionar decae. → punto fijo **sin cola de candidatos ni
+   revisión por entrada**.
+4. **Umbral anti-fluke.** Una regla solo se activa tras **≥ M corroboraciones** (un contador
+   de la firma, no del contenido). Un fallo/acierto puntual no genera ruido; solo patrones
+   robustos y repetidos suben.
+
+**Cómo el aprendizaje es «global» sin phone-home (opción B, decisión del perito).** FORENSIA
+no hace llamadas de salida (SECURITY INVARIANT 7): un despliegue de cliente **no manda
+nada**. Modelo: (1) FORENSIA viaja con una **semilla** de reglas consolidadas en el repo, así
+cada instalación arranca lista; (2) **cada despliegue sigue aprendiendo solo** encima, local;
+(3) en los despliegues de **desarrollo/prueba del propio equipo**, las reglas de alta
+confianza se **vuelcan mecánicamente al repo** (fichero → repo) al preparar cada versión — no
+es revisión por candidato (el *qué* lo decide la corroboración, autónomo), solo un merge de
+datos al liberar. Así el aprendizaje llega a todos **vía release**, nunca por telemetría; las
+copias de cliente no comparten entre sí ni llaman a casa.
+
+**Resultado:** el fichero **converge** (espacio finito + confianza que estabiliza), **no
+inunda** (dedup por firma + umbral + auto-retiro), y **no filtra** (clave abstracta; el stderr
+crudo se queda en el audit log per-caso). Piezas a implementar: el **normalizador
+stderr→`failure_class`** (enum extensible), el **modelo de confianza por firma**
+(corroboración/contradicción + umbral M + auto-retiro), la **inyección** de las reglas activas
+en el ledger (§5.bis-A) y el **volcado semilla↔repo** para el release (opción B).
