@@ -281,6 +281,34 @@ def _safe_int(value: str) -> int:
         return 0
 
 
+# mmls rows that never hold a filesystem: the partition table itself, unallocated gaps,
+# and extended-partition containers. Everything else is TRIED with fls (TSK decides
+# definitively). Matched on mmls's ``description`` column, case-insensitively.
+_NON_FS_PARTITION_RE = re.compile(
+    r"unallocated|primary table|partition table|safety table|extended|gpt (header|safety)|"
+    r"\bmeta\b",
+    re.IGNORECASE,
+)
+
+
+def _filesystem_partitions(parsed: Any) -> list[dict[str, Any]]:
+    """From ``tsk_mmls`` parsed output, the partitions that plausibly hold a filesystem —
+    skipping the partition table, unallocated gaps and extended containers. fls is what
+    ultimately decides; this only avoids obviously-non-filesystem rows so we do not spend a
+    run (and a spurious «skipped») on each of them."""
+    out: list[dict[str, Any]] = []
+    for part in (parsed or {}).get("partitions", []):
+        description = str(part.get("description", ""))
+        if _NON_FS_PARTITION_RE.search(description):
+            continue
+        start = part.get("start_sector")
+        length = part.get("length_sectors")
+        if not isinstance(start, int) or not isinstance(length, int) or length <= 0:
+            continue
+        out.append({"offset": start, "slot": part.get("slot"), "description": description})
+    return out
+
+
 def run_filesystem_timeline(
     case_id: str,
     handle: Any,
@@ -290,66 +318,140 @@ def run_filesystem_timeline(
     emit: Any = None,
     limit: int = DEFAULT_FS_EVENT_LIMIT,
 ) -> dict[str, Any]:
-    """Run ``tsk_fls -m -r`` through the dispatcher and expand its bodyfile to events.
+    """Enumerate partitions (``tsk_mmls``) and run ``tsk_fls -m -r`` on each filesystem,
+    merging their bodyfiles into a single MACB super-timeline.
 
     ``handle`` is the verified :class:`EvidenceHandle` (``EvidenceManager.get``);
-    ``evidence_context`` was built from it and anchors the run to the evidence (id +
+    ``evidence_context`` was built from it and anchors every run to the evidence (id +
     baseline hash) in the hash-chained audit log. ``os_profile`` selects the maletín (fls
     lives in both, so it is required — RULE 2: no silent pick). Execution is shell-free
     argv arrays via the dispatcher / maletín (SECURITY INVARIANTS 4-5) — no subprocess is
     re-implemented here.
 
-    A non-zero ``fls`` exit fails loud with the tool's stderr (RULE 2: no silent partial
-    timeline). Returns a job-result dict with the parsed ``events`` and truncation
-    metadata.
+    A **partitioned disk** (mmls succeeds) runs fls at each filesystem partition's offset,
+    tagging its paths with a ``/p<slot>`` mount prefix; a partition with no readable
+    filesystem (swap, unallocated) is TRANSPARENTLY recorded in ``skipped_partitions`` — not
+    fatal — because a disk normally has such partitions. Only if NO partition yields a
+    filesystem does it fail loud. A **bare filesystem image** (mmls finds no partition table)
+    runs a single fls at offset 0; a non-zero exit there fails loud (RULE 2: no silent
+    partial timeline). Returns a job-result dict with the merged ``events`` and metadata.
     """
     def _emit(event: dict[str, Any]) -> None:
         if emit is not None:
             emit(event)
 
-    _emit({"type": "status", "stage": "fls", "message": "Ejecutando tsk_fls -m sobre la evidencia…"})
-    result = dispatcher.execute(
-        "tsk_fls",
-        {"image_path": str(handle.original_path), "body_format": True, "recursive": True},
+    image_path = str(handle.original_path)
+
+    # 1) Partition map. A full disk image has one; a bare filesystem image (a partition
+    #    dump) does not — mmls then exits non-zero ("Cannot determine partition type"),
+    #    which is the SIGNAL to treat the whole image as a single filesystem, not an error.
+    _emit({"type": "status", "stage": "fls", "message": "Enumerando particiones (tsk_mmls)…"})
+    mmls = dispatcher.execute(
+        "tsk_mmls",
+        {"image_path": image_path},
         case_id=case_id,
         os_profile=os_profile,
         evidence_context=evidence_context,
     )
-    exit_code = result.get("exit_code")
-    run_id = result.get("run_id")
-    if exit_code != 0:
-        raise RuntimeError(
-            f"tsk_fls terminó con exit_code {exit_code!r} sobre la evidencia "
-            f"{evidence_context.evidence_id}; no se construye una super-timeline parcial "
-            f"(RULE 2). stderr: {result.get('stderr_sample', '')[:2000]}"
+    partitions = (
+        _filesystem_partitions(mmls.get("parsed")) if mmls.get("exit_code") == 0 else []
+    )
+
+    runs: list[dict[str, Any]] = []           # succeeded: {run_id, partition_offset, mount_point, description}
+    skipped: list[dict[str, Any]] = []        # transparently reported, non-fatal
+    bodyfiles: list[str] = []
+
+    def _fls(params: dict[str, Any]) -> tuple[int | None, str | None, str]:
+        res = dispatcher.execute(
+            "tsk_fls",
+            {"image_path": image_path, "body_format": True, "recursive": True, **params},
+            case_id=case_id,
+            os_profile=os_profile,
+            evidence_context=evidence_context,
         )
-    if not isinstance(run_id, str):
-        raise RuntimeError(
-            "tsk_fls no devolvió run_id (la ejecución no quedó anclada al caso); "
-            "no se puede recuperar el bodyfile."
-        )
+        return res.get("exit_code"), res.get("run_id"), res.get("stderr_sample", "") or ""
+
+    if partitions:
+        for part in partitions:
+            slot, offset = part.get("slot"), part["offset"]
+            mount = f"/p{slot}" if slot is not None else f"/off{offset}"
+            _emit({
+                "type": "status", "stage": "fls",
+                "message": f"tsk_fls -m en la partición offset {offset} ({part['description']})…",
+            })
+            exit_code, run_id, stderr = _fls({"partition_offset": offset, "mount_point": mount})
+            if exit_code == 0 and isinstance(run_id, str):
+                runs.append({
+                    "run_id": run_id, "partition_offset": offset,
+                    "mount_point": mount, "description": part["description"],
+                })
+                bodyfiles.append(_read_run_stdout(case_id, run_id))
+            else:
+                # A partition with no readable filesystem (swap, unallocated mislabeled by
+                # mmls, unsupported fs) is expected — record it, do not abort (política:
+                # emitir lo legible + listar saltadas).
+                skipped.append({
+                    "partition_offset": offset, "description": part["description"],
+                    "reason": (stderr[:300] or f"exit {exit_code}"),
+                })
+        if not runs:
+            raise RuntimeError(
+                f"ninguna de las {len(partitions)} particiones dio un sistema de ficheros "
+                f"legible sobre la evidencia {evidence_context.evidence_id}; no se construye "
+                f"una super-timeline (RULE 2). Detalle por partición: {skipped}"
+            )
+    else:
+        # Bare filesystem image (no partition table) → single fls at offset 0.
+        _emit({
+            "type": "status", "stage": "fls",
+            "message": "tsk_fls -m sobre la evidencia (imagen sin tabla de particiones)…",
+        })
+        exit_code, run_id, stderr = _fls({})
+        if exit_code != 0:
+            raise RuntimeError(
+                f"tsk_fls terminó con exit_code {exit_code!r} sobre la evidencia "
+                f"{evidence_context.evidence_id}; no se construye una super-timeline parcial "
+                f"(RULE 2). stderr: {stderr[:2000]}"
+            )
+        if not isinstance(run_id, str):
+            raise RuntimeError(
+                "tsk_fls no devolvió run_id (la ejecución no quedó anclada al caso); "
+                "no se puede recuperar el bodyfile."
+            )
+        runs.append({
+            "run_id": run_id, "partition_offset": None,
+            "mount_point": "/", "description": "imagen sin tabla de particiones",
+        })
+        bodyfiles.append(_read_run_stdout(case_id, run_id))
 
     _emit({"type": "status", "stage": "mactime", "message": "Generando la super-timeline MACB…"})
-    bodyfile_text = _read_run_stdout(case_id, run_id)
-    all_events = _bodyfile_to_all_events(bodyfile_text)
+    all_events = _bodyfile_to_all_events("\n".join(b for b in bodyfiles if b))
     total = len(all_events)
     events = all_events[:limit] if (limit is not None and total > limit) else all_events
     # Relevancia calculada sobre TODOS los eventos, no solo la ventana recortada:
     # los eventos importantes suelen quedar fuera del corte cronológico.
     relevant, total_relevant = select_relevant_events(all_events)
+    run_ids = [r["run_id"] for r in runs]
+    skipped_note = f"; {len(skipped)} partición(es) sin FS legible" if skipped else ""
     _emit({
         "type": "status",
         "stage": "done",
         "message": (
             f"Super-timeline lista: {len(events)} eventos (de {total}); "
-            f"{total_relevant} relevantes."
+            f"{total_relevant} relevantes; {len(runs)} partición(es) con FS{skipped_note}."
         ),
     })
     result = {
         "timezone": TIMEZONE,
         "evidence_id": evidence_context.evidence_id,
         "os_profile": os_profile,
-        "fls_run_id": run_id,
+        # ``fls_run_id`` kept for backward compat (first run); ``fls_run_ids`` is the full
+        # set the query re-reads and merges; ``fls_runs`` carries the per-partition detail.
+        "fls_run_id": run_ids[0],
+        "fls_run_ids": run_ids,
+        "fls_runs": runs,
+        "skipped_partitions": skipped,
+        "partition_count": len(partitions),
         "total_events": total,
         "returned": len(events),
         "truncated": total > len(events),
@@ -456,8 +558,14 @@ def query_filesystem_timeline(
                 "vista Timeline) y vuelve a consultar; no infiero actividad sin ella."
             ),
         }
-    run_id = persisted.get("fls_run_id")
-    if not isinstance(run_id, str):
+    # A partitioned disk persists one fls run per filesystem (``fls_run_ids``); an older /
+    # bare-fs timeline persists a single ``fls_run_id``. Merge all their bodyfiles so the
+    # query is exhaustive over every partition, not just the first.
+    run_ids = persisted.get("fls_run_ids")
+    if not (isinstance(run_ids, list) and run_ids and all(isinstance(r, str) for r in run_ids)):
+        single = persisted.get("fls_run_id")
+        run_ids = [single] if isinstance(single, str) else None
+    if not run_ids:
         return {
             "status": "no_timeline",
             "evidence_id": evidence_id,
@@ -484,7 +592,9 @@ def query_filesystem_timeline(
         limit = 100
     limit = min(limit, 500)  # tope duro; el schema declara maximum:500 pero es advisory
 
-    all_events = _bodyfile_to_all_events(_read_run_stdout(case_id, run_id))
+    all_events = _bodyfile_to_all_events(
+        "\n".join(_read_run_stdout(case_id, rid) for rid in run_ids)
+    )
 
     matched: list[dict[str, Any]] = []
     by_category: dict[str, int] = {}
@@ -512,7 +622,8 @@ def query_filesystem_timeline(
         "status": "ok",
         "evidence_id": evidence_id,
         "timezone": TIMEZONE,
-        "fls_run_id": run_id,
+        "fls_run_id": run_ids[0],
+        "fls_run_ids": run_ids,
         "total_events": len(all_events),
         "matched": len(matched),
         "returned": min(len(matched), limit),
