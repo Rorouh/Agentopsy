@@ -24,7 +24,8 @@
     "foremost",
     "qemu-nbd",
     "jq",
-    "ftkimager"
+    "ftkimager",
+    "aff4imager"
   ],
   "windows": [
     "rip.pl",

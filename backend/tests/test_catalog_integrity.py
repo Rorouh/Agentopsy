@@ -191,6 +191,7 @@ def test_path_parameter_inventory_is_exhaustive_and_explicit() -> None:
         "foremost": {"image_path", "output_dir"},
         "qemu_nbd": {"image_path", "nbd_device"},
         "ftkimager": {"image_path", "output_dir"},
+        "aff4imager": {"image_path", "output_dir"},
         "lecmd": {"target_path", "output_dir"},
         "jlecmd": {"target_path", "output_dir"},
         "recmd": {"hive_path", "output_dir", "batch"},

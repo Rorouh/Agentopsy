@@ -39,8 +39,9 @@ import sys
 TOOL_BINARIES = os.path.join(os.path.dirname(__file__), "tool-binaries.json")
 EZ_VERSIONS_TSV = "/opt/eztools/versions.tsv"
 REGRIPPER_DIR = "/opt/regripper"
-# ftkimager no viene de dpkg/pip/git: el build graba su banner + SHA del tarball aquí.
+# ftkimager/aff4imager no vienen de dpkg/pip/git: el build graba su banner + SHA aquí.
 FTKIMAGER_VERSION_FILE = "/opt/ftkimager/VERSION"
+AFF4IMAGER_VERSION_FILE = "/opt/aff4imager/VERSION"
 
 # Binarios cuyo artefacto real es una EZ Tool .NET envuelta en un wrapper: la versión
 # viene del versions.tsv que el build escribe al desplegarlas (la tool la reporta al
@@ -150,6 +151,8 @@ def resolve_version(binary: str, env: dict[str, str], ez: dict[str, str]) -> str
         return _pip_version("volatility3")
     if binary == "ftkimager":
         return _recorded_file_version(FTKIMAGER_VERSION_FILE)
+    if binary == "aff4imager":
+        return _recorded_file_version(AFF4IMAGER_VERSION_FILE)
     if binary == "rip.pl":
         return _git_commit_version(REGRIPPER_DIR, "RegRipper3.0")
     if binary == "hayabusa":

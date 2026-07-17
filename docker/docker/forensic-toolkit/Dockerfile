@@ -98,6 +98,28 @@ RUN cd /tmp \
  && printf '%s (tgz:%.12s)\n' "$(ftkimager --help 2>&1 | head -n1)" "${FTKIMAGER_SHA256}" > /opt/ftkimager/VERSION \
  && cat /opt/ftkimager/VERSION
 
+# --- aff4imager (Velocidex c-aff4) — volúmenes AFF4, Cross ---------------------
+# Consume la SALIDA de WinPmem 3.x (volcados de RAM .aff4): lista los streams del
+# volumen y exporta el elegido (p. ej. la memoria física) a raw para Volatility3.
+# WinPmem en sí (adquisición en vivo, driver de kernel de Windows) queda FUERA:
+# FORENSIA es post-mortem. Binario Linux 1.0.rc1 (2018, el último publicado por
+# Velocidex; casi estático — solo libc/libpthread), verificado en Ubuntu 22.04
+# con round-trip crear→listar→exportar byte-exacto (2026-07-17). SHA-256 pinneado
+# del release oficial de GitHub.
+ARG AFF4IMAGER_SHA256=e15625cdac88f949a5b718225773ace06b3c1789d5752fad946d5eaf46c6c42f
+RUN cd /tmp \
+ && wget -q "https://github.com/Velocidex/c-aff4/releases/download/1.0.rc1/aff4imager" -O aff4imager.bin \
+ && echo "${AFF4IMAGER_SHA256}  aff4imager.bin" | sha256sum -c - \
+ && mkdir -p /opt/aff4imager \
+ && mv aff4imager.bin /opt/aff4imager/aff4imager \
+ && chmod +x /opt/aff4imager/aff4imager \
+ && ln -sf /opt/aff4imager/aff4imager /usr/local/bin/aff4imager \
+ # identidad de versión para el manifiesto del build (gen_versions.py, INVARIANT 4)
+ && ver="$(aff4imager --version 2>&1 | grep -o 'version: *[0-9.]*' | head -n1)" \
+ && [ -n "$ver" ] \
+ && printf 'aff4imager %s (bin:%.12s)\n' "$ver" "${AFF4IMAGER_SHA256}" > /opt/aff4imager/VERSION \
+ && cat /opt/aff4imager/VERSION
+
 # --- Layout de trabajo -------------------------------------------------------
 #   /evidence -> evidencias montadas en SOLO LECTURA (cadena de custodia)
 #   /cases    -> proyectos/casos y salidas del análisis
@@ -128,6 +150,7 @@ echo "  bulk_extractor                    : $(command -v bulk_extractor || echo 
 echo "  foremost                          : $(command -v foremost || echo 'NO')"
 echo "  ewfmount (libewf)                 : $(command -v ewfmount || echo 'NO')"
 echo "  ftkimager (AccessData CLI)        : $(command -v ftkimager || echo 'NO')"
+echo "  aff4imager (AFF4/WinPmem)         : $(command -v aff4imager || echo 'NO')"
 echo "  qemu-nbd                          : $(command -v qemu-nbd || echo 'NO')"
 echo "  guestmount                        : $(command -v guestmount || echo 'NO')"
 echo "  hashdeep                          : $(command -v hashdeep || echo 'NO')"

@@ -230,8 +230,32 @@ TOOL_PARAM_SCHEMAS: dict[str, dict[str, Any]] = {
                 "type": "object",
                 "description": "Optional plugin args as a flat map of string→string.",
             },
+            "dump_path": {
+                **artifact_ref_json_schema(),
+                "description": (
+                    "OPTIONAL {run_id, relpath} reference to a memdump a prior run "
+                    "materialised (e.g. the raw stream aff4imager exported from a "
+                    "WinPmem .aff4). Omit to analyse the selected evidence itself."
+                ),
+            },
         },
         "required": ["plugin"],
+        "additionalProperties": False,
+    },
+    "aff4imager": {
+        "type": "object",
+        "properties": {
+            "stream": {
+                "type": "string",
+                "pattern": "^aff4://.+",
+                "description": (
+                    "FULL stream URN (aff4://…) exactly as printed by a previous "
+                    "listing run. OMIT this param first to LIST the volume's "
+                    "streams; then call again with the URN of the stream to "
+                    "export (e.g. the physical-memory stream of a WinPmem dump)."
+                ),
+            },
+        },
         "additionalProperties": False,
     },
     "hayabusa": {
@@ -459,6 +483,7 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "wxtcmd": "Parse a pre-extracted Windows Timeline ActivitiesCache.db (Win10 1803+) into CSV — app/document activity history.",
     "rbcmd": "Parse Recycle Bin $I metadata (directory or single file) into CSV — original path, size and deletion time of recycled files.",
     "ftkimager": "Convert the disk-image evidence between formats — raw (dd) ↔ E01/SMART — with MD5/SHA1 verification and an acquisition report. E.g. produce a TSK-friendly raw copy from an E01, or a compressed E01 from a raw image.",
+    "aff4imager": "List or extract streams from an AFF4 volume (e.g. a WinPmem 3.x RAM acquisition). Call WITHOUT params to list the stream URNs; call again with `stream`=<that URN> to export it into the run output — then feed the exported raw to volatility3 as {run_id, relpath}.",
     "jq": "Filter JSON output from other tools.",
 }
 

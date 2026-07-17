@@ -22,6 +22,7 @@ from __future__ import annotations
 import pytest
 
 from forensia.toolkit.wrappers import (
+    aff4imager,
     amcacheparser,
     appcompatcacheparser,
     bulk_extractor,
@@ -1295,6 +1296,54 @@ class TestFtkImager:
 
     def test_no_legacy_host_mounts(self):
         assert not hasattr(ftkimager, "host_mounts")
+
+
+# --------------------------------------------------------------------------- #
+# aff4imager
+# --------------------------------------------------------------------------- #
+class TestAff4Imager:
+    def test_build_argv_list_mode_without_stream(self):
+        argv = aff4imager.build_argv(
+            {"image_path": "/evidence/mem.aff4", "output_dir": "/tmp/out"}
+        )
+        assert argv == ["-l", "/evidence/mem.aff4"]
+
+    def test_build_argv_export_mode_with_urn(self):
+        urn = "aff4://86006c40-b262-4c3b-9dfc-132e58cade93/PhysicalMemory"
+        argv = aff4imager.build_argv(
+            {"image_path": "/evidence/mem.aff4", "output_dir": "/tmp/out", "stream": urn}
+        )
+        assert argv == ["-e", urn, "-D", "/tmp/out", "/evidence/mem.aff4"]
+
+    def test_build_argv_stream_without_urn_prefix_raises(self):
+        # RULE 2: el stream es el URN literal de un listado previo, nunca un nombre suelto
+        with pytest.raises(ValueError, match="aff4://"):
+            aff4imager.build_argv(
+                {"image_path": "/x.aff4", "output_dir": "/o", "stream": "PhysicalMemory"}
+            )
+
+    def test_build_argv_missing_image_path_raises(self):
+        with pytest.raises(ValueError, match="image_path"):
+            aff4imager.build_argv({"output_dir": "/o"})
+
+    def test_build_argv_missing_output_dir_raises(self):
+        with pytest.raises(ValueError, match="output_dir"):
+            aff4imager.build_argv({"image_path": "/x.aff4"})
+
+    def test_parse_stream_listing(self):
+        sample = (
+            "aff4://86006c40-b262-4c3b-9dfc-132e58cade93/PhysicalMemory\n"
+            "aff4://86006c40-b262-4c3b-9dfc-132e58cade93/pagefile.sys\n"
+        )
+        result = aff4imager.parse(sample)
+        assert result["stream_count"] == 2
+        assert result["streams"][0].endswith("/PhysicalMemory")
+
+    def test_parse_empty(self):
+        assert aff4imager.parse("") == {"streams": [], "stream_count": 0, "summary": {}}
+
+    def test_no_legacy_host_mounts(self):
+        assert not hasattr(aff4imager, "host_mounts")
 
 
 # --------------------------------------------------------------------------- #

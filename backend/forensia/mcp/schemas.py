@@ -328,6 +328,23 @@ class YaraParams(_StrictModel):
     )
 
 
+class Aff4ImagerParams(_StrictModel):
+    """``aff4imager`` — list/extract streams from an AFF4 volume (e.g. a
+    WinPmem 3.x RAM acquisition; evidence path injected). Call WITHOUT
+    ``stream`` to list the volume's stream URNs; call again with the URN to
+    export it into the run output for volatility3 to consume."""
+
+    stream: Optional[str] = Field(
+        default=None,
+        max_length=2048,
+        pattern=r"^aff4://.+",
+        description=(
+            "FULL stream URN (aff4://…) exactly as printed by a previous "
+            "listing run. Omit to list the volume's streams."
+        ),
+    )
+
+
 class FtkImagerParams(_StrictModel):
     """``ftkimager`` — convert the disk-image evidence between raw/E01/SMART
     formats with MD5/SHA1 verification (evidence path injected; the converted
@@ -444,6 +461,14 @@ class Volatility3Params(_StrictModel):
 
     plugin: Literal[_VOLATILITY_PLUGINS] = Field(  # type: ignore[valid-type]
         description="Volatility3 plugin name. Curated subset; see schemas.py.",
+    )
+    dump_path: Optional[ArtifactRef] = Field(
+        default=None,
+        description=(
+            "OPTIONAL {run_id, relpath} reference to a memdump a prior run "
+            "materialised (e.g. the raw stream aff4imager exported from a "
+            "WinPmem .aff4). Omit to analyse the selected evidence itself."
+        ),
     )
     plugin_args: Optional[dict[str, str]] = Field(
         default=None,
@@ -568,8 +593,9 @@ SCHEMA_BY_TOOL: dict[str, type[BaseModel]] = {
     "bulk_extractor": BulkExtractorParams,
     "hayabusa": HayabusaParams,
     "chainsaw": ChainsawParams,
-    # Conversión de imágenes (2026-07-17, extended tier)
+    # Conversión de imágenes / volúmenes AFF4 (2026-07-17, extended tier)
     "ftkimager": FtkImagerParams,
+    "aff4imager": Aff4ImagerParams,
     # EZ Tools absorbidas el 2026-07-07 (extended tier)
     "lecmd": LECmdParams,
     "jlecmd": JLECmdParams,
@@ -594,6 +620,7 @@ __all__ = [
     "EvtxECmdParams",
     "MFTECmdParams",
     "FtkImagerParams",
+    "Aff4ImagerParams",
     "LECmdParams",
     "JLECmdParams",
     "RECmdParams",

@@ -9,9 +9,9 @@ probada**, agrupada por fase forense. La columna **Ficha** enlaza al documento d
 > hay que **actualizar esta tabla**: alta/baja de fila, cambio de descripción y enlace a su ficha.
 > No listar aquí una tool que no arranque todavía.
 
-Estado: **31/31** tools del catálogo instaladas y operativas — 22 con ficha de prueba
-individual; `ftkimager` (2026-07-17) validado con round-trip byte-exacto sobre el hive
-SYSTEM real; las **8 EZ Tools** añadidas el 2026-07-07 están validadas con el smoke test
+Estado: **32/32** tools del catálogo instaladas y operativas — 22 con ficha de prueba
+individual; `ftkimager` y `aff4imager` (2026-07-17) validados con round-trip byte-exacto;
+las **8 EZ Tools** añadidas el 2026-07-07 están validadas con el smoke test
 del maletín sobre evidencia KAPE real (ver
 [CATALOGO_MALETIN.md § EZ Tools](../../docker/docs/CATALOGO_MALETIN.md)), ficha
 individual pendiente. 🎯
@@ -57,7 +57,8 @@ individual pendiente. 🎯
 
 | Tool | Para qué sirve | Estado | Ficha |
 |------|----------------|:------:|-------|
-| `volatility3` | Análisis de un **volcado de RAM** (procesos y árbol padre/hijo, líneas de comando, conexiones de red, **código inyectado**) | ✅ | [ver](../pruebas/grupo-c/windows7-x64-ram-dump/volatility3.md) |
+| `volatility3` | Análisis de un **volcado de RAM** (procesos y árbol padre/hijo, líneas de comando, conexiones de red, **código inyectado**); acepta el memdump como evidencia o como **derivado** de un run previo | ✅ | [ver](../pruebas/grupo-c/windows7-x64-ram-dump/volatility3.md) |
+| `aff4imager` | **Volúmenes AFF4** (volcados de WinPmem 3.x/linpmem): lista los streams y **exporta a raw** el de memoria física para `volatility3` | ✅ | [smoke](../../docker/docs/CATALOGO_MALETIN.md) |
 
 ## 🪟 Windows: eventos, registro, timeline
 
@@ -81,10 +82,10 @@ individual pendiente. 🎯
 
 ---
 
-**Catálogo completo:** las 31 tools del catálogo están instaladas y operativas (22 con
-ficha individual; las 8 EZ Tools de 2026-07-07 y `ftkimager` de 2026-07-17 validadas en
-el smoke test del maletín, ficha pendiente). `bstrings` viaja en el maletín pero queda
-**fuera del catálogo** (en
+**Catálogo completo:** las 32 tools del catálogo están instaladas y operativas (22 con
+ficha individual; las 8 EZ Tools de 2026-07-07 y `ftkimager`/`aff4imager` de 2026-07-17
+validadas en el smoke test del maletín, ficha pendiente). `bstrings` viaja en el maletín
+pero queda **fuera del catálogo** (en
 Linux solo procesa por stdin y el exec-agent ejecuta argv sin shell — uso manual);
 PECmd/SrumECmd no existen en el maletín (Windows-only). No quedan tools pendientes de
 instalar.

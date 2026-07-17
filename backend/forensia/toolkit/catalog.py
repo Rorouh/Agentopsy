@@ -24,6 +24,9 @@ from forensia.path_policy import BundledPath, PathKind, PathParameter, PathRole
 from forensia.toolkit.maletin import MALETINES, TOOLKIT_WINDOWS
 from forensia.toolkit.tool import Tool
 from forensia.toolkit.wrappers import (
+    aff4imager as _aff4imager,
+)
+from forensia.toolkit.wrappers import (
     amcacheparser as _amcacheparser,
 )
 from forensia.toolkit.wrappers import (
@@ -309,7 +312,12 @@ CATALOG: tuple[Tool, ...] = (
         returns="artifact",
         tier="core",
         toolkits=_BOTH,
-        path_parameters=(_path("dump_path", _E, PathKind.FILE),),
+        # Derived handoff: además del memdump registrado como evidencia, acepta el
+        # raw que un run previo materializó (p. ej. el stream de memoria física que
+        # aff4imager exportó de un volcado WinPmem .aff4) como ArtifactRef
+        # (re-hasheado antes del run — custodia de derivados).
+        input_artifact_params=("dump_path",),
+        path_parameters=(_path("dump_path", _ED, PathKind.FILE),),
         allowed_flags=_volatility3.ALLOWED_FLAGS,
         build_argv=_volatility3.build_argv,
         parse=_volatility3.parse,
@@ -521,6 +529,26 @@ CATALOG: tuple[Tool, ...] = (
         allowed_flags=_ftkimager.ALLOWED_FLAGS,
         build_argv=_ftkimager.build_argv,
         parse=_ftkimager.parse,
+    ),
+
+    # Volúmenes AFF4 (Velocidex c-aff4, stage base — 2026-07-17): consumir la
+    # SALIDA de WinPmem 3.x (volcados de RAM .aff4). Dos modos explícitos (RULE 2):
+    # sin `stream` lista los URNs del volumen; con `stream` (URN literal de un
+    # listado previo) exporta ese stream al out/ del run — que volatility3 puede
+    # consumir como derivado. WinPmem en sí NO se empaqueta (adquisición en vivo).
+    Tool(
+        "aff4imager",
+        "aff4imager",
+        ("unix", "windows"),
+        returns="artifact",
+        toolkits=_BOTH,
+        path_parameters=(
+            _path("image_path", _E, PathKind.FILE),
+            _OUTPUT_DIR,
+        ),
+        allowed_flags=_aff4imager.ALLOWED_FLAGS,
+        build_argv=_aff4imager.build_argv,
+        parse=_aff4imager.parse,
     ),
 
     # Montaje auxiliar (side-effecting; qemu-utils en el stage base)
