@@ -23,28 +23,7 @@ export function SystemStatusPage({ caps, isConnected, version }: SystemStatusPag
 
       {caps ? (
         <div className="status-grid">
-          <Card>
-            <h3>Plataforma</h3>
-            <KeyValueList
-              items={[
-                {
-                  label: "Conexión con el api",
-                  value: (
-                    <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <StatusDot online={isConnected === true} />
-                      {isConnected ? "Conectado" : "Sin conexión"}
-                    </span>
-                  ),
-                },
-                { label: "Versión", value: version ? `v${version}` : "—" },
-                { label: "Sistema Operativo", value: caps.os },
-                { label: "Arquitectura", value: caps.arch },
-                { label: "Python (servicio api)", value: caps.python },
-              ]}
-            />
-          </Card>
-
-          <Card>
+          <Card fullWidth>
             <h3>Ejecutores de IA</h3>
             <KeyValueList
               items={Object.entries(caps.executors).map(([id, status]) => ({

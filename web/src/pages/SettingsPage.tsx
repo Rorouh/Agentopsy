@@ -18,11 +18,10 @@ interface SettingsPageProps {
   onCapsRefresh?: () => Promise<void> | void;
 }
 
-type TabId = "executors" | "operator" | "appearance" | "system";
+type TabId = "executors" | "appearance" | "system";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "executors", label: "Ejecutores / IA" },
-  { id: "operator", label: "Operador y reportes" },
   { id: "appearance", label: "Apariencia" },
   { id: "system", label: "Sistema" },
 ];
@@ -342,84 +341,6 @@ export function SettingsPage({ caps, version, onNavigate, onCapsRefresh }: Setti
                 No se pudo guardar: {configError}
               </div>
             )}
-          </div>
-        </div>
-      )}
-
-      {/* ── Operador y reportes ──────────────────────────────────────────── */}
-      {activeTab === "operator" && (
-        <div
-          id="settings-panel-operator"
-          role="tabpanel"
-          aria-labelledby="settings-tab-operator"
-          className="settings-panel"
-        >
-          <div className="settings-form">
-            <div className="demo-banner">
-              ⚠ Vista previa · estos campos aún no se persisten en el backend; se
-              incluirán como cabecera de los informes cuando la generación real exista.
-            </div>
-
-            <div className="form-field">
-              <label className="form-label" htmlFor="operator-name">Nombre del examinador</label>
-              <input
-                id="operator-name"
-                className="form-input"
-                placeholder="Nombre completo"
-                disabled
-              />
-            </div>
-            <div className="form-field">
-              <label className="form-label" htmlFor="operator-org">Organización</label>
-              <input
-                id="operator-org"
-                className="form-input"
-                placeholder="Organización o institución (opcional)"
-                disabled
-              />
-            </div>
-            <div className="form-field">
-              <label className="form-label" htmlFor="operator-role">Rol / cargo</label>
-              <input
-                id="operator-role"
-                className="form-input"
-                placeholder="Rol profesional (opcional)"
-                disabled
-              />
-            </div>
-
-            <div>
-              <div className="settings-toggle-row">
-                <input type="checkbox" defaultChecked disabled />
-                <div>
-                  <div className="settings-toggle-title">Incluir timeline</div>
-                  <div className="settings-toggle-desc">Adjunta la línea de tiempo de eventos en el informe final.</div>
-                </div>
-              </div>
-              <div className="settings-toggle-row">
-                <input type="checkbox" defaultChecked disabled />
-                <div>
-                  <div className="settings-toggle-title">Incluir hashes de evidencia</div>
-                  <div className="settings-toggle-desc">SHA-256 de cada evidencia y artefacto generado, para trazabilidad.</div>
-                </div>
-              </div>
-              <div className="settings-toggle-row">
-                <input type="checkbox" defaultChecked disabled />
-                <div>
-                  <div className="settings-toggle-title">Incluir mapeo MITRE ATT&amp;CK</div>
-                  <div className="settings-toggle-desc">Tácticas y técnicas correlacionadas con los hallazgos.</div>
-                </div>
-              </div>
-            </div>
-
-            <div className="form-field">
-              <label className="form-label" htmlFor="report-format">Formato de exportación</label>
-              <select id="report-format" className="form-select" defaultValue="pdf" disabled>
-                <option value="pdf">PDF</option>
-                <option value="docx">Word (.docx)</option>
-                <option value="json">JSON (estructurado)</option>
-              </select>
-            </div>
           </div>
         </div>
       )}
