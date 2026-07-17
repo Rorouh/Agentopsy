@@ -99,6 +99,28 @@ class CodexExecutor(CliPromptExecutor):
         with open(path, encoding="utf-8") as fh:
             return fh.read().strip()
 
+    def _extract_error(self, stdout: str, stderr: str) -> str | None:
+        # A failed Codex turn is reported as a JSONL event on STDOUT:
+        # {"type":"error","message":"…"} (usage limit, auth, sandbox denial, …). The
+        # stderr only carries "Reading additional input from stdin..." — an
+        # informational note from stdin=DEVNULL, NOT the cause (Bug 3: verified in vivo
+        # 2026-07-17, codex-cli 0.142.5). Surface the LAST error message found so the
+        # operator sees the real, actionable reason instead of the stdin red herring.
+        message: str | None = None
+        for line in stdout.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(event, dict) and event.get("type") == "error":
+                candidate = event.get("message")
+                if isinstance(candidate, str) and candidate.strip():
+                    message = candidate.strip()
+        return message
+
     def _extract_usage(self, raw: str) -> Usage | None:
         # stdout is a JSONL event stream (`--json`). Token counts appear in one or
         # more events; the LAST occurrence is the cumulative final. Defensive: each

@@ -256,6 +256,54 @@ def test_claude_run_exit_nonzero_surfaces_literal_stderr(
     assert _CLAUDE_NOT_LOGGED_IN in msg
 
 
+# Bug 3 (repro en vivo 2026-07-17, codex-cli 0.142.5): un turno fallido de Codex se
+# reporta como evento JSONL en STDOUT; el stderr solo trae la nota informativa de
+# stdin=DEVNULL, que NO es la causa.
+_CODEX_STDIN_NOTE = "Reading additional input from stdin..."
+_CODEX_USAGE_LIMIT_STDOUT = "\n".join(
+    [
+        '{"type":"thread.started","thread_id":"t-1"}',
+        '{"type":"turn.started"}',
+        '{"type":"error","message":"You\'ve hit your usage limit. Upgrade to Plus, '
+        'or try again at Jul 19th, 2026 10:33 PM."}',
+    ]
+)
+
+
+def test_codex_run_exit_nonzero_surfaces_stdout_error_not_stdin_noise(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """El error surfaceado lleva la causa REAL del stdout JSONL (límite de uso), no la
+    nota de stdin del stderr — RULE 2: fallar fuerte con lo accionable, no un red herring."""
+    monkeypatch.setattr(
+        CodexExecutor, "is_available", lambda self: ExecutorAvailability(available=True)
+    )
+
+    def run_fails(argv, **kwargs):  # noqa: ANN001, ANN003
+        return subprocess.CompletedProcess(
+            argv, 1, stdout=_CODEX_USAGE_LIMIT_STDOUT, stderr=_CODEX_STDIN_NOTE
+        )
+
+    monkeypatch.setattr(executors_base.subprocess, "run", run_fails)
+    with pytest.raises(ExecutorError) as exc:
+        CodexExecutor().run("responde: hola", {})
+    msg = str(exc.value)
+    assert "exit code 1" in msg
+    assert "usage limit" in msg
+    assert "Reading additional input from stdin" not in msg
+
+
+def test_codex_extract_error_parses_jsonl_error_event() -> None:
+    detail = CodexExecutor()._extract_error(_CODEX_USAGE_LIMIT_STDOUT, _CODEX_STDIN_NOTE)
+    assert detail is not None and "usage limit" in detail
+
+
+def test_codex_extract_error_none_when_no_error_event() -> None:
+    """Sin evento `error` en el stdout, el hook devuelve None → el run cae al stderr."""
+    clean = '{"type":"thread.started"}\n{"type":"turn.completed"}'
+    assert CodexExecutor()._extract_error(clean, "") is None
+
+
 def test_claude_extract_text_non_json_names_the_contract() -> None:
     """Capa executor↔parser: un stdout que no es el envelope de
     `--output-format json` produce un error que NOMBRA el contrato y muestra la

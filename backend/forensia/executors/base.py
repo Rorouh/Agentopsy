@@ -322,6 +322,14 @@ class CliPromptExecutor(PromptExecutor):
     def _extract_text(self, stdout: str) -> str:
         """Pull the assistant's final text out of the CLI's stdout envelope."""
 
+    def _extract_error(self, stdout: str, stderr: str) -> str | None:
+        """Hook: pull a MORE ACTIONABLE failure reason than raw stderr from the CLI's
+        output when the run exits non-zero. Some CLIs report the real cause (usage
+        limit, auth, sandbox denial) as a structured event on STDOUT while stderr
+        carries only noise (Codex: an informational "Reading additional input from
+        stdin..." from ``stdin=DEVNULL``). Default: none → the run falls back to stderr."""
+        return None
+
     # ---- shared run ----------------------------------------------------------
 
     def run(self, prompt: str, context: dict[str, Any] | None = None) -> ExecutorResult:
@@ -391,11 +399,19 @@ class CliPromptExecutor(PromptExecutor):
         duration_ms = _ms(started)
 
         if proc.returncode != 0:
+            # Prefer the executor's actionable reason (e.g. Codex's stdout error event)
+            # over raw stderr, which for some CLIs is only noise (RULE 2: fail loud with
+            # the REAL cause, not a red herring).
+            detail = self._extract_error(proc.stdout or "", proc.stderr or "")
+            reason = (
+                detail.strip()
+                if detail and detail.strip()
+                else f"stderr: {(proc.stderr or '').strip()[:2000] or '(vacío)'}"
+            )
             self._audit_finish(audit, case_id, exit_code=proc.returncode,
-                               duration_ms=duration_ms, error=(proc.stderr or "")[:2000])
+                               duration_ms=duration_ms, error=reason[:2000])
             raise ExecutorError(
-                f"{self.name} terminó con exit code {proc.returncode}. "
-                f"stderr: {(proc.stderr or '').strip()[:2000] or '(vacío)'}"
+                f"{self.name} terminó con exit code {proc.returncode}. {reason[:2000]}"
             )
 
         try:
