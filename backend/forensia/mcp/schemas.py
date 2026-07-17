@@ -328,6 +328,27 @@ class YaraParams(_StrictModel):
     )
 
 
+class FtkImagerParams(_StrictModel):
+    """``ftkimager`` — convert the disk-image evidence between raw/E01/SMART
+    formats with MD5/SHA1 verification (evidence path injected; the converted
+    image lands in the run's output directory with its acquisition report)."""
+
+    format: Literal["raw", "e01", "s01"] = Field(
+        default="raw",
+        description="Output image format: raw (dd), E01 (EWF) or S01 (SMART).",
+    )
+    compress: Optional[int] = Field(
+        default=None,
+        ge=0,
+        le=9,
+        description="Compression level for e01/s01 (0=none..9=best). Invalid for raw.",
+    )
+    verify: bool = Field(
+        default=True,
+        description="Hash and verify the destination image after writing (MD5+SHA1).",
+    )
+
+
 class JqParams(_StrictModel):
     """``jq`` — query a JSON artifact already on disk (typically a prior run's output).
 
@@ -547,6 +568,8 @@ SCHEMA_BY_TOOL: dict[str, type[BaseModel]] = {
     "bulk_extractor": BulkExtractorParams,
     "hayabusa": HayabusaParams,
     "chainsaw": ChainsawParams,
+    # Conversión de imágenes (2026-07-17, extended tier)
+    "ftkimager": FtkImagerParams,
     # EZ Tools absorbidas el 2026-07-07 (extended tier)
     "lecmd": LECmdParams,
     "jlecmd": JLECmdParams,
@@ -570,6 +593,7 @@ __all__ = [
     "EwfInfoParams",
     "EvtxECmdParams",
     "MFTECmdParams",
+    "FtkImagerParams",
     "LECmdParams",
     "JLECmdParams",
     "RECmdParams",

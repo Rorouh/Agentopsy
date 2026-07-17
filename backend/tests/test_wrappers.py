@@ -29,6 +29,7 @@ from forensia.toolkit.wrappers import (
     evtxecmd,
     ewf_info,
     foremost,
+    ftkimager,
     hashdeep,
     hayabusa,
     jlecmd,
@@ -1208,6 +1209,92 @@ class TestRBCmd:
 
     def test_no_legacy_host_mounts(self):
         assert not hasattr(rbcmd, "host_mounts")
+
+
+# --------------------------------------------------------------------------- #
+# ftkimager
+# --------------------------------------------------------------------------- #
+class TestFtkImager:
+    def test_build_argv_default_raw_with_verify(self):
+        argv = ftkimager.build_argv(
+            {"image_path": "/evidence/disco.E01", "output_dir": "/tmp/out"}
+        )
+        assert argv[0] == "/evidence/disco.E01"
+        assert argv[1] == "/tmp/out/imagen"
+        assert "--quiet" in argv and "--verify" in argv
+        # raw es el default de ftkimager: sin flag de formato ni compresión
+        assert "--e01" not in argv and "--s01" not in argv and "--compress" not in argv
+
+    def test_build_argv_e01_with_compress(self):
+        argv = ftkimager.build_argv(
+            {
+                "image_path": "/evidence/disco.raw",
+                "output_dir": "/tmp/out",
+                "format": "e01",
+                "compress": 6,
+            }
+        )
+        assert "--e01" in argv
+        assert "--compress" in argv and "6" in argv
+
+    def test_build_argv_verify_false_omits_flag(self):
+        argv = ftkimager.build_argv(
+            {"image_path": "/x.raw", "output_dir": "/o", "verify": False}
+        )
+        assert "--verify" not in argv
+
+    def test_build_argv_compress_with_raw_raises(self):
+        with pytest.raises(ValueError, match="compress"):
+            ftkimager.build_argv(
+                {"image_path": "/x.raw", "output_dir": "/o", "compress": 6}
+            )
+
+    def test_build_argv_compress_out_of_range_raises(self):
+        with pytest.raises(ValueError, match="compress"):
+            ftkimager.build_argv(
+                {"image_path": "/x", "output_dir": "/o", "format": "e01", "compress": 10}
+            )
+
+    def test_build_argv_invalid_format_raises(self):
+        with pytest.raises(ValueError, match="format"):
+            ftkimager.build_argv(
+                {"image_path": "/x", "output_dir": "/o", "format": "aff"}
+            )
+
+    def test_build_argv_missing_image_path_raises(self):
+        with pytest.raises(ValueError, match="image_path"):
+            ftkimager.build_argv({"output_dir": "/o"})
+
+    def test_build_argv_missing_output_dir_raises(self):
+        with pytest.raises(ValueError, match="output_dir"):
+            ftkimager.build_argv({"image_path": "/x.E01"})
+
+    def test_parse_verify_sections(self):
+        sample = (
+            "Creating image...\n"
+            "Image creation complete.\n"
+            "[MD5]\n"
+            " Computed hash: 43a2b91a24ef7dbb39f2286d07428cc8\n"
+            " Report hash:   43a2b91a24ef7dbb39f2286d07428cc8\n"
+            " Verify result: Match\n"
+            "[SHA1]\n"
+            " Computed hash: e2a0e58320d1b0213fa14a3d68f6350ca5b43793\n"
+            " Verify result: Match\n"
+        )
+        result = ftkimager.parse(sample)
+        assert result["summary"]["md5_verify_result"] == "Match"
+        assert result["summary"]["sha1_computed_hash"].startswith("e2a0e583")
+        assert result["verify_results"] == ["Match", "Match"]
+
+    def test_parse_empty(self):
+        assert ftkimager.parse("") == {
+            "summary": {},
+            "verify_results": [],
+            "summary_count": 0,
+        }
+
+    def test_no_legacy_host_mounts(self):
+        assert not hasattr(ftkimager, "host_mounts")
 
 
 # --------------------------------------------------------------------------- #

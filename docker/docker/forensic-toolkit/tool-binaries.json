@@ -23,7 +23,8 @@
     "hashdeep",
     "foremost",
     "qemu-nbd",
-    "jq"
+    "jq",
+    "ftkimager"
   ],
   "windows": [
     "rip.pl",

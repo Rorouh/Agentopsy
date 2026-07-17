@@ -39,6 +39,9 @@ from forensia.toolkit.wrappers import (
     foremost as _foremost,
 )
 from forensia.toolkit.wrappers import (
+    ftkimager as _ftkimager,
+)
+from forensia.toolkit.wrappers import (
     hashdeep as _hashdeep,
 )
 from forensia.toolkit.wrappers import (
@@ -499,6 +502,25 @@ CATALOG: tuple[Tool, ...] = (
         allowed_flags=_foremost.ALLOWED_FLAGS,
         build_argv=_foremost.build_argv,
         parse=_foremost.parse,
+    ),
+
+    # Conversión de imágenes (FTK Imager CLI 3.1.1, stage base — 2026-07-17):
+    # raw↔E01/SMART con verificación MD5/SHA1 y reporte de adquisición. Lee los
+    # contenedores de forma NATIVA, por eso NO declara image_param: la reescritura
+    # ewfmount le daría la vista raw y perdería los metadatos EWF de la fuente.
+    Tool(
+        "ftkimager",
+        "ftkimager",
+        ("unix", "windows"),
+        returns="artifact",
+        toolkits=_BOTH,
+        path_parameters=(
+            _path("image_path", _E, PathKind.FILE),
+            _OUTPUT_DIR,
+        ),
+        allowed_flags=_ftkimager.ALLOWED_FLAGS,
+        build_argv=_ftkimager.build_argv,
+        parse=_ftkimager.parse,
     ),
 
     # Montaje auxiliar (side-effecting; qemu-utils en el stage base)

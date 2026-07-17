@@ -386,6 +386,29 @@ TOOL_PARAM_SCHEMAS: dict[str, dict[str, Any]] = {
         },
         "additionalProperties": False,
     },
+    "ftkimager": {
+        "type": "object",
+        "properties": {
+            "format": {
+                "type": "string",
+                "enum": ["raw", "e01", "s01"],
+                "default": "raw",
+                "description": "Output image format: raw (dd), E01 (EWF) or S01 (SMART).",
+            },
+            "compress": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9,
+                "description": "Compression level for e01/s01 (0=none..9=best). Invalid for raw.",
+            },
+            "verify": {
+                "type": "boolean",
+                "default": True,
+                "description": "Hash and verify the destination image after writing (MD5+SHA1).",
+            },
+        },
+        "additionalProperties": False,
+    },
     "jq": {
         "type": "object",
         "properties": {
@@ -434,6 +457,7 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "sbecmd": "Parse ShellBags from UsrClass.dat/NTUSER.DAT hives under a directory into CSV — folders the user browsed, even if deleted.",
     "wxtcmd": "Parse a pre-extracted Windows Timeline ActivitiesCache.db (Win10 1803+) into CSV — app/document activity history.",
     "rbcmd": "Parse Recycle Bin $I metadata (directory or single file) into CSV — original path, size and deletion time of recycled files.",
+    "ftkimager": "Convert the disk-image evidence between formats — raw (dd) ↔ E01/SMART — with MD5/SHA1 verification and an acquisition report. E.g. produce a TSK-friendly raw copy from an E01, or a compressed E01 from a raw image.",
     "jq": "Filter JSON output from other tools.",
 }
 

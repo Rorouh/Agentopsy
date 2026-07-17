@@ -9,8 +9,9 @@ probada**, agrupada por fase forense. La columna **Ficha** enlaza al documento d
 > hay que **actualizar esta tabla**: alta/baja de fila, cambio de descripción y enlace a su ficha.
 > No listar aquí una tool que no arranque todavía.
 
-Estado: **30/30** tools del catálogo instaladas y operativas — 22 con ficha de prueba
-individual; las **8 EZ Tools** añadidas el 2026-07-07 están validadas con el smoke test
+Estado: **31/31** tools del catálogo instaladas y operativas — 22 con ficha de prueba
+individual; `ftkimager` (2026-07-17) validado con round-trip byte-exacto sobre el hive
+SYSTEM real; las **8 EZ Tools** añadidas el 2026-07-07 están validadas con el smoke test
 del maletín sobre evidencia KAPE real (ver
 [CATALOGO_MALETIN.md § EZ Tools](../../docker/docs/CATALOGO_MALETIN.md)), ficha
 individual pendiente. 🎯
@@ -43,6 +44,7 @@ individual pendiente. 🎯
 | Tool | Para qué sirve | Estado | Ficha |
 |------|----------------|:------:|-------|
 | `ewf_info` | **Metadatos y hashes** de una imagen `.E01` (formato EnCase) | ✅ | [ver](../pruebas/grupo-b/metasploitable2-linux/ewf_info.md) |
+| `ftkimager` | **Convierte imágenes** raw↔E01/SMART con verificación MD5/SHA1 y reporte de adquisición (FTK Imager CLI, AccessData) | ✅ | [smoke](../../docker/docs/CATALOGO_MALETIN.md) |
 
 ## 🕵️ Búsqueda de IOCs / malware
 
@@ -79,9 +81,10 @@ individual pendiente. 🎯
 
 ---
 
-**Catálogo completo:** las 30 tools del catálogo están instaladas y operativas (22 con
-ficha individual; las 8 EZ Tools de 2026-07-07 validadas en el smoke test del maletín,
-ficha pendiente). `bstrings` viaja en el maletín pero queda **fuera del catálogo** (en
+**Catálogo completo:** las 31 tools del catálogo están instaladas y operativas (22 con
+ficha individual; las 8 EZ Tools de 2026-07-07 y `ftkimager` de 2026-07-17 validadas en
+el smoke test del maletín, ficha pendiente). `bstrings` viaja en el maletín pero queda
+**fuera del catálogo** (en
 Linux solo procesa por stdin y el exec-agent ejecuta argv sin shell — uso manual);
 PECmd/SrumECmd no existen en el maletín (Windows-only). No quedan tools pendientes de
 instalar.

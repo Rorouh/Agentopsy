@@ -28,7 +28,7 @@ Notas que aplican a los ejemplos:
 | Categoría | Herramienta | Comando(s) | Para qué |
 |---|---|---|---|
 | Imagen y montaje | libewf-tools (GIFT) | `ewfinfo`, `ewfmount` | Leer/montar imágenes E01 (EWF) |
-| Imagen y montaje | FTK Imager CLI (AccessData) | `ftkimager` | Crear/convertir imágenes raw↔E01/SMART con verificación MD5/SHA1 |
+| Imagen y montaje | FTK Imager CLI (AccessData) | `ftkimager` | Crear/convertir imágenes raw↔E01/SMART con verificación MD5/SHA1 (también en el catálogo del backend — invocable por el agente) |
 | Imagen y montaje | QEMU | `qemu-nbd` | Exponer .vmdk/.qcow2/.raw como dispositivo de bloque |
 | Imagen y montaje | libguestfs | `guestmount` | Montar los sistemas de ficheros de la imagen en solo lectura |
 | Integridad / hashing | coreutils | `sha256sum` | Hash de integridad (cadena de custodia) |

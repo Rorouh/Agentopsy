@@ -92,7 +92,11 @@ RUN cd /tmp \
  && ln -sf /opt/ftkimager/ftkimager /usr/local/bin/ftkimager \
  && rm -f ftkimager.tgz \
  # sanity: el binario carga y emite su banner (--help/--version salen con 1 en este CLI)
- && ftkimager --help 2>&1 | grep -q "FTK Imager"
+ && ftkimager --help 2>&1 | grep -q "FTK Imager" \
+ # identidad de versión para el manifiesto del build (gen_versions.py, INVARIANT 4):
+ # banner real del binario + SHA-256 del tarball desplegado
+ && printf '%s (tgz:%.12s)\n' "$(ftkimager --help 2>&1 | head -n1)" "${FTKIMAGER_SHA256}" > /opt/ftkimager/VERSION \
+ && cat /opt/ftkimager/VERSION
 
 # --- Layout de trabajo -------------------------------------------------------
 #   /evidence -> evidencias montadas en SOLO LECTURA (cadena de custodia)

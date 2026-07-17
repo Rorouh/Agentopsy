@@ -11,6 +11,7 @@ allowed:
   # --- Particiones / imagen ---
   - tsk_mmls            # tabla de particiones (no monta FS)
   - ewf_info            # metadatos del contenedor .E01
+  - ftkimager           # convertir imagenes raw<->E01/SMART con verify MD5/SHA1
   # --- Sistema de ficheros + extracción quirúrgica (vía handle read-only) ---
   - tsk_fls             # árbol de ficheros incl. borrados (artefacto)
   - tsk_mactime         # bodyfile -> línea temporal MAC(b) (artefacto)
