@@ -76,6 +76,29 @@ def _is_ewf_path(path: str) -> bool:
     return dot != -1 and bool(_EWF_SUFFIX_RE.match(path[dot:]))
 
 
+# Container-disk formats the maletín's TSK cannot open natively (no libvmdk/libvhdi), but
+# `qemu-storage-daemon` CAN de-encapsulate to a raw block via its FUSE export. Extension →
+# qemu block-driver name (`vpc` is VHD/conectix, `vhdx` is VHDX). EWF is handled separately
+# by ewfmount; raw/dd/img are not containers and map to nothing. Matched on the copied
+# evidence suffix (``original.vmdk``), consistent with how EWF is detected above.
+_QEMU_CONTAINER_FORMATS: dict[str, str] = {
+    ".vmdk": "vmdk",
+    ".vdi": "vdi",
+    ".qcow2": "qcow2",
+    ".qcow": "qcow2",
+    ".vhd": "vpc",
+    ".vhdx": "vhdx",
+}
+
+
+def _qemu_format_for_path(path: str) -> str | None:
+    """The qemu block-driver name for a container-disk path, or None if it is not one."""
+    dot = path.rfind(".")
+    if dot == -1:
+        return None
+    return _QEMU_CONTAINER_FORMATS.get(path[dot:].lower())
+
+
 @dataclass(frozen=True)
 class _PreparedExecution:
     """Literal argv plus its single, already-resolved execution venue."""
@@ -89,6 +112,13 @@ class _PreparedExecution:
     # argv token the exec-agent must expose as a raw block device via ``ewfmount`` (RO,
     # no filesystem mount) for the duration of the run, then unmount. ``None`` otherwise.
     ewf_image: str | None = None
+    # Set only when the tool reads a qemu container disk (vmdk/vdi/qcow2/vhd/vhdx) inside a
+    # maletín: the exact argv token the exec-agent must expose as a raw block via
+    # ``qemu-storage-daemon``'s FUSE export (RO, block-level, no filesystem mount), plus the
+    # qemu block-driver name to use. Both ``None`` otherwise. Mutually exclusive with
+    # ``ewf_image`` — an evidence file is one container class, not both.
+    qemu_image: str | None = None
+    qemu_format: str | None = None
 
 
 def execute(
@@ -195,15 +225,31 @@ def execute(
         evidence_context=evidence_context,
     )
 
-    # If this tool reads a disk image and that image is an EWF container (`.E01`), the
-    # maletín must expose it as a raw block device via `ewfmount` around the run. The api
-    # decides (it holds the allowlist and the param) and names the EXACT argv token; the
-    # exec-agent only mounts/rewrites/unmounts. A non-EWF image (raw/vmdk) → None, no change.
+    # If this tool reads a disk image and that image is a container the maletín's TSK cannot
+    # open natively, the api names the EXACT argv token the exec-agent must de-encapsulate to
+    # a raw block for the duration of the run (RO, block-level, no filesystem mount), then
+    # tear down. Two disjoint mechanisms: EWF (`.E01`) via ewfmount; qemu containers
+    # (vmdk/vdi/qcow2/vhd/vhdx) via qemu-storage-daemon's FUSE export. A plain raw/dd/img →
+    # neither, no change. The api decides here (it holds the allowlist and the param); the
+    # exec-agent only mounts/rewrites/unmounts.
     ewf_image: str | None = None
+    qemu_image: str | None = None
+    qemu_format: str | None = None
     if tool.image_param is not None:
         candidate = effective_params.get(tool.image_param)
-        if isinstance(candidate, str) and _is_ewf_path(candidate):
-            ewf_image = candidate
+        if isinstance(candidate, str):
+            if _is_ewf_path(candidate):
+                ewf_image = candidate
+            elif (fmt := _qemu_format_for_path(candidate)) is not None:
+                qemu_image = candidate
+                qemu_format = fmt
+    # When a container is de-encapsulated to a raw block (EWF via ewfmount, qemu container
+    # via the FUSE export), the bytes the tool actually reads ARE raw — so any image_format
+    # the model supplied is anchored to ``raw`` here (RULE 2: the format follows from the
+    # de-encapsulation, it is not the LLM's to guess). A stray ``image_format=vmdk`` on the
+    # already-raw block would make TSK fail with "Unsupported image type".
+    if (ewf_image is not None or qemu_image is not None) and "image_format" in effective_params:
+        effective_params["image_format"] = "raw"
 
     # ---- Venue + AUTHORITATIVE tool version, resolved BEFORE reserving the run -------
     # The venue (api-PATH binary vs. maletín) depends only on the tool + os_profile, so
@@ -248,6 +294,8 @@ def execute(
             maletin_service=maletin_service,
             stdout_path=binary_stdout_path,
             ewf_image=ewf_image,
+            qemu_image=qemu_image,
+            qemu_format=qemu_format,
         )
         if case_id is not None and run_id is not None:
             artifact_store.set_run_argv(case_id, run_id, prepared.argv)
@@ -818,12 +866,15 @@ def _prepare_execution(
     maletin_service: str | None,
     stdout_path: str | None = None,
     ewf_image: str | None = None,
+    qemu_image: str | None = None,
+    qemu_format: str | None = None,
 ) -> _PreparedExecution:
     """Construct the exact argv for the already-fixed venue, without invoking a runner."""
     if binary_path is not None:
-        # api-PATH venue (dev only): no exec-agent to run ewfmount in, so EWF is not
-        # rewritten here — TSK would fail loud on a `.E01` with its own "Unsupported image
-        # type" (RULE 2: no silent raw treatment). The product path is the maletín below.
+        # api-PATH venue (dev only): no exec-agent to run ewfmount / qemu-storage-daemon in,
+        # so a container is not de-encapsulated here — TSK would fail loud on a `.E01`/`.vmdk`
+        # with its own "Unsupported image type" (RULE 2: no silent raw treatment). The
+        # product path is the maletín below.
         return _PreparedExecution(
             argv=[str(binary_path), *argv_tail],
             maletin_service=None,
@@ -839,6 +890,8 @@ def _prepare_execution(
         maletin_service=maletin_service,
         stdout_path=stdout_path,
         ewf_image=ewf_image,
+        qemu_image=qemu_image,
+        qemu_format=qemu_format,
     )
 
 
@@ -883,6 +936,9 @@ def _invoke_prepared(
     if prepared.maletin_service is not None:
         if prepared.ewf_image is not None:
             extra["ewf_image"] = prepared.ewf_image
+        if prepared.qemu_image is not None:
+            extra["qemu_image"] = prepared.qemu_image
+            extra["qemu_format"] = prepared.qemu_format
         return maletin.run_argv_in_maletin(
             prepared.maletin_service,
             prepared.argv,

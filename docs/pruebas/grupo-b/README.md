@@ -22,6 +22,12 @@ evidencia recopilada en `<tool>/`).
 ## Nota de preparación (VMDK → raw)
 
 El build de TSK del maletín **no** trae libvmdk (`mmls -i vmdk` → *"Unsupported image type"*).
-La VMDK se convirtió a `.raw` con `qemu-img convert -O raw` (8 GiB virtuales). Sobre el `.raw`,
-`mmls` lee la tabla DOS sin problema. Lección: para VMDK/VDI/QCOW, **convertir a raw con
-`qemu-img`** antes de TSK (o usar `qemu_nbd` cuando su wrapper esté integrado).
+En esta prueba la VMDK se convirtió **a mano** a `.raw` con `qemu-img convert -O raw` (8 GiB
+virtuales). Sobre el `.raw`, `mmls` lee la tabla DOS sin problema.
+
+> **Actualización (2026-07-17): ya no hace falta convertir a mano.** El dispatcher detecta el
+> contenedor (vmdk/vdi/qcow2/vhd/vhdx) y el exec-agent lo **desencapsula al vuelo, sin copia**,
+> con el FUSE export de `qemu-storage-daemon` (RO a nivel de bloque, espejo del `ewfmount` de
+> EWF). El agente ejecuta TSK sobre el VMDK directamente y el backend enruta el raw expuesto.
+> Ver `docs/operacion/exec-agent.md` (routing contenedor qemu) y Bug 4 en
+> `docs/agentes/notas-rediseno-agentes.md`.

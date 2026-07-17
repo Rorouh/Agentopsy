@@ -16,13 +16,14 @@ ejecutar herramientas sin necesidad del socket de Docker del host:
   - POST /exec   {"argv": [...],           -> ejecuta argv shell-free y devuelve
                   "timeout": N|null,          {exit, stdout, stderr, timed_out,
                   "stdout_path": P|null,      executed_argv} — con stdout_path: {exit,
-                  "ewf_image": E|null}        stdout_file, stdout_sha256, stdout_size,
-                                              stderr, timed_out, executed_argv} —
-                                              stdout va a fichero CRUDO
+                  "ewf_image": E|null,        stdout_file, stdout_sha256, stdout_size,
+                  "qemu_image": Q|null,       stderr, timed_out, executed_argv} —
+                  "qemu_format": F|null}      stdout va a fichero CRUDO
 
 Toda respuesta 200 de /exec incluye `executed_argv`: el argv EXACTO que se pasó a
-`subprocess.run` (P0.5-4). Sin EWF es idéntico al solicitado; con EWF difiere SOLO en
-el token `.E01` reescrito al bloque raw `ewf1`. El cliente (`forensia.toolkit.maletin`)
+`subprocess.run` (P0.5-4). Sin desencapsulado es idéntico al solicitado; con EWF difiere
+SOLO en el token `.E01` reescrito al bloque raw `ewf1`, y con contenedor qemu SOLO en el
+token del contenedor reescrito al raw `raw.img`. El cliente (`forensia.toolkit.maletin`)
 lo verifica token a token — un maletín que ejecutara un argv distinto del auditado
 rompería FORENSIC INVARIANT 4 y se detecta ahí, no se confía a ciegas.
 
@@ -40,6 +41,17 @@ la evidencia, FORENSIC INVARIANT 3), reescribe ese token del argv al raw `ewf1`,
 tool y **desmonta SIEMPRE** (incl. en error). El `.E01` no se modifica (montaje RO). Si
 `ewfmount`/FUSE no está disponible → respuesta no-200 nombrando la dependencia (RULE 2):
 jamás se trata el `.E01` como raw. Compone con `stdout_path` (icat sobre `.E01`).
+
+Routing contenedor qemu (`qemu_image`+`qemu_format`): TSK del maletín tampoco abre
+vmdk/vdi/qcow2/vhd/vhdx (no trae libvmdk/libvhdi). Cuando el api pasa `qemu_image` (el
+token EXACTO del argv con la ruta del contenedor) y `qemu_format` (enum cerrado:
+vmdk|vdi|qcow2|vpc|vhdx, elegido por el api desde la triage, no por el LLM), el agente lo
+expone con `qemu-storage-daemon` (FUSE export, SOLO LECTURA a nivel de bloque — NO monta el
+FS de la evidencia, FORENSIC INVARIANT 3) como raw `raw.img`, reescribe ese token del argv
+al raw, ejecuta la tool y **desencapsula SIEMPRE** (para el daemon + desmonta, incl. en
+error). El contenedor no se modifica (RO). Mutuamente excluyente con `ewf_image`. Si
+qemu-storage-daemon/FUSE no está → no-200 nombrando la dependencia (RULE 2). Compone con
+`stdout_path`.
 
 Por qué existe (docs/operacion/exec-agent.md, proximos-pasos.md §B):
 La alternativa §A (montar `/var/run/docker.sock` en el `api` + docker-cli) le daría al
@@ -71,6 +83,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 _PORT = int(os.environ.get("FORENSIA_EXEC_AGENT_PORT", "8666"))
@@ -88,6 +101,16 @@ _MAX_TIMEOUT_S = 1800
 _HASH_CHUNK = 1024 * 1024  # 1 MiB
 # Techo de tiempo para montar/desmontar el `.E01` con ewfmount (no debe colgar el run).
 _EWF_MOUNT_TIMEOUT_S = 120
+# Techo para arrancar/parar el FUSE export de qemu-storage-daemon (no debe colgar el run).
+_QEMU_MOUNT_TIMEOUT_S = 120
+# Formatos de contenedor que qemu desencapsula a raw vía FUSE export. Enum CERRADO: el api
+# elige el formato desde la triage (contenido de la evidencia), nunca el LLM (RULE 2). Son
+# los nombres de driver de bloque de qemu: `vpc` es VHD (conectix), `vhdx` es VHDX.
+_QEMU_FORMATS = frozenset({"vmdk", "vdi", "qcow2", "vpc", "vhdx"})
+# Basename del fichero raw que expone el FUSE export dentro del mkdtemp, análogo a `ewf1`.
+# El api lo verifica token a token (`maletin._verify_executed_argv`): la reescritura del
+# token del contenedor debe apuntar a un absoluto con ESTE basename.
+_QEMU_RAW_BASENAME = "raw.img"
 # Manifiesto INMUTABLE de versiones de tools, generado durante el build de la imagen
 # (gen_versions.py — el build FALLA si una tool declarada no tiene versión determinista
 # y no vacía). El exec-agent solo lo SIRVE (`GET /versions`); nunca ejecuta `--version`
@@ -154,6 +177,111 @@ def ewf_unmount(mountpoint: str) -> None:
             continue
         if proc.returncode == 0:
             return
+
+
+class _QemuMountError(RuntimeError):
+    """`qemu-storage-daemon` no pudo exponer el contenedor (vmdk/vdi/qcow2/vhd/vhdx) como
+    bloque raw (binario ausente, FUSE no disponible, formato no reconocido, o el export no
+    llegó a servir). El handler la traduce en una respuesta no-200 accionable; nunca se
+    trata el contenedor como raw (RULE 2)."""
+
+
+def qemu_mount(qemu_image: str, qemu_format: str, mountpoint_dir: str) -> tuple[str, subprocess.Popen]:
+    """Expone `qemu_image` (contenedor `qemu_format`) como fichero raw vía el FUSE export de
+    `qemu-storage-daemon`, SOLO LECTURA a nivel de bloque — NO monta el sistema de ficheros
+    de la evidencia (FORENSIC INVARIANT 3) — y devuelve `(raw_path, daemon)`. El daemon queda
+    corriendo; el llamador DEBE pararlo con `qemu_unmount`. Lanza `_QemuMountError`
+    (accionable) si el binario no está, el formato es inválido, o el export no sirve a tiempo.
+    """
+    if qemu_format not in _QEMU_FORMATS:
+        raise _QemuMountError(
+            f"formato de contenedor no soportado: {qemu_format!r} "
+            f"(esperado uno de {sorted(_QEMU_FORMATS)})"
+        )
+    raw = os.path.join(mountpoint_dir, _QEMU_RAW_BASENAME)
+    # El FUSE export de qemu monta SOBRE un fichero regular ya existente.
+    open(raw, "wb").close()
+    log_path = os.path.join(mountpoint_dir, "qsd.log")
+    argv = [
+        "qemu-storage-daemon",
+        "--blockdev", f"driver=file,filename={qemu_image},node-name=src,read-only=on",
+        "--blockdev", f"driver={qemu_format},file=src,node-name=fmt,read-only=on",
+        "--export", f"type=fuse,id=exp,node-name=fmt,mountpoint={raw},writable=off",
+    ]
+    # stdout+stderr del daemon a un fichero (no a un PIPE): evita cualquier bloqueo por
+    # buffer lleno mientras el daemon vive, y deja el diagnóstico legible si muere.
+    log = open(log_path, "wb")
+    try:
+        daemon = subprocess.Popen(  # noqa: S603 — argv list, shell=False
+            argv, stdout=log, stderr=subprocess.STDOUT, shell=False
+        )
+    except FileNotFoundError as exc:
+        log.close()
+        raise _QemuMountError(
+            "qemu-storage-daemon no está instalado en el maletín (paquete qemu-utils); sin "
+            "él no se puede desencapsular el contenedor a raw. Instálalo en la imagen del "
+            "maletín (RULE 1) — no se trata el contenedor como raw (RULE 2)."
+        ) from exc
+    # Espera activa a que el export sirva: el fichero pasa de 0 al tamaño del disco.
+    deadline = time.monotonic() + _QEMU_MOUNT_TIMEOUT_S
+    while time.monotonic() < deadline:
+        if daemon.poll() is not None:
+            detail = _read_tail(log_path)
+            raise _QemuMountError(
+                f"qemu-storage-daemon murió exponiendo {qemu_image} (formato {qemu_format}, "
+                f"exit {daemon.returncode}): {detail} — ¿/dev/fuse presente y CAP SYS_ADMIN? "
+                "(docker-compose: devices:[/dev/fuse], cap_add:[SYS_ADMIN])"
+            )
+        try:
+            if os.path.getsize(raw) > 0:
+                return raw, daemon
+        except OSError:
+            pass
+        time.sleep(0.1)
+    _terminate(daemon)
+    raise _QemuMountError(
+        f"qemu-storage-daemon no expuso {raw} en {_QEMU_MOUNT_TIMEOUT_S}s "
+        f"(formato {qemu_format}): {_read_tail(log_path)}"
+    )
+
+
+def qemu_unmount(mountpoint_dir: str, daemon: subprocess.Popen | None) -> None:
+    """Para el daemon del FUSE export y desmonta. Best-effort pero SIEMPRE se intenta
+    (soundness: no dejar un export/mount colgado). SIGTERM a qemu-storage-daemon desmonta y
+    sale limpio; `fusermount -u` queda de respaldo por si el mount quedó zombie."""
+    _terminate(daemon)
+    raw = os.path.join(mountpoint_dir, _QEMU_RAW_BASENAME)
+    for cmd in (["fusermount", "-u", raw], ["umount", raw]):
+        try:
+            proc = subprocess.run(  # noqa: S603 — argv list, shell=False
+                cmd, capture_output=True, text=True, timeout=_QEMU_MOUNT_TIMEOUT_S, shell=False
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            continue
+        if proc.returncode == 0:
+            return
+
+
+def _terminate(daemon: subprocess.Popen | None) -> None:
+    """Termina un daemon best-effort: SIGTERM y, si no muere a tiempo, SIGKILL."""
+    if daemon is None or daemon.poll() is not None:
+        return
+    try:
+        daemon.terminate()
+        daemon.wait(timeout=_QEMU_MOUNT_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        daemon.kill()
+    except OSError:
+        pass
+
+
+def _read_tail(path: str, limit: int = 800) -> str:
+    """Últimos `limit` chars de un log de texto (diagnóstico), tolerante a fallos."""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            return handle.read()[-limit:].strip()
+    except OSError:
+        return ""
 
 
 def _sha256_size(path: str) -> tuple[str, int]:
@@ -293,6 +421,11 @@ class Handler(BaseHTTPRequestHandler):
             if not os.path.isabs(stdout_path) or ".." in stdout_path.split("/"):
                 return self._send(400, {"error": "'stdout_path' must be an absolute path without '..'"})
         ewf_image = payload.get("ewf_image")
+        qemu_image = payload.get("qemu_image")
+        # EWF (ewfmount) y contenedor qemu (qemu-storage-daemon) son dos rutas de
+        # desencapsulado distintas: una evidencia es de UNA clase, no de ambas.
+        if ewf_image is not None and qemu_image is not None:
+            return self._send(400, {"error": "'ewf_image' and 'qemu_image' are mutually exclusive"})
         if ewf_image is not None:
             if not isinstance(ewf_image, str) or not ewf_image:
                 return self._send(400, {"error": "'ewf_image' must be a non-empty string or null"})
@@ -309,6 +442,24 @@ class Handler(BaseHTTPRequestHandler):
                 # eleva a un error accionable; no hay exit code de tool que inventar.
                 return self._send(424, {"error": str(exc)})
             return self._send(200, result)
+        if qemu_image is not None:
+            if not isinstance(qemu_image, str) or not qemu_image:
+                return self._send(400, {"error": "'qemu_image' must be a non-empty string or null"})
+            if not os.path.isabs(qemu_image) or ".." in qemu_image.split("/"):
+                return self._send(400, {"error": "'qemu_image' must be an absolute path without '..'"})
+            if qemu_image not in argv:
+                return self._send(400, {"error": "'qemu_image' must be one of the argv tokens"})
+            qemu_format = payload.get("qemu_format")
+            if qemu_format not in _QEMU_FORMATS:
+                return self._send(400, {
+                    "error": f"'qemu_format' must be one of {sorted(_QEMU_FORMATS)}"
+                })
+            try:
+                result = self._exec_with_qemu(argv, timeout, stdout_path, qemu_image, qemu_format)
+            except _QemuMountError as exc:
+                # 424 Failed Dependency: el desencapsulado previo a la ejecución falló.
+                return self._send(424, {"error": str(exc)})
+            return self._send(200, result)
         return self._send(200, self._run_argv(argv, timeout, stdout_path))
 
     def _exec_with_ewf(self, argv: list[str], timeout, stdout_path, ewf_image: str) -> dict:
@@ -323,6 +474,23 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             ewf_unmount(mountpoint)
             shutil.rmtree(mountpoint, ignore_errors=True)
+
+    def _exec_with_qemu(
+        self, argv: list[str], timeout, stdout_path, qemu_image: str, qemu_format: str
+    ) -> dict:
+        """Expone el contenedor qemu como raw (RO, FUSE, block-level), reescribe el token del
+        argv al raw expuesto, ejecuta y DESENCAPSULA SIEMPRE (finally): para el daemon y
+        desmonta. Mismo contrato (stdout_path binario, shell-free); solo cambia el token de
+        la imagen por su vista raw."""
+        mountpoint_dir = tempfile.mkdtemp(prefix="forensia-qemu-")
+        daemon: subprocess.Popen | None = None
+        try:
+            raw, daemon = qemu_mount(qemu_image, qemu_format, mountpoint_dir)
+            rewritten = [raw if token == qemu_image else token for token in argv]
+            return self._run_argv(rewritten, timeout, stdout_path)
+        finally:
+            qemu_unmount(mountpoint_dir, daemon)
+            shutil.rmtree(mountpoint_dir, ignore_errors=True)
 
     def _run_argv(self, argv: list[str], timeout, stdout_path) -> dict:
         """Ejecuta el argv ya resuelto y devuelve el dict de respuesta (sin enviarlo).

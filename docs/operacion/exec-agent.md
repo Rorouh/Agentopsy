@@ -47,6 +47,7 @@ api  ──HTTP (red interna del compose)──▶  exec-agent  ──subprocess
 | `POST` | `/exec`   | `{"argv": ["fls","-r","/evidence/…"], "timeout": 300}` | `{"exit": int, "stdout": str, "stderr": str, "timed_out": bool, "executed_argv": [str]}` |
 | `POST` | `/exec` (binario) | `{"argv": ["icat",…], "timeout": 300, "stdout_path": "/cases/…/out/stdout.bin"}` | `{"exit": int, "stdout_file": str, "stdout_sha256": str, "stdout_size": int, "stderr": str, "timed_out": bool, "executed_argv": [str]}` |
 | `POST` | `/exec` (EWF)     | `{"argv": ["mmls",…,"/cases/…/original.E01"], "timeout": 300, "ewf_image": "/cases/…/original.E01"}` | igual que `/exec` (o el binario si además va `stdout_path`); en fallo de montaje: `424 {"error": "…ewfmount…"}` |
+| `POST` | `/exec` (contenedor qemu) | `{"argv": ["mmls",…,"/cases/…/original.vmdk"], "timeout": 300, "qemu_image": "/cases/…/original.vmdk", "qemu_format": "vmdk"}` | igual que `/exec` (o el binario si además va `stdout_path`); en fallo de desencapsulado: `424 {"error": "…qemu-storage-daemon…"}` |
 
 El campo `timeout` acepta `null` (el api no impone timeout): entonces el exec-agent aplica
 su techo duro `_MAX_TIMEOUT_S` como timeout efectivo — **nunca** corre sin límite (ver
@@ -77,20 +78,40 @@ dependencia y el dispatcher falla fuerte — **nunca** trata el `.E01` como raw 
 decisión de si es EWF es del api; el mecanismo (mount/rewrite/unmount) vive en el maletín,
 donde corre la tool.
 
-El argv que se **audita** (paso 2 abajo) es el que construye el api, con la ruta **`.E01`** —
-la identidad estable y reproducible de la evidencia (ligada a su SHA-256 baseline), **no** el
-bloque raw `ewf1`. La reescritura al `ewf1` es un detalle de transporte RO **efímero**
-(mountpoint aleatorio, inexistente tras la corrida) y determinista, resuelto por el backend
-dentro del maletín; por eso el registro cita la evidencia y no el mount temporal — coherente
-con FORENSIC INVARIANT 4 (se audita el argv literal que fija el api, no la intención del LLM,
-que además nunca elige el mountpoint).
+**Routing contenedor qemu (`qemu_image` + `qemu_format`).** El TSK del maletín **tampoco**
+abre vmdk/vdi/qcow2/vhd/vhdx nativo (no trae libvmdk/libvhdi; `mmls -i vmdk` → *"Unsupported
+image type"*), y el PPA GIFT no empaqueta `vmdkmount`. Cuando el `image_param` de la tool es
+un contenedor de esa clase, el **dispatcher** pasa `qemu_image` (el **token exacto** del argv)
+y `qemu_format` (el driver de bloque de qemu: `vmdk|vdi|qcow2|vpc|vhdx`, derivado por el api de
+la extensión de la evidencia — **nunca** del LLM). El exec-agent lo expone con
+`qemu-storage-daemon` (**FUSE export, solo lectura a nivel de bloque** — expone el disco como
+fichero raw `raw.img`, **no** monta el FS de la evidencia, FORENSIC INVARIANT 3), reescribe ese
+token del argv al raw `raw.img`, ejecuta la tool y **desencapsula siempre** (para el daemon +
+desmonta, incl. en error). El contenedor se abre RO (el hash baseline no cambia). Compone con
+`stdout_path`. Es **mutuamente excluyente** con `ewf_image`: una evidencia es de una clase de
+contenedor, no de ambas. `qemu-storage-daemon` viene con `qemu-utils` (ya en el maletín —
+RULE 1) y usa el mismo FUSE que `ewfmount`; si falta, `424` nombrando la dependencia y el
+dispatcher falla fuerte — **nunca** trata el contenedor como raw (RULE 2). Como el bloque
+expuesto ES raw, el dispatcher ancla `image_format=raw` para esa corrida (descarta un
+`image_format=vmdk` que el modelo hubiera propuesto — daría *"Unsupported image type"* sobre el
+raw ya desencapsulado).
+
+El argv que se **audita** (paso 2 abajo) es el que construye el api, con la ruta del
+contenedor (**`.E01`** para EWF, **`.vmdk`**… para qemu) — la identidad estable y reproducible
+de la evidencia (ligada a su SHA-256 baseline), **no** el bloque raw efímero (`ewf1` /
+`raw.img`). La reescritura al raw es un detalle de transporte RO **efímero** (mountpoint
+aleatorio, inexistente tras la corrida) y determinista, resuelto por el backend dentro del
+maletín; por eso el registro cita la evidencia y no el mount temporal — coherente con FORENSIC
+INVARIANT 4 (se audita el argv literal que fija el api, no la intención del LLM, que además
+nunca elige el mountpoint).
 
 **El argv ejecutado se VERIFICA, no se presume (P0.5-4).** Toda respuesta 200 de `/exec`
 incluye `executed_argv`: la lista literal que el exec-agent pasó a `subprocess.run` (también
 en exit 127/timeout). `forensia.toolkit.maletin.run_argv_in_maletin` la compara token a
-token contra el argv auditado: sin `ewf_image` deben ser idénticos; con `ewf_image`, cada
-posición cuyo token solicitado era el `.E01` debe estar reescrita — todas al MISMO bloque
-raw absoluto con basename `ewf1` — y el resto intacto. Cualquier otra cosa (campo ausente
+token contra el argv auditado: sin desencapsulado deben ser idénticos; con `ewf_image` (o
+`qemu_image`), cada posición cuyo token solicitado era el contenedor debe estar reescrita —
+todas al MISMO bloque raw absoluto con el basename esperado (`ewf1` para EWF, `raw.img` para
+qemu) — y el resto intacto. Cualquier otra cosa (campo ausente
 → imagen anterior al contrato, reconstruye el maletín; longitud distinta; token alterado;
 token EWF sin reescribir; reescritura que no es el bloque raw) es `MaletinExecError`
 ("custodia rota"): el dispatcher cierra el run como error con su contexto forense y el

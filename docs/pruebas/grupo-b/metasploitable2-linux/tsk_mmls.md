@@ -42,8 +42,10 @@ raíz dentro de **LVM**.
 1. **En un disco, empieza por `mmls`**: da los offsets de cada partición para el resto de TSK
    (`fls -o <offset>`, `icat -o <offset>`). Sin esto, `fls` sobre el disco entero falla o lee
    la partición equivocada.
-2. **VMDK/VDI/QCOW → convertir a raw primero** (`qemu-img convert -O raw`); el TSK del maletín
-   no trae libvmdk. (Cuando `qemu_nbd` esté integrado, alternativa sin copiar.)
+2. **VMDK/VDI/QCOW → desencapsulado automático (2026-07-17)**: el TSK del maletín no trae
+   libvmdk, pero ya **no hay que convertir a mano**. El exec-agent expone el contenedor como
+   raw al vuelo (sin copia) con el FUSE export de `qemu-storage-daemon`; el dispatcher lo
+   enruta solo. El agente le pasa el `.vmdk` a TSK y funciona. Ver `docs/operacion/exec-agent.md`.
 3. **Ojo con LVM (tipo 0x8e)**: la partición existe pero el FS está en un volumen lógico. `fls
    -o 482013` **no** lo lee directo; hay que activar el LV (kpartx/losetup + vgchange) y dar el
    offset del LV. Distínguelo de una partición ext plana (0x83), que `fls -o` sí lee directo.

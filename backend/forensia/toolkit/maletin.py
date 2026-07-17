@@ -75,6 +75,17 @@ _EXEC_AGENT_MAX_TIMEOUT = 1800
 # Explicit constant, no silent default (RULE 2).
 _HTTP_TIMEOUT_MARGIN = 60
 
+# Basename of the raw block the exec-agent exposes when it de-encapsulates a container:
+# ``ewf1`` for EWF (ewfmount), ``raw.img`` for a qemu container (qemu-storage-daemon FUSE
+# export). MUST mirror `_QEMU_RAW_BASENAME` in docker/docker/forensic-toolkit/exec_agent.py.
+# The custody proof (`_verify_executed_argv`) requires the rewritten token to end in the
+# expected basename; a drift here would reject every legitimate run.
+_EWF_RAW_BASENAME = "ewf1"
+_QEMU_RAW_BASENAME = "raw.img"
+# Container formats the api may route to the maletín's qemu-storage-daemon FUSE export.
+# The api derives the value from the evidence's triage fingerprint (content), never the LLM.
+_QEMU_FORMATS = frozenset({"vmdk", "vdi", "qcow2", "vpc", "vhdx"})
+
 
 class MaletinExecError(RuntimeError):
     """The exec-agent could not run the argv (URL not configured, unreachable, or a
@@ -128,6 +139,8 @@ def run_argv_in_maletin(
     timeout: float | None = None,
     stdout_path: str | None = None,
     ewf_image: str | None = None,
+    qemu_image: str | None = None,
+    qemu_format: str | None = None,
 ) -> tuple[int, str, str]:
     """Run a fully-resolved argv inside a maletín via its exec-agent `POST /exec`.
 
@@ -149,12 +162,30 @@ def run_argv_in_maletin(
     the run, rewrites that token to the raw `ewf1`, and unmounts always. If `ewfmount`/FUSE
     is unavailable the exec-agent answers non-200 naming the dependency, surfaced here as a
     `MaletinExecError` — never a silent raw treatment of the `.E01` (RULE 2).
+
+    Container mode (`qemu_image`+`qemu_format`): the maletín's TSK does not open
+    vmdk/vdi/qcow2/vhd/vhdx natively either (no libvmdk/libvhdi). When `qemu_image` names the
+    exact argv token holding the container path and `qemu_format` is the qemu block driver
+    (`vmdk|vdi|qcow2|vpc|vhdx`, derived by the api from the evidence triage — never the LLM),
+    the exec-agent exposes it as a raw block device via `qemu-storage-daemon`'s FUSE export
+    (read-only, block-level, no filesystem mount — INVARIANT 3), rewrites that token to the
+    raw `raw.img`, and tears the export down always. Mutually exclusive with `ewf_image`.
     """
     base_url = service_url(service)
     if not base_url:
         raise MaletinExecError(_no_url_reason(service))
     if not isinstance(argv, list) or not argv or not all(isinstance(a, str) for a in argv):
         raise MaletinExecError("argv debe ser una list[str] no vacía (shell-free)")
+    if ewf_image is not None and qemu_image is not None:
+        raise MaletinExecError(
+            "ewf_image y qemu_image son mutuamente excluyentes: una evidencia es de UNA "
+            "clase de contenedor (bug del llamador)"
+        )
+    if qemu_image is not None and qemu_format not in _QEMU_FORMATS:
+        raise MaletinExecError(
+            f"qemu_format inválido {qemu_format!r}: esperado uno de {sorted(_QEMU_FORMATS)} "
+            "(RULE 2: lo elige el api desde la triage, nunca el LLM)"
+        )
     # The exec-agent caps this run at `min(timeout, ceiling)` (or the ceiling itself when
     # the api passes no timeout — see `_EXEC_AGENT_MAX_TIMEOUT`). Wait strictly longer so
     # the exec-agent ALWAYS finishes first: it kills the child, hashes stdout and replies
@@ -172,6 +203,9 @@ def run_argv_in_maletin(
         request_body["stdout_path"] = stdout_path
     if ewf_image is not None:
         request_body["ewf_image"] = ewf_image
+    if qemu_image is not None:
+        request_body["qemu_image"] = qemu_image
+        request_body["qemu_format"] = qemu_format
     try:
         status, body = _request(
             "POST", f"{base_url}/exec", request_body, timeout=http_timeout
@@ -193,7 +227,7 @@ def run_argv_in_maletin(
     # ``ewf_image`` token(s) rewritten to the raw ``ewf1`` block when EWF routing ran.
     # The exec-agent is not trusted blindly: a divergence here is a custody violation
     # and the run is closed as an error, never accepted.
-    _verify_executed_argv(base_url, argv, body.get("executed_argv"), ewf_image)
+    _verify_executed_argv(base_url, argv, body.get("executed_argv"), ewf_image, qemu_image)
     if stdout_path is not None:
         # Binary-safe: stdout went to `stdout_path` on the shared mount, not over the wire.
         return int(body["exit"]), "", str(body.get("stderr", ""))
@@ -205,19 +239,29 @@ def _verify_executed_argv(
     requested: list[str],
     executed: object,
     ewf_image: str | None,
+    qemu_image: str | None = None,
 ) -> None:
     """Token-by-token proof that the maletín executed EXACTLY the audited argv.
 
     Contract (P0.5-4): every 200 from ``POST /exec`` carries ``executed_argv`` — the
-    literal list the exec-agent passed to ``subprocess.run``. Without ``ewf_image`` it
-    must equal the requested argv verbatim. With it, every position whose requested
-    token equals ``ewf_image`` must be rewritten — all to the SAME absolute raw block
-    whose basename is ``ewf1`` (what ``ewfmount`` exposes; never a filesystem mount,
-    FORENSIC INVARIANT 3) — and every other token must be untouched. Anything else
-    (missing field, length drift, altered token, unrewritten EWF token, a rewrite that
-    is not the raw block) raises ``MaletinExecError``: the caller closes the run as an
-    error and the artifact is never trusted (RULE 2 — no "probably fine").
+    literal list the exec-agent passed to ``subprocess.run``. Without a de-encapsulation
+    it must equal the requested argv verbatim. When a container was de-encapsulated
+    (``ewf_image`` for EWF, or ``qemu_image`` for a qemu container — mutually exclusive),
+    every position whose requested token equals that image path must be rewritten — all to
+    the SAME absolute raw block whose basename is the expected one (``ewf1`` for ewfmount,
+    ``raw.img`` for the qemu FUSE export; never a filesystem mount, FORENSIC INVARIANT 3) —
+    and every other token must be untouched. Anything else (missing field, length drift,
+    altered token, unrewritten container token, a rewrite that is not the raw block) raises
+    ``MaletinExecError``: the caller closes the run as an error and the artifact is never
+    trusted (RULE 2 — no "probably fine").
     """
+    # EWF and qemu are mutually exclusive; at most one rewrite is active per run.
+    if ewf_image is not None:
+        rewrite_token, expected_basename, kind = ewf_image, _EWF_RAW_BASENAME, "EWF"
+    elif qemu_image is not None:
+        rewrite_token, expected_basename, kind = qemu_image, _QEMU_RAW_BASENAME, "contenedor qemu"
+    else:
+        rewrite_token, expected_basename, kind = None, None, ""
     if not isinstance(executed, list) or not all(isinstance(t, str) for t in executed):
         raise MaletinExecError(
             f"el exec-agent {base_url} no devolvió 'executed_argv' (o no es list[str]) — "
@@ -233,19 +277,19 @@ def _verify_executed_argv(
         )
     rewrites: set[str] = set()
     for index, (req, got) in enumerate(zip(requested, executed)):
-        if ewf_image is not None and req == ewf_image:
+        if rewrite_token is not None and req == rewrite_token:
             if got == req:
                 raise MaletinExecError(
                     f"custodia rota: el exec-agent {base_url} no reescribió el token "
-                    f"EWF (posición {index}) — la tool habría leído el contenedor "
-                    ".E01 directamente, que TSK no interpreta (RULE 2: el routing "
-                    "EWF no puede degradarse en silencio)."
+                    f"del {kind} (posición {index}) — la tool habría leído el contenedor "
+                    "directamente, que TSK no interpreta (RULE 2: el desencapsulado no "
+                    "puede degradarse en silencio)."
                 )
-            if not got.startswith("/") or got.rsplit("/", 1)[-1] != "ewf1":
+            if not got.startswith("/") or got.rsplit("/", 1)[-1] != expected_basename:
                 raise MaletinExecError(
-                    f"custodia rota: el exec-agent {base_url} reescribió el token EWF "
-                    f"(posición {index}) a {got!r}, que no es el bloque raw 'ewf1' "
-                    "absoluto que expone ewfmount — reescritura no reconocida "
+                    f"custodia rota: el exec-agent {base_url} reescribió el token del "
+                    f"{kind} (posición {index}) a {got!r}, que no es el bloque raw "
+                    f"{expected_basename!r} absoluto esperado — reescritura no reconocida "
                     "(FORENSIC INVARIANT 3/4)."
                 )
             rewrites.add(got)
@@ -255,16 +299,16 @@ def _verify_executed_argv(
                 f"del auditado (posición {index}: se auditó {req!r}, se ejecutó "
                 f"{got!r}) — FORENSIC INVARIANT 4; el resultado no se acepta."
             )
-    if ewf_image is not None:
+    if rewrite_token is not None:
         if not rewrites:
             raise MaletinExecError(
-                f"custodia rota: se pidió routing EWF para {ewf_image!r} pero ese "
-                f"token no aparece en el argv auditado — bug del llamador; el "
+                f"custodia rota: se pidió desencapsulado {kind} para {rewrite_token!r} pero "
+                f"ese token no aparece en el argv auditado — bug del llamador; el "
                 f"exec-agent {base_url} no pudo haberlo reescrito."
             )
         if len(rewrites) > 1:
             raise MaletinExecError(
-                f"custodia rota: el exec-agent {base_url} reescribió el token EWF a "
+                f"custodia rota: el exec-agent {base_url} reescribió el token del {kind} a "
                 f"rutas distintas en posiciones distintas ({sorted(rewrites)}) — "
                 "reescritura inconsistente (FORENSIC INVARIANT 4)."
             )
