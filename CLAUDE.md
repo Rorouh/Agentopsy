@@ -337,7 +337,14 @@ lives on the Guía page), and registers evidence from the
 the `api` service mounts the inbox `rw` (the perito's write path) while the
 toolkits/agent keep it `ro` (chain of custody — they never mutate the image); upload
 only deposits the file (name/format validated, no traversal, never overwrites, atomic
-via a hidden temp), the hash-gate still runs at *register* time. **MITRE ATT&CK is wired end to end (2026-07-14)**
+via a hidden temp), the hash-gate still runs at *register* time. **Registering an EWF
+`.E01` now ingests the WHOLE co-located segment set as ONE evidence** (2026-07-24,
+`forensia.evidence`): the first segment (`.E01`/`.Ex01`) triggers discovery of its
+siblings (`.E02`…`.E0N`, gap-checked — a hole rejects the register, RULE 2) in the same
+source dir, each copied under a shared `original` stem (`original.E01`…`original.E0N`)
+with the per-segment hash gate, so `ewfmount` reassembles the full image (before, only
+the `.E01` was copied → truncated reads); `baseline.json` gains `segments[]`, `verify`
+re-hashes every segment, and a single-file evidence is unchanged. **MITRE ATT&CK is wired end to end (2026-07-14)**
 (`backend/forensia/mitre/`): `record_finding` now accepts the `mitre_hints` the
 package prompts had been prescribing all along (the engine's `additionalProperties:
 false` was silently blocking them), validated server-side against a **closed enum

@@ -102,6 +102,19 @@ class VerificationRecord:
 
 
 @dataclass(frozen=True)
+class EvidenceSegment:
+    """One file of a multi-segment evidence set (an EWF ``.E01`` split), with its
+    own baseline hash + size. For a single-file evidence (``.raw`` / a lone ``.E01``)
+    there is exactly one segment. The set is stored co-located under a shared
+    ``original`` stem (``original.E01``, ``original.E02`` …) so ``ewfmount``
+    reassembles the image from the first."""
+
+    name: str
+    sha256: str
+    size: int
+
+
+@dataclass(frozen=True)
 class EvidenceHandle:
     evidence_id: str
     case_id: str
@@ -123,6 +136,12 @@ class EvidenceHandle:
     # (disk: TSK; memory: Volatility). Same persistence + lazy backfill as
     # detected_os; same RULE 2 guarantee — never auto-anything.
     detected_kind: DetectedKind = "unknown"
+    # The copied files that back this evidence, each hash-gated at registration.
+    # One entry for a single-file evidence; N for an EWF ``.E01`` set (in segment
+    # order, ``original.E01`` … ``original.E0N``). Empty for legacy evidence
+    # registered before segment tracking existed — ``verify`` then falls back to
+    # the single ``original_basename`` from ``baseline.json``.
+    segments: tuple[EvidenceSegment, ...] = ()
 
 
 def _utc_now_iso() -> str:
@@ -154,6 +173,123 @@ def _sha256_file(path: Path) -> tuple[str, int]:
             digest.update(chunk)
             size += len(chunk)
     return digest.hexdigest(), size
+
+
+# ── EWF multi-segment sets ───────────────────────────────────────────────────
+# Expert Witness Format (EnCase ``.E01`` / libewf) splits a disk image into
+# SEGMENTS: ``<stem>.E01``, ``.E02`` … ``.E99``, then ``.EAA``, ``.EAB`` … (and the
+# EWF2 ``.Ex01`` / ``.Ex02`` … scheme). Only the FIRST segment carries the ``.E01``
+# extension; the rest hold the raw bytes that continue the image. ``ewfmount``
+# reassembles the WHOLE image from the first segment, DISCOVERING the others by this
+# naming convention IN THE SAME DIRECTORY. So registering ONLY the ``.E01`` (the old
+# single-file copy) leaves ``ewfmount`` unable to assemble the image — it reads
+# truncated. We copy the whole co-located set, renamed to a shared ``original`` stem
+# (``original.E01``, ``original.E02`` …), so libewf reassembles from ``original.E01``.
+
+# Matches ONLY a first segment (``.E01`` / ``.e01`` / ``.Ex01`` / ``.ex01``).
+_EWF_FIRST_RE = re.compile(r"^\.(ex?)01$", re.IGNORECASE)
+# Matches ANY EWF segment extension: the ``E`` (or EWF2 ``Ex``) prefix + a 2-char
+# tail that is either 2 digits (``01`` … ``99``) or 2 letters (``AA`` … ``ZZ``).
+_EWF_ANY_RE = re.compile(r"^\.(ex?)(\d{2}|[a-z]{2})$", re.IGNORECASE)
+# The 2-char tail addresses 99 (numeric) + 26*26 (alpha) = 775 segments; past that
+# libewf bumps the leading letter (``F..``), which no real acquisition reaches. We
+# refuse a set beyond this rather than guess an extension scheme we do not model.
+_EWF_MAX_SEGMENTS = 99 + 26 * 26  # 775
+
+
+def _ewf_segment_index(suffix: str) -> int | None:
+    """1-based segment index for an EWF extension (``.E01`` → 1 … ``.EAA`` → 100),
+    or ``None`` when ``suffix`` is not a valid EWF segment extension.
+
+    The tail is either two digits (``01`` … ``99`` → 1 … 99) or two letters
+    (``AA`` → 100, ``AB`` → 101 … ``ZZ`` → 774), mirroring the EnCase/libewf
+    continuation. Independent of the ``E`` vs ``Ex`` scheme (both share the tail).
+    """
+    match = _EWF_ANY_RE.match(suffix)
+    if match is None:
+        return None
+    tail = match.group(2)
+    if tail.isdigit():
+        index = int(tail)
+        return index if index >= 1 else None  # ``.E00`` is not a segment
+    tail = tail.upper()
+    return 99 + (ord(tail[0]) - ord("A")) * 26 + (ord(tail[1]) - ord("A")) + 1
+
+
+def _is_ewf_first_segment(suffix: str) -> bool:
+    return bool(_EWF_FIRST_RE.match(suffix))
+
+
+def _is_ewf_middle_segment(suffix: str) -> bool:
+    """A non-first EWF segment (``.E02`` … / ``.EAA`` … / ``.Ex02`` …). Registering
+    one alone can never assemble the image; the register entry point rejects it."""
+    return bool(_EWF_ANY_RE.match(suffix)) and not _is_ewf_first_segment(suffix)
+
+
+def _discover_ewf_segment_set(first: Path) -> list[Path]:
+    """The ordered, GAP-FREE EWF segment set co-located with ``first`` (a
+    ``.E01`` / ``.Ex01``).
+
+    Globs ``first``'s directory for every sibling sharing its stem and EWF scheme,
+    maps each to its 1-based segment index, and requires the indices to be exactly
+    ``{1, 2, … N}`` — a hole (e.g. ``.E01`` + ``.E03`` but no ``.E02``) is a broken
+    set and RAISES ``ValueError`` (RULE 2: never register a partial set). A lone
+    first segment returns ``[first]``. A symlinked segment is refused (SECURITY
+    INVARIANT 6); every path stays inside ``first.parent`` (same directory), so the
+    set cannot escape the source tree.
+    """
+    first_match = _EWF_FIRST_RE.match(first.suffix)
+    if first_match is None:  # defensive — callers gate on ``_is_ewf_first_segment``
+        raise ValueError(f"not an EWF first segment: {first.name!r}")
+    scheme = first_match.group(1).lower()  # "e" or "ex"
+    stem = first.stem
+    parent = first.parent
+
+    found: dict[int, Path] = {}
+    for entry in parent.iterdir():
+        if entry.stem != stem:
+            continue
+        any_match = _EWF_ANY_RE.match(entry.suffix)
+        if any_match is None or any_match.group(1).lower() != scheme:
+            continue
+        index = _ewf_segment_index(entry.suffix)
+        if index is None:
+            continue
+        # A would-be segment that is a symlink is refused (never followed): the
+        # target could point outside the source dir / be swapped later.
+        if entry.is_symlink():
+            raise ValueError(
+                f"EWF segment {entry.name!r} is a symlink — refusing (SECURITY "
+                "INVARIANT 6). Provide the real, co-located segment files."
+            )
+        if not entry.is_file():
+            continue
+        if index in found:
+            raise ValueError(
+                f"duplicate EWF segment index {index}: {found[index].name!r} and "
+                f"{entry.name!r} — ambiguous set, refusing (RULE 2)."
+            )
+        found[index] = entry
+
+    if 1 not in found:
+        # ``first`` is the ``.E01`` and exists, so this is defensive.
+        raise ValueError(
+            f"EWF first segment not found in its own directory: {first.name!r}"
+        )
+    top = max(found)
+    if top > _EWF_MAX_SEGMENTS:
+        raise ValueError(
+            f"EWF set for {stem!r} has segment index {top}, beyond the supported "
+            f"maximum ({_EWF_MAX_SEGMENTS}); refusing (RULE 2)."
+        )
+    missing = [i for i in range(1, top + 1) if i not in found]
+    if missing:
+        raise ValueError(
+            f"EWF set incompleto para {stem!r}: faltan los segmentos {missing} "
+            f"(presentes {sorted(found)}). Un conjunto EWF debe ser contiguo desde "
+            ".E01; no se registra un set parcial (RULE 2)."
+        )
+    return [found[i] for i in range(1, top + 1)]
 
 
 class EvidenceManager:
@@ -196,6 +332,28 @@ class EvidenceManager:
             # ``resolve(strict=False)`` follows the link; re-check after.
             raise ValueError(f"source_path resolves to a symlink: {src}")
 
+        # 2.bis Resolve the SEGMENT SET to ingest. Most evidence is a single file
+        #    (``.raw`` / ``.vmdk`` / dump). An EWF ``.E01`` is the FIRST segment of a
+        #    set that ``ewfmount`` reassembles from the whole co-located family — so
+        #    registering the ``.E01`` must ingest ALL of ``.E01`` … ``.E0N`` as ONE
+        #    evidence, or the image reads truncated. Discovery is gap-checked and runs
+        #    BEFORE the evidence dir is created, so a broken/partial set leaves no
+        #    orphan directory (RULE 2: fail loud, register nothing partial).
+        suffix = src.suffix  # may be ""; that's fine
+        if _is_ewf_first_segment(suffix):
+            segment_sources = _discover_ewf_segment_set(src)
+            is_multi_segment = True
+        elif _is_ewf_middle_segment(suffix):
+            raise ValueError(
+                f"{src.name} is a non-first EWF segment. Register the first segment "
+                f"of the set (…{suffix[:2]}01) instead — FORENSIA ingests the whole "
+                "co-located set from it; a middle segment alone cannot assemble the "
+                "image (RULE 2)."
+            )
+        else:
+            segment_sources = [src]
+            is_multi_segment = False
+
         evidence_root = case_dir / "evidence"
         evidence_root.mkdir(parents=True, exist_ok=True)
 
@@ -206,41 +364,55 @@ class EvidenceManager:
             raise ValueError(f"evidence dir escapes cases root: {evidence_dir}")
         evidence_dir.mkdir(parents=True, exist_ok=False)
 
-        # 3. Hash the source FIRST (baseline). This is what every downstream
-        #    comparison is anchored to.
-        baseline_sha, baseline_size = _sha256_file(src)
-
-        # 4. Copy preserving the suffix so downstream tools that key on extension
-        #    (e.g. ``.vmdk``, ``.raw``, ``.E01``) behave correctly. ``copy2`` keeps
-        #    mtime, which is useful for triage even though the hash is what matters.
-        suffix = src.suffix  # may be ""; that's fine
-        dest = evidence_dir / f"original{suffix}"
+        # 3-6. Copy each segment with the hash gate IN ORDER (forensic invariant 2):
+        #    per segment → sha256 the source (baseline) → copy → re-hash the copy →
+        #    abort on any mismatch → chmod 0o444. Each segment keeps its own extension
+        #    under the shared ``original`` stem (``original.E01`` … ``original.E0N``)
+        #    so ``ewfmount`` reassembles the image from the first. A single-file
+        #    evidence runs this loop exactly once — identical to the pre-set behaviour.
+        #    Any failure (copy error OR hash mismatch) cleans up the half-built dir so
+        #    a retry with a fixed source doesn't trip the existence check.
+        segments: list[EvidenceSegment] = []
         try:
-            shutil.copy2(src, dest)
+            for seg_src in segment_sources:
+                dest = evidence_dir / f"original{seg_src.suffix}"
+                src_sha, src_size = _sha256_file(seg_src)  # baseline for THIS segment
+                shutil.copy2(seg_src, dest)
+                copy_sha, copy_size = _sha256_file(dest)  # re-hash the copy
+                if copy_sha != src_sha or copy_size != src_size:
+                    raise OSError(  # noqa: TRY301 — cleanup happens in the handler below
+                        f"evidence copy hash mismatch on {seg_src.name} — corruption "
+                        f"during copy (source={src_sha} copy={copy_sha})"
+                    )
+                os.chmod(dest, _READ_ONLY_MODE)
+                segments.append(
+                    EvidenceSegment(name=dest.name, sha256=src_sha, size=src_size)
+                )
         except OSError:
-            # Clean up the half-created evidence dir before re-raising so a retry
-            # with a fixed source doesn't trip the existence check.
             shutil.rmtree(evidence_dir, ignore_errors=True)
             raise
 
-        # 5. Re-hash the COPY. Mismatch == corruption during transfer; refuse.
-        copy_sha, copy_size = _sha256_file(dest)
-        if copy_sha != baseline_sha or copy_size != baseline_size:
-            shutil.rmtree(evidence_dir, ignore_errors=True)
-            raise IOError(
-                "evidence copy hash mismatch — corruption during copy "
-                f"(source={baseline_sha} copy={copy_sha})"
-            )
+        # The FIRST segment is the primary: its hash is the baseline the audit and the
+        # metadata/custody-act key on (single-value contract preserved), and its copy
+        # (``original.E01`` / ``original.<ext>``) is the handle's ``original_path``.
+        primary = segments[0]
+        baseline_sha, baseline_size = primary.sha256, primary.size
+        dest = evidence_dir / primary.name
 
-        # 6. Read-only at the FS level. v1 minimum; Phase 2 adds block-level RO.
-        os.chmod(dest, _READ_ONLY_MODE)
-
-        # 7. Triage fingerprint over the already-frozen copy. Pure read, so it
-        #    can run AFTER chmod 0o444. We do this before writing baseline.json
-        #    so the persisted record carries the triage axes from day one.
+        # 7. Triage fingerprint over the already-frozen FIRST segment. Pure read, so it
+        #    can run AFTER chmod 0o444. For an EWF set this is ``original.E01`` — triage
+        #    returns container_disk/unknown (correct for EWF; the operator anchors the
+        #    profile). We do this before writing baseline.json so the persisted record
+        #    carries the triage axes from day one.
         triage = fingerprint_evidence(dest)
 
         registered_at = _utc_now_iso()
+        # Segment records (dest name + own hash + size). Persisted only for a
+        # multi-file (EWF) set — a single-file evidence keeps the legacy baseline
+        # shape (no ``segments`` key), so ``.raw`` behaves exactly as before.
+        segment_records = [
+            {"name": s.name, "sha256": s.sha256, "size": s.size} for s in segments
+        ]
         baseline = {
             "sha256": baseline_sha,
             "size": baseline_size,
@@ -252,24 +424,29 @@ class EvidenceManager:
             "triage_confidence": triage.confidence,
             "triage_signals": list(triage.signals),
         }
+        if is_multi_segment:
+            baseline["segments"] = segment_records
         self._write_baseline(evidence_dir, baseline)
 
         # 8. Chain-of-custody event (forensic invariant 4): the baseline hash
         #    reaches the append-only audit log the moment the evidence exists,
         #    not only when it is later verified. Records what came in and from
-        #    where — the literal source path, like baseline.json.
-        AuditLog(case_dir / "audit.jsonl").append(
-            {
-                "action": "evidence_register",
-                "case_id": case_dir.name,
-                "evidence_id": evidence_id,
-                "sha256": baseline_sha,
-                "size": baseline_size,
-                "source_path": str(src),
-                "original_basename": dest.name,
-                "registered_at": registered_at,
-            }
-        )
+        #    where — the literal source path, like baseline.json. For an EWF set the
+        #    WHOLE segment family (names + per-segment hashes) is recorded, so the
+        #    chain of custody attests every file that was ingested, not just the .E01.
+        register_event = {
+            "action": "evidence_register",
+            "case_id": case_dir.name,
+            "evidence_id": evidence_id,
+            "sha256": baseline_sha,
+            "size": baseline_size,
+            "source_path": str(src),
+            "original_basename": dest.name,
+            "registered_at": registered_at,
+        }
+        if is_multi_segment:
+            register_event["segments"] = segment_records
+        AuditLog(case_dir / "audit.jsonl").append(register_event)
 
         # 9. Auto-detección de SO: derive the case's os_profile from THIS
         #    evidence's content-based triage (never the host platform). The
@@ -289,6 +466,9 @@ class EvidenceManager:
             registered_at=registered_at,
             detected_os=triage.family,
             detected_kind=triage.kind,
+            # Mirror what ``get()`` reconstructs from baseline.json: the set for an
+            # EWF evidence, empty for a single-file one (no ``segments`` key persisted).
+            segments=tuple(segments) if is_multi_segment else (),
         )
 
     def get(self, case_id: str, evidence_id: str) -> EvidenceHandle:
@@ -299,6 +479,20 @@ class EvidenceManager:
             raise KeyError(
                 f"evidence original missing for evidence_id={evidence_id}: {original}"
             )
+
+        # Segment set (EWF ``.E01`` family), in order; empty for single-file / legacy
+        # evidence. Every recorded segment file must still be on disk — a missing one
+        # is a broken evidence set, surfaced now rather than at tool-run time.
+        segments = tuple(
+            EvidenceSegment(name=s["name"], sha256=s["sha256"], size=s["size"])
+            for s in baseline.get("segments", [])
+        )
+        for seg in segments:
+            if not (evidence_dir / seg.name).is_file():
+                raise KeyError(
+                    f"evidence segment missing for evidence_id={evidence_id}: "
+                    f"{seg.name}"
+                )
 
         # Lazy backfill: evidence registered before forensia.triage existed
         # may lack ``detected_os`` and/or ``detected_kind`` in baseline.json.
@@ -336,6 +530,7 @@ class EvidenceManager:
             last_verification=self._read_verification(evidence_dir),
             detected_os=detected_os,
             detected_kind=detected_kind,
+            segments=segments,
         )
 
     def list(self, case_id: str) -> list[EvidenceHandle]:
@@ -358,32 +553,62 @@ class EvidenceManager:
 
     def verify(self, case_id: str, evidence_id: str) -> bool:
         handle = self.get(case_id, evidence_id)
-        current_sha, current_size = _sha256_file(handle.original_path)
-        verified = current_sha == handle.sha256 and current_size == handle.size
+        evidence_dir = self._evidence_dir(case_id, evidence_id)
+
+        # Re-hash EVERY file that backs the evidence. For an EWF set that is all of
+        # ``original.E01`` … ``original.E0N`` — a change to ANY segment breaks the
+        # chain of custody, so verification is the AND over the whole set (a
+        # truncated/altered ``.E05`` must NOT pass just because ``.E01`` is intact).
+        # Single-file / legacy evidence (no segments recorded) re-hashes the one
+        # original file, exactly as before.
+        segments = handle.segments or (
+            EvidenceSegment(
+                name=handle.original_path.name,
+                sha256=handle.sha256,
+                size=handle.size,
+            ),
+        )
+        segment_results: list[dict] = []
+        verified = True
+        for seg in segments:
+            seg_path = evidence_dir / seg.name
+            if seg_path.is_file():
+                cur_sha, cur_size = _sha256_file(seg_path)
+                ok = cur_sha == seg.sha256 and cur_size == seg.size
+            else:
+                cur_sha, ok = "", False  # a missing segment fails custody, loudly
+            verified = verified and ok
+            segment_results.append(
+                {"name": seg.name, "verified": ok, "current_sha256": cur_sha}
+            )
 
         # Persist the result so it survives navigation / app restarts. The record
         # lives next to baseline.json and the same fact is hash-chained into the
         # case audit log so the perito can prove WHEN and WITH WHAT RESULT every
-        # verification happened.
+        # verification happened. The single-value record keeps the PRIMARY
+        # (first-segment) current hash for the metadata/acta contract; ``verified``
+        # reflects the WHOLE set.
+        primary_current_sha = segment_results[0]["current_sha256"]
         record = VerificationRecord(
             verified_at=_utc_now_iso(),
             verified=verified,
-            current_sha256=current_sha,
+            current_sha256=primary_current_sha,
         )
-        evidence_dir = self._evidence_dir(case_id, evidence_id)
         self._write_verification(evidence_dir, record)
 
         case_dir = self._cases.case_dir(case_id)
-        AuditLog(case_dir / "audit.jsonl").append(
-            {
-                "action": "evidence_verify",
-                "case_id": case_id,
-                "evidence_id": evidence_id,
-                "verified": verified,
-                "current_sha256": current_sha,
-                "baseline_sha256": handle.sha256,
-            }
-        )
+        verify_event = {
+            "action": "evidence_verify",
+            "case_id": case_id,
+            "evidence_id": evidence_id,
+            "verified": verified,
+            "current_sha256": primary_current_sha,
+            "baseline_sha256": handle.sha256,
+        }
+        if handle.segments:
+            # Attest each segment's result so the audit shows WHICH one changed.
+            verify_event["segments"] = segment_results
+        AuditLog(case_dir / "audit.jsonl").append(verify_event)
         return verified
 
     def get_verification(self, case_id: str, evidence_id: str) -> VerificationRecord | None:
@@ -415,6 +640,17 @@ class EvidenceManager:
             "read_only_label": READ_ONLY_LEVEL_LABELS[READ_ONLY_LEVEL],
             "detected_os": handle.detected_os,
             "detected_kind": handle.detected_kind,
+            # The segment set for an EWF ``.E01`` evidence (each file + its own
+            # baseline hash + size); an empty list for a single-file evidence.
+            "segments": [
+                {
+                    "name": s.name,
+                    "sha256": s.sha256,
+                    "size_bytes": s.size,
+                    "size_human": human_readable_size(s.size),
+                }
+                for s in handle.segments
+            ],
             "verification": (
                 {
                     "verified_at": lv.verified_at,
@@ -503,6 +739,26 @@ class EvidenceManager:
             raise ValueError(f"baseline.json has invalid sha256: {data['sha256']!r}")
         if not isinstance(data["size"], int) or data["size"] < 0:
             raise ValueError(f"baseline.json has invalid size: {data['size']!r}")
+        # ``segments`` is optional (only multi-file EWF sets have it). When present it
+        # must be a non-empty list of well-formed records — a malformed list is our
+        # own corruption and is surfaced loudly, never silently ignored (RULE 2).
+        segments = data.get("segments")
+        if segments is not None:
+            if not isinstance(segments, list) or not segments:
+                raise ValueError(
+                    "baseline.json 'segments' must be a non-empty list when present"
+                )
+            for seg in segments:
+                if not (
+                    isinstance(seg, dict)
+                    and isinstance(seg.get("name"), str)
+                    and seg["name"]
+                    and isinstance(seg.get("sha256"), str)
+                    and len(seg["sha256"]) == 64
+                    and isinstance(seg.get("size"), int)
+                    and seg["size"] >= 0
+                ):
+                    raise ValueError(f"baseline.json has an invalid segment: {seg!r}")
         return data
 
 

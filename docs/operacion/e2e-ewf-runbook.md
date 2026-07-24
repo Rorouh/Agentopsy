@@ -44,13 +44,31 @@ En la UI:
 
 1. **Crear caso** (nombre, examinador). El `os_profile` lo determina el triage por el
    contenido, o lo ancla el operador (Windows para un disco NTFS) — nunca por el host (RULE 2).
-2. **Registrar evidencia** desde la bandeja (`Registrar evidencia` → elige `caso.E01`). El
-   backend ejecuta el **hash gate en orden** (SHA-256 del origen → copia inmutable →
-   re-hash → `chmod 0444` → `baseline.json`) y expone el handle **solo lectura**. La copia
-   queda en `./projects/cases/<case-id>/evidence/<evidence-id>/original.E01`.
+2. **Registrar evidencia** desde la bandeja (`Registrar evidencia` → elige `caso.E01`).
+   Registrar el **primer segmento** (`.E01` / `.Ex01`) **ingiere el SET COMPLETO como UNA
+   evidencia**: el backend descubre sus hermanos co-localizados (`.E02`, `.E03`, … según la
+   convención libewf) en el **mismo directorio** de origen y aplica el **hash gate en orden,
+   por segmento** (SHA-256 del origen → copia inmutable → re-hash → `chmod 0444`). Las copias
+   quedan bajo un **stem común** para que `ewfmount` reensamble desde la primera:
+
+   ```
+   ./projects/cases/<case-id>/evidence/<evidence-id>/
+     original.E01   original.E02   …   original.E0N
+     baseline.json  ← sha256 primario = el del .E01; segments:[{name,sha256,size}, …] (N entradas)
+   ```
+
+   - **Set incompleto → rechazo (RULE 2):** si la secuencia tiene un hueco (hay `.E01` y
+     `.E03` pero falta `.E02`) el registro **falla fuerte** y **no** deja evidencia a medias;
+     coloca el segmento que falta y reintenta. Un `.E01` **sin hermanos** es válido (segmento
+     único). Registrar un segmento intermedio (`.E02`…) por sí solo se rechaza: registra el
+     `.E01`.
+   - Un fichero único (`.raw` / `.dd` / `.vmdk` / `.mem`) se registra exactamente igual que
+     antes (sin `segments`).
 
 > El agente y las tools **nunca** tocan la ruta original: siempre la copia inmutable
-> (FORENSIC INVARIANTS 1-2). El `.E01` no se modifica en ningún paso.
+> (FORENSIC INVARIANTS 1-2). Ningún segmento `.E0x` se modifica en ningún paso. **Verificar**
+> (Evidencia → Verificar) re-hashea **todos** los segmentos: si cualquiera cambia, la
+> verificación falla nombrando el segmento afectado.
 
 ## 3. Ejecutar la cadena (por el agente / chat)
 
@@ -132,3 +150,5 @@ docker compose down                      # detiene el stack (conserva ./projects
 - Contraparte automatizada sin Docker/FUSE (CI): `backend/tests/test_e2e_chain.py`
   (cadena por loopback), `test_ewf_routing.py` (routing EWF), `test_derived_handoff.py`
   (relevo derivado), `test_binary_stdout_channel.py` (canal binario de `icat`).
+- Ingesta del set multi-segmento (copia de `.E01`…`.E0N`, `segments[]`, rechazo de huecos,
+  `verify` de todos los segmentos): `backend/tests/test_evidence_ewf_segments.py`.

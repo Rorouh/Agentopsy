@@ -132,6 +132,18 @@ def build_custody_act(
             "registered_at": handle.registered_at,
             "detected_os": handle.detected_os,
             "detected_kind": handle.detected_kind,
+            # For an EWF ``.E01`` evidence, the whole segment family (each file + its
+            # own baseline hash + size) so the annex attests every ingested file, not
+            # just the first segment. Empty for a single-file evidence.
+            "segments": [
+                {
+                    "name": s.name,
+                    "sha256": s.sha256,
+                    "size_bytes": s.size,
+                    "size_human": human_readable_size(s.size),
+                }
+                for s in handle.segments
+            ],
         },
         "read_only": {
             "level": meta["read_only_level"],

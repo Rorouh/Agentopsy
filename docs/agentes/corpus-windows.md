@@ -95,7 +95,12 @@ independiente (ya computada por segmento para la variante E01; ver «Detalle»):
 - **Variantes de ingesta** (mismo contenido lógico, dos formas equivalentes):
   - **(a) set E01 multi-segmento** — apuntar la herramienta a `LoneWolf.E01`;
     `libewf` carga `LoneWolf.E02`–`E09` automáticamente si están en la misma
-    carpeta. Es la variante nativa de la descarga por segmentos.
+    carpeta. Es la variante nativa de la descarga por segmentos. Al **registrar**
+    el `LoneWolf.E01` en la bandeja, FORENSIA ingiere el **set completo como UNA
+    evidencia**: copia los 9 segmentos co-localizados a `original.E01`…`original.E09`
+    (hash gate por segmento, `segments[]` en `baseline.json`) para que `ewfmount`
+    reensamble desde `original.E01`. Deja los `.E02`–`.E09` junto al `.E01` en la
+    bandeja; si falta uno, el registro se rechaza (RULE 2).
   - **(b) imagen única reconstruida** — el ZIP único del escenario, o el resultado
     de convertir el set E01 con `ewfexport` a `.raw`. Útil para tools que esperan
     un único fichero de imagen.

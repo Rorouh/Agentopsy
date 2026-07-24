@@ -174,8 +174,15 @@ audit**.
    **Registrar**. FORENSIA ejecuta el **hash gate**: calcula el **SHA-256 baseline**, copia la
    evidencia a una copia inmutable (solo lectura), corre el **triage** (deriva `os_profile` y
    tipo) y registra el evento en el audit. La fila aparece en *Evidencias del caso*.
-3. Pulsa **Verificar** en la fila: re-hashea y compara con el baseline, dejando un registro
-   *verificado el día X con resultado Y* (cadena de custodia).
+   - **EWF multi-segmento (`.E01`…`.E0N`):** selecciona el **primer segmento** (`.E01` /
+     `.Ex01`); registrarlo ingiere el **set completo como UNA evidencia** — FORENSIA copia
+     todos los segmentos hermanos del **mismo directorio** (hash gate por segmento) para que
+     `ewfmount` reensamble la imagen. Si falta un segmento intermedio, el registro **se
+     rechaza** (no deja evidencia a medias): completa el set y reintenta. Deja siempre los
+     `.E02`, `.E03`, … junto al `.E01` en la bandeja.
+3. Pulsa **Verificar** en la fila: re-hashea y compara con el baseline (para un set EWF,
+   re-hashea **todos** los segmentos), dejando un registro *verificado el día X con resultado
+   Y* (cadena de custodia).
 
 > **De dónde sacar evidencia de prueba.** El repo referencia imágenes públicas de CTF por
 > URL+SHA-256 en `docs/agentes/corpus-windows.md` y en `docs/pruebas/**` (DVWA rootfs,
