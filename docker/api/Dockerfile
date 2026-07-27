@@ -32,6 +32,12 @@ RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
 # --- CLIs de la capa de ejecución ---------------------------------------------
 # Versiones fijadas (sobreescribibles con --build-arg); nombres de paquete npm
 # verificados contra registry.npmjs.org.
+#
+# OJO: estas versiones deciden a qué generación resuelve un ALIAS de modelo
+# (`opus`, `sonnet`, …) — un CLI viejo resuelve `opus` a una generación anterior.
+# Para fijar la generación sin rebuild, usa el id COMPLETO en `CLAUDE_CODE_MODEL`
+# (Configuración → Ejecutores/IA). Detalle y comprobación:
+# docs/operacion/guia-despliegue-y-pruebas-ui.md §3 «Alias vs id completo».
 ARG CLAUDE_CODE_VERSION=2.1.187
 ARG CODEX_VERSION=0.142.5
 ARG GEMINI_CLI_VERSION=0.49.0

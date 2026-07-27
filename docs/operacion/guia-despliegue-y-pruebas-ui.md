@@ -106,6 +106,40 @@ id que acepte el CLI; *Por defecto del CLI* lo deja sin fijar y manda el modelo 
 CLI. Agentopsy **no puede enumerar** el catálogo de un CLI cloud sin API key (SECURITY 7): la
 lista son sugerencias, no el catálogo completo. Ollama sí lista los modelos realmente instalados.
 
+#### Alias (`opus`, `sonnet`) vs id completo — cuidado con la generación
+
+Un **alias no nombra una generación**: lo resuelve el CLI, y el CLI va **pineado en la imagen**
+(`docker/api/Dockerfile`: `CLAUDE_CODE_VERSION` / `CODEX_VERSION` / `GEMINI_CLI_VERSION`). Una
+imagen construida hace semanas puede resolver `opus` a una generación anterior a la que resuelve
+el mismo alias en tu host. Comprobado el 2026-07-27 con `CLAUDE_CODE_VERSION=2.1.187`: `--model
+opus` dentro del contenedor resolvía a **`claude-opus-4-8`**.
+
+Verifícalo siempre contra el propio contenedor — el envelope de `--output-format json` trae el
+`modelUsage` con los ids reales:
+
+```bash
+docker compose exec -T api claude -p "di solo: ok" --model opus --output-format json \
+  | python3 -c 'import sys,json; print(list(json.load(sys.stdin)["modelUsage"]))'
+# → ['claude-haiku-4-5-20251001', 'claude-opus-4-8']   # haiku = modelo auxiliar interno del CLI
+```
+
+Para fijar la generación tienes dos vías:
+
+- **Puntual, sin rebuild** — pon el **id completo** en *Configuración → Ejecutores/IA →
+  Modelo de Claude Code* (`CLAUDE_CODE_MODEL`, p. ej. `claude-opus-5`). Agentopsy lo pasa
+  verbatim como `--model` y persiste en `/cases/config.json`. Es la vía recomendada: el id
+  completo no depende de cómo resuelva el alias el CLI de la imagen.
+- **Estructural** — sube la `ARG` correspondiente en `docker/api/Dockerfile` y reconstruye
+  (`docker compose up --build api`), para que el alias `opus` vuelva a resolver a la generación
+  actual. Necesaria si además quieres features nuevas del CLI, no sólo el modelo.
+
+> **Un id completo no es un catálogo.** `validate_model_id` (`executors/base.py`) sólo comprueba
+> la forma (`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$`, anti-inyección de flags — SECURITY 5), no que
+> el modelo exista: Agentopsy no puede consultar el catálogo sin API key (SECURITY 7). Si el id
+> no existe, falla el CLI y el error sube tal cual (RULE 2). Consecuencia práctica: los sufijos
+> entre corchetes tipo `claude-opus-5[1m]` (ventana de 1 M) **los rechaza el validador**, porque
+> `[` y `]` no están en el juego de caracteres permitido.
+
 ### Opción B — Claude Code / Codex CLI / Gemini CLI (tu suscripción, sin API keys)
 
 Inicia sesión **una vez dentro del contenedor** (la sesión persiste en el volumen
