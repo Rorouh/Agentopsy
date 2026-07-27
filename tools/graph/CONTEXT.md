@@ -52,7 +52,9 @@ inmutable `evidence_id` + `baseline_sha256`, construido **solo** desde un
 `fingerprint_evidence()` / `fingerprint_os()` → `DetectedEvidence` /
 `routable_profile()`; **resolución de perfil** `resolve_os_profile()` /
 `OsProfileUnresolved` (el único punto que decide el `os_profile`, o falla fuerte —
-RULE 2).
+RULE 2); **registro asíncrono** `forensia.evidence_jobs` (`RegisterJobRegistry` /
+`RegisterJob`: corre `register()` en un hilo y expone fase + bytes; el registro es
+atómico —staging oculto + `rename`— y el progreso, observacional).
 
 **Auditoría** — `AuditLog` hash-encadenado + gates de integridad (hash-chain,
 tamper).

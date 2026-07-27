@@ -9,12 +9,29 @@ Hash gate, in strict order (forensic invariant 2):
 
     1. canonicalize ``source_path`` and refuse symlinks / non-files
     2. stream-hash the source                              (baseline)
-    3. copy source -> case_dir/evidence/<eid>/original.<ext>
+    3. copy source -> <staging>/original.<ext>
     4. stream-hash the copy and compare to baseline        (corruption check)
     5. chmod 0o444 the copy                                (read-only at FS level)
     6. write baseline.json
-    7. append ``evidence_register`` to the case audit log  (forensic invariant 4)
-    8. return the handle
+    7. publish: rename <staging> -> case_dir/evidence/<eid>  (ATOMIC)
+    8. append ``evidence_register`` to the case audit log  (forensic invariant 4)
+    9. return the handle
+
+Steps 2-6 run inside a HIDDEN staging directory (``evidence/.registrando-<eid>``,
+which ``list()`` ignores because the name is not a UUID4) and only a fully built,
+fully hash-verified set is published with a single ``os.rename`` (step 7). A
+multi-GB image takes minutes: an interruption mid-copy (a killed request, a
+crash, ``Ctrl-C``) must never leave a TRUNCATED, baseline-less ``evidence/<uuid>``
+directory behind — on any exception the staging dir is removed and nothing was
+ever visible under ``evidence/``. The hash gate itself is unchanged: same order,
+same per-segment verification, same immutable copy.
+
+``register`` also accepts an OPTIONAL ``on_progress`` callback. It is strictly
+OBSERVATIONAL — it changes nothing about the gate, the baseline or the audit; it
+only reports how many of the ``3 × total_bytes`` (hash source + copy + re-hash)
+have been processed, so the web surface can paint a real progress bar instead of
+holding an HTTP request open for minutes. Omitting it (the default) reproduces
+the previous behaviour byte for byte.
 
 Both ``register`` and ``verify`` write to the case's append-only, hash-chained
 ``audit.jsonl`` (forensic invariant 4): registration records the baseline hash +
@@ -35,7 +52,9 @@ import logging
 import os
 import re
 import shutil
+import stat
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -52,7 +71,29 @@ _UUID4_RE = re.compile(
 )
 
 _HASH_CHUNK = 1024 * 1024  # 1 MiB — evidence images run to tens of GB.
+_COPY_CHUNK = 1024 * 1024  # idem for the immutable copy (streamed, never read whole)
 _READ_ONLY_MODE = 0o444
+
+# ── Observational progress (does NOT touch the hash gate) ────────────────────
+# ``register`` walks every byte THREE times: hash the source (baseline), copy it,
+# re-hash the copy. Total work is therefore ``3 × sum(segment sizes)``; the
+# callback reports how much of it is done, which phase it is in, and which
+# segment of the set (1-based) is being processed.
+#
+#   on_progress(bytes_done, bytes_total_work, phase, segment_index, segment_count)
+#
+# ``phase`` is one of PROGRESS_PHASES. The callback is OPTIONAL: without it the
+# registration behaves exactly as before (nothing is called, nothing is measured
+# differently). It must not raise — it is called from inside the gate loop.
+ProgressCallback = Callable[[int, int, str, int, int], None]
+PROGRESS_PHASES = ("hashing", "copying", "verifying")
+# Report at most one callback per this many bytes (plus one forced report at the
+# end of every phase, so a small file still reports the three phases).
+_PROGRESS_INTERVAL = 64 * 1024 * 1024  # 64 MiB
+# Prefix of the hidden staging dir a registration is built in. Hidden from
+# ``list()`` because the name is not a UUID4, so a leftover (should the process
+# be killed between the copy and the cleanup) is never mistaken for evidence.
+_STAGING_PREFIX = ".registrando-"
 
 # Read-only enforcement level actually applied by ``register`` (step 6 below).
 # This is the HONEST label the metadata / acquisition-act surfaces show: v1 is
@@ -158,10 +199,14 @@ def _validate_evidence_id(evidence_id: str) -> str:
     return evidence_id
 
 
-def _sha256_file(path: Path) -> tuple[str, int]:
+def _sha256_file(path: Path, on_chunk: Callable[[int], None] | None = None) -> tuple[str, int]:
     """Stream-hash ``path`` in chunks. Returns ``(hex_digest, size_bytes)``.
 
     Never use ``Path.read_bytes()`` here — evidence images are routinely multi-GB.
+
+    ``on_chunk`` (optional) receives the byte count of each chunk as it is read.
+    It is purely observational: the digest is computed exactly the same with or
+    without it.
     """
     digest = hashlib.sha256()
     size = 0
@@ -172,7 +217,62 @@ def _sha256_file(path: Path) -> tuple[str, int]:
                 break
             digest.update(chunk)
             size += len(chunk)
+            if on_chunk is not None:
+                on_chunk(len(chunk))
     return digest.hexdigest(), size
+
+
+def _copy_file(src: Path, dest: Path, on_chunk: Callable[[int], None] | None = None) -> None:
+    """Copy ``src`` to ``dest`` preserving metadata (contents + ``copystat``).
+
+    Without an observer this IS ``shutil.copy2`` — the exact call the hash gate
+    has always made, unchanged. With one, the same copy runs as an explicit
+    chunk loop so the bytes can be counted as they move (``shutil.copyfileobj``
+    takes no callback); ``copystat`` afterwards leaves the destination in the
+    same state ``copy2`` would. Either way ``src`` is only ever opened for READ
+    — the original evidence is never touched (forensic invariant 1).
+    """
+    if on_chunk is None:
+        shutil.copy2(src, dest)
+        return
+    with src.open("rb") as fsrc, dest.open("wb") as fdst:
+        while True:
+            chunk = fsrc.read(_COPY_CHUNK)
+            if not chunk:
+                break
+            fdst.write(chunk)
+            if on_chunk is not None:
+                on_chunk(len(chunk))
+    shutil.copystat(src, dest)
+
+
+def _clear_readonly_and_retry(func, path: str, _exc: BaseException) -> None:
+    """``shutil.rmtree`` error handler for the half-built staging directory.
+
+    Segments already through the gate are ``chmod 0o444``; on Windows unlinking a
+    read-only file raises ``PermissionError``, which would leave the staging dir
+    (and its truncated copy) behind — exactly the orphan the atomic registration
+    exists to prevent. Clearing the bit here is safe: this only ever runs on a
+    staging dir that is being destroyed because its registration FAILED, never on
+    published evidence.
+    """
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
+
+
+def _discard_staging(staging: Path) -> None:
+    """Remove a failed registration's staging dir. Never raises: it runs while
+    another exception is propagating, and masking that one with a cleanup error
+    would hide the real cause (the failure is logged instead)."""
+    if not staging.exists():
+        return
+    try:
+        shutil.rmtree(staging, onexc=_clear_readonly_and_retry)
+    except OSError as exc:
+        logger.error(
+            "no se pudo limpiar el directorio temporal de registro %s: %s — "
+            "bórralo a mano (no es evidencia registrada)", staging, exc,
+        )
 
 
 # ── EWF multi-segment sets ───────────────────────────────────────────────────
@@ -321,9 +421,24 @@ class EvidenceManager:
 
     # ---- public API ---------------------------------------------------------
 
-    def register(self, case_id: str, source_path: str) -> EvidenceHandle:
+    def register(
+        self,
+        case_id: str,
+        source_path: str,
+        *,
+        on_progress: ProgressCallback | None = None,
+    ) -> EvidenceHandle:
+        """Ingest ``source_path`` into ``case_id`` through the hash gate.
+
+        ``on_progress`` is OPTIONAL and purely OBSERVATIONAL (see the module
+        docstring): it never changes the gate, the baseline, the copy or the
+        audit. Omitted (the default) → identical behaviour to a registration
+        without progress, byte for byte.
+        """
         if not isinstance(source_path, str) or not source_path.strip():
             raise ValueError("source_path must be a non-empty string")
+        if on_progress is not None and not callable(on_progress):
+            raise ValueError("on_progress must be callable or None")
 
         # 1. Validate the case exists (load() raises KeyError on bad id / missing
         #    case) and is still open — a closed case is a closed chain of custody;
@@ -381,7 +496,46 @@ class EvidenceManager:
         if self._cases.root not in evidence_dir.parents:
             # Belt-and-braces: confine inside the cases root.
             raise ValueError(f"evidence dir escapes cases root: {evidence_dir}")
-        evidence_dir.mkdir(parents=True, exist_ok=False)
+        if evidence_dir.exists():
+            # A UUID4 collision is not a thing we silently absorb (RULE 2).
+            raise ValueError(f"evidence dir already exists: {evidence_dir}")
+
+        # 2.ter Work in a HIDDEN staging dir and PUBLISH with a single rename (step 7
+        #    below). Registering a multi-GB set takes minutes; if the process dies in
+        #    the middle, everything built so far must vanish with it — a truncated
+        #    ``evidence/<uuid>`` (no baseline.json, half a segment set) is worse than
+        #    no evidence at all. ``list()`` never sees this dir: its name is not a
+        #    UUID4. The hash gate below is byte-for-byte the same as before.
+        staging_dir = evidence_root / f"{_STAGING_PREFIX}{evidence_id}"
+        staging_dir.mkdir(parents=True, exist_ok=False)
+
+        # Observational progress accounting (see the module docstring). Every byte is
+        # walked three times (hash source → copy → re-hash copy), so the total work is
+        # 3× the set size. With ``on_progress=None`` nothing here is wired at all.
+        segment_count = len(segment_sources)
+        bytes_total = sum(s.stat().st_size for s in segment_sources)
+        total_work = 3 * bytes_total
+        progress_done = 0
+        progress_reported = 0
+
+        def _report(phase: str, seg_index: int, *, force: bool = False) -> None:
+            nonlocal progress_reported
+            if on_progress is None:
+                return
+            if force or progress_done - progress_reported >= _PROGRESS_INTERVAL:
+                progress_reported = progress_done
+                on_progress(progress_done, total_work, phase, seg_index, segment_count)
+
+        def _chunk_cb(phase: str, seg_index: int) -> Callable[[int], None] | None:
+            if on_progress is None:
+                return None  # nothing measured, nothing called
+
+            def _cb(n: int) -> None:
+                nonlocal progress_done
+                progress_done += n
+                _report(phase, seg_index)
+
+            return _cb
 
         # 3-6. Copy each segment with the hash gate IN ORDER (forensic invariant 2):
         #    per segment → sha256 the source (baseline) → copy → re-hash the copy →
@@ -389,15 +543,22 @@ class EvidenceManager:
         #    under the shared ``original`` stem (``original.E01`` … ``original.E0N``)
         #    so ``ewfmount`` reassembles the image from the first. A single-file
         #    evidence runs this loop exactly once — identical to the pre-set behaviour.
-        #    Any failure (copy error OR hash mismatch) cleans up the half-built dir so
-        #    a retry with a fixed source doesn't trip the existence check.
+        #    ANY failure (copy error, hash mismatch, triage, baseline write, rename)
+        #    discards the whole staging dir: nothing partial is ever published.
         segments: list[EvidenceSegment] = []
         try:
-            for seg_src in segment_sources:
-                dest = evidence_dir / f"original{seg_src.suffix}"
-                src_sha, src_size = _sha256_file(seg_src)  # baseline for THIS segment
-                shutil.copy2(seg_src, dest)
-                copy_sha, copy_size = _sha256_file(dest)  # re-hash the copy
+            for seg_index, seg_src in enumerate(segment_sources, start=1):
+                dest = staging_dir / f"original{seg_src.suffix}"
+                src_sha, src_size = _sha256_file(  # baseline for THIS segment
+                    seg_src, _chunk_cb("hashing", seg_index)
+                )
+                _report("hashing", seg_index, force=True)
+                _copy_file(seg_src, dest, _chunk_cb("copying", seg_index))
+                _report("copying", seg_index, force=True)
+                copy_sha, copy_size = _sha256_file(  # re-hash the copy
+                    dest, _chunk_cb("verifying", seg_index)
+                )
+                _report("verifying", seg_index, force=True)
                 if copy_sha != src_sha or copy_size != src_size:
                     raise OSError(  # noqa: TRY301 — cleanup happens in the handler below
                         f"evidence copy hash mismatch on {seg_src.name} — corruption "
@@ -407,45 +568,54 @@ class EvidenceManager:
                 segments.append(
                     EvidenceSegment(name=dest.name, sha256=src_sha, size=src_size)
                 )
-        except OSError:
-            shutil.rmtree(evidence_dir, ignore_errors=True)
+
+            # The FIRST segment is the primary: its hash is the baseline the audit and
+            # the metadata/custody-act key on (single-value contract preserved), and its
+            # copy (``original.E01`` / ``original.<ext>``) is the handle's
+            # ``original_path``.
+            primary = segments[0]
+            baseline_sha, baseline_size = primary.sha256, primary.size
+
+            # 7. Triage fingerprint over the already-frozen FIRST segment. Pure read, so
+            #    it can run AFTER chmod 0o444. For an EWF set this is ``original.E01`` —
+            #    triage returns container_disk/unknown (correct for EWF; the operator
+            #    anchors the profile). We do this before writing baseline.json so the
+            #    persisted record carries the triage axes from day one.
+            triage = fingerprint_evidence(staging_dir / primary.name)
+
+            registered_at = _utc_now_iso()
+            # Segment records (dest name + own hash + size). Persisted only for a
+            # multi-file (EWF) set — a single-file evidence keeps the legacy baseline
+            # shape (no ``segments`` key), so ``.raw`` behaves exactly as before.
+            segment_records = [
+                {"name": s.name, "sha256": s.sha256, "size": s.size} for s in segments
+            ]
+            baseline = {
+                "sha256": baseline_sha,
+                "size": baseline_size,
+                "registered_at": registered_at,
+                "source_path": str(src),
+                "original_basename": primary.name,
+                "detected_os": triage.family,
+                "detected_kind": triage.kind,
+                "triage_confidence": triage.confidence,
+                "triage_signals": list(triage.signals),
+            }
+            if is_multi_segment:
+                baseline["segments"] = segment_records
+            self._write_baseline(staging_dir, baseline)
+
+            # PUBLISH. Single atomic rename inside the same directory: the evidence
+            # appears complete (every segment hash-verified + baseline.json) or it
+            # never appears at all.
+            os.rename(staging_dir, evidence_dir)
+        except BaseException:
+            # Includes KeyboardInterrupt / SystemExit: an interrupted registration
+            # must not leave a half-copied image behind either.
+            _discard_staging(staging_dir)
             raise
 
-        # The FIRST segment is the primary: its hash is the baseline the audit and the
-        # metadata/custody-act key on (single-value contract preserved), and its copy
-        # (``original.E01`` / ``original.<ext>``) is the handle's ``original_path``.
-        primary = segments[0]
-        baseline_sha, baseline_size = primary.sha256, primary.size
         dest = evidence_dir / primary.name
-
-        # 7. Triage fingerprint over the already-frozen FIRST segment. Pure read, so it
-        #    can run AFTER chmod 0o444. For an EWF set this is ``original.E01`` — triage
-        #    returns container_disk/unknown (correct for EWF; the operator anchors the
-        #    profile). We do this before writing baseline.json so the persisted record
-        #    carries the triage axes from day one.
-        triage = fingerprint_evidence(dest)
-
-        registered_at = _utc_now_iso()
-        # Segment records (dest name + own hash + size). Persisted only for a
-        # multi-file (EWF) set — a single-file evidence keeps the legacy baseline
-        # shape (no ``segments`` key), so ``.raw`` behaves exactly as before.
-        segment_records = [
-            {"name": s.name, "sha256": s.sha256, "size": s.size} for s in segments
-        ]
-        baseline = {
-            "sha256": baseline_sha,
-            "size": baseline_size,
-            "registered_at": registered_at,
-            "source_path": str(src),
-            "original_basename": dest.name,
-            "detected_os": triage.family,
-            "detected_kind": triage.kind,
-            "triage_confidence": triage.confidence,
-            "triage_signals": list(triage.signals),
-        }
-        if is_multi_segment:
-            baseline["segments"] = segment_records
-        self._write_baseline(evidence_dir, baseline)
 
         # 8. Chain-of-custody event (forensic invariant 4): the baseline hash
         #    reaches the append-only audit log the moment the evidence exists,

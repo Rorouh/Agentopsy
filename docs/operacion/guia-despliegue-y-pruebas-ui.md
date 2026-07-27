@@ -201,6 +201,21 @@ audit**.
      `ewfmount` reensamble la imagen. Si falta un segmento intermedio, el registro **se
      rechaza** (no deja evidencia a medias): completa el set y reintenta. Deja siempre los
      `.E02`, `.E03`, … junto al `.E01` en la bandeja.
+   - **Barra de progreso real (imágenes grandes).** El registro corre en **segundo plano**
+     (`POST …/evidence/async` → `job_id`, sondeado cada segundo), no dentro de la petición
+     HTTP: por eso una imagen de decenas de GB ya **no acaba en 504** del proxy. La zona
+     muestra el avance verdadero — `%`, `segmento N/M` y la **fase** (*SHA-256 del origen* →
+     *copiando a la carpeta del caso* → *re-hash de la copia*). Son las **tres pasadas** que
+     el hash gate siempre ha hecho sobre todos los bytes; el progreso solo las observa, no
+     cambia nada del gate. Puedes **cerrar la pestaña**: el registro sigue en el servidor y,
+     al volver al caso, la UI **re-engancha** el sondeo. (El registro de jobs vive en memoria
+     del `api`: si reinicias el contenedor pierdes el seguimiento, no la evidencia ya
+     publicada.)
+   - **El registro es ATÓMICO.** La evidencia se construye en un directorio temporal oculto
+     (`evidence/.registrando-<id>`) y solo se **publica entera** —todos los segmentos con su
+     hash verificado y su `baseline.json`— con un renombrado final. Si el proceso se corta a
+     mitad de copia **no queda nada**: ni un `evidence/<uuid>` truncado ni el temporal. No hay
+     botón de cancelar precisamente por eso: o entra completa, o no entra.
 3. Pulsa **Verificar** en la fila: re-hashea y compara con el baseline (para un set EWF,
    re-hashea **todos** los segmentos), dejando un registro *verificado el día X con resultado
    Y* (cadena de custodia).
@@ -283,6 +298,14 @@ hallazgos/tools) es la vista amable de este mismo registro.
   responde lento.
 - **“Sin agente para perfil windows/unix”**: falta `agentes/forensia-<perfil>/`. Verifica que
   la carpeta existe y reinicia el stack (`docker compose restart api`).
+- **El registro de una imagen grande parecía cortarse (504)**: ya no ocurre — el registro corre
+  en segundo plano y la barra muestra fase y bytes reales. Si al volver al caso no ves la
+  barra, el `api` se reinició: el seguimiento del job vive en memoria (la evidencia ya
+  publicada está en disco). Vuelve a pulsar **Registrar** si la evidencia no aparece.
+- **Una carpeta `.registrando-…` dentro de `projects/cases/<id>/evidence/`**: es el temporal de
+  un registro que se cortó de golpe (p. ej. `kill -9` del contenedor). **No es evidencia**
+  —nunca pasó la puerta de hash— y ni la UI ni `list()` la ven: bórrala sin miedo y repite el
+  registro.
 - **`.E01` no se procesa**: los maletines necesitan `cap_add: SYS_ADMIN` + `devices: /dev/fuse`
   (ya están en el compose) para `ewfmount`. No los comentes.
 - **Apple Silicon / arm64**: los maletines corren emulados (amd64); funcionan igual pero el

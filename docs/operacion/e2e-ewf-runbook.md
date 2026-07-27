@@ -69,6 +69,12 @@ En la UI:
      `.E01`.
    - Un fichero único (`.raw` / `.dd` / `.vmdk` / `.mem`) se registra exactamente igual que
      antes (sin `segments`).
+   - **Un set de decenas de GB tarda minutos** (el gate recorre todos los bytes tres veces:
+     hash del origen, copia, re-hash). El registro corre en **segundo plano** —la UI pinta
+     `%`, `segmento N/M` y la fase, y puedes cerrar la pestaña— y es **atómico**: se
+     construye en `evidence/.registrando-<id>` y se publica con un `rename` final, así que un
+     corte no deja un `evidence/<uuid>` truncado. Ver
+     [`guia-despliegue-y-pruebas-ui.md`](guia-despliegue-y-pruebas-ui.md) §5.2.
 
 > El agente y las tools **nunca** tocan la ruta original: siempre la copia inmutable
 > (FORENSIC INVARIANTS 1-2). Ningún segmento `.E0x` se modifica en ningún paso. **Verificar**

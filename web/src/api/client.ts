@@ -25,6 +25,7 @@ import type {
   GenerateReportRequest,
   EvidenceHandle,
   EvidenceMetadata,
+  EvidenceRegisterJob,
   EvidenceSource,
   ExecutorId,
   FsTimelineJob,
@@ -290,6 +291,9 @@ export const api = {
     // el caso actualizado; queda registrado en el audit log del caso.
     anchorProfile: (caseId: string, os_profile: "unix" | "windows") =>
       post<Case>(`/api/cases/${encodeURIComponent(caseId)}/os-profile`, { os_profile }),
+    // Registro SÍNCRONO: espera al hash-gate completo dentro de la petición.
+    // La UI NO lo usa — una imagen grande tarda minutos y nginx la corta con
+    // 504. Para registrar desde el navegador, `evidence.registerAsync`.
     registerEvidence: (caseId: string, source_path: string) =>
       post<EvidenceHandle>(`/api/cases/${encodeURIComponent(caseId)}/evidence`, {
         source_path,
@@ -455,6 +459,26 @@ export const api = {
     // eso es un paso aparte, con el hash-gate). `onProgress` va de 0 a 1.
     uploadSource: (file: File, onProgress?: (fraction: number) => void) =>
       upload<EvidenceSource>("/api/evidence/upload", file, onProgress),
+
+    // Registro en SEGUNDO PLANO: arranca el hash-gate y devuelve el job al
+    // instante. Es el camino de la UI para imágenes grandes — el registro
+    // síncrono (cases.registerEvidence) tarda minutos dentro de la petición y
+    // nginx lo corta con 504. El job sobrevive a cerrar la pestaña.
+    registerAsync: (caseId: string, source_path: string) =>
+      post<EvidenceRegisterJob>(
+        `/api/cases/${encodeURIComponent(caseId)}/evidence/async`,
+        { source_path },
+      ),
+    registerJob: (caseId: string, jobId: string) =>
+      request<EvidenceRegisterJob>(
+        `/api/cases/${encodeURIComponent(caseId)}/evidence/jobs/${encodeURIComponent(jobId)}`,
+      ),
+    // Jobs de registro del caso (más recientes primero): la página los consulta
+    // al montar para RE-ENGANCHAR el sondeo de un registro que sigue vivo.
+    listRegisterJobs: (caseId: string) =>
+      request<EvidenceRegisterJob[]>(
+        `/api/cases/${encodeURIComponent(caseId)}/evidence/jobs`,
+      ),
   },
 
   config: {

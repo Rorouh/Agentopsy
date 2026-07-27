@@ -5,6 +5,7 @@ import type {
   CustodyAct,
   EvidenceHandle,
   EvidenceMetadata,
+  EvidenceRegisterJob,
   EvidenceSource,
 } from "../api/types";
 import type { ViewId } from "../navigation/navItems";
@@ -93,6 +94,15 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [registering, setRegistering] = useState(false);
+  // Registro en SEGUNDO PLANO: el hash-gate de una imagen grande tarda minutos,
+  // así que no vive dentro de la petición HTTP (504 del proxy + copia cortada a
+  // medias). `registerJob` es el último estado sondeado (fase + bytes, para la
+  // barra); `registerJobRef` ata el sondeo a SU caso — cambiar de caso no debe
+  // sondear el job del anterior contra el nuevo (daría 404).
+  const [registerJob, setRegisterJob] = useState<EvidenceRegisterJob | null>(null);
+  const [registerJobRef, setRegisterJobRef] = useState<
+    { caseId: string; jobId: string } | null
+  >(null);
   // Flash de éxito de registro (2 s) — aria-live en EvidenceInbox.
   const [registerSuccess, setRegisterSuccess] = useState(false);
   const successTimer = useRef<number | undefined>(undefined);
@@ -345,42 +355,126 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
     [loadSources],
   );
 
+  // Arranca el registro en SEGUNDO PLANO y devuelve al instante: el hash-gate
+  // (hash del origen → copia inmutable → re-hash) recorre todos los bytes tres
+  // veces y tarda minutos en una imagen grande. El avance llega por sondeo del
+  // job (efecto de abajo); el registro sobrevive a cerrar la pestaña.
   const registerSelectedSource = useCallback(async () => {
-    // Snapshot the case at the moment the user CLICKED "Registrar": hashing a
-    // multi-GB image takes a while and the user may switch cases meanwhile.
+    // Snapshot the case at the moment the user CLICKED "Registrar": the job is
+    // anchored to it and the user may switch cases while it runs.
     const intendedCaseId = activeCase?.id;
     if (!intendedCaseId || !selectedSourcePath) return;
     setEvidenceError(null);
     setRegistering(true);
+    setRegisterJob(null);
     try {
-      const handle = await api.cases.registerEvidence(intendedCaseId, selectedSourcePath);
-      // Only append if the user hasn't navigated away in the meantime; if they
-      // did, the effect on activeCaseId already refetched and will reflect
-      // reality next time they come back to this case.
-      if (activeCaseIdRef.current === intendedCaseId) {
-        setEvidence((prev) => [handle, ...prev]);
-      }
-      setSelectedSourcePath("");
-      // El caso puede haber cambiado en el servidor (triage deriva os_profile
-      // al registrar la primera evidencia enrutable) — refresca la fila.
-      try {
-        const refreshed = await api.cases.get(intendedCaseId);
-        setCases((prev) => prev.map((c) => (c.id === refreshed.id ? refreshed : c)));
-      } catch {
-        /* refresco best-effort; la evidencia ya quedó registrada */
-      }
-      setRegisterSuccess(true);
-      window.clearTimeout(successTimer.current);
-      successTimer.current = window.setTimeout(() => setRegisterSuccess(false), 2000);
+      const job = await api.evidence.registerAsync(intendedCaseId, selectedSourcePath);
+      setRegisterJob(job);
+      setRegisterJobRef({ caseId: intendedCaseId, jobId: job.job_id });
     } catch (err) {
+      setRegistering(false);
       setEvidenceError({
         kind: "register",
         message: String(err instanceof Error ? err.message : err),
       });
-    } finally {
-      setRegistering(false);
     }
   }, [activeCase, selectedSourcePath]);
+
+  // Sondeo del job de registro (~1 s). Solo sondea el job de SU caso: si el
+  // operador cambia de caso, el job sigue vivo en el servidor y se re-engancha
+  // al volver (efecto siguiente).
+  useEffect(() => {
+    if (!registerJobRef || registerJobRef.caseId !== activeCaseId) return;
+    const { caseId, jobId } = registerJobRef;
+    let cancelled = false;
+    let timer: number | undefined;
+
+    const poll = async () => {
+      let job: EvidenceRegisterJob;
+      try {
+        job = await api.evidence.registerJob(caseId, jobId);
+      } catch (err) {
+        if (cancelled) return;
+        setRegisterJobRef(null);
+        setRegistering(false);
+        setEvidenceError({
+          kind: "register",
+          message: String(err instanceof Error ? err.message : err),
+        });
+        return;
+      }
+      if (cancelled) return;
+      setRegisterJob(job);
+      if (job.state === "pending" || job.state === "running") {
+        timer = window.setTimeout(() => void poll(), 1000);
+        return;
+      }
+
+      setRegisterJobRef(null);
+      setRegistering(false);
+      if (job.state === "error") {
+        // RULE 2: el mensaje del backend nombra la dependencia/guarda que falló.
+        setEvidenceError({
+          kind: "register",
+          message: job.error ?? "el registro terminó en error sin detalle",
+        });
+        return;
+      }
+
+      // done: la evidencia ya está publicada (registro atómico). Refresca la
+      // lista y la ficha del caso (el triage puede haber derivado os_profile).
+      setSelectedSourcePath("");
+      try {
+        const [list, refreshed] = await Promise.all([
+          api.cases.listEvidence(caseId),
+          api.cases.get(caseId),
+        ]);
+        if (cancelled) return;
+        if (activeCaseIdRef.current === caseId) setEvidence(list);
+        setCases((prev) => prev.map((c) => (c.id === refreshed.id ? refreshed : c)));
+      } catch {
+        /* refresco best-effort; la evidencia ya quedó registrada */
+      }
+      if (cancelled) return;
+      setRegisterSuccess(true);
+      window.clearTimeout(successTimer.current);
+      successTimer.current = window.setTimeout(() => setRegisterSuccess(false), 2000);
+    };
+
+    void poll();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [activeCaseId, registerJobRef]);
+
+  // Re-enganche: al montar (o al cambiar de caso) pregunta si ese caso tiene un
+  // registro VIVO y retoma su sondeo. Cerrar/reabrir la ventana no aborta nada
+  // — el job corre en el api (registro en memoria: un reinicio del api sí lo
+  // vacía, pero la evidencia ya publicada está en disco).
+  useEffect(() => {
+    setRegisterJob(null);
+    setRegisterJobRef(null);
+    setRegistering(false);
+    if (!activeCaseId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const jobs = await api.evidence.listRegisterJobs(activeCaseId);
+        if (cancelled) return;
+        const live = jobs.find((j) => j.state === "pending" || j.state === "running");
+        if (!live) return;
+        setRegisterJob(live);
+        setRegisterJobRef({ caseId: activeCaseId, jobId: live.job_id });
+        setRegistering(true);
+      } catch {
+        /* sin re-enganche: no es un fallo del caso, solo no hay job que retomar */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeCaseId]);
 
   const verifyOne = useCallback(
     async (evidenceId: string) => {
@@ -739,6 +833,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
                     loadingSources={loadingSources}
                     selectedSourcePath={selectedSourcePath}
                     registering={registering}
+                    registerJob={registerJob}
                     registerError={
                       evidenceError?.kind === "register" ? evidenceError.message : null
                     }

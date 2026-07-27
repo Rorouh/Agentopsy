@@ -354,6 +354,20 @@ is still the single-file formats ∪ the FIRST segment (`is_registrable_evidence
 The UI uploads a whole batch (multi-select + multi-drop), treats a 409 as informational
 ("already in the inbox" — evidence is never overwritten), auto-selects the batch's `.E01`
 and labels continuations as *segmento EWF · se registra desde el .E01* (not selectable).
+**Registering a large image no longer dies with the request** (2026-07-27): the hash gate
+walks every byte THREE times (hash source → immutable copy → re-hash), i.e. minutes for a
+multi-GB EWF set, so `POST /api/cases/{id}/evidence/async` starts it as a background job
+(`forensia.evidence_jobs`, mirror of `agent.jobs`) and returns a `job_id` at once, polled at
+`GET …/evidence/jobs/{job_id}` (`phase ∈ {hashing, copying, verifying}`, `seg_index/seg_count`,
+`bytes_done/bytes_total` where total is 3× the set size); `…/evidence/jobs` lists the case's
+jobs so the SPA re-attaches its polling on mount (closing the tab no longer aborts anything,
+and nginx no longer 504s). The synchronous endpoint stays for MCP/tests. `register` itself is
+now ATOMIC — it builds the whole set in a hidden `evidence/.registrando-<eid>` staging dir
+(invisible to `list()`: not a UUID4) and publishes it with a single `os.rename`, discarding
+the staging dir on ANY exception, so an interrupted registration can never leave a truncated,
+baseline-less evidence dir behind. The progress callback is OPTIONAL and strictly
+OBSERVATIONAL (FORENSIC INVARIANT 2 untouched: same order, same baseline, same audit;
+`on_progress=None` is the previous code path, `shutil.copy2` included).
 A case can also be DELETED (2026-07-27, `CaseManager.delete_case` →
 `POST /api/cases/{id}/delete`): irreversible removal of the whole case dir (evidence,
 hash-chained audit, findings, artifacts), gated by a type-to-confirm `confirm_name` that

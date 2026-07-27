@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
-import type { EvidenceSource } from "../api/types";
+import type { EvidenceRegisterJob, EvidenceSource } from "../api/types";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { formatBytes } from "../utils/format";
@@ -20,6 +20,9 @@ interface EvidenceInboxProps {
   loadingSources: boolean;
   selectedSourcePath: string;
   registering: boolean;
+  // Último estado sondeado del job de registro (fase + bytes reales), o null
+  // mientras no hay ninguno. Lo gobierna la página.
+  registerJob: EvidenceRegisterJob | null;
   // Mensaje del último fallo de registro (kind "register"), o null.
   registerError: string | null;
   // Flash de 2 s tras un registro exitoso (lo gobierna la página).
@@ -45,6 +48,27 @@ const EWF_HINT =
   "Si la imagen es un EWF partido (.E01, .E02, …), suelta o selecciona TODOS " +
   "sus segmentos: se registran desde el .E01 como una sola evidencia.";
 
+// Fases REALES del hash-gate (backend/forensia/evidence.py PROGRESS_PHASES). El
+// progreso es observacional: describe las tres pasadas que ya se hacían, no
+// añade ninguna (FORENSIC INVARIANT 2).
+const PHASE_LABEL: Record<NonNullable<EvidenceRegisterJob["phase"]>, string> = {
+  hashing: "SHA-256 del origen",
+  copying: "copiando a la carpeta del caso",
+  verifying: "re-hash de la copia",
+};
+
+function registerProgressLabel(job: EvidenceRegisterJob | null): string {
+  if (!job || job.bytes_total <= 0) {
+    // Aún validando (caso, ruta, conjunto EWF): no hay bytes que medir todavía.
+    return "Preparando el registro…";
+  }
+  const pct = Math.min(100, Math.round((job.bytes_done / job.bytes_total) * 100));
+  const parts = [`${pct}%`];
+  if (job.seg_count > 1) parts.push(`segmento ${job.seg_index}/${job.seg_count}`);
+  if (job.phase) parts.push(PHASE_LABEL[job.phase]);
+  return parts.join(" · ");
+}
+
 // Zona de registro de evidencia. El perito puede DEPOSITAR evidencia en la
 // bandeja de dos formas: copiándola a ./evidence en el host, o SUBIÉNDOLA desde
 // aquí (drag-and-drop o «Examinar», uno o VARIOS ficheros a la vez). La subida
@@ -59,6 +83,7 @@ export function EvidenceInbox({
   loadingSources,
   selectedSourcePath,
   registering,
+  registerJob,
   registerError,
   registerSuccess,
   uploading,
@@ -179,18 +204,39 @@ export function EvidenceInbox({
             </div>
           </div>
         ) : registering ? (
-          // Estado G — registrando: indeterminado (no hay progreso ni
-          // cancelación en el backend, a propósito — hash gate atómico).
+          // Estado G — registrando: PROGRESO REAL del hash-gate (bytes de las
+          // tres pasadas), sondeado del job. No hay cancelación a propósito: el
+          // registro es atómico (se publica entero o no se publica).
           <>
-            {selectedSource && (
-              <div className="dropzone-title">{selectedSource.name}</div>
-            )}
+            <div className="dropzone-title">
+              {selectedSource?.name ??
+                registerJob?.source_path.split(/[\\/]/).pop() ??
+                "Registrando evidencia"}
+            </div>
             <div className="loading-state" aria-live="polite">
               <span className="spinner" aria-hidden="true" />
-              <span>
-                Registrando y calculando SHA-256 baseline… Este proceso puede tardar
-                varios minutos para imágenes grandes. No cierres esta ventana.
-              </span>
+              <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
+                <div>Registrando… {registerProgressLabel(registerJob)}</div>
+                {registerJob && registerJob.bytes_total > 0 && (
+                  <div className="upload-progress" aria-hidden="true">
+                    <div
+                      className="upload-progress-bar"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.round((registerJob.bytes_done / registerJob.bytes_total) * 100),
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                )}
+                <div className="dropzone-hint">
+                  El hash-gate recorre la imagen tres veces (SHA-256 del origen →
+                  copia inmutable → re-hash de la copia): puede tardar varios
+                  minutos. Puedes cerrar esta ventana — el registro sigue en el
+                  servidor y se retoma al volver.
+                </div>
+              </div>
             </div>
           </>
         ) : sources === null ? (

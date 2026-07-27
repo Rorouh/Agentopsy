@@ -33,6 +33,23 @@ existe **antes** de cualquier exposición y **alcanza el audit log en la ingesta
 para demostrar que el flujo no alteró la evidencia. Ambos eventos van a la cadena
 hash-chained del caso (forensic invariant 4).
 
+**La ingesta es atómica: o entra entera, o no entra.** Todo el bloque (hash del origen →
+copia inmutable → re-hash → `chmod 0444` → `baseline.json`, por cada segmento del conjunto)
+se construye en un directorio **temporal oculto** `evidence/.registrando-<id>` y se
+**publica con un único `rename`** a `evidence/<id>`. Ante cualquier excepción el temporal se
+destruye. Importa forensemente: una imagen de decenas de GB tarda minutos y cualquier corte
+(timeout del proxy, crash, `Ctrl-C`) dejaba antes una **copia truncada sin `baseline.json`**
+— un objeto en la carpeta de evidencias del caso que no es evidencia y que nadie hasheó
+nunca. Ahora `list()` no puede ver un registro a medias: el nombre del temporal no es un
+UUID4, y la evidencia solo existe cuando está completa y verificada.
+
+El **progreso** que la UI pinta durante la ingesta es **observacional**: cuenta los bytes de
+las tres pasadas que el gate ya hacía (hash del origen, copia, re-hash) y nada más. No
+altera el orden, ni el baseline, ni la copia, ni el audit; sin observador (`on_progress=None`)
+el camino es exactamente el de siempre. El registro corre además **desacoplado de la
+petición HTTP** (`forensia.evidence_jobs`), para que la vida de una conexión del navegador
+nunca decida si una evidencia se ingiere o no.
+
 ## 3. Audit log: trazabilidad de cada acción del agente
 
 Un agente IA introduce no-determinismo. Forensemente hay que poder responder: *¿qué comando

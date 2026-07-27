@@ -213,6 +213,32 @@ export interface EvidenceHandle {
   detected_kind: "disk" | "memory" | "container_disk" | "unknown";
 }
 
+// Registro de evidencia en SEGUNDO PLANO (POST …/evidence/async). El hash-gate
+// recorre TODOS los bytes TRES veces (hash del origen → copia inmutable →
+// re-hash de la copia): minutos para una imagen grande, que dentro de la
+// petición HTTP acaban en 504 y en una copia cortada a medias. El job corre
+// desacoplado (cerrar la pestaña no lo aborta) y se sondea por id.
+// `bytes_total` es el TRABAJO total (3 × tamaño del conjunto), no el tamaño de
+// la evidencia; vale 0 mientras el backend valida, antes de mover un byte.
+export interface EvidenceRegisterJob {
+  job_id: string;
+  case_id: string;
+  source_path: string;
+  state: "pending" | "running" | "done" | "error";
+  phase: "hashing" | "copying" | "verifying" | null;
+  // Segmento en curso de un EWF partido (1-based) y total del conjunto.
+  seg_index: number;
+  seg_count: number;
+  bytes_done: number;
+  bytes_total: number;
+  // Presente solo cuando state === "done".
+  evidence_id: string | null;
+  // Mensaje accionable cuando state === "error" (RULE 2).
+  error: string | null;
+  created_at: string;
+  finished_at: string | null;
+}
+
 export interface CreateCaseRequest {
   name: string;
   examiner: string;
@@ -512,7 +538,7 @@ export interface ConfigSnapshot {
 
 // Fichero de la bandeja de evidencias (/api/evidence/sources): `path` es la
 // ruta DENTRO del contenedor api (p. ej. /evidence/disco.raw) — es la que se
-// envía a registerEvidence.
+// envía a registerAsync (el registro en segundo plano que usa la UI).
 export interface EvidenceSource {
   name: string;
   path: string;

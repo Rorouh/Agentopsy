@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from forensia.cases.manager import case_manager
 from forensia.evidence import evidence_manager
+from forensia.evidence_jobs import register_job_registry
 from forensia.security import require_token
 
 router = APIRouter()
@@ -182,6 +183,65 @@ def register_evidence(case_id: str, req: RegisterEvidenceRequest) -> dict[str, A
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return _evidence_dict(handle)
+
+
+@router.post("/api/cases/{case_id}/evidence/async", dependencies=[Depends(require_token)])
+def register_evidence_async(case_id: str, req: RegisterEvidenceRequest) -> dict[str, Any]:
+    """Arranca el registro en SEGUNDO PLANO y devuelve el ``job_id`` al instante.
+
+    Registrar una imagen grande recorre todos sus bytes tres veces (hash del
+    origen → copia → re-hash): minutos. Hacerlo dentro de la petición HTTP la
+    mata en el proxy (504) y corta la copia a mitad. Aquí el hash-gate corre
+    desacoplado (``forensia.evidence_jobs``) y se sondea con
+    ``GET …/evidence/jobs/{job_id}``; el registro síncrono sigue existiendo.
+
+    Sólo se valida aquí lo que permite fallar rápido con el código HTTP correcto
+    (caso inexistente → 404, ``source_path`` vacío → 422). El resto de guardas
+    (caso cerrado, ruta fuera de la bandeja, symlink, set EWF incompleto) las
+    aplica ``EvidenceManager.register`` y llegan como ``error`` accionable del
+    job — nunca como un registro a medias (RULE 2)."""
+    if not req.source_path or not req.source_path.strip():
+        raise HTTPException(
+            status_code=422,
+            detail="source_path is required: elige la evidencia de la bandeja "
+                   "(FORENSIA no asume 'la única' ni 'la más reciente' — RULE 2).",
+        )
+    try:
+        case_manager.load(case_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    job = register_job_registry.submit(case_id, req.source_path, manager=evidence_manager)
+    return job.public()
+
+
+@router.get("/api/cases/{case_id}/evidence/jobs", dependencies=[Depends(require_token)])
+def list_evidence_jobs(case_id: str) -> list[dict[str, Any]]:
+    """Jobs de registro de este caso, más recientes primero. La web lo consulta al
+    montar para RE-ENGANCHAR el sondeo de un registro que sigue vivo (cerrar la
+    pestaña no lo aborta). El registro vive en memoria del api: un reinicio lo
+    vacía (la evidencia ya registrada está en disco)."""
+    return register_job_registry.list_for_case(case_id)
+
+
+@router.get(
+    "/api/cases/{case_id}/evidence/jobs/{job_id}",
+    dependencies=[Depends(require_token)],
+)
+def get_evidence_job(case_id: str, job_id: str) -> dict[str, Any]:
+    """Estado del job: pending / running (fase + bytes) / done (``evidence_id``) /
+    error (mensaje accionable). Job inexistente — o de otro caso — → 404."""
+    snap = register_job_registry.snapshot(job_id)
+    if snap is None:
+        raise HTTPException(status_code=404, detail=f"job {job_id} not found")
+    if snap.get("case_id") != case_id:
+        raise HTTPException(
+            status_code=404,
+            detail=f"job {job_id} does not belong to case {case_id}",
+        )
+    return snap
 
 
 @router.get("/api/cases/{case_id}/evidence", dependencies=[Depends(require_token)])
