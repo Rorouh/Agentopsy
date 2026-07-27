@@ -260,7 +260,7 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
               height: 24,
               border: "1px solid var(--border)",
               borderRadius: 4,
-              background: "var(--surface)",
+              background: "var(--inset)",
               color: "var(--text-muted)",
               cursor: "pointer",
               display: "flex",

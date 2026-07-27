@@ -1,114 +1,234 @@
-import type { ReactNode } from "react";
-import { NAV_ITEMS, type ViewId } from "../navigation/navItems";
+import { useEffect, useState } from "react";
+import { api } from "../api/client";
+import type { Case } from "../api/types";
+import { useActiveCase } from "../state/activeCase";
+import { useTheme } from "../ThemeProvider";
+import { PHASES, UTILITIES, type ViewId } from "../navigation/navItems";
 
 interface SidebarProps {
   activeView: ViewId;
   onViewChange: (view: ViewId) => void;
+  // «cambiar caso» y «Nuevo caso» viven ahora en el sidebar, pero los diálogos
+  // siguen siendo los de la vista de evidencia: el armazón solo los dispara.
+  onOpenCaseSearch?: () => void;
+  onOpenNewCase?: () => void;
 }
 
-const ICON_PROPS = {
-  width: 16,
-  height: 16,
-  viewBox: "0 0 24 24",
-  fill: "none",
-  stroke: "currentColor",
-  strokeWidth: 2,
-  strokeLinecap: "round" as const,
-  strokeLinejoin: "round" as const,
-  style: { marginRight: 8, flexShrink: 0 },
+// Estado de una fase DEL CASO — independiente de la vista abierta.
+type PhaseState = "done" | "current" | "next" | "pending";
+
+const STATUS_LABEL: Record<Case["status"], string> = {
+  active: "abierto",
+  closed: "cerrado",
 };
 
-// Un icono simple por vista. Cuando se conecte backend real no hace falta
-// tocar esto — solo añadir un caso si se añade una vista nueva en navItems.ts.
-const NAV_ICONS: Record<ViewId, ReactNode> = {
-  guide: (
-    <svg {...ICON_PROPS}>
-      <circle cx="12" cy="12" r="10" />
-      <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-      <line x1="12" y1="17" x2="12.01" y2="17" />
-    </svg>
-  ),
-  repository: (
-    <svg {...ICON_PROPS}>
-      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-    </svg>
-  ),
-  "document-viewer": (
-    <svg {...ICON_PROPS}>
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <polyline points="14 2 14 8 20 8" />
-      <line x1="8" y1="13" x2="16" y2="13" />
-      <line x1="8" y1="17" x2="16" y2="17" />
-    </svg>
-  ),
-  timeline: (
-    <svg {...ICON_PROPS}>
-      <line x1="4" y1="6" x2="20" y2="6" />
-      <line x1="4" y1="12" x2="20" y2="12" />
-      <line x1="4" y1="18" x2="20" y2="18" />
-      <circle cx="9" cy="6" r="1.6" fill="currentColor" stroke="none" />
-      <circle cx="15" cy="12" r="1.6" fill="currentColor" stroke="none" />
-      <circle cx="7" cy="18" r="1.6" fill="currentColor" stroke="none" />
-    </svg>
-  ),
-  investigation: (
-    <svg {...ICON_PROPS}>
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-    </svg>
-  ),
-  mitre: (
-    <svg {...ICON_PROPS}>
-      <polygon points="12 2 19 6 19 14 12 22 5 14 5 6" />
-      <line x1="12" y1="2" x2="12" y2="22" />
-    </svg>
-  ),
-  settings: (
-    <svg {...ICON_PROPS}>
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-    </svg>
-  ),
+interface PhaseFacts {
+  evidenceTotal: number;
+  evidenceVerified: number;
+  findings: number;
+  documents: number;
+  // Mientras sea `false` no se pinta ninguna meta: un contador inventado para
+  // que la escalera «se vea llena» es exactamente lo que prohíbe RULE 2.
+  loaded: boolean;
+}
+
+const EMPTY_FACTS: PhaseFacts = {
+  evidenceTotal: 0,
+  evidenceVerified: 0,
+  findings: 0,
+  documents: 0,
+  loaded: false,
 };
 
-export function Sidebar({ activeView, onViewChange }: SidebarProps) {
-  const primaryItems = NAV_ITEMS.filter((item) => item.section === "primary");
-  const secondaryItems = NAV_ITEMS.filter((item) => item.section === "secondary");
+export function Sidebar({
+  activeView,
+  onViewChange,
+  onOpenCaseSearch,
+  onOpenNewCase,
+}: SidebarProps) {
+  const { activeCaseId } = useActiveCase();
+  const { theme, toggle } = useTheme();
+  const [activeCase, setActiveCase] = useState<Case | null>(null);
+  const [facts, setFacts] = useState<PhaseFacts>(EMPTY_FACTS);
+
+  // El sidebar está SIEMPRE visible, así que estos datos se cargan una vez por
+  // caso — no por render. Cualquier fallo deja la escalera sin meta en vez de
+  // rellenarla con supuestos.
+  useEffect(() => {
+    let cancelled = false;
+    if (!activeCaseId) {
+      setActiveCase(null);
+      setFacts(EMPTY_FACTS);
+      return;
+    }
+    (async () => {
+      try {
+        const c = await api.cases.get(activeCaseId);
+        if (!cancelled) setActiveCase(c);
+      } catch {
+        if (!cancelled) setActiveCase(null);
+      }
+      const [evidence, findings, documents] = await Promise.all([
+        api.cases.listEvidence(activeCaseId).catch(() => []),
+        api.cases.listFindings(activeCaseId).catch(() => []),
+        api.cases.listDocuments(activeCaseId).catch(() => []),
+      ]);
+      if (cancelled) return;
+      setFacts({
+        evidenceTotal: evidence.length,
+        evidenceVerified: evidence.filter((e) => e.last_verification !== null).length,
+        findings: findings.length,
+        documents: documents.length,
+        loaded: true,
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeCaseId]);
+
+  // Estado del CASO por fase. Sin caso, todo pendiente: no hay nada que
+  // presumir. Timeline no expone hoy un contador barato de super-timeline
+  // generada, así que se queda sin meta (TODO) en vez de fingir una.
+  const phaseState = (id: ViewId): PhaseState => {
+    if (!activeCase || !facts.loaded) return "pending";
+    switch (id) {
+      case "repository":
+        return facts.evidenceTotal > 0 ? "done" : "current";
+      case "investigation":
+        if (facts.evidenceTotal === 0) return "pending";
+        return facts.findings > 0 ? "done" : "current";
+      case "mitre":
+        return facts.findings > 0 ? "next" : "pending";
+      case "timeline":
+        return "pending";
+      case "document-viewer":
+        return facts.documents > 0 ? "done" : "pending";
+      default:
+        return "pending";
+    }
+  };
+
+  const phaseMeta = (id: ViewId): string => {
+    if (!activeCase || !facts.loaded) return "";
+    switch (id) {
+      case "repository":
+        if (facts.evidenceTotal === 0) return "sin evidencia";
+        return `${facts.evidenceTotal} ${facts.evidenceTotal === 1 ? "fichero" : "ficheros"} · ${facts.evidenceVerified} verificados`;
+      case "investigation":
+        if (facts.findings === 0) return "sin hallazgos";
+        return `${facts.findings} ${facts.findings === 1 ? "hallazgo" : "hallazgos"}`;
+      case "mitre":
+        return facts.findings > 0 ? "hallazgos por correlacionar" : "";
+      case "document-viewer":
+        if (facts.documents === 0) return "sin documentos";
+        return `${facts.documents} ${facts.documents === 1 ? "documento" : "documentos"}`;
+      default:
+        return "";
+    }
+  };
 
   return (
     <aside className="sidebar">
       <div className="brand-section">
-        <span className="brand-name">Agentopsy</span>
+        <div className="brand-name">AGENTOPSY</div>
+        <div className="brand-tagline">Análisis post-mortem</div>
       </div>
 
-      <div className="nav-list">
-        {primaryItems.map((item) => (
+      <div className="sidebar-case">
+        <div className="eyebrow">Caso</div>
+        {activeCase ? (
+          <>
+            <div className="sidebar-case-name">{activeCase.name}</div>
+            <div className="sidebar-case-meta">
+              {activeCase.os_profile ?? "perfil sin determinar"}
+              {" · "}
+              {STATUS_LABEL[activeCase.status]}
+            </div>
+          </>
+        ) : (
+          <div className="sidebar-case-meta">Sin caso seleccionado</div>
+        )}
+        {onOpenCaseSearch && (
+          <button type="button" className="sidebar-case-action" onClick={onOpenCaseSearch}>
+            {activeCase ? "cambiar caso" : "seleccionar caso"}
+          </button>
+        )}
+      </div>
+
+      {onOpenNewCase && (
+        <div className="sidebar-newcase">
+          <button type="button" className="btn-newcase" onClick={onOpenNewCase}>
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+            >
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            Nuevo caso
+          </button>
+        </div>
+      )}
+
+      <div className="sidebar-phases">
+        <div className="eyebrow">Fases del caso</div>
+        {/* DOS señales independientes: el PUNTO dice dónde está el CASO y no
+            depende de la vista abierta; la FILA (barra izquierda + peso de la
+            etiqueta) dice dónde estás TÚ. */}
+        <div className="phase-rail">
+          {PHASES.map((p, i) => {
+            const state = phaseState(p.id);
+            const selected = activeView === p.id;
+            const meta = phaseMeta(p.id);
+            return (
+              <div className="phase-row" key={p.id}>
+                <div className="phase-marker">
+                  <span className={`phase-dot phase-dot--${state}`}>
+                    {state === "done" ? "✓" : ""}
+                  </span>
+                  {i < PHASES.length - 1 && (
+                    <span className={`phase-line ${state === "done" ? "is-done" : ""}`} />
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className={`phase-button phase-button--${state} ${selected ? "is-selected" : ""}`}
+                  aria-current={selected ? "page" : undefined}
+                  onClick={() => onViewChange(p.id)}
+                >
+                  <span className="phase-label">{p.label}</span>
+                  {meta && <span className="phase-meta">{meta}</span>}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="sidebar-utilities">
+        {UTILITIES.map((u) => (
           <button
-            key={item.id}
-            className={`nav-item ${activeView === item.id ? "active" : ""}`}
-            aria-current={activeView === item.id ? "page" : undefined}
-            onClick={() => onViewChange(item.id)}
+            type="button"
+            key={u.id}
+            className={`utility-item ${activeView === u.id ? "is-active" : ""}`}
+            aria-current={activeView === u.id ? "page" : undefined}
+            onClick={() => onViewChange(u.id)}
           >
-            {NAV_ICONS[item.id]}
-            {item.label}
+            {u.label}
           </button>
         ))}
+      </div>
 
-        {secondaryItems.length > 0 && (
-          <>
-            <hr className="nav-section-divider" />
-            {secondaryItems.map((item) => (
-              <button
-                key={item.id}
-                className={`nav-item ${activeView === item.id ? "active" : ""}`}
-                aria-current={activeView === item.id ? "page" : undefined}
-                onClick={() => onViewChange(item.id)}
-              >
-                {NAV_ICONS[item.id]}
-                {item.label}
-              </button>
-            ))}
-          </>
-        )}
+      <div className="sidebar-theme">
+        <button type="button" className="theme-toggle" onClick={toggle} title="Cambiar el tema">
+          {theme === "dark" ? "○ claro" : "● oscuro"}
+        </button>
       </div>
     </aside>
   );
