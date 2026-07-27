@@ -6,6 +6,9 @@ type Theme = "light" | "dark";
 interface ThemeCtx {
   theme: Theme;
   toggle: () => void;
+  // El conmutador de Configuración elige un tema CONCRETO, no alterna: pulsar
+  // «Claro» estando en claro no debe llevarte a oscuro.
+  setTheme: (t: Theme) => void;
 }
 
 const STORAGE_KEY = "forensia-theme";
@@ -18,7 +21,11 @@ function getInitialTheme(): Theme {
   return "light";
 }
 
-const ThemeContext = createContext<ThemeCtx>({ theme: "light", toggle: () => {} });
+const ThemeContext = createContext<ThemeCtx>({
+  theme: "light",
+  toggle: () => {},
+  setTheme: () => {},
+});
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
@@ -33,7 +40,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const toggle = () => setTheme((prev) => (prev === "light" ? "dark" : "light"));
 
   return (
-    <ThemeContext.Provider value={{ theme, toggle }}>
+    <ThemeContext.Provider value={{ theme, toggle, setTheme }}>
       {children}
     </ThemeContext.Provider>
   );

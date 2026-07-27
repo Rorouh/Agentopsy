@@ -1,7 +1,6 @@
-import { useEffect, useState } from "react";
-import { api } from "../api/client";
 import type { Case } from "../api/types";
 import { useActiveCase } from "../state/activeCase";
+import { useCaseFacts } from "../state/caseFacts";
 import { useTheme } from "../ThemeProvider";
 import { PHASES, UTILITIES, type ViewId } from "../navigation/navItems";
 
@@ -22,70 +21,18 @@ const STATUS_LABEL: Record<Case["status"], string> = {
   closed: "cerrado",
 };
 
-interface PhaseFacts {
-  evidenceTotal: number;
-  evidenceVerified: number;
-  findings: number;
-  documents: number;
-  // Mientras sea `false` no se pinta ninguna meta: un contador inventado para
-  // que la escalera «se vea llena» es exactamente lo que prohíbe RULE 2.
-  loaded: boolean;
-}
-
-const EMPTY_FACTS: PhaseFacts = {
-  evidenceTotal: 0,
-  evidenceVerified: 0,
-  findings: 0,
-  documents: 0,
-  loaded: false,
-};
-
 export function Sidebar({
   activeView,
   onViewChange,
   onOpenCaseSearch,
   onOpenNewCase,
 }: SidebarProps) {
-  const { activeCaseId } = useActiveCase();
+  // El caso activo lo sirve el store global: el sidebar no vuelve a pedirlo al
+  // api ni mantiene una copia que pueda quedarse vieja tras editar el caso. Las
+  // cifras salen del MISMO hook que la Guía, para que no se contradigan.
+  const { activeCase } = useActiveCase();
   const { theme, toggle } = useTheme();
-  const [activeCase, setActiveCase] = useState<Case | null>(null);
-  const [facts, setFacts] = useState<PhaseFacts>(EMPTY_FACTS);
-
-  // El sidebar está SIEMPRE visible, así que estos datos se cargan una vez por
-  // caso — no por render. Cualquier fallo deja la escalera sin meta en vez de
-  // rellenarla con supuestos.
-  useEffect(() => {
-    let cancelled = false;
-    if (!activeCaseId) {
-      setActiveCase(null);
-      setFacts(EMPTY_FACTS);
-      return;
-    }
-    (async () => {
-      try {
-        const c = await api.cases.get(activeCaseId);
-        if (!cancelled) setActiveCase(c);
-      } catch {
-        if (!cancelled) setActiveCase(null);
-      }
-      const [evidence, findings, documents] = await Promise.all([
-        api.cases.listEvidence(activeCaseId).catch(() => []),
-        api.cases.listFindings(activeCaseId).catch(() => []),
-        api.cases.listDocuments(activeCaseId).catch(() => []),
-      ]);
-      if (cancelled) return;
-      setFacts({
-        evidenceTotal: evidence.length,
-        evidenceVerified: evidence.filter((e) => e.last_verification !== null).length,
-        findings: findings.length,
-        documents: documents.length,
-        loaded: true,
-      });
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeCaseId]);
+  const facts = useCaseFacts();
 
   // Estado del CASO por fase. Sin caso, todo pendiente: no hay nada que
   // presumir. Timeline no expone hoy un contador barato de super-timeline

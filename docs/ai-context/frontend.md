@@ -114,70 +114,102 @@ Security constraints that shape frontend work (gate numbers from `modelo-amenaza
 
 ## Current SPA Structure
 
+> Rediseño 2026-07 aplicado (`docs/diseno/rediseno-2026-07/`). El destino visual y
+> estructural es el mock `mocks/rediseno-final.dc.html`, que es la **fuente autoritativa**:
+> ante una duda de forma, se lee el mock, no el código anterior.
+
 ```
 web/src/                       ← the SPA (own package.json + vite.config.ts at web/)
-├── index.css               Token system (CSS custom properties). Single source of truth for all design tokens.
+├── index.css               Design tokens + THE whole stylesheet. Paper palette, terracotta accent,
+│                           square corners, 1px hairlines. No cards: sections are separated by a
+│                           label + hairline + space. Los alias transitorios de la paleta antigua
+│                           (--bg, --border, --text-*) ya NO existen.
 ├── api/
 │   ├── client.ts           THE HTTP client module: token bootstrap (/api/session), ApiError with the backend's actionable detail, every endpoint call.
 │   └── types.ts            Request/response types mirrored 1:1 (snake_case) from the routers.
 ├── main.tsx                Entry point. Just renders <App />.
-├── App.tsx                 Root assembler. Calls health + capabilities, owns activeView state, wires mock data as props.
-├── ThemeProvider.tsx       React context for theme. Reads localStorage, writes data-theme on <html>.
-├── ThemeToggle.tsx         Pill UI control. Reads/writes through useTheme(). No local state. Lives only inside SettingsPage now — not in the global topbar.
+├── App.tsx                 Root assembler: health + capabilities, activeView state, page switch.
+├── ThemeProvider.tsx       React context for theme: { theme, toggle, setTheme }. Reads localStorage
+│                           (forensia-theme), writes data-theme on <html>.
 ├── navigation/
-│   └── navItems.ts         ViewId union, NavItem interface, NAV_ITEMS (section: "primary"|"secondary"), DEFAULT_VIEW.
-├── types/
-│   └── domain.ts            Domain contracts meant to mirror future backend shapes: CaseSummary, EvidenceFile, ReportDocument, TimelineEvent, MitreTechniqueMatch, InvestigationFinding, GuideStep, LoadState.
-├── mocks/
-│   └── frontendPreviewData.ts  All mock data. Imported ONLY in App.tsx and passed down as typed props — pages never import mocks directly.
+│   └── navItems.ts         ViewId union, PHASES (las cinco fases del caso, con su índice para el
+│                           eyebrow «Fase N de 5»), UTILITIES, NAV_ITEMS, viewEyebrow/viewLabel, DEFAULT_VIEW.
+├── state/
+│   ├── activeCase.tsx      ActiveCaseProvider: caso activo GLOBAL **y la lista de casos**. Expone
+│                           { activeCaseId, setActiveCaseId, cases, activeCase, phase, error, reload,
+│                           upsertCase }. Antes cada vista cargaba su propia lista; ahora hay una sola.
+│   └── caseFacts.ts        useCaseFacts(): las cifras del caso (evidencias, verificadas, hallazgos,
+│                           documentos). LAS MISMAS para la escalera del sidebar y los pasos de la Guía,
+│                           para que no puedan contradecirse. Sin `loaded` no se pinta ninguna meta (RULE 2).
+├── layout/
+│   ├── AppShell.tsx        Rejilla 272px + main, la ÚNICA cabecera contextual, y los dos diálogos
+│                           globales de caso (CaseSearchModal, NewCaseModal).
+│   ├── Sidebar.tsx         El ESTADO DEL CASO, no un menú: marca → caso activo («cambiar caso») →
+│                           «Nuevo caso» → escalera de cinco fases → utilidades → tema. Sin iconos.
+│   │                       DOS señales independientes: el PUNTO dice dónde está el CASO; la FILA,
+│                           dónde estás TÚ.
+│   └── shellHeader.tsx     Contexto de la cabecera. `usePublishShellHeader(payload, deps)` la publica
+│                           desde la página y la retira al desmontar. Transporta DATOS YA RESUELTOS
+│                           por la página, nunca reglas (RULE 3).
 ├── utils/
 │   ├── format.ts            Pure formatting helpers (formatBytes, formatDate, shortHash).
-│   └── evidence.ts          SUPPORTED_EXTENSIONS (single source, mirrors toolkit/catalog.py + triage.py), fileExtension/isSupportedEvidence, EWF segment predicates (isEwfSegment/isEwfFirstSegment/isEwfContinuationSegment) and the uploadable-vs-registrable split (isUploadableEvidence ⊃ isRegistrableEvidence — mirrors forensia/evidence.py; backend re-validates), FILE_INPUT_ACCEPT_EXTENSIONS, DETECTED_KIND_LABEL.
-├── components/              Presentational pieces of RepositoryPage (page keeps ALL state/data logic):
-│   ├── CaseSearchModal.tsx  Command-palette case finder (opened from the "Buscar casos" header button — there is no left panel): client-side search/filter/sort + pagination (8/page) over the loaded Case[]; selecting a case activates it and closes the modal; error+retry state.
-│   ├── ActiveCaseHeader.tsx Compact case header: name+badge, meta line, actions (Investigar/Editar/Más▾ menu with click-outside; closed case → "Reabrir" prominent), collapsible notes.
-│   ├── EvidenceInbox.tsx    Register-evidence zone; states for closed case / uploading (real XHR progress, batch-aggregated) / registering (REAL progress bar from the register job: %, "segmento N/M", phase) / inbox not loaded / loading / empty / selectable sources (only registrable ones are clickable; EWF continuations are listed with a "segmento EWF · se registra desde el .E01" badge) / inline error+retry / 2s success flash / non-red upload notice (409 = already in the inbox). Real DnD + multi-select upload via the File API (POST /api/evidence/upload); no cancel on register — none exists server-side, and registration is atomic by design.
-│   └── EvidenceTable.tsx    Semantic <table> of registered evidence: kind label, size, short hash + copy button, verification badge, per-row verify; client-side search (>5 rows) + pagination (10/page).
-│   └── Pagination.tsx       Shared "‹ Anterior N/M Siguiente ›" client-side pager.
-├── layout/
-│   ├── AppShell.tsx        Visual frame: CSS grid (sidebar 260px + main), error banner via ErrorState. No topbar/ThemeToggle here anymore.
-│   └── Sidebar.tsx         Brand + full nav list (8 items, primary + secondary sections) with aria-current="page" on the active item. No footer: connection + version moved to SystemStatusPage (2026-07-04).
-├── pages/
-│   ├── ChatPage.tsx        Full chat UI + send logic via api.query(). Executor selector (4 chips; unavailable ones disabled with the actionable reason as tooltip) + a cloud-egress warning (the per-case consent flow and the /api/agent/cloud-consent endpoint were removed 2026-07-16 — the warning no longer blocks send). Has ownership constraint (see below).
-│   ├── GuidePage.tsx       Static onboarding/flow explainer. CTA → repository.
-│   ├── RepositoryPage.tsx  "Casos y evidencias". Full-width case workspace; cases are located via CaseSearchModal (command-palette, "Buscar casos" header button — no side panel). Real case lifecycle (create in Modal — no os_profile field, the orchestrator derives it —, edit inline, close with confirm Modal, reopen, DELETE with a type-the-name confirm Modal) + evidence upload/registration from the /api/evidence/sources inbox (./evidence on the host) + hash verify. Registration goes through the BACKGROUND job (POST …/evidence/async, polled ~1s, re-attached on mount via …/evidence/jobs) — never the synchronous endpoint, which 504s on multi-GB images. Orchestrates state; presentational pieces live in components/. CTA → investigation (in ActiveCaseHeader).
-│   ├── InvestigationPage.tsx  Wraps ChatPage, adds ContextBanner + findings side panel. CTA → timeline.
-│   ├── TimelinePage.tsx    Mock chronological events with severity filter ("Vista demo" banner). CTA → document-viewer.
-│   ├── DocumentViewerPage.tsx  Mock report list + viewer pane ("Vista demo" banner). CTA → mitre.
-│   ├── MitreAttackPage.tsx Mock MITRE technique correlation grid ("Vista demo" banner). Last step in the flow, no onNavigate.
-│   ├── SettingsPage.tsx    4 accessible tabs (tablist/tab/tabpanel): Ejecutores/IA (real: status of the 4 executors with local/cloud + reasons, capabilities refresh, DEFAULT_EXECUTOR select, OLLAMA_HOST/OLLAMA_MODEL, per-cloud-CLI model (CLAUDE_CODE_MODEL/CODEX_MODEL/GEMINI_MODEL, passed as --model; empty = CLI default)/FORENSIA_EXECUTOR_TIMEOUT, CLI-session/forensia-cli-auth explainer — no API keys anywhere), Operador y reportes (preview forms, disabled), Apariencia (real theme toggle + persistence), Sistema (security notes, diagnostics, about; CTA → system).
-│   └── SystemStatusPage.tsx  Capabilities dashboard. Renders caps.tools, caps.toolkits and caps.executors from the capabilities endpoint + connection/version (ex-sidebar-footer).
+│   └── evidence.ts          SUPPORTED_EXTENSIONS (single source, mirrors toolkit/catalog.py + triage.py),
+│                            EWF segment predicates, uploadable-vs-registrable split, DETECTED_KIND_LABEL.
+├── components/
+│   ├── CaseSearchModal.tsx  Buscador de casos Y administración del caso activo: búsqueda/filtro/orden +
+│                            paginación, y editar / cerrar-reabrir / ELIMINAR con confirmación por nombre
+│                            exacto (el backend re-valida `confirm_name`). Se abre desde «cambiar caso».
+│   ├── NewCaseModal.tsx     Alta de caso (nombre / examinador / descripción). Lleva la nota que NIEGA
+│                            que aquí se elija el os_profile: lo deriva el orquestador de la evidencia.
+│   ├── EvidenceInbox.tsx    Zona de alta: panel punteado + bandeja ./evidence + progreso REAL de subida
+│                            y de registro (fases del hash-gate, segmento N/M, bytes). El mock no dibuja
+│                            esas barras: se conservan porque no son decorativas.
+│   ├── EvidenceTable.tsx    Las SEIS columnas del mock (Fichero · Tipo · Tamaño · SHA-256 · Integridad · —).
+│                            La fecha de registro vive en el acta, que es su sitio de custodia.
+│   ├── ExecutorLoginModal.tsx  Login web de un ejecutor CLI cloud (relay / device-code).
+│   └── Pagination.tsx       Paginador client-side compartido.
+├── pages/                  Una por vista; TODAS llaman al backend real.
+│   ├── RepositoryPage.tsx  FASE 1 · Evidencia. Cuatro bloques del mock: cifras · alta · tabla · cadena de
+│   │                       custodia + acta. La gestión del caso ya NO vive aquí (está en el armazón).
+│   │                       El registro va por el job en SEGUNDO PLANO (…/evidence/async, sondeo ~1 s,
+│   │                       re-enganche al montar con …/evidence/jobs) — nunca el endpoint síncrono.
+│   ├── InvestigationPage.tsx  FASE 2. Rejilla minmax(0,1fr) 300px ↔ 28px + media query 1180px. Panel de
+│   │                       contexto: hallazgos, herramientas, coste. Conserva el aviso de desajuste de perfil.
+│   ├── ChatPage.tsx        La transcripción: columna de hora + filete, «Cadena de ejecución» con el argv
+│   │                       LITERAL, tira de hallazgo, compositor con ejecutor/modelo/enviar y prompts rápidos.
+│   ├── MitreAttackPage.tsx FASE 3. Matriz de columnas de 176 px con cabecera sticky; CINCO estados
+│   │                       (confirmada / sospechosa / descartada / propuesta / no evaluada) — «descartada»
+│   │                       no está en el mock y no puede faltar. Panel de dictamen con motivo obligatorio.
+│   ├── TimelinePage.tsx    FASE 4. Tres capas (investigación / MACB / eventos relevantes), día con filete,
+│   │                       fila hora·tipo·cuerpo. La evidencia de la super-timeline se ELIGE (RULE 2).
+│   ├── DocumentsPage.tsx   FASE 5. Rejilla 296px 1fr: lista + generador a la izquierda, documento a la
+│   │                       derecha. Un documento FINAL no se borra; el PDF va por fetch con token.
+│   ├── SettingsPage.tsx    Pestañas «Motor de análisis / Sistema · Maletín / Apariencia». Un motor por
+│   │                       fila desplegable: disponibilidad + ámbito + por-defecto + modelo en la misma línea.
+│   └── GuidePage.tsx       Seis pasos numerados cuyo estado REFLEJA el caso activo (useCaseFacts),
+│                           bloque de comandos oscuro en ambos temas, y las cuatro notas.
 └── ui/
-    ├── Button.tsx, Card.tsx, StatusDot.tsx   Original primitives, unchanged.
-    ├── Badge.tsx, EmptyState.tsx, LoadingState.tsx, ErrorState.tsx   Visual state primitives.
-    ├── PageHeader.tsx, PageSection.tsx       Page-level layout primitives.
-    ├── MetricCard.tsx, KeyValueList.tsx      Data display primitives.
-    ├── Modal.tsx                              Minimal dialog: fixed backdrop + centered panel; closes on backdrop click / Escape / ×; optional panelClassName for variants. Used for case creation, close-case confirmation and the case search palette.
-    └── ContextBanner.tsx                      Shows active case/evidence; used on Timeline/DocumentViewer/Mitre (Repository/Investigation render their own banners inline).
+    ├── Modal.tsx           Diálogo con la forma del mock: eyebrow · título · subtítulo · cuerpo · pie con
+    │                       acciones y pista de teclado. Cierra con backdrop / Escape / ×.
+    ├── LoadingState.tsx, ErrorState.tsx   Los dos únicos primitivos de estado que quedan.
+    └── (Button/Card/Badge/PageHeader/PageSection/MetricCard/KeyValueList/StatusDot/EmptyState se
+         retiraron con el rediseño: el lenguaje visual es de clases, no de componentes envoltorio.)
 ```
 
-Most pages are a **visual demo layer**: mock data typed as props, no direct backend
-calls, no real persistence except theme. They exist to make the app navigable and
-screenshot-ready while the real backend wiring lands incrementally through `App.tsx`.
+**Ya no hay capa de demo.** Las siete vistas llaman al backend real; `mocks/` y
+`types/domain.ts` se borraron con el rediseño.
 
 ### App.tsx — what it does and does not do
 
 `App.tsx` is the root assembler. It:
 - calls the health + capabilities endpoints on mount (via `api` from `src/api/client.ts`)
-- derives `isConnected` from the presence of `version` and absence of `error`
-- owns the `activeView: ViewId` state (8 views now, see `navigation/navItems.ts`)
-- imports all mock data from `mocks/frontendPreviewData.ts` and passes it down as typed props
+- owns the `activeView: ViewId` state (7 views, see `navigation/navItems.ts`) and persists it
+- passes `caps` / `onCapsRefresh` to the two pages that need them (Investigación, Configuración)
 - passes `onNavigate={setActiveView}` to pages that have a flow CTA
 - delegates everything else to `AppShell` and the page components
 
-It does **not** contain any UI, any business logic, or any direct DOM manipulation. When
-real backend data arrives, this is the only file that needs to change — pages keep their
-prop contracts. The migration to the HTTP client also concentrates here.
+It does **not** contain any UI, any business logic, or any direct DOM manipulation. El caso
+activo y su lista NO pasan por aquí: los sirve `ActiveCaseProvider`.
 
 ### ChatPage.tsx — ownership constraint
 
@@ -357,7 +389,8 @@ These are standing notes for when frontend changes touch other teams' boundaries
   now carries `executor: { id, name, local }` besides `reply`/`tool_calls`/`agent`.
 
 - **Backend changes `Capabilities` shape →** update the `Capabilities` type
-  and verify `SystemStatusPage.tsx` renders correctly. Adding fields is safe; removing or
+  and verify the «Sistema · Maletín» tab of `SettingsPage.tsx` renders correctly (it is the
+  only consumer of `caps.tools` / `caps.toolkits`). Adding fields is safe; removing or
   renaming fields is a breaking change. After the pivot, capabilities also report executor
   availability (Claude Code / Codex CLI / Gemini CLI / Ollama) — the UI must degrade
   explicitly per capability, never hide the failure (RULE 2).

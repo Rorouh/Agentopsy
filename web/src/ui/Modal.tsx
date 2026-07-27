@@ -6,6 +6,15 @@ interface ModalProps {
   title: string;
   onClose: () => void;
   children: ReactNode;
+  // Versalitas sobre el título: sitúan el diálogo en el flujo del caso
+  // («Fase 1 · antes de tocar evidencia», «Cadena de custodia»).
+  eyebrow?: string;
+  // Tercera línea de la cabecera, monoespaciada: el objeto sobre el que actúa
+  // el diálogo (el fichero de evidencia del acta, p. ej.).
+  subtitle?: string;
+  // Pie fijo con las acciones. La pista de teclado va a la derecha, separada.
+  footer?: ReactNode;
+  footerHint?: string;
   // Clase extra sobre .modal-panel para variantes (p. ej. el buscador de
   // casos estilo command-palette: más ancho y con el body a sangre).
   panelClassName?: string;
@@ -14,7 +23,17 @@ interface ModalProps {
 // Diálogo mínimo: backdrop fijo + panel centrado. Cierra con click en el
 // backdrop, Escape, o el botón ×. Sin createPortal — no hay ningún ancestro
 // con `transform` en AppShell/index.css que rompa `position: fixed`.
-export function Modal({ open, title, onClose, children, panelClassName }: ModalProps) {
+export function Modal({
+  open,
+  title,
+  onClose,
+  children,
+  eyebrow,
+  subtitle,
+  footer,
+  footerHint,
+  panelClassName,
+}: ModalProps) {
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -36,12 +55,22 @@ export function Modal({ open, title, onClose, children, panelClassName }: ModalP
         onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-header">
-          <h3>{title}</h3>
+          <div className="modal-header-titles">
+            {eyebrow && <div className="eyebrow">{eyebrow}</div>}
+            <h3>{title}</h3>
+            {subtitle && <div className="modal-subtitle">{subtitle}</div>}
+          </div>
           <button type="button" className="modal-close" aria-label="Cerrar" onClick={onClose}>
             ×
           </button>
         </div>
         <div className="modal-body">{children}</div>
+        {(footer || footerHint) && (
+          <div className="modal-footer">
+            {footer}
+            {footerHint && <span className="modal-footer-hint">{footerHint}</span>}
+          </div>
+        )}
       </div>
     </div>
   );

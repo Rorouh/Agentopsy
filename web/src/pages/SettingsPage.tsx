@@ -1,16 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
-import type { Capabilities, ConfigSnapshot, ExecutorId, ExecutorStatus } from "../api/types";
+import type {
+  Capabilities,
+  ConfigSnapshot,
+  ExecutorId,
+  ExecutorModels,
+  ExecutorStatus,
+} from "../api/types";
 import type { ViewId } from "../navigation/navItems";
 import { useTheme } from "../ThemeProvider";
-import { ThemeToggle } from "../ThemeToggle";
-import { PageHeader } from "../ui/PageHeader";
-import { KeyValueList } from "../ui/KeyValueList";
-import { Button } from "../ui/Button";
-import { Card } from "../ui/Card";
-import { EmptyState } from "../ui/EmptyState";
-import { LoadingState } from "../ui/LoadingState";
-import { StatusDot } from "../ui/StatusDot";
+import { usePublishShellHeader } from "../layout/shellHeader";
 import { ExecutorLoginModal } from "../components/ExecutorLoginModal";
 
 interface SettingsPageProps {
@@ -20,95 +19,78 @@ interface SettingsPageProps {
   onCapsRefresh?: () => Promise<void> | void;
 }
 
-type TabId = "executors" | "appearance" | "system";
+type TabId = "executors" | "system" | "appearance";
 
 const TABS: { id: TabId; label: string }[] = [
-  { id: "executors", label: "Ejecutores / IA" },
-  { id: "system", label: "Sistema / Maletín" },
+  { id: "executors", label: "Motor de análisis" },
+  { id: "system", label: "Sistema · Maletín" },
   { id: "appearance", label: "Apariencia" },
 ];
 
-// Claves editables del backend (allowlist cerrada de routers/config.py).
-// Desde el pivote 2026-07-02 NO hay secretos: el proyecto no maneja API keys
-// (SECURITY INVARIANT 7) — los ejecutores CLI se autentican con la sesión del
-// volumen forensia-cli-auth (seeded desde el host o login en el contenedor).
-type EditableKey =
-  | "DEFAULT_EXECUTOR"
-  | "OLLAMA_HOST"
-  | "OLLAMA_MODEL"
-  | "CLAUDE_CODE_MODEL"
-  | "CODEX_MODEL"
-  | "GEMINI_MODEL"
-  | "FORENSIA_EXECUTOR_TIMEOUT";
-
-const KEY_LABELS: Record<Exclude<EditableKey, "DEFAULT_EXECUTOR">, string> = {
-  OLLAMA_HOST: "Ollama host",
-  OLLAMA_MODEL: "Modelo de Ollama",
-  CLAUDE_CODE_MODEL: "Modelo de Claude Code",
-  CODEX_MODEL: "Modelo de Codex CLI",
-  GEMINI_MODEL: "Modelo de Gemini CLI",
-  FORENSIA_EXECUTOR_TIMEOUT: "Timeout de ejecutor (s)",
+// Clave de configuración del modelo POR proveedor (espejo de
+// backend/forensia/executors/__init__.py MODEL_CONFIG_KEY).
+const MODEL_CONFIG_KEY: Record<ExecutorId, string> = {
+  "claude-code": "CLAUDE_CODE_MODEL",
+  codex: "CODEX_MODEL",
+  gemini: "GEMINI_MODEL",
+  ollama: "OLLAMA_MODEL",
 };
 
-const CLOUD_MODEL_HINT =
-  "Id que se pasa al CLI como --model (p. ej. opus, gpt-5.5). Agentopsy no puede enumerar el catálogo sin API key (SECURITY 7); déjalo vacío para usar el modelo por defecto del CLI. También se elige desde el chat.";
-
-const KEY_HINTS: Record<Exclude<EditableKey, "DEFAULT_EXECUTOR">, string> = {
-  OLLAMA_HOST:
-    "URL http(s) del servicio Ollama. En el compose ya llega por entorno (http://ollama:11434); esta clave cubre ejecuciones standalone.",
-  OLLAMA_MODEL:
-    "Tag del modelo local, p. ej. llama3.1:8b. Si no lo fijas, el ejecutor ollama usa el modelo que recomienda el paquete del agente.",
-  CLAUDE_CODE_MODEL: CLOUD_MODEL_HINT,
-  CODEX_MODEL: CLOUD_MODEL_HINT,
-  GEMINI_MODEL: CLOUD_MODEL_HINT,
-  FORENSIA_EXECUTOR_TIMEOUT:
-    "Segundos que una petición al ejecutor puede tardar antes de abortarse (y auditarse) como timeout. Sin fijar: 120 s. Súbelo si tu modelo local responde lento.",
-};
-
+const TIMEOUT_OPTIONS = [60, 120, 300];
 const SAVED_MS = 2000;
 
-export function SettingsPage({ caps, version, onNavigate, onCapsRefresh }: SettingsPageProps) {
-  const { theme } = useTheme();
+export function SettingsPage({ caps, version, onCapsRefresh }: SettingsPageProps) {
+  const { theme, setTheme } = useTheme();
   const [activeTab, setActiveTab] = useState<TabId>("executors");
-  const [configSnapshot, setConfigSnapshot] = useState<ConfigSnapshot | null>(null);
-  const [draft, setDraft] = useState<Record<EditableKey, string>>({
-    DEFAULT_EXECUTOR: "",
-    OLLAMA_HOST: "",
-    OLLAMA_MODEL: "",
-    CLAUDE_CODE_MODEL: "",
-    CODEX_MODEL: "",
-    GEMINI_MODEL: "",
-    FORENSIA_EXECUTOR_TIMEOUT: "",
-  });
-  const [savingKey, setSavingKey] = useState<EditableKey | null>(null);
-  const [savedKey, setSavedKey] = useState<EditableKey | null>(null);
+  const [config, setConfig] = useState<ConfigSnapshot | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [savedKey, setSavedKey] = useState<string | null>(null);
   const [refreshingCaps, setRefreshingCaps] = useState(false);
+  // Fila de motor desplegada. null = todas plegadas.
+  const [openEngine, setOpenEngine] = useState<ExecutorId | null>(null);
+  const [models, setModels] = useState<Partial<Record<ExecutorId, ExecutorModels>>>({});
+  const [modelDraft, setModelDraft] = useState("");
+  const [ollamaHostDraft, setOllamaHostDraft] = useState("");
   // Ejecutor cuyo modal de login web está abierto (null = ninguno).
   const [loginExecutor, setLoginExecutor] = useState<ExecutorId | null>(null);
 
   const refreshConfig = useCallback(async () => {
     try {
-      const snap = await api.config.get();
-      setConfigSnapshot(snap);
+      setConfig(await api.config.get());
     } catch (err) {
       setConfigError(String(err instanceof Error ? err.message : err));
     }
   }, []);
 
   useEffect(() => {
-    refreshConfig();
+    void refreshConfig();
   }, [refreshConfig]);
 
+  // Los modelos del proveedor se piden al desplegar su fila, no de golpe al
+  // montar: son cuatro llamadas que casi nunca se miran todas.
+  useEffect(() => {
+    if (!openEngine || models[openEngine]) return;
+    let alive = true;
+    api
+      .executorModels(openEngine)
+      .then((m) => {
+        if (alive) setModels((prev) => ({ ...prev, [openEngine]: m }));
+      })
+      .catch(() => {
+        /* el backend degrada; la fila muestra solo la razón */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [openEngine, models]);
+
   const saveKey = useCallback(
-    async (key: EditableKey, rawValue?: string) => {
-      const value = (rawValue ?? draft[key]).trim();
-      if (!value) return;
+    async (key: string, value: string) => {
       setSavingKey(key);
       setConfigError(null);
       try {
-        await api.config.set(key, value);
-        setDraft((prev) => ({ ...prev, [key]: "" }));
+        await api.config.set(key, value.trim());
         await refreshConfig();
         if (onCapsRefresh) await onCapsRefresh();
         setSavedKey(key);
@@ -119,7 +101,7 @@ export function SettingsPage({ caps, version, onNavigate, onCapsRefresh }: Setti
         setSavingKey(null);
       }
     },
-    [draft, refreshConfig, onCapsRefresh]
+    [refreshConfig, onCapsRefresh],
   );
 
   const refreshCaps = useCallback(async () => {
@@ -132,318 +114,415 @@ export function SettingsPage({ caps, version, onNavigate, onCapsRefresh }: Setti
     }
   }, [onCapsRefresh]);
 
+  usePublishShellHeader(
+    {
+      title: "Configuración",
+      meta: version ? `api v${version} · sin secretos guardados` : "sin secretos guardados",
+      action: onCapsRefresh ? (
+        <button type="button" disabled={refreshingCaps} onClick={() => void refreshCaps()}>
+          {refreshingCaps ? "Actualizando…" : "Actualizar estado"}
+        </button>
+      ) : undefined,
+    },
+    [version, refreshingCaps, onCapsRefresh],
+  );
+
   const executors: [ExecutorId, ExecutorStatus][] = caps
     ? (Object.entries(caps.executors) as [ExecutorId, ExecutorStatus][])
     : [];
-  const currentDefault = configSnapshot?.keys.DEFAULT_EXECUTOR?.preview ?? "";
+  const defaultExecutor = config?.keys.DEFAULT_EXECUTOR?.preview ?? "";
+  const timeoutValue = Number(config?.keys.FORENSIA_EXECUTOR_TIMEOUT?.preview ?? "") || null;
 
   return (
-    <div>
-      <PageHeader
-        title="Configuración"
-        subtitle="Ejecutores de IA, datos del operador, apariencia y diagnóstico del stack. Agentopsy no guarda ningún secreto: no hay API keys en ninguna parte."
-      />
-
-      <div className="settings-tabs" role="tablist" aria-label="Secciones de configuración">
-        {TABS.map((tab) => (
-          <button
-            key={tab.id}
-            id={`settings-tab-${tab.id}`}
-            role="tab"
-            type="button"
-            aria-selected={activeTab === tab.id}
-            aria-controls={`settings-panel-${tab.id}`}
-            className={`settings-tab ${activeTab === tab.id ? "active" : ""}`}
-            onClick={() => setActiveTab(tab.id)}
-          >
-            {tab.label}
-          </button>
-        ))}
+    <div className="settings">
+      <div className="settings-bar">
+        <div className="tab-row" role="tablist" aria-label="Secciones de configuración">
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              id={`settings-tab-${tab.id}`}
+              role="tab"
+              type="button"
+              aria-selected={activeTab === tab.id}
+              aria-controls={`settings-panel-${tab.id}`}
+              className={`tab${activeTab === tab.id ? " is-active" : ""}`}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* ── Ejecutores / IA ──────────────────────────────────────────────── */}
-      {activeTab === "executors" && (
-        <div
-          id="settings-panel-executors"
-          role="tabpanel"
-          aria-labelledby="settings-tab-executors"
-          className="settings-panel"
-        >
-          <div className="settings-form">
-            {/* Estado de los 4 ejecutores — viene de caps.executors (RULE 2:
-                los no disponibles muestran la razón accionable, nunca se ocultan). */}
-            {caps ? (
-              <div className="settings-exec-status">
-                <div className="settings-exec-status-title">EJECUTORES / IA</div>
-                {executors.map(([id, status]) => (
-                  <div key={id} className="settings-exec-row">
-                    <div className="settings-exec-row-main">
-                      <span className="settings-exec-name">
-                        {status.name}{" "}
-                        <span className="settings-exec-scope">
-                          {id} · {status.local ? "100 % local" : "cloud (suscripción propia)"}
-                        </span>
-                      </span>
-                      <span
-                        className={`settings-exec-badge ${status.available ? "available" : "unavailable"}`}
-                      >
-                        <span className="settings-exec-dot" />
-                        {status.available ? "Disponible" : "No disponible"}
-                      </span>
-                    </div>
-                    {!status.available && status.reason && (
-                      <div className="settings-exec-reason">{status.reason}</div>
-                    )}
-                    {/* Login web para los ejecutores CLI cloud no disponibles:
-                        conecta Codex/Claude sin abrir terminal. Ollama (local) no
-                        tiene login, así que solo se ofrece a los no-locales. */}
-                    {!status.available && !status.local && (
-                      <div className="settings-exec-connect">
-                        <Button variant="chip" onClick={() => setLoginExecutor(id)}>
-                          Conectar {status.name} →
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-                <p className="settings-exec-hint">
-                  Los ejecutores CLI (Claude Code, Codex, Gemini) se autentican con tu propia
-                  sesión, guardada en el volumen <code>forensia-cli-auth</code> del stack —
-                  nunca con API keys. La sesión se siembra una vez desde el host o iniciando
-                  sesión dentro del contenedor (p. ej.{" "}
-                  <code>docker compose exec -it api claude auth login</code>); no sale de tu
-                  máquina, no se registra en logs y se revoca con{" "}
-                  <code>docker compose down -v</code>. Ollama es la opción 100 % local.
-                </p>
-              </div>
-            ) : (
-              <LoadingState label="Consultando capacidades del servicio api…" />
-            )}
-
-            <div className="settings-save-row" style={{ marginTop: 0 }}>
-              <Button variant="chip" disabled={refreshingCaps || !onCapsRefresh} onClick={refreshCaps}>
-                {refreshingCaps ? "Actualizando…" : "Actualizar estado"}
-              </Button>
-              <span className="field-hint">
-                Reconsulta capabilities tras iniciar sesión en un CLI o levantar Ollama.
-              </span>
-            </div>
-
-            {!configSnapshot ? (
-              <LoadingState label="Consultando configuración…" />
-            ) : (
-              <>
-                {/* RULE 2: el operador fija cada valor; fijar DEFAULT_EXECUTOR aquí es
-                    un acto explícito del usuario (inventarlo el código sí violaría la regla). */}
-                <div className="form-field">
-                  <label className="form-label" htmlFor="default-executor">
-                    Ejecutor por defecto (DEFAULT_EXECUTOR)
-                    {configSnapshot.keys.DEFAULT_EXECUTOR?.set ? (
-                      <span style={{ marginLeft: 6, color: "var(--success)" }}>
-                        ● {currentDefault}
-                      </span>
-                    ) : (
-                      <span style={{ marginLeft: 6, color: "var(--text-muted)" }}>
-                        ○ sin fijar
-                      </span>
-                    )}
-                  </label>
-                  <select
-                    id="default-executor"
-                    className="form-select"
-                    value={draft.DEFAULT_EXECUTOR}
-                    disabled={savingKey === "DEFAULT_EXECUTOR"}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setDraft((prev) => ({ ...prev, DEFAULT_EXECUTOR: value }));
-                      if (value) saveKey("DEFAULT_EXECUTOR", value);
-                    }}
-                  >
-                    <option value="">
-                      {currentDefault
-                        ? `Actual: ${currentDefault} — elige otro…`
-                        : "Selecciona un ejecutor…"}
-                    </option>
-                    {executors.map(([id, status]) => (
-                      <option key={id} value={id} disabled={!status.available} title={status.reason ?? ""}>
-                        {status.name}
-                        {status.available ? "" : " — no disponible"}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="field-hint">
-                    Opcional. Si no lo fijas, cada consulta exige elegir ejecutor (RULE 2:
-                    Agentopsy nunca elige uno por ti). Los no disponibles muestran su razón al
-                    pasar el cursor.
-                  </span>
-                  {savedKey === "DEFAULT_EXECUTOR" && (
-                    <span className="settings-saved" aria-live="polite">✓ Guardado</span>
-                  )}
+      <div className="view-scroll settings-scroll">
+        <div className="view-stack settings-stack">
+          {/* ── Motor de análisis ────────────────────────────────────────── */}
+          {activeTab === "executors" && (
+            <div
+              id="settings-panel-executors"
+              role="tabpanel"
+              aria-labelledby="settings-tab-executors"
+              className="view-stack settings-stack"
+            >
+              <div className="section-stack">
+                <div className="settings-lede">
+                  Quién ejecuta el análisis. Elige uno: Agentopsy no lo hace por ti.
                 </div>
 
-                {(Object.keys(KEY_LABELS) as (keyof typeof KEY_LABELS)[]).map((key) => {
-                  const status = configSnapshot.keys[key];
-                  return (
-                    <div key={key} className="form-field">
-                      <label className="form-label" htmlFor={`config-${key}`}>
-                        {KEY_LABELS[key]}
-                        {status?.set ? (
-                          <span style={{ marginLeft: 6, color: "var(--success)" }}>
-                            ● {status.preview}
-                          </span>
-                        ) : (
-                          <span style={{ marginLeft: 6, color: "var(--text-muted)" }}>
-                            ○ sin fijar
-                          </span>
-                        )}
-                      </label>
-                      <div style={{ display: "flex", gap: 8 }}>
-                        <input
-                          id={`config-${key}`}
-                          className="form-input"
-                          type="text"
-                          placeholder={status?.set ? status.preview ?? "" : "(sin definir)"}
-                          value={draft[key]}
-                          onChange={(e) =>
-                            setDraft((prev) => ({ ...prev, [key]: e.target.value }))
-                          }
-                          style={{ flex: 1 }}
-                        />
-                        <Button
-                          variant="primary"
-                          disabled={savingKey === key || !draft[key].trim()}
-                          onClick={() => saveKey(key)}
-                        >
-                          {savingKey === key ? (
-                            <>
-                              <span className="spinner" aria-hidden="true" /> Guardando…
-                            </>
-                          ) : (
-                            "Guardar"
+                {!caps ? (
+                  <div className="loading-state">
+                    <span className="spinner" aria-hidden="true" />
+                    <span>Consultando capacidades del servicio api…</span>
+                  </div>
+                ) : (
+                  <div className="engine-rows">
+                    {executors.map(([id, status]) => {
+                      const open = openEngine === id;
+                      const isDefault = defaultExecutor === id;
+                      const providerModels = models[id];
+                      const configured = config?.keys[MODEL_CONFIG_KEY[id]]?.preview ?? "";
+                      const modelLabel = status.available
+                        ? configured || "por defecto"
+                        : "conectar →";
+                      return (
+                        <div key={id}>
+                          <button
+                            type="button"
+                            className={`engine-row${open ? " is-open" : ""}`}
+                            aria-expanded={open}
+                            onClick={() => {
+                              setOpenEngine(open ? null : id);
+                              setModelDraft(configured);
+                              setOllamaHostDraft(config?.keys.OLLAMA_HOST?.preview ?? "");
+                            }}
+                          >
+                            <span className={`dot${status.available ? " dot--ok" : ""}`} />
+                            <span
+                              className={`engine-name${status.available ? "" : " is-off"}`}
+                            >
+                              {status.name}
+                            </span>
+                            <span
+                              className={`engine-scope${status.local ? " is-local" : ""}`}
+                            >
+                              {status.local ? "local" : "nube"}
+                            </span>
+                            {isDefault && <span className="engine-default">por defecto</span>}
+                            <span
+                              className={`engine-model${status.available ? "" : " is-off"}`}
+                            >
+                              {modelLabel}
+                            </span>
+                            <span className="engine-caret">{open ? "–" : "+"}</span>
+                          </button>
+
+                          {open && (
+                            <div className="engine-panel">
+                              {/* RULE 2: un ejecutor no disponible NO se oculta —
+                                  se muestra con la razón accionable que reporta
+                                  capabilities. */}
+                              <div className="engine-note">
+                                {status.available
+                                  ? status.local
+                                    ? "No sale nada de tu máquina."
+                                    : "Usa tu propia suscripción; el prompt sale a ese proveedor."
+                                  : status.reason ?? "No disponible."}
+                              </div>
+
+                              {status.available && providerModels?.editable && (
+                                <>
+                                  {providerModels.note && (
+                                    <div className="engine-note">{providerModels.note}</div>
+                                  )}
+                                  <div className="engine-models">
+                                    {id !== "ollama" && (
+                                      <button
+                                        type="button"
+                                        className={`chip-option${!configured ? " is-on" : ""}`}
+                                        disabled={savingKey === MODEL_CONFIG_KEY[id]}
+                                        onClick={() => void saveKey(MODEL_CONFIG_KEY[id], "")}
+                                      >
+                                        Por defecto del CLI
+                                      </button>
+                                    )}
+                                    {(providerModels.models ?? []).map((m) => (
+                                      <button
+                                        key={m}
+                                        type="button"
+                                        className={`chip-option${m === configured ? " is-on" : ""}`}
+                                        disabled={savingKey === MODEL_CONFIG_KEY[id]}
+                                        onClick={() => void saveKey(MODEL_CONFIG_KEY[id], m)}
+                                      >
+                                        {m}
+                                      </button>
+                                    ))}
+                                  </div>
+                                  {(providerModels.allow_custom ?? true) && (
+                                    <div className="engine-custom">
+                                      <label
+                                        className="visually-hidden"
+                                        htmlFor={`model-${id}`}
+                                      >
+                                        Id de modelo para {status.name}
+                                      </label>
+                                      <input
+                                        id={`model-${id}`}
+                                        className="field-input field-input--sm"
+                                        value={modelDraft}
+                                        onChange={(e) => setModelDraft(e.target.value)}
+                                        placeholder={
+                                          id === "ollama"
+                                            ? "otro modelo (p. ej. qwen2.5:7b-instruct)"
+                                            : "id de modelo (p. ej. opus, gpt-5.5)"
+                                        }
+                                      />
+                                      <button
+                                        type="button"
+                                        className="link-action"
+                                        disabled={
+                                          savingKey === MODEL_CONFIG_KEY[id] || !modelDraft.trim()
+                                        }
+                                        onClick={() =>
+                                          void saveKey(MODEL_CONFIG_KEY[id], modelDraft)
+                                        }
+                                      >
+                                        Guardar
+                                      </button>
+                                      {savedKey === MODEL_CONFIG_KEY[id] && (
+                                        <span className="tag tag--ok" aria-live="polite">
+                                          ✓ guardado
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
+                                </>
+                              )}
+
+                              {status.available && providerModels && !providerModels.editable && (
+                                <div className="engine-note">
+                                  {providerModels.note ??
+                                    "El modelo lo gestiona el CLI de este proveedor."}
+                                </div>
+                              )}
+
+                              {/* El host de Ollama sigue siendo configurable: en el
+                                  compose llega por entorno, pero una ejecución
+                                  standalone lo necesita. */}
+                              {id === "ollama" && (
+                                <div className="engine-custom">
+                                  <label className="visually-hidden" htmlFor="ollama-host">
+                                    Ollama host
+                                  </label>
+                                  <input
+                                    id="ollama-host"
+                                    className="field-input field-input--sm"
+                                    value={ollamaHostDraft}
+                                    onChange={(e) => setOllamaHostDraft(e.target.value)}
+                                    placeholder="http://ollama:11434"
+                                  />
+                                  <button
+                                    type="button"
+                                    className="link-action"
+                                    disabled={
+                                      savingKey === "OLLAMA_HOST" || !ollamaHostDraft.trim()
+                                    }
+                                    onClick={() => void saveKey("OLLAMA_HOST", ollamaHostDraft)}
+                                  >
+                                    Guardar host
+                                  </button>
+                                </div>
+                              )}
+
+                              {status.available ? (
+                                <button
+                                  type="button"
+                                  className="link-action"
+                                  disabled={isDefault || savingKey === "DEFAULT_EXECUTOR"}
+                                  onClick={() => void saveKey("DEFAULT_EXECUTOR", id)}
+                                >
+                                  {isDefault ? "es el motor por defecto" : "usar por defecto"}
+                                </button>
+                              ) : !status.local ? (
+                                <button
+                                  type="button"
+                                  className="link-action"
+                                  onClick={() => setLoginExecutor(id)}
+                                >
+                                  Conectar {status.name} →
+                                </button>
+                              ) : (
+                                <span className="engine-note">
+                                  Levanta el servicio ollama del compose para usarlo.
+                                </span>
+                              )}
+                            </div>
                           )}
-                        </Button>
-                      </div>
-                      <span className="field-hint">{KEY_HINTS[key]}</span>
-                      {savedKey === key && (
-                        <span className="settings-saved" aria-live="polite">✓ Guardado</span>
-                      )}
-                    </div>
-                  );
-                })}
-
-                <span className="field-hint">
-                  La configuración se guarda en <code>{configSnapshot.config_file}</code>.
-                  Ninguna de estas claves es un secreto.
-                </span>
-              </>
-            )}
-
-            {configError && (
-              <div className="settings-form-error" role="alert" aria-live="polite">
-                No se pudo guardar: {configError}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        </div>
-      )}
 
-      {/* ── Apariencia ───────────────────────────────────────────────────── */}
-      {activeTab === "appearance" && (
-        <div
-          id="settings-panel-appearance"
-          role="tabpanel"
-          aria-labelledby="settings-tab-appearance"
-          className="settings-panel"
-        >
-          <div className="settings-form">
-            <div className="form-field">
-              <label className="form-label" id="theme-label">Tema</label>
-              <div aria-labelledby="theme-label">
-                <ThemeToggle />
-              </div>
-              <span className="field-hint">
-                Tema actual: {theme === "light" ? "Claro" : "Oscuro"}. Se guarda en este
-                navegador (localStorage) y se aplica a toda la aplicación.
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Sistema ──────────────────────────────────────────────────────── */}
-      {activeTab === "system" && (
-        <div
-          id="settings-panel-system"
-          role="tabpanel"
-          aria-labelledby="settings-tab-system"
-        >
-          {caps ? (
-            <div className="status-grid">
-              <Card fullWidth>
-                <h3>Ejecutores de IA</h3>
-                <KeyValueList
-                  items={Object.entries(caps.executors).map(([id, status]) => ({
-                    label: `${status.name}${status.local ? " (local)" : ""}`,
-                    value: (
-                      <span
-                        style={{ display: "flex", alignItems: "center", gap: 6 }}
-                        title={status.available ? id : status.reason ?? ""}
-                      >
-                        <StatusDot online={status.available} />
-                        {status.available ? "Disponible" : "No disponible"}
-                      </span>
-                    ),
-                  }))}
-                />
-              </Card>
-
-              <Card fullWidth>
-                <h3>Maletines forenses (toolkit-windows / toolkit-unix)</h3>
-                <KeyValueList
-                  items={Object.values(caps.toolkits).map((m) => ({
-                    label: m.service,
-                    value: (
-                      <span
-                        style={{ display: "flex", alignItems: "center", gap: 6 }}
-                        title={m.running === true ? m.container : m.reason ?? ""}
-                      >
-                        <StatusDot online={m.running === true} />
-                        {m.running === true
-                          ? "En ejecución"
-                          : m.running === false
-                            ? "Detenido / inaccesible"
-                            : "No consultable desde el api"}
-                      </span>
-                    ),
-                  }))}
-                />
-              </Card>
-
-              <Card fullWidth>
-                <h3>Herramientas del catálogo (por maletín)</h3>
-                <div className="tools-grid">
-                  {Object.entries(caps.tools).map(([k, v]) => (
-                    <div
-                      className="tool-indicator"
-                      key={k}
-                      style={{ opacity: v.available ? 1 : 0.5 }}
-                      title={v.available ? `${k} — ${v.toolkits.join(", ")}` : v.reason ?? k}
+              <div className="settings-inline">
+                <div className="eyebrow settings-inline-label">Tiempo máximo</div>
+                <div className="engine-models">
+                  {TIMEOUT_OPTIONS.map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      className={`chip-option${timeoutValue === v ? " is-on" : ""}`}
+                      disabled={savingKey === "FORENSIA_EXECUTOR_TIMEOUT"}
+                      onClick={() => void saveKey("FORENSIA_EXECUTOR_TIMEOUT", String(v))}
                     >
-                      <span className={`dot ${v.available ? "" : "inactive"}`} />
-                      <span className="tool-name">{k}</span>
-                    </div>
+                      {v} s
+                    </button>
                   ))}
                 </div>
-              </Card>
+              </div>
+
+              {configError && (
+                <div className="error-state" role="alert" aria-live="polite">
+                  No se pudo guardar: {configError}
+                </div>
+              )}
+
+              <div className="settings-foot">
+                sin API keys · sesiones y ajustes solo en tu máquina
+                {config ? ` · ${config.config_file}` : ""}
+              </div>
             </div>
-          ) : (
-            <EmptyState
-              title="Sin conexión con el servicio api"
-              description="No se pudo obtener el diagnóstico del stack."
-            />
+          )}
+
+          {/* ── Sistema · Maletín ────────────────────────────────────────── */}
+          {activeTab === "system" && (
+            <div
+              id="settings-panel-system"
+              role="tabpanel"
+              aria-labelledby="settings-tab-system"
+              className="view-stack settings-stack"
+            >
+              {!caps ? (
+                <div className="empty-rail">
+                  <div className="empty-rail-title">Sin conexión con el servicio api</div>
+                  <div className="empty-rail-body">
+                    No se pudo obtener el diagnóstico del stack. Comprueba que el compose está
+                    levantado.
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="section-stack">
+                    <div className="rule-label">
+                      <span className="eyebrow eyebrow--section">Maletines</span>
+                      <span className="rule" />
+                    </div>
+                    <div className="toolkit-rows">
+                      {Object.values(caps.toolkits).map((m) => (
+                        <div className="toolkit-row" key={m.service}>
+                          <span className={`dot${m.running === true ? " dot--ok" : ""}`} />
+                          <span className="toolkit-name">{m.service}</span>
+                          <span
+                            className={`tag${m.running === true ? " tag--ok" : " tag--muted"}`}
+                            title={m.running === true ? m.container : m.reason ?? ""}
+                          >
+                            {m.running === true
+                              ? "en ejecución"
+                              : m.running === false
+                                ? "detenido / inaccesible"
+                                : "no consultable desde el api"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="section-stack">
+                    <div className="rule-label">
+                      <span className="eyebrow eyebrow--section">Herramientas del catálogo</span>
+                      <span className="rule" />
+                    </div>
+                    <div className="tool-chips">
+                      {Object.entries(caps.tools).map(([k, v]) => (
+                        <span
+                          className={`tool-chip${v.available ? "" : " is-off"}`}
+                          key={k}
+                          title={v.available ? `${k} — ${v.toolkits.join(", ")}` : v.reason ?? k}
+                        >
+                          <span className={`dot${v.available ? " dot--ok" : ""}`} />
+                          {k}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="section-stack">
+                    <div className="rule-label">
+                      <span className="eyebrow eyebrow--section">Servicio</span>
+                      <span className="rule" />
+                    </div>
+                    <div className="kv-rows">
+                      <div className="kv-row">
+                        <span className="kv-k">Backend api</span>
+                        <span className="kv-v">
+                          {version ? `v${version}` : "—"} · 127.0.0.1:8000
+                        </span>
+                      </div>
+                      <div className="kv-row">
+                        <span className="kv-k">Sistema del api</span>
+                        <span className="kv-v">{caps.os}</span>
+                      </div>
+                      <div className="kv-row">
+                        <span className="kv-k">Agentes cargados</span>
+                        <span className="kv-v">
+                          {(caps.agents?.loaded ?? []).map((a) => a.id).join(" · ") || "ninguno"}
+                        </span>
+                      </div>
+                      <div className="kv-row">
+                        <span className="kv-k">Configuración</span>
+                        <span className="kv-v">{config?.config_file ?? "—"}</span>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* ── Apariencia ───────────────────────────────────────────────── */}
+          {activeTab === "appearance" && (
+            <div
+              id="settings-panel-appearance"
+              role="tabpanel"
+              aria-labelledby="settings-tab-appearance"
+              className="view-stack settings-stack"
+            >
+              <div className="section-stack">
+                <div className="rule-label">
+                  <span className="eyebrow eyebrow--section">Tema</span>
+                  <span className="rule" />
+                </div>
+                <div className="theme-choices" role="group" aria-label="Tema de la interfaz">
+                  {(["light", "dark"] as const).map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      className={`theme-choice${theme === t ? " is-active" : ""}`}
+                      aria-pressed={theme === t}
+                      onClick={() => setTheme(t)}
+                    >
+                      {t === "light" ? "Claro" : "Oscuro"}
+                    </button>
+                  ))}
+                </div>
+                <div className="field-hint">
+                  Se guarda en este navegador y se aplica a toda la aplicación.
+                </div>
+              </div>
+            </div>
           )}
         </div>
-      )}
+      </div>
 
       {loginExecutor && (
         <ExecutorLoginModal

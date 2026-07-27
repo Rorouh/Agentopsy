@@ -250,7 +250,7 @@ ejecución? ¿binario presente?) y `capabilities` reporta por tool `{available, 
 reason}` + una sección `toolkits` con el estado de cada maletín — antes el mapa salía
 todo `false` porque el resolver miraba el `PATH` del contenedor `api` (que no lleva
 ninguna tool). RULE 2 intacta: un tool solo se resuelve contra los maletines que declara;
-sin sustituciones. La SPA (`SystemStatusPage`, `SettingsPage`) consume la nueva forma.
+sin sustituciones. La SPA la consume en la pestaña «Sistema · Maletín» de `SettingsPage`.
 
 **Restante concreto de §A** (el sondeo lo delata ahora con razón accionable):
 - ~~**RegRipper**~~ ✅ **reconciliado (2026-07-04):** el catálogo apunta a `rip.pl` (el binario
@@ -532,15 +532,30 @@ del prefijo:
 caching del proveedor), pero exige una decisión de equipo previa: ver **D-6** en §7.
 No implementar sin cerrarla.
 
-### Páginas frontend aún mock
+### Frontend — rediseño aplicado y lo que queda
 
-| Página | Mock que falta cablear |
+El rediseño de `docs/diseno/rediseno-2026-07/` está aplicado a las siete vistas
+(2026-07-27). **Ya no queda ninguna página sobre mocks**: `mocks/frontendPreviewData.ts`
+y `types/domain.ts` se borraron. Lo pendiente es de datos, no de forma:
+
+| Qué | Estado |
 |---|---|
-| `TimelinePage.tsx` | Necesita `forensia.timeline` (ver arriba). |
-| `DocumentViewerPage.tsx` | Necesita `forensia.reports` (ver arriba). |
-| ~~`MitreAttackPage.tsx`~~ | **Cableada (2026-07-14).** Ya no usa mocks: matriz sobre el catálogo real (`GET /api/mitre/catalog`, derivado de la semilla del orquestador), propuestas del agente desde los `mitre_hints` de hallazgos reales, y dictamen del perito persistido y auditado (`POST /api/cases/{id}/mitre`). **Pendiente aún:** la capa de síntesis (`_orchestrator/mitre.md` sobre `forensia.reports`) que produzca `MitreTechniqueMatch[]` con `confidence` — hoy la UI pinta los hints crudos, que es una propuesta con procedencia, no una correlación sintetizada. Ver `docs/agentes/contrato-paquetes.md` §5.bis. |
-| `SettingsPage` tabs "Operador" / "Reportes" / "Seguridad" / "Acerca de" | Inputs aún `disabled`. Operador + Reportes podrían persistirse vía el mismo `/api/config` extendiendo el allowlist. Seguridad es UI conceptual. |
-| `GuidePage.tsx` | Estática, OK como tal por ahora — el contenido refleja el flujo real. |
+| `TimelinePage.tsx` | Cableada. Las tres capas salen del backend real; la super-timeline MACB exige elegir evidencia (RULE 2, ya no coge «la primera»). |
+| `DocumentsPage.tsx` | Cableada sobre `forensia.reports`. El almacén funciona; falta la **síntesis** del informe desde los hallazgos (ver arriba), así que la lista nace vacía hasta que alguien genere un borrador. |
+| `MitreAttackPage.tsx` | Cableada (2026-07-14). **Pendiente aún:** la capa de síntesis (`_orchestrator/mitre.md` sobre `forensia.reports`) que produzca `MitreTechniqueMatch[]` con `confidence` — hoy la UI pinta los hints crudos, que es una propuesta con procedencia, no una correlación sintetizada. Ver `docs/agentes/contrato-paquetes.md` §5.bis. |
+| `SettingsPage.tsx` | Tres pestañas reales: «Motor de análisis» (un motor por fila desplegable), «Sistema · Maletín» y «Apariencia». Las antiguas pestañas «Operador / Reportes / Seguridad / Acerca de» con inputs `disabled` **desaparecieron**: no se enseña un control que no hace nada. Si Operador/Reportes se quieren de verdad, se persisten vía `/api/config` extendiendo el allowlist. |
+| `GuidePage.tsx` | Los seis pasos reflejan el caso activo (`useCaseFacts`), ya no son estáticos. |
+
+#### TODO — estimación previa al análisis (no existe)
+
+`web/src/api/types.ts` define `AnalysisEstimate`, `AnalysisEstimateRange`
+(`basis: "history" | "heuristic"`) y `AnalysisCostEstimate`, pero **`client.ts` no
+tiene método `estimate` y ninguna vista lo pinta**. No hay nada que «conservar» en el
+rediseño: hay algo que construir, y hace falta el endpoint primero.
+
+Fabricar los rangos en el cliente sería a la vez RULE 2 (inventar un dato que nadie
+midió) y RULE 3 (lógica en la superficie). Lo único vivo hoy es el descargo textual de
+la Guía: «iteraciones, tokens, tiempo y coste son orientativos, no un presupuesto».
 
 ---
 

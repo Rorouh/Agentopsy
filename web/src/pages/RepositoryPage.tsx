@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, api } from "../api/client";
 import type {
-  Case,
   CustodyAct,
   EvidenceHandle,
   EvidenceMetadata,
@@ -10,27 +9,14 @@ import type {
 } from "../api/types";
 import type { ViewId } from "../navigation/navItems";
 import { useActiveCase } from "../state/activeCase";
-import { ActiveCaseHeader } from "../components/ActiveCaseHeader";
-import { CaseSearchModal } from "../components/CaseSearchModal";
 import { EvidenceInbox } from "../components/EvidenceInbox";
 import { EvidenceTable } from "../components/EvidenceTable";
-import { Badge } from "../ui/Badge";
-import { Button } from "../ui/Button";
-import { Card } from "../ui/Card";
-import { EmptyState } from "../ui/EmptyState";
 import { ErrorState } from "../ui/ErrorState";
 import { LoadingState } from "../ui/LoadingState";
 import { Modal } from "../ui/Modal";
-import { PageHeader } from "../ui/PageHeader";
-import { PageSection } from "../ui/PageSection";
+import { usePublishShellHeader } from "../layout/shellHeader";
 import { formatBytes, formatDate, shortHash } from "../utils/format";
-import { isEwfFirstSegment } from "../utils/evidence";
-
-// Etiqueta corta del nivel de solo-lectura para la lista de custodia. La fuente
-// AUTORITATIVA es el backend (metadata.read_only_label / acta.read_only.label);
-// esto es solo la insignia compacta por fila. Honesta: FS (chmod 0444), el
-// bloqueo a nivel de bloque es Fase 2 (RULE 2 — no se anuncia lo que no se aplica).
-const READ_ONLY_BADGE = "Solo lectura: FS (chmod 0444)";
+import { isEwfFirstSegment, isRegistrableEvidence } from "../utils/evidence";
 
 function evidenceFileName(ev: EvidenceHandle): string {
   return ev.original_path.split("/").pop() ?? ev.original_path;
@@ -40,58 +26,19 @@ interface RepositoryPageProps {
   onNavigate?: (view: ViewId) => void;
 }
 
-type LoadingPhase = "loading" | "ready" | "error";
-
-interface FormState {
-  name: string;
-  examiner: string;
-  notes: string;
-}
-
-const EMPTY_FORM: FormState = {
-  name: "",
-  examiner: "",
-  notes: "",
-};
-
-// Workspace del caso activo a ancho completo (header + métricas + registrar
-// evidencia + tabla). Los casos se localizan con el CaseSearchModal (botón
-// «Buscar casos» del header, estilo command-palette) — ya no hay panel
-// lateral. Toda la carga/persistencia vive aquí; components/ es presentacional.
+// FASE 1 · Evidencia. El rediseño saca la gestión del caso del cuerpo de la
+// vista (vive en el sidebar y en sus diálogos) y deja aquí SOLO la evidencia,
+// en los cuatro bloques del mock: cifras · alta · tabla · cadena de custodia.
 export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
-  const [cases, setCases] = useState<Case[]>([]);
-  // Caso activo GLOBAL (compartido con Investigación / Timeline / Documentos /
-  // MITRE). Cambiarlo aquí — o desde cualquier otra vista — sincroniza a todas.
-  const { activeCaseId, setActiveCaseId } = useActiveCase();
+  const {
+    activeCaseId,
+    activeCase,
+    phase: casesPhase,
+    error: casesError,
+    reload: reloadCases,
+    upsertCase,
+  } = useActiveCase();
   const [evidence, setEvidence] = useState<EvidenceHandle[]>([]);
-  const [phase, setPhase] = useState<LoadingPhase>("loading");
-  const [error, setError] = useState<string | null>(null);
-
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [newCaseOpen, setNewCaseOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
-  // Ancla del scroll-to tras crear un caso: baja directo a la zona de
-  // "Registrar evidencia" del caso recién creado — encadena crear → registrar
-  // como un flujo guiado sin fusionar las dos operaciones en un solo formulario.
-  const evidenceCardRef = useRef<HTMLDivElement>(null);
-
-  // Panel de detalle del caso activo: ver / editar (nombre, examinador, notas
-  // — no el os_profile, que lo deriva el orquestador) y cerrar/reabrir.
-  const [editing, setEditing] = useState(false);
-  const [editForm, setEditForm] = useState({ name: "", examiner: "", notes: "" });
-  const [editSaving, setEditSaving] = useState(false);
-  const [editError, setEditError] = useState<string | null>(null);
-  const [caseActionBusy, setCaseActionBusy] = useState(false);
-  const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
-  // Borrado PERMANENTE del caso: modal tipo-a-confirmar (el operador escribe el
-  // nombre exacto). El backend re-valida `confirm_name` (RULE 2) y responde 409
-  // si no cuadra, sin borrar nada.
-  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
-  const [deleteConfirmName, setDeleteConfirmName] = useState("");
-  const [deleting, setDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [registering, setRegistering] = useState(false);
   // Registro en SEGUNDO PLANO: el hash-gate de una imagen grande tarda minutos,
@@ -125,29 +72,21 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
 
   // Acta de adquisición: modal por evidencia con la metadata de custodia + el
   // acta estructurada (cadena hash-encadenada), ambas del backend.
-  const [actaOpen, setActaOpen] = useState(false);
   const [actaEvidence, setActaEvidence] = useState<EvidenceHandle | null>(null);
   const [actaMeta, setActaMeta] = useState<EvidenceMetadata | null>(null);
   const [acta, setActa] = useState<CustodyAct | null>(null);
   const [actaLoading, setActaLoading] = useState(false);
   const [actaError, setActaError] = useState<string | null>(null);
-  // Tagged so the toast can label the failure honestly. Mixing both in one
-  // string slot used to mean a verify 404 showed up as "No se pudo registrar
-  // la evidencia: …" which was wrong both ways.
+  // Etiquetado para que el aviso nombre el fallo con honestidad: mezclar ambos
+  // en un mismo slot hacía que un 404 de verify apareciera como «No se pudo
+  // registrar la evidencia: …», que era falso por los dos lados.
   const [evidenceError, setEvidenceError] = useState<
     { kind: "register" | "verify"; message: string } | null
   >(null);
 
-  const activeCase = useMemo(
-    () => cases.find((c) => c.id === activeCaseId) ?? null,
-    [cases, activeCaseId]
-  );
-
-  // Mirror of activeCaseId in a ref. The register call is async (hashing a
-  // multi-GB image takes a while) and the user may create/switch case while it
-  // runs; the closure of registerSelectedSource would otherwise anchor the
-  // evidence to a stale case_id. The ref always carries the latest value at
-  // the moment each await resolves.
+  // Espejo de activeCaseId en un ref. El registro es asíncrono (hashear una
+  // imagen de varios GB tarda) y el operador puede cambiar de caso mientras
+  // corre; el closure anclaría la evidencia a un case_id viejo.
   const activeCaseIdRef = useRef<string | null>(null);
   useEffect(() => {
     activeCaseIdRef.current = activeCaseId;
@@ -157,36 +96,8 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
     return () => window.clearTimeout(successTimer.current);
   }, []);
 
-  // Initial load (y Reintentar del navegador de casos): lista casos y activa
-  // el más reciente. El fetch de evidencias lo gobierna el effect de abajo,
-  // keyed en activeCaseId, para que cualquier cambio refetchee uniformemente.
-  const loadCases = useCallback(async () => {
-    setPhase("loading");
-    setError(null);
-    try {
-      const list = await api.cases.list();
-      setCases(list);
-      // Conserva el caso activo global si sigue existiendo; si el guardado ya no
-      // está (o no hay ninguno), cae al más reciente (list[0]).
-      setActiveCaseId((prev) =>
-        prev && list.some((c) => c.id === prev) ? prev : list[0]?.id ?? null,
-      );
-      setPhase("ready");
-    } catch (err) {
-      setError(String(err instanceof Error ? err.message : err));
-      setPhase("error");
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadCases();
-  }, [loadCases]);
-
-  // Single source of truth for the evidence list: it follows activeCaseId.
-  // We clear immediately so the UI never paints zombie rows from the previous
-  // case (the source of the 404 from /verify when stale rows pointed at the
-  // wrong case). cancelled flag prevents a slow listEvidence from a previous
-  // case_id overwriting a newer fetch.
+  // Única fuente de verdad de la lista de evidencias: sigue a activeCaseId. Se
+  // limpia de inmediato para que la UI no pinte filas zombi del caso anterior.
   useEffect(() => {
     if (!activeCaseId) {
       setEvidence([]);
@@ -212,50 +123,6 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
     };
   }, [activeCaseId]);
 
-  const switchCase = useCallback(
-    (caseId: string) => {
-      if (caseId === activeCaseId) return;
-      setActiveCaseId(caseId);
-      // Evidence refetch happens automatically via the useEffect above.
-    },
-    [activeCaseId]
-  );
-
-  // El modo edición es por caso: si el operador cambia de caso a mitad de
-  // edición, se descarta el borrador en vez de guardarlo contra el caso nuevo.
-  useEffect(() => {
-    setEditing(false);
-    setEditError(null);
-  }, [activeCaseId]);
-
-  const submitCase = useCallback(async () => {
-    setCreating(true);
-    setCreateError(null);
-    try {
-      // os_profile se omite a propósito — lo deriva el orquestador del
-      // contenido de la evidencia al registrarla (auto-detección de SO).
-      const created = await api.cases.create({
-        name: form.name.trim(),
-        examiner: form.examiner.trim(),
-        notes: form.notes.trim(),
-      });
-      setCases((prev) => [created, ...prev]);
-      setActiveCaseId(created.id);
-      // Evidence is reset by the activeCaseId effect (it always clears first).
-      setForm(EMPTY_FORM);
-      setNewCaseOpen(false);
-      // Guía al operador directo al siguiente paso: registrar evidencia para
-      // el caso que acaba de crear.
-      requestAnimationFrame(() => {
-        evidenceCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-      });
-    } catch (err) {
-      setCreateError(String(err instanceof Error ? err.message : err));
-    } finally {
-      setCreating(false);
-    }
-  }, [form]);
-
   // Devuelve la bandeja recién leída (además de fijarla en el estado) para que
   // quien la refresca pueda decidir sobre la lista NUEVA sin esperar al render.
   const loadSources = useCallback(async (): Promise<EvidenceSource[] | null> => {
@@ -266,9 +133,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
       setSources(res.sources);
       // Si el fichero seleccionado desapareció de la bandeja, deselecciona —
       // jamás se registra una ruta que ya no está (el backend la rechazaría).
-      setSelectedSourcePath((prev) =>
-        res.sources.some((s) => s.path === prev) ? prev : ""
-      );
+      setSelectedSourcePath((prev) => (res.sources.some((s) => s.path === prev) ? prev : ""));
       return res.sources;
     } catch (err) {
       setSources(null);
@@ -287,9 +152,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
   // reensamble la imagen; por eso se sube el conjunto, no solo el primero.
   // Un 409 («ya está en la bandeja») NO es un fallo: el backend nunca
   // sobrescribe evidencia, así que re-soltar un set del que ya había parte es
-  // el caso normal — se cuenta como informativo. Al terminar refresca la
-  // bandeja y autoselecciona el .E01 de la tanda (lo único registrable de un
-  // set), para que al operador solo le quede pulsar «Registrar».
+  // el caso normal — se cuenta como informativo.
   const uploadSources = useCallback(
     async (files: File[]) => {
       if (files.length === 0) return;
@@ -314,9 +177,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
             if (err instanceof ApiError && err.status === 409) {
               already.push(file.name);
             } else {
-              failed.push(
-                `${file.name}: ${String(err instanceof Error ? err.message : err)}`,
-              );
+              failed.push(`${file.name}: ${String(err instanceof Error ? err.message : err)}`);
             }
           }
         }
@@ -358,10 +219,10 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
   // Arranca el registro en SEGUNDO PLANO y devuelve al instante: el hash-gate
   // (hash del origen → copia inmutable → re-hash) recorre todos los bytes tres
   // veces y tarda minutos en una imagen grande. El avance llega por sondeo del
-  // job (efecto de abajo); el registro sobrevive a cerrar la pestaña.
+  // job; el registro sobrevive a cerrar la pestaña.
   const registerSelectedSource = useCallback(async () => {
-    // Snapshot the case at the moment the user CLICKED "Registrar": the job is
-    // anchored to it and the user may switch cases while it runs.
+    // Instantánea del caso en el momento del clic: el job queda anclado a él y
+    // el operador puede cambiar de caso mientras corre.
     const intendedCaseId = activeCase?.id;
     if (!intendedCaseId || !selectedSourcePath) return;
     setEvidenceError(null);
@@ -431,7 +292,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
         ]);
         if (cancelled) return;
         if (activeCaseIdRef.current === caseId) setEvidence(list);
-        setCases((prev) => prev.map((c) => (c.id === refreshed.id ? refreshed : c)));
+        upsertCase(refreshed);
       } catch {
         /* refresco best-effort; la evidencia ya quedó registrada */
       }
@@ -446,12 +307,11 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [activeCaseId, registerJobRef]);
+  }, [activeCaseId, registerJobRef, upsertCase]);
 
   // Re-enganche: al montar (o al cambiar de caso) pregunta si ese caso tiene un
   // registro VIVO y retoma su sondeo. Cerrar/reabrir la ventana no aborta nada
-  // — el job corre en el api (registro en memoria: un reinicio del api sí lo
-  // vacía, pero la evidencia ya publicada está en disco).
+  // — el job corre en el api.
   useEffect(() => {
     setRegisterJob(null);
     setRegisterJobRef(null);
@@ -481,19 +341,15 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
       const intendedCaseId = activeCase?.id;
       if (!intendedCaseId) return;
       setEvidenceError(null);
-      setVerifyingIds((prev) => {
-        const next = new Set(prev);
-        next.add(evidenceId);
-        return next;
-      });
+      setVerifyingIds((prev) => new Set(prev).add(evidenceId));
       try {
         const updated = await api.cases.verifyEvidence(intendedCaseId, evidenceId);
-        // The router returns the full handle with last_verification freshly
-        // persisted (verification.json + audit.jsonl). Replace the row in place
-        // — but only if the active case hasn't changed under us.
+        // El router devuelve el handle completo con last_verification recién
+        // persistida (verification.json + audit.jsonl). Sustituye la fila en
+        // sitio — pero solo si el caso activo no ha cambiado por debajo.
         if (activeCaseIdRef.current === intendedCaseId) {
           setEvidence((prev) =>
-            prev.map((ev) => (ev.evidence_id === evidenceId ? { ...ev, ...updated } : ev))
+            prev.map((ev) => (ev.evidence_id === evidenceId ? { ...ev, ...updated } : ev)),
           );
         }
       } catch (err) {
@@ -509,7 +365,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
         });
       }
     },
-    [activeCase]
+    [activeCase],
   );
 
   const openActa = useCallback(
@@ -517,7 +373,6 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
       const caseId = activeCase?.id;
       if (!caseId) return;
       setActaEvidence(ev);
-      setActaOpen(true);
       setActa(null);
       setActaMeta(null);
       setActaError(null);
@@ -536,14 +391,12 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
         setActaLoading(false);
       }
     },
-    [activeCase]
+    [activeCase],
   );
 
   const downloadActa = useCallback(() => {
     if (!acta) return;
-    const blob = new Blob([JSON.stringify(acta, null, 2)], {
-      type: "application/json",
-    });
+    const blob = new Blob([JSON.stringify(acta, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -554,589 +407,300 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
     URL.revokeObjectURL(url);
   }, [acta]);
 
-  const closeActiveCase = useCallback(async () => {
-    if (!activeCase) return;
-    setCaseActionBusy(true);
-    try {
-      const updated = await api.cases.close(activeCase.id);
-      setCases((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
-      setConfirmCloseOpen(false);
-    } catch (err) {
-      // Cierre de caso comparte el slot de errores con register/verify; el copy
-      // "no se pudo verificar" cuadra peor que el de register, así que va aquí.
-      setEvidenceError({
-        kind: "register",
-        message: String(err instanceof Error ? err.message : err),
-      });
-      setConfirmCloseOpen(false);
-    } finally {
-      setCaseActionBusy(false);
-    }
-  }, [activeCase]);
-
-  const reopenActiveCase = useCallback(async () => {
-    if (!activeCase) return;
-    setCaseActionBusy(true);
-    try {
-      const updated = await api.cases.reopen(activeCase.id);
-      setCases((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
-    } catch (err) {
-      setEvidenceError({
-        kind: "register",
-        message: String(err instanceof Error ? err.message : err),
-      });
-    } finally {
-      setCaseActionBusy(false);
-    }
-  }, [activeCase]);
-
-  const openDeleteModal = useCallback(() => {
-    setDeleteConfirmName("");
-    setDeleteError(null);
-    setConfirmDeleteOpen(true);
-  }, []);
-
-  // Borrado PERMANENTE del caso activo. El backend exige el nombre exacto y
-  // borra el directorio entero (evidencia, audit, hallazgos, artefactos); aquí
-  // solo se recarga la lista, que deselecciona el caso si era el activo.
-  const deleteActiveCase = useCallback(async () => {
-    if (!activeCase) return;
-    setDeleting(true);
-    setDeleteError(null);
-    try {
-      await api.cases.delete(activeCase.id, deleteConfirmName);
-      setConfirmDeleteOpen(false);
-      setDeleteConfirmName("");
-      // El caso ya no existe: limpia lo que colgaba de él antes de recargar.
-      setEvidence([]);
-      setSources(null);
-      setSelectedSourcePath("");
-      setActiveCaseId((prev) => (prev === activeCase.id ? null : prev));
-      await loadCases();
-    } catch (err) {
-      setDeleteError(String(err instanceof Error ? err.message : err));
-    } finally {
-      setDeleting(false);
-    }
-  }, [activeCase, deleteConfirmName, loadCases, setActiveCaseId]);
-
-  const startEdit = useCallback(() => {
-    if (!activeCase) return;
-    setEditForm({
-      name: activeCase.name,
-      examiner: activeCase.examiner,
-      notes: activeCase.notes,
-    });
-    setEditError(null);
-    setEditing(true);
-  }, [activeCase]);
-
-  const cancelEdit = useCallback(() => {
-    setEditing(false);
-    setEditError(null);
-  }, []);
-
-  const saveEdit = useCallback(async () => {
-    if (!activeCase) return;
-    setEditSaving(true);
-    setEditError(null);
-    try {
-      const updated = await api.cases.update(activeCase.id, {
-        name: editForm.name.trim(),
-        examiner: editForm.examiner.trim(),
-        notes: editForm.notes.trim(),
-      });
-      setCases((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
-      setEditing(false);
-    } catch (err) {
-      setEditError(String(err instanceof Error ? err.message : err));
-    } finally {
-      setEditSaving(false);
-    }
-  }, [activeCase, editForm]);
-
   const verifiedCount = useMemo(
     () => evidence.filter((e) => e.last_verification?.verified === true).length,
-    [evidence]
+    [evidence],
   );
   const pendingCount = evidence.length - verifiedCount;
-
-  const formValid =
-    form.name.trim().length > 0 &&
-    form.name.trim().length <= 200 &&
-    form.examiner.trim().length > 0 &&
-    form.examiner.trim().length <= 200;
-
-  const editValid =
-    editForm.name.trim().length > 0 &&
-    editForm.name.trim().length <= 200 &&
-    editForm.examiner.trim().length > 0 &&
-    editForm.examiner.trim().length <= 200;
-
   const caseClosed = activeCase?.status === "closed";
 
-  if (phase === "loading") {
+  // La acción de la cabecera es la del mock, «Registrar evidencia», y solo
+  // procede con un punto de entrada elegido: sin selección no se adivina cuál
+  // registrar (RULE 2).
+  const selectedSource = sources?.find((s) => s.path === selectedSourcePath) ?? null;
+  const canRegister =
+    !caseClosed &&
+    !registering &&
+    !uploading &&
+    selectedSource !== null &&
+    isRegistrableEvidence(selectedSource.name);
+
+  // La cabecera se publica ANTES de cualquier return temprano: es un hook y
+  // tiene que ejecutarse en todos los renders.
+  usePublishShellHeader(
+    {
+      title: "Evidencia",
+      meta: activeCase
+        ? `bandeja ./evidence · solo lectura${caseClosed ? " · caso cerrado" : ""}`
+        : "sin caso seleccionado",
+      action: activeCase ? (
+        <button
+          type="button"
+          disabled={!canRegister}
+          title={
+            canRegister
+              ? undefined
+              : "Elige primero el punto de entrada en la bandeja (un formato soportado o el .E01 del set)."
+          }
+          onClick={() => void registerSelectedSource()}
+        >
+          {registering ? "Registrando…" : "Registrar evidencia"}
+        </button>
+      ) : undefined,
+    },
+    [activeCase?.id, activeCase?.examiner, caseClosed, canRegister, registering],
+  );
+
+  if (casesPhase === "loading") {
     return (
-      <div>
-        <PageHeader title="Casos y evidencias" subtitle="Cargando casos del servicio api…" />
+      <div className="view-scroll">
         <LoadingState label="Cargando casos…" />
       </div>
     );
   }
 
+  if (casesPhase === "error") {
+    return (
+      <div className="view-scroll">
+        {/* RULE 2: el fallo del listado se muestra aquí mismo, no solo dentro
+            del diálogo de casos que quizá nadie abra. */}
+        <ErrorState message={casesError ?? "no se pudo listar los casos"} />
+        <div className="cta-row">
+          <button type="button" className="link-action" onClick={() => void reloadCases()}>
+            Reintentar
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!activeCase) {
+    return (
+      <div className="view-scroll">
+        <div className="empty-rail">
+          <div className="empty-rail-title">Sin caso activo</div>
+          <div className="empty-rail-body">
+            Abre uno con «Nuevo caso» o elige otro con «cambiar caso», en el lateral. La
+            evidencia se registra siempre dentro de un caso: es lo que ancla la cadena de
+            custodia.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div>
-      <PageHeader
-        title="Casos y evidencias"
-        subtitle="Crea el caso, registra la evidencia y deja que Agentopsy calcule el hash baseline antes de exponerla a cualquier herramienta."
-        actions={
-          <>
-            <Button variant="chip" onClick={() => setSearchOpen(true)}>
-              Buscar casos
-            </Button>
-            <Button variant="primary" onClick={() => setNewCaseOpen(true)}>
-              + Abrir caso nuevo
-            </Button>
-          </>
-        }
-      />
-
-      <section className="case-workspace">
-          {phase === "error" ? (
-            // RULE 2: el fallo del listado se muestra aquí mismo, no solo
-            // dentro del modal de búsqueda que quizá nadie abra.
-            <>
-              <ErrorState message={error ?? "no se pudo listar los casos"} />
-              <div className="cta-row">
-                <Button variant="chip" onClick={loadCases}>
-                  Reintentar
-                </Button>
-              </div>
-            </>
-          ) : !activeCase ? (
-            <EmptyState
-              title="Sin caso activo"
-              description="Busca un caso existente o crea uno nuevo para empezar."
-              action={
-                <div style={{ display: "flex", gap: 10 }}>
-                  <Button variant="chip" onClick={() => setSearchOpen(true)}>
-                    Buscar casos
-                  </Button>
-                  <Button variant="primary" onClick={() => setNewCaseOpen(true)}>
-                    + Abrir caso nuevo
-                  </Button>
-                </div>
-              }
-            />
-          ) : (
-            <>
-              <Card fullWidth>
-                {editing ? (
-                  <>
-                    <h3>Editar caso</h3>
-                    <div className="form-grid">
-                      <div className="form-field full-width">
-                        <label className="form-label" htmlFor="edit-case-name">
-                          Nombre del caso
-                        </label>
-                        <input
-                          id="edit-case-name"
-                          className="form-input"
-                          value={editForm.name}
-                          onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                          maxLength={200}
-                        />
-                      </div>
-                      <div className="form-field">
-                        <label className="form-label" htmlFor="edit-case-examiner">
-                          Examinador
-                        </label>
-                        <input
-                          id="edit-case-examiner"
-                          className="form-input"
-                          value={editForm.examiner}
-                          onChange={(e) =>
-                            setEditForm({ ...editForm, examiner: e.target.value })
-                          }
-                          maxLength={200}
-                        />
-                      </div>
-                      <div className="form-field full-width">
-                        <label className="form-label" htmlFor="edit-case-notes">
-                          Descripción / notas
-                        </label>
-                        <textarea
-                          id="edit-case-notes"
-                          className="form-textarea"
-                          rows={3}
-                          value={editForm.notes}
-                          onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
-                        />
-                      </div>
-                    </div>
-                    {editError && (
-                      <div className="error-state" style={{ marginTop: 8 }}>
-                        <strong>No se pudo guardar:</strong> {editError}
-                      </div>
-                    )}
-                    <div className="cta-row">
-                      <Button
-                        variant="primary"
-                        disabled={!editValid || editSaving}
-                        onClick={saveEdit}
-                      >
-                        {editSaving ? "Guardando…" : "Guardar cambios"}
-                      </Button>
-                      <Button variant="chip" disabled={editSaving} onClick={cancelEdit}>
-                        Cancelar
-                      </Button>
-                    </div>
-                  </>
-                ) : (
-                  <ActiveCaseHeader
-                    c={activeCase}
-                    busy={caseActionBusy}
-                    onInvestigate={
-                      onNavigate ? () => onNavigate("investigation") : undefined
-                    }
-                    onEdit={startEdit}
-                    onRequestClose={() => setConfirmCloseOpen(true)}
-                    onRequestDelete={openDeleteModal}
-                    onReopen={reopenActiveCase}
-                  />
-                )}
-              </Card>
-
-              <div className="metrics-inline">
-                <div className="metrics-inline-item">
-                  <strong>{evidence.length}</strong> Evidencias
-                </div>
-                <div className="metrics-inline-item metrics-inline-item--success">
-                  <strong>{verifiedCount}</strong> ✓ Verificadas
-                </div>
-                <div
-                  className={
-                    pendingCount > 0
-                      ? "metrics-inline-item metrics-inline-item--warning"
-                      : "metrics-inline-item"
-                  }
-                >
-                  <strong>{pendingCount}</strong> ◷ Pendientes
-                </div>
-              </div>
-
-              <div ref={evidenceCardRef}>
-                <PageSection title="Registrar evidencia">
-                  <EvidenceInbox
-                    caseClosed={caseClosed}
-                    sources={sources}
-                    loadingSources={loadingSources}
-                    selectedSourcePath={selectedSourcePath}
-                    registering={registering}
-                    registerJob={registerJob}
-                    registerError={
-                      evidenceError?.kind === "register" ? evidenceError.message : null
-                    }
-                    registerSuccess={registerSuccess}
-                    uploading={uploading}
-                    uploadProgress={uploadProgress}
-                    uploadError={uploadError}
-                    uploadNotice={uploadNotice}
-                    onSelectSource={setSelectedSourcePath}
-                    onLoadSources={() => void loadSources()}
-                    onRegister={registerSelectedSource}
-                    onUploadFiles={uploadSources}
-                  />
-                </PageSection>
-              </div>
-
-              <PageSection title={`Evidencias del caso (${evidence.length})`}>
-                <EvidenceTable
-                  evidence={evidence}
-                  verifyingIds={verifyingIds}
-                  onVerify={verifyOne}
-                  verifyError={
-                    evidenceError?.kind === "verify" ? evidenceError.message : null
-                  }
-                />
-              </PageSection>
-
-              {evidence.length > 0 && (
-                <PageSection title="Cadena de custodia">
-                  <div className="dropzone-hint" style={{ marginBottom: 10 }}>
-                    Solo lectura a nivel de sistema de ficheros (chmod 0444); el
-                    bloqueo a nivel de bloque está pendiente (Fase 2). Genera el
-                    acta de adquisición de cada evidencia con su hash baseline,
-                    tamaño y el enlace de la cadena hash-encadenada.
-                  </div>
-                  <div className="custody-list">
-                    {evidence.map((ev) => (
-                      <Card key={ev.evidence_id}>
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            gap: 12,
-                            flexWrap: "wrap",
-                          }}
-                        >
-                          <div style={{ minWidth: 0 }}>
-                            <strong
-                              title={evidenceFileName(ev)}
-                              style={{ display: "block", overflowWrap: "anywhere" }}
-                            >
-                              {evidenceFileName(ev)}
-                            </strong>
-                            <div style={{ marginTop: 4, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                              <Badge variant="neutral">{formatBytes(ev.size)}</Badge>
-                              <span title={ev.sha256}>
-                                <Badge variant="neutral">SHA-256 {shortHash(ev.sha256)}</Badge>
-                              </span>
-                              <Badge variant="medium">{READ_ONLY_BADGE}</Badge>
-                            </div>
-                          </div>
-                          <Button variant="chip" onClick={() => openActa(ev)}>
-                            Acta de adquisición
-                          </Button>
-                        </div>
-                      </Card>
-                    ))}
-                  </div>
-                </PageSection>
-              )}
-            </>
-          )}
-      </section>
-
-      <CaseSearchModal
-        open={searchOpen}
-        onClose={() => setSearchOpen(false)}
-        cases={cases}
-        activeCaseId={activeCaseId}
-        onSelect={switchCase}
-        error={phase === "error" ? error : null}
-        onRetry={loadCases}
-      />
-
-      <Modal open={newCaseOpen} title="Nuevo caso" onClose={() => setNewCaseOpen(false)}>
-        <div className="form-grid">
-          <div className="form-field full-width">
-            <label className="form-label" htmlFor="case-name">Nombre del caso</label>
-            <input
-              id="case-name"
-              className="form-input"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              maxLength={200}
-              placeholder="Nombre o referencia del caso"
-              autoFocus
-            />
+    <div className="view-scroll">
+      <div className="view-stack view-stack--1000">
+        {/* 1 · Cifras del caso */}
+        <div className="stat-row">
+          <div className="stat">
+            <div className="eyebrow">Registradas</div>
+            <div className="stat-value">{evidence.length}</div>
           </div>
-          <div className="form-field full-width">
-            <label className="form-label" htmlFor="case-examiner">Examinador</label>
-            <input
-              id="case-examiner"
-              className="form-input"
-              value={form.examiner}
-              onChange={(e) => setForm({ ...form, examiner: e.target.value })}
-              maxLength={200}
-              placeholder="Nombre completo"
-            />
+          <div className="stat">
+            <div className="eyebrow">Hash verificado</div>
+            <div className="stat-value stat-value--ok">{verifiedCount}</div>
           </div>
-          <div className="form-field full-width">
-            <label className="form-label" htmlFor="case-notes">Descripción / notas</label>
-            <textarea
-              id="case-notes"
-              className="form-textarea"
-              rows={3}
-              value={form.notes}
-              onChange={(e) => setForm({ ...form, notes: e.target.value })}
-              onKeyDown={(e) => {
-                // Enter en el último campo = enviar (Shift+Enter para salto de línea,
-                // mismo gesto que el composer del chat).
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  if (formValid && !creating) void submitCase();
-                }
-              }}
-              placeholder="Descripción breve del caso (opcional)"
-            />
+          <div className="stat">
+            <div className="eyebrow">Pendientes</div>
+            <div className={`stat-value${pendingCount > 0 ? " stat-value--accent" : ""}`}>
+              {pendingCount}
+            </div>
+          </div>
+          <div className="stat">
+            <div className="eyebrow">Examinador</div>
+            <div className="stat-text">{activeCase.examiner}</div>
           </div>
         </div>
-        <div className="dropzone-hint" style={{ marginTop: 4 }}>
-          El perfil de sistema operativo no se elige aquí — el orquestador lo deriva
-          automáticamente del contenido de la evidencia al registrarla.
+
+        {/* 2 · Alta de evidencia */}
+        <div className="section-stack">
+          <div className="eyebrow eyebrow--section">Añadir evidencia</div>
+          <EvidenceInbox
+            caseClosed={caseClosed}
+            sources={sources}
+            loadingSources={loadingSources}
+            selectedSourcePath={selectedSourcePath}
+            registering={registering}
+            registerJob={registerJob}
+            registerError={evidenceError?.kind === "register" ? evidenceError.message : null}
+            registerSuccess={registerSuccess}
+            uploading={uploading}
+            uploadProgress={uploadProgress}
+            uploadError={uploadError}
+            uploadNotice={uploadNotice}
+            onSelectSource={setSelectedSourcePath}
+            onLoadSources={() => void loadSources()}
+            onRegister={() => void registerSelectedSource()}
+            onUploadFiles={uploadSources}
+          />
         </div>
-        {createError && (
-          <div className="error-state" style={{ marginTop: 8 }}>
-            <strong>No se pudo crear el caso:</strong> {createError}
+
+        {/* 3 · Evidencias del caso */}
+        <div className="section-stack">
+          <div className="rule-label">
+            <span className="eyebrow eyebrow--section">Evidencias del caso</span>
+            <span className="rule" />
+            <span className="rule-count">{evidence.length}</span>
+          </div>
+          <EvidenceTable
+            evidence={evidence}
+            verifyingIds={verifyingIds}
+            onVerify={verifyOne}
+            verifyError={evidenceError?.kind === "verify" ? evidenceError.message : null}
+          />
+        </div>
+
+        {/* 4 · Cadena de custodia */}
+        {evidence.length > 0 && (
+          <div className="section-stack">
+            <div className="rule-label">
+              <span className="eyebrow eyebrow--section">Cadena de custodia</span>
+              <span className="rule" />
+            </div>
+            <div className="prose">
+              Solo lectura a nivel de sistema de ficheros (<span className="mono">chmod 0444</span>
+              ); el bloqueo a nivel de bloque llega en la Fase 2. El acta de adquisición recoge
+              el hash baseline, el tamaño y el enlace de la cadena encadenada por hash.
+            </div>
+            <div className="custody-rows">
+              {evidence.map((ev) => (
+                <div className="custody-row" key={ev.evidence_id}>
+                  <span className="custody-name">{evidenceFileName(ev)}</span>
+                  <span className="custody-meta">{formatBytes(ev.size)}</span>
+                  <span className="custody-meta" title={ev.sha256}>
+                    sha256 {shortHash(ev.sha256)}
+                  </span>
+                  {/* Estado REAL del handle. La verificación de la cadena la
+                      calcula el backend al emitir el acta: no se afirma aquí. */}
+                  {ev.last_verification === null ? (
+                    <span className="custody-meta">sin re-verificar</span>
+                  ) : ev.last_verification.verified ? (
+                    <span className="custody-meta custody-meta--ok">hash re-verificado</span>
+                  ) : (
+                    <span className="custody-meta custody-meta--danger">⚠ hash mismatch</span>
+                  )}
+                  <button type="button" className="link-action custody-action" onClick={() => void openActa(ev)}>
+                    Acta de adquisición
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
-        <div className="cta-row">
-          <Button variant="primary" disabled={!formValid || creating} onClick={submitCase}>
-            {creating ? "Guardando…" : "Guardar caso"}
-          </Button>
-          <Button variant="chip" disabled={creating} onClick={() => setNewCaseOpen(false)}>
-            Cancelar
-          </Button>
-        </div>
-      </Modal>
+
+        {onNavigate && evidence.length > 0 && (
+          <div className="cta-row">
+            <button type="button" className="link-action" onClick={() => onNavigate("investigation")}>
+              Pasar a Investigación →
+            </button>
+          </div>
+        )}
+      </div>
 
       <Modal
-        open={actaOpen}
+        open={actaEvidence !== null}
+        eyebrow="Cadena de custodia"
         title="Acta de adquisición"
-        onClose={() => setActaOpen(false)}
+        subtitle={actaEvidence ? evidenceFileName(actaEvidence) : undefined}
+        onClose={() => setActaEvidence(null)}
+        panelClassName="acta-modal"
+        footerHint="esc para cerrar"
+        footer={
+          <>
+            <button
+              type="button"
+              className="modal-action"
+              disabled={!acta}
+              onClick={downloadActa}
+            >
+              Descargar acta (JSON)
+            </button>
+            <button
+              type="button"
+              className="modal-action modal-action--quiet"
+              onClick={() => setActaEvidence(null)}
+            >
+              Cerrar
+            </button>
+          </>
+        }
       >
-        {actaEvidence && (
-          <p style={{ marginTop: 0, wordBreak: "break-word" }}>
-            <strong>{evidenceFileName(actaEvidence)}</strong>
-          </p>
-        )}
         {actaLoading ? (
           <LoadingState label="Generando acta…" />
         ) : actaError ? (
           <ErrorState message={actaError} />
         ) : acta && actaMeta ? (
-          <div className="acta-detail">
-            <dl className="acta-grid">
-              <dt>Caso</dt>
-              <dd>
-                {acta.case.name} · Examinador: {acta.case.examiner}
-              </dd>
-              <dt>Origen</dt>
-              <dd style={{ overflowWrap: "anywhere" }}>
+          <div className="acta-rows">
+            <div className="acta-row">
+              <div className="eyebrow">Caso</div>
+              <div className="acta-value">
+                {acta.case.name} · {acta.case.examiner}
+              </div>
+            </div>
+            <div className="acta-row">
+              <div className="eyebrow">Origen</div>
+              <div className="acta-value acta-value--mono">
                 {acta.evidence.source_path ?? "—"}
-              </dd>
-              <dt>SHA-256 (baseline)</dt>
-              <dd style={{ overflowWrap: "anywhere" }} title={acta.evidence.sha256}>
-                {acta.evidence.sha256}
-              </dd>
-              <dt>Tamaño</dt>
-              <dd>
-                {acta.evidence.size_human} ({acta.evidence.size_bytes.toLocaleString("es-ES")} bytes)
-              </dd>
-              <dt>Registrada</dt>
-              <dd>{formatDate(acta.evidence.registered_at)}</dd>
-              <dt>Nivel de solo-lectura</dt>
-              <dd>{actaMeta.read_only_label}</dd>
-              <dt>Cadena de custodia</dt>
-              <dd style={{ overflowWrap: "anywhere" }}>
-                entry_hash:{" "}
-                <code>{acta.chain_of_custody.register_entry_hash ?? "—"}</code>
-                <div style={{ marginTop: 6 }}>
-                  {acta.chain_of_custody.hash_chain_verified ? (
-                    <Badge variant="success">✓ Cadena hash verificada</Badge>
-                  ) : (
-                    <Badge variant="critical">⚠ Cadena hash NO verifica</Badge>
-                  )}
-                </div>
-              </dd>
-              <dt>Verificación</dt>
-              <dd>
-                {acta.verification ? (
-                  acta.verification.verified ? (
-                    <Badge variant="success">
-                      ✓ Verificada {formatDate(acta.verification.verified_at)}
-                    </Badge>
-                  ) : (
-                    <Badge variant="critical">⚠ Hash MISMATCH</Badge>
-                  )
-                ) : (
-                  <Badge variant="neutral">Sin verificar</Badge>
-                )}
-              </dd>
-              <dt>Herramienta</dt>
-              <dd>
+              </div>
+            </div>
+            <div className="acta-row">
+              <div className="eyebrow">SHA-256 (baseline)</div>
+              <div className="acta-value acta-value--mono">{acta.evidence.sha256}</div>
+            </div>
+            <div className="acta-row">
+              <div className="eyebrow">Tamaño</div>
+              <div className="acta-value acta-value--mono">
+                {acta.evidence.size_human} (
+                {acta.evidence.size_bytes.toLocaleString("es-ES")} bytes)
+              </div>
+            </div>
+            <div className="acta-row">
+              <div className="eyebrow">Registrada</div>
+              <div className="acta-value acta-value--mono">
+                {formatDate(acta.evidence.registered_at)}
+              </div>
+            </div>
+            <div className="acta-row">
+              <div className="eyebrow">Nivel de solo-lectura</div>
+              <div className="acta-value">{actaMeta.read_only_label}</div>
+            </div>
+            <div className="acta-row">
+              <div className="eyebrow">Cadena de custodia</div>
+              <div
+                className={`acta-value acta-value--mono${
+                  acta.chain_of_custody.hash_chain_verified ? " is-ok" : " is-bad"
+                }`}
+              >
+                entry_hash {acta.chain_of_custody.register_entry_hash ?? "—"} ·{" "}
+                {acta.chain_of_custody.hash_chain_verified
+                  ? "cadena verificada"
+                  : "⚠ la cadena NO verifica"}
+              </div>
+            </div>
+            <div className="acta-row">
+              <div className="eyebrow">Verificación</div>
+              <div
+                className={`acta-value acta-value--mono${
+                  acta.verification?.verified ? " is-ok" : acta.verification ? " is-bad" : ""
+                }`}
+              >
+                {acta.verification
+                  ? acta.verification.verified
+                    ? `Verificada ${formatDate(acta.verification.verified_at)}`
+                    : "⚠ Hash MISMATCH"
+                  : "Sin verificar"}
+              </div>
+            </div>
+            <div className="acta-row">
+              <div className="eyebrow">Herramienta</div>
+              <div className="acta-value">
                 {acta.tool.name} {acta.tool.version} · {acta.tool.method}
-              </dd>
-            </dl>
-            <div className="cta-row">
-              <Button variant="primary" onClick={downloadActa}>
-                Descargar acta (JSON)
-              </Button>
-              <Button variant="chip" onClick={() => setActaOpen(false)}>
-                Cerrar
-              </Button>
+              </div>
             </div>
           </div>
         ) : null}
-      </Modal>
-
-      <Modal
-        open={confirmCloseOpen}
-        title="Cerrar caso"
-        onClose={() => setConfirmCloseOpen(false)}
-      >
-        <p style={{ marginTop: 0 }}>
-          ¿Deseas cerrar «{activeCase?.name}»? Las evidencias registradas no serán
-          eliminadas.
-        </p>
-        <div className="cta-row">
-          <Button
-            variant="chip"
-            disabled={caseActionBusy}
-            onClick={() => setConfirmCloseOpen(false)}
-          >
-            Cancelar
-          </Button>
-          <Button variant="primary" disabled={caseActionBusy} onClick={closeActiveCase}>
-            {caseActionBusy ? "Cerrando…" : "Cerrar caso"}
-          </Button>
-        </div>
-      </Modal>
-
-      <Modal
-        open={confirmDeleteOpen}
-        title="Eliminar caso"
-        onClose={() => {
-          if (!deleting) setConfirmDeleteOpen(false);
-        }}
-      >
-        <div className="danger-notice">
-          <strong>Esta acción es irreversible.</strong> Se borrará de forma
-          PERMANENTE todo el caso «{activeCase?.name}» y con él su cadena de
-          custodia completa: las copias de evidencia registradas, el log de
-          auditoría hash-encadenado, los hallazgos, los artefactos, los chats y
-          los informes. No hay papelera ni deshacer.
-        </div>
-        <div className="form-field full-width">
-          <label className="form-label" htmlFor="delete-case-confirm">
-            Escribe el nombre del caso ({activeCase?.name}) para confirmar
-          </label>
-          <input
-            id="delete-case-confirm"
-            className="form-input"
-            value={deleteConfirmName}
-            onChange={(e) => setDeleteConfirmName(e.target.value)}
-            placeholder={activeCase?.name ?? ""}
-            autoComplete="off"
-            autoFocus
-          />
-        </div>
-        {deleteError && (
-          <div className="error-state" style={{ marginTop: 8 }}>
-            <strong>No se pudo eliminar el caso:</strong> {deleteError}
-          </div>
-        )}
-        <div className="cta-row">
-          <Button
-            variant="chip"
-            disabled={deleting}
-            onClick={() => setConfirmDeleteOpen(false)}
-          >
-            Cancelar
-          </Button>
-          <Button
-            variant="primary"
-            className="btn-danger"
-            // Habilitado solo con el nombre EXACTO; el backend lo re-valida.
-            disabled={deleting || deleteConfirmName !== (activeCase?.name ?? "")}
-            onClick={deleteActiveCase}
-          >
-            {deleting ? "Eliminando…" : "Eliminar permanentemente"}
-          </Button>
-        </div>
       </Modal>
     </div>
   );

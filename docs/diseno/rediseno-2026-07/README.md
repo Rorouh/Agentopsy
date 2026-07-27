@@ -4,6 +4,15 @@ Material de referencia del rediseño de la SPA (`web/`): los mocks navegables qu
 fija el equipo como destino visual y estructural, y la secuencia de prompts con la
 que se ejecuta la migración.
 
+> **Estado: aplicado (2026-07-27).** Las siete vistas y los dos modales de
+> `mocks/rediseno-final.dc.html` están en el código. El mock sigue siendo la
+> **fuente autoritativa** de la forma: ante una duda, se lee el mock. Lo que el
+> mock omite y el producto conserva —barra de progreso del registro asíncrono,
+> borrado de caso con confirmación por nombre, estado ATT&CK «descartada»,
+> paginación y aviso de desajuste de perfil— está justificado en el §5 de
+> [`plan-migracion.md`](plan-migracion.md) y anotado en la entrada del
+> [journal](../../operacion/frontend-journal.md) del 2026-07-27.
+
 ## Contenido
 
 | Ruta | Qué es |

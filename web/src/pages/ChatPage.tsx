@@ -10,32 +10,20 @@ import type {
   ExecutorStatus,
   StreamEvent,
 } from "../api/types";
-import { Button } from "../ui/Button";
 import { ExecutorLoginModal } from "../components/ExecutorLoginModal";
 
-function renderBoldText(text: string) {
-  // Simple regex to parse **bold** and `code`
+// Markdown mínimo del turno del agente. SEC INV 8: se pinta como TEXTO — en
+// todo web/src no hay un solo dangerouslySetInnerHTML, y esta pantalla es la
+// tentación número uno de romperlo.
+function renderInline(text: string) {
   const parts = text.split(/(\*\*.*?\*\*|`.*?`)/g);
   return parts.map((part, i) => {
     if (part.startsWith("**") && part.endsWith("**")) {
-      return (
-        <strong key={i} style={{ fontWeight: 650, color: "var(--text-primary)" }}>
-          {part.slice(2, -2)}
-        </strong>
-      );
+      return <strong key={i}>{part.slice(2, -2)}</strong>;
     }
     if (part.startsWith("`") && part.endsWith("`")) {
       return (
-        <code
-          key={i}
-          style={{
-            fontFamily: "var(--font-mono)",
-            background: "rgba(255, 255, 255, 0.08)",
-            padding: "2px 5px",
-            borderRadius: 4,
-            fontSize: "0.9em",
-          }}
-        >
+        <code key={i} className="inline-code">
           {part.slice(1, -1)}
         </code>
       );
@@ -45,153 +33,115 @@ function renderBoldText(text: string) {
 }
 
 function formatMessageContent(content: string) {
-  const lines = content.split("\n");
-  return lines.map((line, idx) => {
+  return content.split("\n").map((line, idx) => {
     const text = line.trim();
     if (text.startsWith("* ") || text.startsWith("- ")) {
-      const inner = text.substring(2);
-      return (
-        <li key={idx} style={{ marginBottom: 4 }}>
-          {renderBoldText(inner)}
-        </li>
-      );
+      return <li key={idx}>{renderInline(text.substring(2))}</li>;
     }
     const numMatch = text.match(/^(\d+)\.\s+(.*)/);
     if (numMatch) {
       return (
-        <li key={idx} style={{ marginBottom: 4 }} value={parseInt(numMatch[1], 10)}>
-          {renderBoldText(numMatch[2])}
+        <li key={idx} value={parseInt(numMatch[1], 10)}>
+          {renderInline(numMatch[2])}
         </li>
       );
     }
-    if (text.startsWith("### ")) {
-      return (
-        <h4 key={idx} style={{ color: "var(--text-primary)", marginTop: 12, marginBottom: 6 }}>
-          {renderBoldText(text.substring(4))}
-        </h4>
-      );
-    }
-    if (text.startsWith("## ")) {
-      return (
-        <h3
-          key={idx}
-          style={{
-            color: "var(--text-primary)",
-            marginTop: 14,
-            marginBottom: 8,
-            borderBottom: "1px solid var(--border)",
-            paddingBottom: 4,
-          }}
-        >
-          {renderBoldText(text.substring(3))}
-        </h3>
-      );
-    }
-    if (text.startsWith("# ")) {
-      return (
-        <h2 key={idx} style={{ color: "var(--text-primary)", marginTop: 16, marginBottom: 10 }}>
-          {renderBoldText(text.substring(2))}
-        </h2>
-      );
-    }
-    if (text === "") return <div key={idx} style={{ height: 8 }} />;
-    return (
-      <p key={idx} style={{ margin: "0 0 10px 0" }}>
-        {renderBoldText(line)}
-      </p>
-    );
+    if (text.startsWith("### ")) return <h4 key={idx}>{renderInline(text.substring(4))}</h4>;
+    if (text.startsWith("## ")) return <h3 key={idx}>{renderInline(text.substring(3))}</h3>;
+    if (text.startsWith("# ")) return <h3 key={idx}>{renderInline(text.substring(2))}</h3>;
+    if (text === "") return <div key={idx} className="turn-gap" />;
+    return <p key={idx}>{renderInline(line)}</p>;
   });
 }
 
-const QUICK_CHIPS = [
-  { label: "Analizar evidencia", prefill: "Analiza el volcado " },
-  { label: "Listar herramientas", prefill: "¿Qué herramientas tengo disponibles?" },
-  { label: "Ver logs de auditoría", prefill: "¿Cómo funciona la cadena de custodia de los logs?" },
-  { label: "Búsqueda forense", prefill: "Realiza una búsqueda forense de " },
+// Instrucciones de arranque del mock: verbos del oficio, no botones de demo.
+const QUICK_PROMPTS = [
+  "buscar persistencia",
+  "analizar conexiones de red",
+  "generar timeline del sistema de ficheros",
+  "redactar informe",
 ];
+
+const SEVERITY_LABEL: Record<string, string> = {
+  low: "Baja",
+  medium: "Media",
+  high: "Alta",
+  critical: "Crítica",
+};
 
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+  // Hora del turno (ISO). La columna izquierda de la transcripción.
+  at?: string;
   pending?: boolean;
   // Progreso en vivo del agente (streaming): eventos acumulados + si sigue en curso.
   activity?: StreamEvent[];
   streaming?: boolean;
 }
 
-// Una línea del log de actividad (estilo Claude Code: árbol monoespaciado).
-function ActivityLine({ ev }: { ev: StreamEvent }) {
-  if (ev.type === "reasoning") {
-    return <div className="al al-reason">· {ev.text}</div>;
-  }
-  if (ev.type === "tool_call") {
-    const params = ev.params
-      ? Object.entries(ev.params)
-          .map(([k, v]) => `${k}=${String(v)}`)
-          .join(" ")
-      : "";
-    const shown = params.length > 90 ? params.slice(0, 89) + "…" : params;
-    return (
-      <div className="al al-call">
-        ▸ <strong>{ev.tool_id}</strong>
-        {shown ? ` ${shown}` : ""}
-      </div>
-    );
-  }
-  if (ev.type === "tool_result") {
-    const ok = ev.status === "ok";
-    const cmd = ev.argv && ev.argv.length ? ev.argv.join(" ") : "";
-    const shownCmd = cmd.length > 110 ? cmd.slice(0, 109) + "…" : cmd;
-    return (
-      <div className={`al ${ok ? "al-ok" : "al-err"}`}>
-        {"  "}
-        {ok ? "✓" : "✗"} {shownCmd && <code className="al-cmd">{shownCmd}</code>}{" "}
-        {ev.summary ?? ev.status}
-        {ev.status === "nonzero" && ev.exit_code != null ? ` (exit ${ev.exit_code})` : ""}
-      </div>
-    );
-  }
-  if (ev.type === "finding") {
-    return (
-      <div className="al al-find">
-        {"  "}★ [{ev.severity}] {ev.title}
-      </div>
-    );
-  }
-  return null;
+function clockOf(at: string | undefined): string {
+  if (!at) return "";
+  const d = new Date(at);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString("es-ES", { hour12: false });
 }
 
-// Bloque de actividad del agente: cabecera con spinner mientras trabaja (● …),
-// colapsable ("✓ N pasos") al terminar. Estilo Claude Code.
-function AgentActivity({ activity, streaming }: { activity: StreamEvent[]; streaming: boolean }) {
-  const lines = activity.map((ev, i) => <ActivityLine key={i} ev={ev} />);
+// Bloque «Cadena de ejecución»: lo que el agente EJECUTÓ, con el argv literal.
+// No es la intención declarada por el LLM — es el comando que corrió y quedó en
+// el log de auditoría encadenado (FORENSIC INVARIANT 4).
+function ToolChain({ activity, streaming }: { activity: StreamEvent[]; streaming: boolean }) {
   const steps = activity.filter((e) => e.type === "tool_call").length;
+  if (activity.length === 0 && !streaming) return null;
 
-  if (streaming) {
-    const last = activity[activity.length - 1];
-    let status = "trabajando";
-    if (last?.type === "tool_call") status = `ejecutando ${last.tool_id}`;
-    else if (last?.type === "reasoning") status = "razonando";
-    else if (last?.type === "tool_result") status = "procesando resultado";
-    else if (last?.type === "finding") status = "registrando hallazgo";
-    return (
-      <div className="agent-activity">
-        <div className="agent-activity-header live">
-          <span className="agent-activity-dot" />
-          {status}…
-        </div>
-        {lines.length > 0 && <div className="agent-activity-body">{lines}</div>}
-      </div>
-    );
-  }
-  if (!activity.length) return null;
   return (
-    <details className="agent-activity">
-      <summary className="agent-activity-header">
-        ✓ {steps} paso{steps === 1 ? "" : "s"} · ver actividad
-      </summary>
-      <div className="agent-activity-body">{lines}</div>
-    </details>
+    <div className="toolchain">
+      <div className="toolchain-head">
+        <span>Cadena de ejecución</span>
+        <span>
+          {steps} paso{steps === 1 ? "" : "s"} · {streaming ? "en curso" : "registrada"}
+        </span>
+      </div>
+      {activity.map((ev, i) => {
+        if (ev.type === "reasoning") {
+          return (
+            <div className="toolchain-line toolchain-line--dim" key={i}>
+              {ev.text}
+            </div>
+          );
+        }
+        if (ev.type === "tool_call") {
+          const params = ev.params
+            ? Object.entries(ev.params)
+                .map(([k, v]) => `${k}=${String(v)}`)
+                .join(" ")
+            : "";
+          return (
+            <div className="toolchain-line toolchain-line--dim" key={i}>
+              ▸ {ev.tool_id}
+              {params ? ` ${params.length > 90 ? `${params.slice(0, 89)}…` : params}` : ""}
+            </div>
+          );
+        }
+        if (ev.type === "tool_result") {
+          const ok = ev.status === "ok";
+          const cmd = ev.argv && ev.argv.length ? ev.argv.join(" ") : "";
+          return (
+            <div className="toolchain-line" key={i}>
+              <span className={ok ? "toolchain-ok" : "toolchain-err"}>{ok ? "✓" : "✗"}</span>
+              &nbsp;&nbsp;
+              {cmd || ev.status}
+              <span className="toolchain-note">
+                {" — "}
+                {ev.summary ?? ev.status}
+                {ev.status === "nonzero" && ev.exit_code != null ? ` (exit ${ev.exit_code})` : ""}
+              </span>
+            </div>
+          );
+        }
+        return null;
+      })}
+    </div>
   );
 }
 
@@ -200,8 +150,7 @@ function AgentActivity({ activity, streaming }: { activity: StreamEvent[]; strea
 const CHAT_SESSION_ID = "main";
 
 // Config key que persiste el modelo elegido POR proveedor (espejo de
-// backend/forensia/executors/__init__.py MODEL_CONFIG_KEY). Así Agentopsy recuerda
-// el último modelo de cada ejecutor entre recargas.
+// backend/forensia/executors/__init__.py MODEL_CONFIG_KEY).
 const MODEL_CONFIG_KEY: Record<ExecutorId, string> = {
   "claude-code": "CLAUDE_CODE_MODEL",
   codex: "CODEX_MODEL",
@@ -211,19 +160,14 @@ const MODEL_CONFIG_KEY: Record<ExecutorId, string> = {
 
 interface ChatPageProps {
   caps: Capabilities | null;
-  // Optional case context. When provided, the chat anchors queries to the
-  // case's os_profile (instead of the host's) and to the registered evidence's
-  // evidence_id (instead of an empty string). When absent, falls back to the
-  // legacy behaviour for backward compat with any standalone use of ChatPage.
   activeCase?: Case | null;
   activeEvidence?: EvidenceHandle | null;
-  // Called whenever a query() finishes (success or error) so the surrounding
-  // page (Investigation) can refresh side-channel state like findings.
+  // Se llama al terminar cada query() (bien o mal) para que la página que
+  // envuelve (Investigación) refresque hallazgos, tools y coste.
   onTurnComplete?: () => void;
   // Refresca capabilities en App tras conectar un ejecutor CLI desde el selector.
   onCapsRefresh?: () => Promise<void> | void;
-  // Propaga el caso actualizado tras anclar su os_profile manualmente, para que
-  // la página contenedora repinte el perfil sin recargar.
+  // Propaga el caso actualizado tras anclar su os_profile manualmente.
   onCaseUpdated?: (updated: Case) => void;
 }
 
@@ -240,25 +184,21 @@ export function ChatPage({
   const [busy, setBusy] = useState(false);
 
   // Ejecutor elegido por el operador para esta sesión. Se preselecciona con
-  // DEFAULT_EXECUTOR solo si el usuario lo fijó EXPLÍCITAMENTE en Settings
-  // (agencia del operador — RULE 2); nunca se inventa uno.
+  // DEFAULT_EXECUTOR solo si el usuario lo fijó EXPLÍCITAMENTE en Configuración
+  // (agencia del operador — RULE 2); nunca se inventa uno. El vacío inicial es
+  // deliberado: no es un hueco que haya que "arreglar" con un ?? "ollama".
   const [executor, setExecutor] = useState<ExecutorId | "">("");
 
   // Anclaje MANUAL del os_profile del caso (RULE 2: acción explícita del
-  // operador) cuando el triage no lo determinó. `anchoring` marca cuál se está
-  // fijando para deshabilitar los botones mientras.
+  // operador) cuando el triage no lo determinó.
   const [anchoring, setAnchoring] = useState<"unix" | "windows" | null>(null);
   const [anchorError, setAnchorError] = useState<string | null>(null);
 
-  // Composer option menus (proveedor / modelo) y el modelo elegido para Ollama.
   const [openMenu, setOpenMenu] = useState<null | "provider" | "model">(null);
-  // Ejecutor cloud no disponible cuyo modal de login web está abierto.
   const [loginExecutor, setLoginExecutor] = useState<ExecutorId | null>(null);
-  // Modelo elegido por proveedor (persistido en config; recuerda el último).
   const [modelByProvider, setModelByProvider] = useState<Partial<Record<ExecutorId, string>>>({});
   const [modelDraft, setModelDraft] = useState<string>("");
   const [modelSaving, setModelSaving] = useState(false);
-  // Modelos que ofrece el ejecutor elegido (Ollama: lista real; cloud: nota).
   const [providerModels, setProviderModels] = useState<ExecutorModels | null>(null);
   const [modelsLoading, setModelsLoading] = useState(false);
 
@@ -312,7 +252,6 @@ export function ChatPage({
     };
   }, [executor]);
 
-  // Cerrar el menú abierto al hacer clic fuera del grupo de acciones.
   useEffect(() => {
     if (!openMenu) return;
     const onDown = (e: MouseEvent) => {
@@ -324,9 +263,9 @@ export function ChatPage({
     return () => document.removeEventListener("mousedown", onDown);
   }, [openMenu]);
 
-  // Persist the operator's model choice for the CURRENT provider. An empty value
-  // clears it (cloud → CLI default; Ollama → package model) — RULE 2: Agentopsy
-  // never invents one. The backend accepts "" as an unset for the model keys.
+  // Persiste la elección de modelo del proveedor ACTUAL. Un valor vacío la
+  // limpia (cloud → por defecto del CLI; Ollama → modelo del paquete) — RULE 2:
+  // Agentopsy nunca se inventa uno.
   const saveModel = async (value: string) => {
     if (!executor) return;
     const v = value.trim();
@@ -348,9 +287,8 @@ export function ChatPage({
     }
   };
 
-  // Al elegir proveedor lo recordamos como DEFAULT_EXECUTOR (agencia del operador
-  // — no un default inventado; RULE 2). Best-effort: si falla, la selección de la
-  // sesión sigue viva aunque no se persista.
+  // Al elegir proveedor lo recordamos como DEFAULT_EXECUTOR (agencia del
+  // operador — no un default inventado; RULE 2).
   const selectExecutor = (id: ExecutorId) => {
     setExecutor(id);
     setOpenMenu(null);
@@ -359,12 +297,8 @@ export function ChatPage({
     });
   };
 
-  // Source of truth for the agent selection: the CASE's os_profile, not the
-  // host's. Only when no case is open we fall back to host detection. RULE 2 in
-  // the backend: /api/agent/query returns 503 if there is no package for the
-  // requested profile — we surface that explicitly instead of inventing a default.
-  // `null` means the orchestrator hasn't derived it yet (no routable evidence
-  // registered on the case) — not an error, just "not yet".
+  // Fuente de verdad de la selección de agente: el os_profile del CASO, no el
+  // del host. `null` = el orquestador aún no lo ha derivado — no es un error.
   const activeProfile: "unix" | "windows" | null = activeCase
     ? activeCase.os_profile
     : caps?.os === "windows"
@@ -381,10 +315,6 @@ export function ChatPage({
   const executorStatus: ExecutorStatus | null =
     executor && caps ? caps.executors[executor] ?? null : null;
 
-  // Ancla el os_profile del caso a mano (unix/windows) cuando el triage no lo
-  // determinó. RULE 2: no se adivina el perfil; lo elige el operador. Tras
-  // anclar, refresca el caso (para que el aviso desaparezca) y capabilities
-  // (para que el agente del perfil pase a estar disponible) — sin recargar.
   const anchorProfile = async (profile: "unix" | "windows") => {
     if (!activeCase || anchoring) return;
     setAnchoring(profile);
@@ -402,17 +332,13 @@ export function ChatPage({
     }
   };
 
-  // Auto-scroll chat to bottom
   useEffect(() => {
-    if (logRef.current) {
-      logRef.current.scrollTop = logRef.current.scrollHeight;
-    }
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [msgs]);
 
-  // Load persisted chat history when the active case changes. A 404 (no session
-  // file yet) means "fresh conversation" — not an error to surface.
   // Sondeo del análisis en segundo plano. `pollRef` marca el sondeo activo para
-  // cancelarlo al desmontar / cambiar de caso sin tocar estado de un componente ido.
+  // cancelarlo al desmontar / cambiar de caso sin tocar estado de un componente
+  // que ya no está.
   const pollRef = useRef<{ cancelled: boolean } | null>(null);
   useEffect(
     () => () => {
@@ -429,10 +355,6 @@ export function ChatPage({
       return next;
     });
 
-  // Engancha a un análisis en segundo plano (nuevo o reanudado) y SONDEA su
-  // estado hasta terminar, pintando el progreso (segundos · nº de hallazgos que
-  // se van registrando en caliente). Si el cliente se fue, el job siguió vivo en
-  // el servidor y esto vuelve a engancharse; una desconexión no lo aborta.
   const pushActivity = (ev: StreamEvent) =>
     setMsgs((prev) => {
       if (prev.length === 0) return prev;
@@ -442,6 +364,9 @@ export function ChatPage({
       return next;
     });
 
+  // Engancha a un análisis en segundo plano (nuevo o reanudado) y SONDEA su
+  // estado hasta terminar. Si el cliente se fue, el job siguió vivo en el
+  // servidor y esto vuelve a engancharse: una desconexión no lo aborta.
   const drivePoll = async (caseId: string, jobId: string) => {
     const token = { cancelled: false };
     pollRef.current = token;
@@ -451,13 +376,10 @@ export function ChatPage({
     let cursor = 0; // eventos de progreso ya pintados en el chat
     const collected: StreamEvent[] = []; // para persistir la traza con el mensaje
     const startedAt = Date.now();
-    // Mantén la cabecera "en vivo" y muestra el feed de actividad (comando +
-    // hallazgo) según llegan, aunque sondeemos en vez de recibir un stream.
     patchLast({ streaming: true });
     try {
       while (!token.cancelled) {
         const job = await api.getJob(jobId, cursor);
-        // Pinta los eventos NUEVOS (tool_call con argv, tool_result, finding…).
         (job.events ?? []).forEach((ev) => {
           pushActivity(ev);
           collected.push(ev);
@@ -495,7 +417,6 @@ export function ChatPage({
           role: "assistant",
           content: reply,
           tool_calls: tools,
-          // Persistir la traza de actividad para re-pintar "✓ N pasos" al recargar.
           activity: collected.length ? collected : null,
         })
         .catch(() => {
@@ -516,23 +437,24 @@ export function ChatPage({
       .readChat(caseId, CHAT_SESSION_ID)
       .then((history) => {
         if (cancelled) return;
-        const restored: ChatMessage[] = history
-          .filter((m) => m.role === "user" || m.role === "assistant")
-          .map((m) => ({
-            role: m.role as "user" | "assistant",
-            content: m.content,
-            // Re-pinta el bloque colapsable de actividad si se persistió.
-            activity: m.activity ?? undefined,
-          }));
-        setMsgs(restored);
+        setMsgs(
+          history
+            .filter((m) => m.role === "user" || m.role === "assistant")
+            .map((m) => ({
+              role: m.role as "user" | "assistant",
+              content: m.content,
+              at: m.ts,
+              activity: m.activity ?? undefined,
+            })),
+        );
       })
       .catch(() => {
-        // No prior session yet — start empty.
+        // Aún no hay sesión previa: conversación en blanco.
         if (!cancelled) setMsgs([]);
       })
       .finally(async () => {
-        // Robustez: si quedó un análisis corriendo en segundo plano (el perito
-        // cerró la pestaña y volvió), reengánchate a él y muestra su progreso.
+        // Si quedó un análisis corriendo (el perito cerró la pestaña y volvió),
+        // reengánchate y muestra su progreso.
         if (cancelled || pollRef.current) return;
         try {
           const jobs = await api.listCaseJobs(caseId);
@@ -540,7 +462,14 @@ export function ChatPage({
           if (running && !cancelled && !pollRef.current) {
             setMsgs((prev) => [
               ...prev,
-              { role: "assistant", content: "Reanudando análisis en curso…", pending: true, streaming: false, activity: [] },
+              {
+                role: "assistant",
+                content: "Reanudando análisis en curso…",
+                at: new Date().toISOString(),
+                pending: true,
+                streaming: false,
+                activity: [],
+              },
             ]);
             void drivePoll(caseId, running.job_id);
           }
@@ -559,30 +488,36 @@ export function ChatPage({
     const text = input.trim();
     if (!text || busy || !activeCase) return;
     const caseId = activeCase.id;
+    const now = new Date().toISOString();
     setInput("");
     setBusy(true);
-    setMsgs((prev) => [...prev, { role: "user", content: text }]);
     setMsgs((prev) => [
       ...prev,
-      { role: "assistant", content: "Lanzando análisis en segundo plano…", pending: true, streaming: false, activity: [] },
+      { role: "user", content: text, at: now },
+      {
+        role: "assistant",
+        content: "Lanzando análisis en segundo plano…",
+        at: now,
+        pending: true,
+        streaming: false,
+        activity: [],
+      },
     ]);
 
-    // Persist user turn upfront so a disconnect doesn't erase what the analyst
-    // asked. La asistente se persiste al terminar el job (en drivePoll).
-    api.cases
-      .appendChat(caseId, CHAT_SESSION_ID, { role: "user", content: text })
-      .catch(() => {
-        /* persistence best-effort; UI state stays */
-      });
+    // Persiste el turno del perito de entrada: una desconexión no puede borrar
+    // lo que pidió. El del agente se persiste al terminar el job (drivePoll).
+    api.cases.appendChat(caseId, CHAT_SESSION_ID, { role: "user", content: text }).catch(() => {
+      /* persistencia best-effort; el estado de la UI sigue */
+    });
 
     try {
       // Arranca el análisis en SEGUNDO PLANO: la petición vuelve al instante con
       // un job_id; el análisis sigue en el servidor aunque el cliente se
-      // desconecte (RULE: robustez para evidencia grande). `drivePoll` sondea.
+      // desconecte. `drivePoll` sondea.
       const { job_id } = await api.analyze({
         prompt: text,
-        // El backend resuelve el os_profile del caso; esta clave se ignora si
-        // se manda. activeProfile puede ser null (SO aún sin determinar).
+        // El backend resuelve el os_profile del caso; esta clave se ignora si se
+        // manda. activeProfile puede ser null (SO aún sin determinar).
         evidence_id: activeEvidence?.evidence_id ?? "",
         case_id: caseId,
         executor: executor || undefined,
@@ -590,8 +525,8 @@ export function ChatPage({
       });
       await drivePoll(caseId, job_id);
     } catch (e) {
-      // Falló el ARRANQUE (validación: ejecutor/evidencia/perfil). El
-      // backend responde con detail accionable (RULE 2); se muestra tal cual.
+      // Falló el ARRANQUE (validación: ejecutor/evidencia/perfil). El backend
+      // responde con un detail accionable (RULE 2); se muestra tal cual.
       const friendly =
         e instanceof ApiError
           ? e.detail
@@ -605,356 +540,336 @@ export function ChatPage({
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      send();
+      void send();
     }
   };
 
-  const handleChipClick = (prefill: string) => {
-    setInput(prefill);
-    inputRef.current?.focus();
-  };
-
-  // Selector de ejecutor: los cuatro del pivote, visibles siempre en la sesión.
-  // Los no disponibles se deshabilitan y el tooltip lleva la razón accionable
-  // que reporta capabilities (RULE 2: degradación explícita, nunca sustituto).
-
   const sendDisabled = !input.trim() || busy;
+  const agentLabel = activeAgent?.id ?? (activeProfile ? `forensia-${activeProfile}` : "agentopsy");
 
-  const providerLabel = executor ? executorStatus?.name ?? executor : "Proveedor";
+  const providerLabel = executor ? executorStatus?.name ?? executor : "Elige ejecutor";
   // El modelo recomendado del paquete solo aplica a Ollama (modelo local).
   const recommendedModel = activeAgent?.model.name ?? "";
   const configuredModel = executor ? modelByProvider[executor] ?? "" : "";
   const effectiveModel = configuredModel || (executor === "ollama" ? recommendedModel : "");
   const modelEditable = providerModels?.editable ?? false;
   const modelLabel = !executor
-    ? "Modelo"
-    : effectiveModel || (executor === "ollama" ? "Modelo" : "por defecto");
-
-  const composerFooter = (
-    <div className="composer-footer">
-      <div className="composer-left">
-        {/* Adjuntar evidencia — maqueta (aún sin funcionalidad) */}
-        <button
-          type="button"
-          className="composer-opt composer-opt--icon"
-          title="Adjuntar evidencia (próximamente)"
-          aria-label="Adjuntar evidencia"
-          onClick={() => {
-            /* mock: pendiente de cablear la subida/selección de evidencia */
-          }}
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-          </svg>
-        </button>
-        <span className="composer-tip">Enter para enviar · Shift+Enter para nueva línea</span>
-      </div>
-
-      <div className="composer-actions" ref={actionsRef}>
-        {/* Proveedor (ejecutor) — funcional */}
-        <div className="composer-opt-wrap">
-          <button
-            type="button"
-            className={`composer-opt${openMenu === "provider" ? " active" : ""}`}
-            title="Proveedor de ejecución"
-            onClick={() => setOpenMenu(openMenu === "provider" ? null : "provider")}
-          >
-            <span className="composer-opt-label">
-              {providerLabel}
-              {executorStatus?.local ? " ⌂" : ""}
-            </span>
-            <span className="composer-opt-caret">▾</span>
-          </button>
-          {openMenu === "provider" && (
-            <div className="composer-popover">
-              <div className="composer-popover-title">Proveedor</div>
-              {executorEntries.length === 0 && (
-                <div className="composer-popover-note">consultando capacidades…</div>
-              )}
-              {executorEntries.map(([id, status]) =>
-                status.available ? (
-                  <button
-                    key={id}
-                    type="button"
-                    className={`composer-popover-item${id === executor ? " active" : ""}`}
-                    onClick={() => selectExecutor(id)}
-                  >
-                    <span>
-                      {status.name}
-                      {status.local ? " ⌂" : ""}
-                    </span>
-                    {id === executor && <span aria-hidden>✓</span>}
-                  </button>
-                ) : (
-                  // No disponible. Los CLI cloud (no locales) ofrecen conectar
-                  // desde aquí (login web); Ollama (local) solo muestra la razón.
-                  <div
-                    key={id}
-                    className="composer-popover-item disabled"
-                    title={status.reason ?? "No disponible"}
-                  >
-                    <span>
-                      {status.name}
-                      {status.local ? " ⌂" : ""} — no disponible
-                    </span>
-                    {!status.local && (
-                      <button
-                        type="button"
-                        className="chip"
-                        onClick={() => {
-                          setLoginExecutor(id);
-                          setOpenMenu(null);
-                        }}
-                      >
-                        Conectar
-                      </button>
-                    )}
-                  </div>
-                ),
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Modelo — funcional; la lista depende del proveedor */}
-        <div className="composer-opt-wrap">
-          <button
-            type="button"
-            className={`composer-opt${openMenu === "model" ? " active" : ""}`}
-            title={executor ? "Modelo del proveedor" : "Elige primero un proveedor"}
-            disabled={!executor}
-            onClick={() => {
-              setModelDraft(effectiveModel);
-              setOpenMenu(openMenu === "model" ? null : "model");
-            }}
-          >
-            <span className="composer-opt-label">{modelLabel}</span>
-            <span className="composer-opt-caret">▾</span>
-          </button>
-          {openMenu === "model" && (
-            <div className="composer-popover">
-              <div className="composer-popover-title">
-                Modelo · {executorStatus?.name ?? executor}
-              </div>
-              {modelsLoading && <div className="composer-popover-note">cargando modelos…</div>}
-              {!modelsLoading && !modelEditable && (
-                <div className="composer-popover-note">
-                  {providerModels?.note ??
-                    "El modelo lo gestiona el CLI de este proveedor."}
-                </div>
-              )}
-              {!modelsLoading && modelEditable && (
-                <>
-                  {/* Nota del backend: para Ollama solo si no hay modelos; para
-                      los CLIs cloud explica que la lista son atajos + texto libre. */}
-                  {providerModels?.note && (
-                    <div className="composer-popover-note">{providerModels.note}</div>
-                  )}
-                  {executor !== "ollama" &&
-                    (providerModels?.models ?? []).length === 0 &&
-                    !providerModels?.note && (
-                      <div className="composer-popover-note">
-                        Escribe el id del modelo abajo.
-                      </div>
-                    )}
-                  {/* Cloud: volver al modelo por defecto del CLI (limpia la clave). */}
-                  {executor !== "ollama" && (
-                    <button
-                      type="button"
-                      className={`composer-popover-item${!configuredModel ? " active" : ""}`}
-                      disabled={modelSaving}
-                      onClick={() => saveModel("")}
-                    >
-                      <span>Por defecto del CLI</span>
-                      {!configuredModel && <span aria-hidden>✓</span>}
-                    </button>
-                  )}
-                  {(providerModels?.models ?? []).map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      className={`composer-popover-item${m === effectiveModel ? " active" : ""}`}
-                      disabled={modelSaving}
-                      onClick={() => saveModel(m)}
-                    >
-                      <span>{m}</span>
-                      {m === recommendedModel && (
-                        <span className="composer-popover-tag">recomendado</span>
-                      )}
-                    </button>
-                  ))}
-                  {(providerModels?.allow_custom ?? true) && (
-                    <div className="composer-popover-input">
-                      <input
-                        value={modelDraft}
-                        onChange={(e) => setModelDraft(e.target.value)}
-                        placeholder={
-                          executor === "ollama"
-                            ? "otro modelo (p. ej. qwen2.5:7b-instruct)"
-                            : "id de modelo (p. ej. opus, gpt-5.5)"
-                        }
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            saveModel(modelDraft);
-                          }
-                        }}
-                      />
-                      <Button
-                        variant="chip"
-                        disabled={modelSaving || !modelDraft.trim()}
-                        onClick={() => saveModel(modelDraft)}
-                      >
-                        {modelSaving ? "…" : "OK"}
-                      </Button>
-                    </div>
-                  )}
-                  <div className="composer-popover-note">
-                    Se guarda como <code>{executor ? MODEL_CONFIG_KEY[executor] : ""}</code>.
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Enviar */}
-        <Button variant="icon" onClick={send} disabled={sendDisabled}>
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <line x1="22" y1="2" x2="11" y2="13" />
-            <polygon points="22 2 15 22 11 13 2 9 22 2" />
-          </svg>
-        </Button>
-      </div>
-    </div>
-  );
+    ? ""
+    : effectiveModel || (executor === "ollama" ? "modelo" : "por defecto");
 
   return (
-    <div className="chat-container">
-      {msgs.length === 0 ? (
-        // Welcome / empty state
-        <div className="chat-welcome">
-          <div className="welcome-title">¿Qué analizamos hoy?</div>
-
-          {/* Anclaje de perfil: NO es decoración. Cuando el triage no ha
-              determinado el os_profile del caso, el orquestador no puede rutar a
-              ningún sub-agente y la RULE 2 prohíbe elegir uno en silencio: el
-              operador tiene que anclarlo. Éste es el único punto de la UI desde
-              el que puede hacerlo, así que sólo se pinta en ese caso — con el
-              perfil ya determinado no aparece nada (la insignia informativa
-              "Agente activo" se retiró a propósito). */}
-          {activeProfile === null && (
-            <div className="agent-badge">
-              <span className="agent-anchor">
-                <span className="agent-anchor-msg">
-                  <span className="agent-badge-dot agent-badge-dot--warn" />
-                  El sistema operativo de este caso aún no está determinado —
-                  regístrale una evidencia para que el orquestador lo derive, o
-                  ánclalo manualmente:
-                </span>
-                <span className="agent-anchor-actions">
-                  <span className="agent-anchor-label">Anclar perfil:</span>
-                  <Button
-                    variant="chip"
-                    disabled={!!anchoring}
-                    onClick={() => anchorProfile("unix")}
-                  >
-                    {anchoring === "unix" ? "Anclando…" : "unix"}
-                  </Button>
-                  <Button
-                    variant="chip"
-                    disabled={!!anchoring}
-                    onClick={() => anchorProfile("windows")}
-                  >
-                    {anchoring === "windows" ? "Anclando…" : "windows"}
-                  </Button>
-                </span>
-                {anchorError && (
-                  <span className="agent-anchor-error">
-                    No se pudo anclar: {anchorError}
-                  </span>
-                )}
-              </span>
+    <div className="chat-column">
+      <div className="transcript" ref={logRef}>
+        <div className="transcript-inner">
+          {msgs.length === 0 && (
+            <div className="turn">
+              <div className="turn-time" />
+              <div className="turn-body">
+                <div className="empty-rail">
+                  <div className="empty-rail-title">La investigación empieza aquí</div>
+                  <div className="empty-rail-body">
+                    Escribe una instrucción para el agente. Ejecutará el maletín forense sobre
+                    la evidencia verificada y dejará cada comando en el log de auditoría
+                    encadenado.
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
-          {/* Composer inside welcome */}
-          <div className="composer-wrapper" style={{ width: "100%" }}>
-            <div className="composer">
-              <textarea
-                ref={inputRef}
-                className="composer-textarea"
-                placeholder="Escribe una consulta sobre el caso"
-                rows={1}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-              />
-              {composerFooter}
-            </div>
-          </div>
-
-          <div className="quick-chips">
-            {QUICK_CHIPS.map((chip, i) => (
-              <Button
-                key={i}
-                variant="chip"
-                onClick={() => handleChipClick(chip.prefill)}
-              >
-                {chip.label}
-              </Button>
-            ))}
-          </div>
-        </div>
-      ) : (
-        // Conversation Flow
-        <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-          <div className="chat-messages" ref={logRef}>
-            {msgs.map((msg, i) => (
-              <div key={i} className={`msg-wrapper ${msg.role}`}>
-                {msg.role === "assistant" ? (
-                  <div>
-                    {(msg.activity?.length || msg.streaming) && (
-                      <AgentActivity activity={msg.activity ?? []} streaming={!!msg.streaming} />
-                    )}
-                    {msg.content && (
-                      <div style={{ opacity: msg.pending ? 0.6 : 1 }}>
-                        {formatMessageContent(msg.content)}
-                      </div>
-                    )}
+          {/* Anclaje de perfil: NO es decoración. Sin os_profile el orquestador
+              no puede rutar a ningún sub-agente y la RULE 2 prohíbe elegir uno
+              en silencio: el operador tiene que anclarlo. Este es el único
+              punto de la UI desde el que puede. */}
+          {activeProfile === null && (
+            <div className="turn">
+              <div className="turn-time" />
+              <div className="turn-body">
+                <div className="note-rail">
+                  El sistema operativo de este caso aún no está determinado — regístrale una
+                  evidencia para que el orquestador lo derive, o ánclalo manualmente:
+                  <div className="anchor-actions">
+                    <button
+                      type="button"
+                      className="chip-option"
+                      disabled={!!anchoring}
+                      onClick={() => void anchorProfile("unix")}
+                    >
+                      {anchoring === "unix" ? "Anclando…" : "unix"}
+                    </button>
+                    <button
+                      type="button"
+                      className="chip-option"
+                      disabled={!!anchoring}
+                      onClick={() => void anchorProfile("windows")}
+                    >
+                      {anchoring === "windows" ? "Anclando…" : "windows"}
+                    </button>
                   </div>
-                ) : (
-                  <span>{msg.content}</span>
-                )}
+                  {anchorError && (
+                    <div className="anchor-error">No se pudo anclar: {anchorError}</div>
+                  )}
+                </div>
               </div>
-            ))}
+            </div>
+          )}
+
+          {msgs.map((msg, i) =>
+            msg.role === "user" ? (
+              <div className="turn" key={i}>
+                <div className="turn-time">{clockOf(msg.at)}</div>
+                <div className="turn-body turn-body--user">
+                  <div className="turn-role">Perito</div>
+                  <div className="turn-said">{msg.content}</div>
+                </div>
+              </div>
+            ) : (
+              <div className="turn" key={i}>
+                <div className="turn-time">{clockOf(msg.at)}</div>
+                <div className="turn-body turn-body--agent">
+                  <div className="turn-role">{agentLabel}</div>
+
+                  {msg.streaming && (
+                    <div className="turn-running">
+                      <span className="turn-running-dot" aria-hidden="true" />
+                      {(() => {
+                        const last = msg.activity?.[msg.activity.length - 1];
+                        if (last?.type === "tool_call") return `ejecutando ${last.tool_id}`;
+                        if (last?.type === "reasoning") return "razonando";
+                        if (last?.type === "tool_result") return "procesando resultado";
+                        if (last?.type === "finding") return "registrando hallazgo";
+                        return "trabajando";
+                      })()}
+                    </div>
+                  )}
+
+                  {(msg.activity?.length || msg.streaming) && (
+                    <ToolChain activity={msg.activity ?? []} streaming={!!msg.streaming} />
+                  )}
+
+                  {msg.content && (
+                    <div className={`turn-prose${msg.pending ? " is-pending" : ""}`}>
+                      {formatMessageContent(msg.content)}
+                    </div>
+                  )}
+
+                  {/* Hallazgos registrados EN CALIENTE durante el turno. */}
+                  {(msg.activity ?? [])
+                    .filter((e) => e.type === "finding")
+                    .map((e, k) =>
+                      e.type === "finding" ? (
+                        <div className="finding-strip" key={k}>
+                          <span className="tag tag--box">
+                            {SEVERITY_LABEL[e.severity] ?? e.severity}
+                          </span>
+                          <span className="finding-strip-title">{e.title}</span>
+                          <span className="finding-strip-meta">registrado en el caso</span>
+                        </div>
+                      ) : null,
+                    )}
+                </div>
+              </div>
+            ),
+          )}
+        </div>
+      </div>
+
+      <div className="composer-bar">
+        <div className="composer-inner">
+          <textarea
+            ref={inputRef}
+            className="composer-input"
+            placeholder="Escribe una instrucción para el agente…"
+            rows={1}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+          />
+
+          <div className="composer-row" ref={actionsRef}>
+            {/* Proveedor (ejecutor). Los NO disponibles se muestran, no se
+                ocultan: deshabilitados, con la razón accionable de capabilities
+                y su acción de conexión si son CLI cloud (RULE 2). */}
+            <div className="composer-menu-wrap">
+              <button
+                type="button"
+                className={`composer-pick${executor ? "" : " is-empty"}`}
+                title="Ejecutor del análisis"
+                onClick={() => setOpenMenu(openMenu === "provider" ? null : "provider")}
+              >
+                {providerLabel}
+                {executorStatus?.local ? " · local" : ""}
+                {modelLabel ? ` · ${modelLabel}` : ""}
+              </button>
+              {openMenu === "provider" && (
+                <div className="composer-popover">
+                  <div className="composer-popover-title">Ejecutor</div>
+                  {executorEntries.length === 0 && (
+                    <div className="composer-popover-note">consultando capacidades…</div>
+                  )}
+                  {executorEntries.map(([id, status]) =>
+                    status.available ? (
+                      <button
+                        key={id}
+                        type="button"
+                        className={`composer-popover-item${id === executor ? " is-active" : ""}`}
+                        onClick={() => selectExecutor(id)}
+                      >
+                        <span>
+                          {status.name}
+                          {status.local ? " · local" : " · nube"}
+                        </span>
+                        {id === executor && <span aria-hidden>✓</span>}
+                      </button>
+                    ) : (
+                      <div
+                        key={id}
+                        className="composer-popover-item is-disabled"
+                        title={status.reason ?? "No disponible"}
+                      >
+                        <span>
+                          {status.name} — no disponible
+                        </span>
+                        {!status.local && (
+                          <button
+                            type="button"
+                            className="link-action"
+                            onClick={() => {
+                              setLoginExecutor(id);
+                              setOpenMenu(null);
+                            }}
+                          >
+                            Conectar
+                          </button>
+                        )}
+                      </div>
+                    ),
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Modelo — la lista depende del proveedor. */}
+            <div className="composer-menu-wrap">
+              <button
+                type="button"
+                className="composer-pick composer-pick--quiet"
+                title={executor ? "Modelo del proveedor" : "Elige primero un ejecutor"}
+                disabled={!executor}
+                onClick={() => {
+                  setModelDraft(effectiveModel);
+                  setOpenMenu(openMenu === "model" ? null : "model");
+                }}
+              >
+                modelo
+              </button>
+              {openMenu === "model" && (
+                <div className="composer-popover">
+                  <div className="composer-popover-title">
+                    Modelo · {executorStatus?.name ?? executor}
+                  </div>
+                  {modelsLoading && <div className="composer-popover-note">cargando modelos…</div>}
+                  {!modelsLoading && !modelEditable && (
+                    <div className="composer-popover-note">
+                      {providerModels?.note ?? "El modelo lo gestiona el CLI de este proveedor."}
+                    </div>
+                  )}
+                  {!modelsLoading && modelEditable && (
+                    <>
+                      {providerModels?.note && (
+                        <div className="composer-popover-note">{providerModels.note}</div>
+                      )}
+                      {executor !== "ollama" && (
+                        <button
+                          type="button"
+                          className={`composer-popover-item${!configuredModel ? " is-active" : ""}`}
+                          disabled={modelSaving}
+                          onClick={() => void saveModel("")}
+                        >
+                          <span>Por defecto del CLI</span>
+                          {!configuredModel && <span aria-hidden>✓</span>}
+                        </button>
+                      )}
+                      {(providerModels?.models ?? []).map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          className={`composer-popover-item${m === effectiveModel ? " is-active" : ""}`}
+                          disabled={modelSaving}
+                          onClick={() => void saveModel(m)}
+                        >
+                          <span>{m}</span>
+                          {m === recommendedModel && (
+                            <span className="composer-popover-tag">recomendado</span>
+                          )}
+                        </button>
+                      ))}
+                      {(providerModels?.allow_custom ?? true) && (
+                        <div className="composer-popover-input">
+                          <input
+                            className="field-input field-input--sm"
+                            value={modelDraft}
+                            onChange={(e) => setModelDraft(e.target.value)}
+                            placeholder={
+                              executor === "ollama"
+                                ? "otro modelo (p. ej. qwen2.5:7b-instruct)"
+                                : "id de modelo (p. ej. opus, gpt-5.5)"
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                void saveModel(modelDraft);
+                              }
+                            }}
+                          />
+                          <button
+                            type="button"
+                            className="link-action"
+                            disabled={modelSaving || !modelDraft.trim()}
+                            onClick={() => void saveModel(modelDraft)}
+                          >
+                            {modelSaving ? "…" : "OK"}
+                          </button>
+                        </div>
+                      )}
+                      <div className="composer-popover-note">
+                        Se guarda como <code>{executor ? MODEL_CONFIG_KEY[executor] : ""}</code>.
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <span className="composer-tip">Enter envía · Shift+Enter salta línea</span>
+
+            <button
+              type="button"
+              className="action-invert composer-send"
+              onClick={() => void send()}
+              disabled={sendDisabled}
+            >
+              {busy ? "Analizando…" : "Enviar"}
+            </button>
           </div>
 
-          <div className="composer-wrapper">
-            <div className="composer">
-              <textarea
-                ref={inputRef}
-                className="composer-textarea"
-                placeholder="Escribe una consulta sobre el caso"
-                rows={1}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-              />
-              {composerFooter}
-            </div>
+          <div className="quick-prompts">
+            {QUICK_PROMPTS.map((q) => (
+              <button
+                key={q}
+                type="button"
+                className="quick-prompt"
+                onClick={() => {
+                  setInput(q);
+                  inputRef.current?.focus();
+                }}
+              >
+                {q}
+              </button>
+            ))}
           </div>
         </div>
-      )}
+      </div>
 
       {loginExecutor && (
         <ExecutorLoginModal

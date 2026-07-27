@@ -6,6 +6,62 @@ No reemplaza ni contradice `arquitectura.md` ni `modelo-amenazas.md`; los comple
 
 ---
 
+## Entrada 2026-07-27 — Rediseño aplicado a las siete vistas
+
+Se termina la migración de la SPA al mock destino
+`docs/diseno/rediseno-2026-07/mocks/rediseno-final.dc.html`. El commit `592a45e`
+había traído el sistema visual (tokens de papel, acento terracota, filete de 1px)
+y el sidebar de fases; esta entrada cubre el cuerpo de las siete vistas, los dos
+modales y la limpieza.
+
+**Lo que cambia de forma**
+
+- **La gestión del caso sale del cuerpo de la vista.** El bloque de caso del
+  sidebar (nombre · `os_profile · estado` · «cambiar caso») y el botón «Nuevo
+  caso» disparan dos diálogos que ahora vive el armazón (`AppShell`), así que
+  funcionan desde cualquier pantalla. `RepositoryPage` se queda **solo** con la
+  evidencia, en los cuatro bloques del mock: cifras · alta · tabla · custodia.
+- **Una sola cabecera.** Cada página publica eyebrow/título/meta/acción con
+  `usePublishShellHeader`; el armazón la pinta. `ui/PageHeader.tsx` desaparece.
+- **Una sola lista de casos.** `ActiveCaseProvider` pasa a ser el store: además
+  del caso activo, carga y mantiene `cases`. Cinco vistas dejaron de pedir su
+  propia copia (y el sidebar, que está siempre visible, no la pide una sexta vez).
+- **Una sola fuente para las cifras del caso.** `useCaseFacts()` alimenta a la
+  vez la escalera de fases del sidebar y los seis pasos de la Guía; antes habrían
+  sido dos implementaciones capaces de contradecirse.
+
+**Lo que el mock omite y NO se ha perdido** (los cinco puntos del §5 de
+`plan-migracion.md`):
+
+| Qué | Dónde vive ahora |
+|---|---|
+| Barra de progreso del registro asíncrono | `EvidenceInbox`, `.progress-block` — con fase del hash-gate, segmento N/M y bytes |
+| Borrado de caso con confirmación por nombre | Panel «Eliminar» de `CaseSearchModal` |
+| Estado ATT&CK «descartada» | Quinta celda y quinto swatch de la leyenda de `MitreAttackPage` |
+| Paginación | `Pagination` + el `Pager` de las tablas MACB |
+| Aviso de desajuste de perfil de SO | `.mismatch-banner` en `InvestigationPage` |
+
+**Dos cosas que el rediseño aprovecha para corregir**, ambas rozaban RULE 2:
+
+- La Timeline **ya no preselecciona «la primera» evidencia** para la
+  super-timeline: el mock dibuja un selector explícito y ahora lo es de verdad.
+  Sin elección, vacío explicativo y acción de cabecera deshabilitada.
+- El compositor del chat mantiene el ejecutor **vacío a propósito** y lo marca en
+  acento, para que se lea como un paso pendiente y no como un hueco que arreglar
+  con un `?? "ollama"`.
+
+**Limpieza.** Se retiran 15 ficheros huérfanos (verificados con grep):
+`WorkflowGraph`, `ActiveCaseHeader`, `SystemStatusPage`, `DocumentViewerPage`,
+`ContextBanner`, `MetricCard`, `PageSection`, `Card`, `EmptyState`,
+`KeyValueList`, `StatusDot`, `PageHeader`, `ThemeToggle`,
+`mocks/frontendPreviewData.ts` y `types/domain.ts`; después `Button` y `Badge`,
+al convertir sus dos últimos consumidores. `index.css` pasa de 4.423 a ~1.660
+líneas: se borra la hoja de las páginas anteriores y **se retiran los alias
+transitorios de la paleta** (`--bg`, `--border`, `--text-*`, `--radius-card`…),
+que ya no resuelven nada.
+
+---
+
 ## Entrada 2026-07-15 — Conectar un ejecutor CLI cloud desde la web (login sin terminal)
 
 Hasta ahora la sesión de un ejecutor CLI cloud (Codex/Claude/Gemini) solo podía

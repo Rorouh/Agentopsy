@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError } from "../api/client";
 import type {
-  Case,
   EvidenceHandle,
   FsRelevantEvent,
   FsTimelineEvent,
@@ -9,19 +8,19 @@ import type {
   FsTimelineResult,
   TimelineEvent,
 } from "../api/types";
-import { EmptyState } from "../ui/EmptyState";
-import { PageHeader } from "../ui/PageHeader";
-import { useActiveCase, useActiveCaseFrom } from "../state/activeCase";
+import { usePublishShellHeader } from "../layout/shellHeader";
+import { useActiveCase } from "../state/activeCase";
 
-// Timeline forense del caso — DOS capas REALES (sin datos inventados, RULE 2):
-//   1) Investigación: cada ejecución de herramienta del audit log + cada hallazgo,
-//      en orden cronológico. Determinista, siempre disponible.
-//   2) Sistema de ficheros: la super-timeline MACB (tsk_fls -m) sobre la evidencia
-//      seleccionada, bajo demanda y asíncrona (job).
-// Todas las marcas de tiempo son UTC y se muestran con la zona explícita
-// (hallazgo F): NUNCA se convierten a la hora local del navegador.
+// FASE 4 · Timeline forense del caso — TRES capas REALES (sin datos inventados,
+// RULE 2):
+//   1) Investigación: cada ejecución de herramienta del audit log + cada
+//      hallazgo, en orden cronológico. Determinista, siempre disponible.
+//   2) Sistema de ficheros: la super-timeline MACB (tsk_fls -m) sobre la
+//      evidencia seleccionada, bajo demanda y asíncrona (job).
+//   3) Eventos relevantes: el triage forense determinista sobre (2).
+// Todas las marcas de tiempo son UTC y se muestran con la zona explícita:
+// NUNCA se convierten a la hora local del navegador.
 
-type Phase = "loading" | "ready" | "no-case" | "error";
 type Layer = "investigation" | "filesystem" | "relevant";
 
 const SEV_LABEL: Record<string, string> = {
@@ -89,39 +88,34 @@ function Pager({
 }) {
   if (total === 0) return null;
   return (
-    <div className="tl-pager">
-      <button
-        className="tl-pager-btn"
-        onClick={() => onPage(0)}
-        disabled={page <= 0}
-        aria-label="Primera página"
-      >
+    <div className="pager">
+      <button type="button" className="pager-btn" onClick={() => onPage(0)} disabled={page <= 0}>
         «
       </button>
       <button
-        className="tl-pager-btn"
+        type="button"
+        className="pager-btn"
         onClick={() => onPage(page - 1)}
         disabled={page <= 0}
-        aria-label="Página anterior"
       >
         ‹
       </button>
-      <span className="tl-pager-info">
+      <span className="pager-info">
         Página {page + 1} de {pageCount} · {total.toLocaleString("es-ES")} {noun}
       </span>
       <button
-        className="tl-pager-btn"
+        type="button"
+        className="pager-btn"
         onClick={() => onPage(page + 1)}
         disabled={page >= pageCount - 1}
-        aria-label="Página siguiente"
       >
         ›
       </button>
       <button
-        className="tl-pager-btn"
+        type="button"
+        className="pager-btn"
         onClick={() => onPage(pageCount - 1)}
         disabled={page >= pageCount - 1}
-        aria-label="Última página"
       >
         »
       </button>
@@ -130,20 +124,22 @@ function Pager({
 }
 
 export function TimelinePage() {
-  const [cases, setCases] = useState<Case[]>([]);
-  const [phase, setPhase] = useState<Phase>("loading");
-  const [error, setError] = useState("");
+  const { activeCase, phase: casesPhase, error: casesError } = useActiveCase();
   const [layer, setLayer] = useState<Layer>("investigation");
   const [search, setSearch] = useState("");
   // Página actual de las tablas del sistema de ficheros (capas 2 y 3).
   const [fsPage, setFsPage] = useState(0);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   // Capa 1
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   // Capa 2
   const [evidences, setEvidences] = useState<EvidenceHandle[]>([]);
+  // RULE 2: NO se preselecciona «la primera» evidencia. La super-timeline se
+  // construye sobre la que el perito elija; adivinarla es exactamente el
+  // «coge el único / el más reciente» que la regla prohíbe.
   const [selectedEvidence, setSelectedEvidence] = useState("");
   const [fsJob, setFsJob] = useState<FsTimelineJob | null>(null);
   // Super-timeline PERSISTIDA de la evidencia seleccionada (rehidrata la vista
@@ -153,36 +149,8 @@ export function TimelinePage() {
   const [starting, setStarting] = useState(false);
   const pollRef = useRef<number | null>(null);
 
-  // Caso activo GLOBAL (compartido con las demás vistas). El selector de abajo
-  // lo cambia y todas convergen.
-  const { setActiveCaseId } = useActiveCase();
-  const activeCase = useActiveCaseFrom(cases);
-
-  // Carga la LISTA de casos una vez. La timeline/evidencias del caso activo las
-  // gobierna el efecto de abajo (keyed en activeCase.id) para que cambiar de
-  // caso — aquí o en otra vista — refetchee uniformemente.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const list = await api.cases.list();
-        if (cancelled) return;
-        setCases(list);
-        setPhase(list.length === 0 ? "no-case" : "ready");
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : String(err));
-          setPhase("error");
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   // Timeline + evidencias del caso activo. Se recarga al cambiar de caso (desde
-  // aquí o desde cualquier otra vista), limpiando el estado de la capa 2.
+  // el sidebar o cualquier otra vista), limpiando el estado de la capa 2.
   useEffect(() => {
     const caseId = activeCase?.id;
     if (!caseId) {
@@ -192,6 +160,7 @@ export function TimelinePage() {
       return;
     }
     let cancelled = false;
+    setLoadError("");
     (async () => {
       try {
         const [tl, evs] = await Promise.all([
@@ -201,12 +170,9 @@ export function TimelinePage() {
         if (cancelled) return;
         setEvents(tl.events);
         setEvidences(evs);
-        setSelectedEvidence(evs.length > 0 ? evs[0].evidence_id : "");
+        setSelectedEvidence("");
       } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : String(err));
-          setPhase("error");
-        }
+        if (!cancelled) setLoadError(err instanceof Error ? err.message : String(err));
       }
     })();
     return () => {
@@ -216,8 +182,7 @@ export function TimelinePage() {
 
   // Rehidrata la capa 2 al cambiar de caso o de evidencia seleccionada: cancela
   // cualquier job/sondeo en curso y carga la super-timeline PERSISTIDA de esa
-  // evidencia (si nunca se generó, queda null → estado «Pulsa Generar»). Así la
-  // super-timeline sobrevive a recargas y cambios de vista sin re-ejecutar fls.
+  // evidencia (si nunca se generó, queda null → vacío explicativo).
   useEffect(() => {
     const caseId = activeCase?.id;
     const evidenceId = selectedEvidence;
@@ -232,7 +197,7 @@ export function TimelinePage() {
         const { result } = await api.cases.getPersistedFsTimeline(caseId, evidenceId);
         if (!cancelled) setLoadedFsResult(result);
       } catch {
-        // Silencioso: sin persistido (o fallo puntual) se muestra el estado vacío.
+        // Silencioso: sin persistido (o fallo puntual) se muestra el vacío.
         if (!cancelled) setLoadedFsResult(null);
       }
     })();
@@ -241,13 +206,11 @@ export function TimelinePage() {
     };
   }, [activeCase?.id, selectedEvidence]);
 
-  // Vuelve a la primera página cuando cambia el conjunto mostrado (capa,
-  // búsqueda, evidencia o caso) o al recibir un nuevo resultado.
+  // Vuelve a la primera página cuando cambia el conjunto mostrado.
   useEffect(() => {
     setFsPage(0);
   }, [layer, search, selectedEvidence, activeCase?.id, fsJob?.status]);
 
-  // Limpia el sondeo al desmontar.
   useEffect(() => {
     return () => {
       if (pollRef.current !== null) window.clearTimeout(pollRef.current);
@@ -286,8 +249,8 @@ export function TimelinePage() {
     }
   }, [activeCase, selectedEvidence, poll]);
 
-  // Export CSV del timeline de investigación (tool runs + hallazgos). Se descarga con
-  // el token mismo-origen; un caso sin actividad exporta igual (cabecera honesta).
+  // Export CSV del timeline de investigación (tool runs + hallazgos). Se descarga
+  // con el token mismo-origen; un caso sin actividad exporta igual.
   const exportInvestigationCsv = useCallback(async () => {
     if (!activeCase) return;
     setExporting(true);
@@ -327,23 +290,15 @@ export function TimelinePage() {
     return { toolRuns, findings, total: events.length };
   }, [events]);
 
-  // Un job activo (running/done/error) gobierna la vista; sin job, se muestra la
-  // super-timeline persistida de la evidencia.
-  const fsResult = fsJob
-    ? fsJob.status === "done"
-      ? fsJob.result
-      : null
-    : loadedFsResult;
+  // Un job activo gobierna la vista; sin job, la super-timeline persistida.
+  const fsResult = fsJob ? (fsJob.status === "done" ? fsJob.result : null) : loadedFsResult;
   const fsFiltered = useMemo(() => {
     if (!fsResult) return [] as FsTimelineEvent[];
     const q = search.trim().toLowerCase();
     if (!q) return fsResult.events;
-    return fsResult.events.filter((e) =>
-      `${e.path} ${e.macb} ${e.inode}`.toLowerCase().includes(q),
-    );
+    return fsResult.events.filter((e) => `${e.path} ${e.macb} ${e.inode}`.toLowerCase().includes(q));
   }, [fsResult, search]);
 
-  // Capa 3 — eventos relevantes (triage forense determinista del backend).
   const relevantFiltered = useMemo(() => {
     const all = fsResult?.relevant_events ?? [];
     const q = search.trim().toLowerCase();
@@ -355,7 +310,6 @@ export function TimelinePage() {
     );
   }, [fsResult, search]);
 
-  // Paginación common a las capas 2 y 3.
   const activeFsRows = layer === "relevant" ? relevantFiltered : fsFiltered;
   const fsPageCount = Math.max(1, Math.ceil(activeFsRows.length / FS_PAGE_SIZE));
   const safeFsPage = Math.min(fsPage, fsPageCount - 1);
@@ -363,7 +317,6 @@ export function TimelinePage() {
     () => activeFsRows.slice(safeFsPage * FS_PAGE_SIZE, safeFsPage * FS_PAGE_SIZE + FS_PAGE_SIZE),
     [activeFsRows, safeFsPage],
   );
-  // La capa 2 (cronológica) agrupa por día; la página ya viene acotada.
   const fsDays = useMemo(
     () => groupByDay(fsPageRows as FsTimelineEvent[], (e) => e.ts),
     [fsPageRows],
@@ -371,401 +324,436 @@ export function TimelinePage() {
 
   const fsProgress = fsJob?.events ?? [];
   const lastProgress = fsProgress[fsProgress.length - 1]?.message ?? "";
+  const isInvestigation = layer === "investigation";
+  const canGenerate =
+    !!selectedEvidence && !starting && fsJob?.status !== "running" && evidences.length > 0;
 
-  if (phase === "loading") {
-    return <PageHeader title="Timeline forense" subtitle="Cargando la línea de tiempo…" />;
-  }
-  if (phase === "error") {
+  // Exportar CSV pertenece SOLO a la capa de investigación; generar la
+  // super-timeline (tsk_fls -m), solo a las de sistema de ficheros. La cabecera
+  // transporta la acción YA RESUELTA por la página, no la regla (RULE 3).
+  usePublishShellHeader(
+    {
+      title: "Timeline forense",
+      meta: !activeCase
+        ? "sin caso seleccionado"
+        : isInvestigation
+          ? `UTC · ${counts.toolRuns} ejecuciones · ${counts.findings} hallazgos`
+          : fsResult
+            ? `UTC · ${fsResult.total_events} eventos MACB`
+            : "UTC · super-timeline sin generar",
+      action: !activeCase ? undefined : isInvestigation ? (
+        <button type="button" disabled={exporting} onClick={() => void exportInvestigationCsv()}>
+          {exporting ? "Exportando…" : "Exportar CSV"}
+        </button>
+      ) : (
+        <button
+          type="button"
+          disabled={!canGenerate}
+          title={selectedEvidence ? undefined : "Elige primero la evidencia."}
+          onClick={() => void startFsTimeline()}
+        >
+          {fsJob?.status === "running" || starting ? "Generando…" : "Generar super-timeline"}
+        </button>
+      ),
+    },
+    [
+      activeCase?.id,
+      isInvestigation,
+      counts.toolRuns,
+      counts.findings,
+      fsResult?.total_events,
+      exporting,
+      canGenerate,
+      starting,
+      fsJob?.status,
+    ],
+  );
+
+  if (casesPhase === "loading") {
     return (
-      <div>
-        <PageHeader title="Timeline forense" subtitle="No se pudo cargar la línea de tiempo." />
-        <EmptyState title="Error" description={error} />
+      <div className="view-scroll">
+        <div className="loading-state">
+          <span className="spinner" aria-hidden="true" />
+          <span>Cargando la línea de tiempo…</span>
+        </div>
       </div>
     );
   }
-  if (phase === "no-case" || !activeCase) {
+
+  if (casesPhase === "error" || loadError) {
     return (
-      <div>
-        <PageHeader
-          title="Timeline forense"
-          subtitle="Línea temporal del caso: acciones de investigación y super-timeline del sistema de ficheros."
-        />
-        <EmptyState
-          title="Sin caso abierto"
-          description="Abre un caso: la línea de tiempo se construye con la actividad auditada y la evidencia del caso."
-        />
+      <div className="view-scroll">
+        <div className="error-state">
+          <strong>No se pudo cargar la línea de tiempo:</strong> {loadError || casesError}
+        </div>
+      </div>
+    );
+  }
+
+  if (!activeCase) {
+    return (
+      <div className="view-scroll">
+        <div className="empty-rail">
+          <div className="empty-rail-title">Sin caso abierto</div>
+          <div className="empty-rail-body">
+            La línea de tiempo se construye con la actividad auditada y la evidencia del caso.
+            Abre uno desde el lateral.
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="tl-page">
-      <PageHeader
-        title="Timeline forense"
-        subtitle="Línea temporal del caso. Todas las marcas de tiempo se muestran en UTC."
-      />
-
-      <div className="mitre-context">
-        <span className="case-picker-row">
-          <span className="case-picker-label">Caso activo</span>
-          <select
-            className="case-picker"
-            aria-label="Caso activo"
-            value={activeCase.id}
-            onChange={(e) => setActiveCaseId(e.target.value)}
+    <div className="timeline">
+      <div className="tl-bar">
+        <div className="tab-row">
+          <button
+            type="button"
+            className={`tab${layer === "investigation" ? " is-active" : ""}`}
+            onClick={() => setLayer("investigation")}
           >
-            {cases.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-                {c.os_profile ? ` · ${c.os_profile}` : ""}
-              </option>
-            ))}
-          </select>
-          <span>· {activeCase.examiner}</span>
-        </span>
-        <span className="tl-tz">Zona horaria: UTC</span>
+            Investigación
+            <span className="tab-count">{counts.total}</span>
+          </button>
+          <button
+            type="button"
+            className={`tab${layer === "filesystem" ? " is-active" : ""}`}
+            onClick={() => setLayer("filesystem")}
+          >
+            Sistema de ficheros (MACB)
+            <span className="tab-count">{fsResult ? fsResult.total_events : "—"}</span>
+          </button>
+          <button
+            type="button"
+            className={`tab${layer === "relevant" ? " is-active" : ""}`}
+            onClick={() => setLayer("relevant")}
+            title="Eventos del sistema de ficheros forensemente relevantes (credenciales, persistencia, historial, logs, ejecutables en temporales…)"
+          >
+            Eventos relevantes
+            <span className="tab-count">
+              {fsResult?.total_relevant !== undefined ? fsResult.total_relevant : "—"}
+            </span>
+          </button>
+        </div>
+        <span className="bar-note">Todas las horas en UTC</span>
       </div>
 
-      {/* Selector de capa */}
-      <div className="tl-layers">
-        <button
-          className={`tl-layer${layer === "investigation" ? " is-active" : ""}`}
-          onClick={() => setLayer("investigation")}
-        >
-          Investigación
-          <span className="tl-layer-count">{counts.total}</span>
-        </button>
-        <button
-          className={`tl-layer${layer === "filesystem" ? " is-active" : ""}`}
-          onClick={() => setLayer("filesystem")}
-        >
-          Sistema de ficheros (MACB)
-          {fsResult && <span className="tl-layer-count">{fsResult.total_events}</span>}
-        </button>
-        <button
-          className={`tl-layer${layer === "relevant" ? " is-active" : ""}`}
-          onClick={() => setLayer("relevant")}
-          title="Eventos del sistema de ficheros forensemente relevantes (credenciales, persistencia, historial, logs, ejecutables en temporales…)"
-        >
-          Eventos relevantes
-          {fsResult?.total_relevant !== undefined && (
-            <span className="tl-layer-count">{fsResult.total_relevant}</span>
-          )}
-        </button>
-      </div>
-
-      {/* Buscador (común a las tres capas) */}
       <div className="tl-toolbar">
+        <label className="visually-hidden" htmlFor="tl-search">
+          Buscar en la línea de tiempo
+        </label>
         <input
-          className="tl-search"
+          id="tl-search"
+          className="field-input tl-search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder={
-            layer === "investigation"
+            isInvestigation
               ? "Buscar por herramienta, argv, hallazgo o técnica…"
               : layer === "relevant"
                 ? "Buscar por ruta, motivo, categoría, MACB o inode…"
                 : "Buscar por ruta, MACB o inode…"
           }
         />
-        {layer === "investigation" && (
-          <div className="tl-summary">
-            <span>{counts.toolRuns} ejecuciones</span>
-            <span>{counts.findings} hallazgos</span>
+        {isInvestigation ? (
+          <div className="tl-meta">
+            {counts.toolRuns} ejecuciones · {counts.findings} hallazgos
           </div>
-        )}
-        {layer === "investigation" && (
-          <button
-            className="tl-run-btn"
-            onClick={exportInvestigationCsv}
-            disabled={exporting}
-            title="Descargar el timeline de investigación como CSV"
-          >
-            {exporting ? "Exportando…" : "Exportar CSV"}
-          </button>
-        )}
-      </div>
-
-      {exportError && layer === "investigation" && (
-        <div className="tl-fserror">No se pudo exportar: {exportError}</div>
-      )}
-
-      {layer === "investigation" ? (
-        <div className="tl-scroll">
-          {events.length === 0 ? (
-            <div className="tl-empty">
-              Aún no hay actividad en este caso. La línea de tiempo se llena con cada
-              herramienta que se ejecuta y cada hallazgo que el agente registra.
-            </div>
-          ) : invFiltered.length === 0 ? (
-            <div className="tl-empty">No hay eventos que coincidan con la búsqueda.</div>
-          ) : (
-            invDays.map((day) => (
-              <div className="tl-day" key={day.label}>
-                <div className="tl-day-head">
-                  <span className="tl-day-label">{day.label} · UTC</span>
-                  <span className="tl-day-rule" />
-                  <span className="tl-day-count">{day.rows.length} eventos</span>
-                </div>
-                <div className="tl-rail">
-                  {day.rows.map((ev) =>
-                    ev.kind === "finding" ? (
-                      <div className="tl-event" key={ev.finding_id}>
-                        <span className={`tl-dot tl-dot--${ev.severity}`} />
-                        <div className="tl-event-meta">
-                          <span className="tl-time">{fmtUtc(ev.ts).time} UTC</span>
-                          <span className="tl-kind tl-kind--finding">Hallazgo</span>
-                          <span className="tl-src">{ev.tool_id ?? "agente"}</span>
-                          <span className={`tl-sev tl-sev--${ev.severity}`}>
-                            {SEV_LABEL[ev.severity] ?? ev.severity}
-                          </span>
-                        </div>
-                        <p className="tl-desc">{ev.summary || ev.title}</p>
-                        {ev.mitre_hints.length > 0 && (
-                          <div className="tl-techs">
-                            {ev.mitre_hints.map((t) => (
-                              <span className="tl-tech" key={t}>
-                                {t}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="tl-event" key={ev.run_id ?? `${ev.ts}-${ev.tool_id}`}>
-                        <span
-                          className={`tl-dot ${
-                            ev.exit === 0 ? "tl-dot--ok" : ev.exit === null ? "tl-dot--run" : "tl-dot--fail"
-                          }`}
-                        />
-                        <div className="tl-event-meta">
-                          <span className="tl-time">{fmtUtc(ev.ts).time} UTC</span>
-                          <span className="tl-kind tl-kind--tool">Ejecución</span>
-                          <span className="tl-src">{ev.tool_id ?? "tool"}</span>
-                          <span
-                            className={`tl-exit ${
-                              ev.exit === 0
-                                ? "tl-exit--ok"
-                                : ev.exit === null
-                                  ? "tl-exit--run"
-                                  : "tl-exit--fail"
-                            }`}
-                          >
-                            {ev.exit === null ? ev.status : `exit ${ev.exit}`}
-                          </span>
-                        </div>
-                        <code className="tl-argv">{ev.argv.join(" ") || "(sin argv)"}</code>
-                        {ev.output_files_count !== null && ev.output_files_count > 0 && (
-                          <div className="tl-techs">
-                            <span className="tl-tech">
-                              {ev.output_files_count} artefacto
-                              {ev.output_files_count === 1 ? "" : "s"}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    ),
-                  )}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      ) : (
-        <>
-          <div className="tl-fsbar">
+        ) : (
+          <div className="tl-evidence">
+            <span className="eyebrow">Evidencia</span>
+            <label className="visually-hidden" htmlFor="tl-evidence-select">
+              Evidencia de la super-timeline
+            </label>
             <select
-              className="tl-source"
+              id="tl-evidence-select"
+              className="field-select"
               value={selectedEvidence}
               onChange={(e) => setSelectedEvidence(e.target.value)}
               disabled={evidences.length === 0 || fsJob?.status === "running"}
             >
-              {evidences.length === 0 && <option value="">Sin evidencia registrada</option>}
+              <option value="">
+                {evidences.length === 0 ? "Sin evidencia registrada" : "Elige la evidencia…"}
+              </option>
               {evidences.map((e) => (
                 <option key={e.evidence_id} value={e.evidence_id}>
                   {evidenceName(e)}
                 </option>
               ))}
             </select>
-            <button
-              className="tl-run-btn"
-              onClick={startFsTimeline}
-              disabled={
-                !selectedEvidence || starting || fsJob?.status === "running" || evidences.length === 0
-              }
-            >
-              {fsJob?.status === "running" || starting
-                ? "Generando…"
-                : "Generar super-timeline (tsk_fls -m)"}
-            </button>
           </div>
+        )}
+      </div>
 
-          {evidences.length === 0 && (
-            <div className="docs-note">
-              Registra una evidencia en el caso para construir la super-timeline del sistema
-              de ficheros.
-            </div>
+      <div className="tl-scroll">
+        <div className="view-stack view-stack--1000 tl-stack">
+          {exportError && isInvestigation && (
+            <div className="error-state">No se pudo exportar: {exportError}</div>
           )}
 
-          {fsError && <div className="tl-fserror">{fsError}</div>}
-
-          {fsJob?.status === "running" && (
-            <div className="tl-fsstatus">
-              <span className="tl-spinner" />
-              {lastProgress || "Ejecutando tsk_fls -m sobre la evidencia…"}
-            </div>
-          )}
-          {fsJob?.status === "error" && (
-            <div className="tl-fserror">{fsJob.error ?? "El análisis falló."}</div>
-          )}
-
-          {fsResult && fsResult.generated_at && !fsJob && (
-            <div className="docs-note">
-              Super-timeline generada el {fmtUtc(fsResult.generated_at).date} a las{" "}
-              {fmtUtc(fsResult.generated_at).time} UTC · {fsResult.total_events} eventos.
-              Vuelve a pulsar «Generar» para recalcularla.
-            </div>
-          )}
-
-          {/* Capa 2 — super-timeline cronológica (agrupada por día, paginada). */}
-          {fsResult && layer === "filesystem" && (
-            <div className="tl-scroll">
-              {fsResult.truncated && (
-                <div className="tl-truncated">
-                  Mostrando {fsResult.returned} de {fsResult.total_events} eventos (recortado
-                  para acotar el tamaño). Afina con la búsqueda.
+          {isInvestigation ? (
+            events.length === 0 ? (
+              <div className="empty-rail">
+                <div className="empty-rail-title">Sin actividad todavía</div>
+                <div className="empty-rail-body">
+                  La línea de tiempo se llena con cada herramienta que se ejecuta y cada hallazgo
+                  que el agente registra, tomados del log de auditoría encadenado.
                 </div>
-              )}
-              {fsFiltered.length === 0 ? (
-                <div className="tl-empty">
-                  {fsResult.total_events === 0
-                    ? "La evidencia no produjo eventos de sistema de ficheros."
-                    : "No hay eventos que coincidan con la búsqueda."}
-                </div>
-              ) : (
-                <>
-                  {fsDays.map((day) => (
-                    <div className="tl-day" key={day.label}>
-                      <div className="tl-day-head">
-                        <span className="tl-day-label">{day.label} · UTC</span>
-                        <span className="tl-day-rule" />
-                        <span className="tl-day-count">{day.rows.length} eventos</span>
+              </div>
+            ) : invFiltered.length === 0 ? (
+              <div className="inline-note">Ningún evento coincide con la búsqueda.</div>
+            ) : (
+              invDays.map((day) => (
+                <div className="tl-day" key={day.label}>
+                  <div className="tl-day-head">
+                    <span className="tl-day-label">{day.label} · UTC</span>
+                    <span className="rule" />
+                    <span className="rule-count">
+                      {day.rows.length} evento{day.rows.length === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                  {day.rows.map((ev) =>
+                    ev.kind === "finding" ? (
+                      <div className="tl-row" key={ev.finding_id}>
+                        <div className="tl-time">{fmtUtc(ev.ts).time}</div>
+                        <div className="tl-kindcol">
+                          <span className="tl-kind tl-kind--finding">Hallazgo</span>
+                          <span className="tl-src">
+                            {ev.tool_id ?? "agente"} · {SEV_LABEL[ev.severity] ?? ev.severity}
+                          </span>
+                        </div>
+                        <div className="tl-body">
+                          <div className="tl-desc">{ev.summary || ev.title}</div>
+                          {ev.mitre_hints.length > 0 && (
+                            <div className="tl-techs">
+                              {ev.mitre_hints.map((t) => (
+                                <span key={t}>{t}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      <table className="tl-fstable">
-                        <thead>
-                          <tr>
-                            <th>Hora (UTC)</th>
-                            <th>MACB</th>
-                            <th>Tamaño</th>
-                            <th>Inodo</th>
-                            <th>Ruta</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {day.rows.map((ev, i) => (
-                            <tr key={`${ev.inode}-${ev.ts}-${i}`}>
-                              <td className="tl-fs-time">{fmtUtc(ev.ts).time}</td>
-                              <td>
-                                <code className="tl-macb">{ev.macb}</code>
-                              </td>
-                              <td className="tl-fs-size">{ev.size.toLocaleString("es-ES")}</td>
-                              <td className="tl-fs-inode">{ev.inode}</td>
-                              <td className="tl-fs-path">{ev.path}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ))}
-                  <Pager
-                    page={safeFsPage}
-                    pageCount={fsPageCount}
-                    total={fsFiltered.length}
-                    noun="eventos"
-                    onPage={setFsPage}
-                  />
-                </>
-              )}
-            </div>
-          )}
-
-          {/* Capa 3 — eventos relevantes (ordenados por importancia, paginados). */}
-          {fsResult && layer === "relevant" && (
-            <div className="tl-scroll">
-              {fsResult.relevant_events === undefined ? (
-                <div className="docs-note">
-                  Esta super-timeline se generó con una versión anterior sin triage de
-                  relevancia. Vuelve a pulsar «Generar super-timeline» para calcular los
-                  eventos relevantes.
+                    ) : (
+                      <div className="tl-row" key={ev.run_id ?? `${ev.ts}-${ev.tool_id}`}>
+                        <div className="tl-time">{fmtUtc(ev.ts).time}</div>
+                        <div className="tl-kindcol">
+                          <span className="tl-kind">Ejecución</span>
+                          <span className="tl-src">
+                            {ev.tool_id ?? "tool"}
+                            {ev.exit === null ? ` · ${ev.status}` : ` · exit ${ev.exit}`}
+                          </span>
+                        </div>
+                        <div className="tl-body">
+                          {/* El argv LITERAL que se ejecutó (FORENSIC INVARIANT 4). */}
+                          <div className="tl-argv">{ev.argv.join(" ") || "(sin argv)"}</div>
+                          {ev.output_files_count !== null && ev.output_files_count > 0 && (
+                            <div className="tl-techs">
+                              <span>
+                                {ev.output_files_count} artefacto
+                                {ev.output_files_count === 1 ? "" : "s"}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ),
+                  )}
                 </div>
-              ) : (
+              ))
+            )
+          ) : (
+            <>
+              {evidences.length === 0 ? (
+                <div className="empty-rail">
+                  <div className="empty-rail-title">Sin evidencia registrada</div>
+                  <div className="empty-rail-body">
+                    Registra una evidencia en el caso para construir la super-timeline del
+                    sistema de ficheros.
+                  </div>
+                </div>
+              ) : !selectedEvidence ? (
+                <div className="empty-rail">
+                  <div className="empty-rail-title">Elige la evidencia</div>
+                  <div className="empty-rail-body">
+                    La super-timeline se construye sobre una evidencia concreta. Agentopsy no
+                    elige por ti cuál analizar.
+                  </div>
+                </div>
+              ) : null}
+
+              {fsError && <div className="error-state">{fsError}</div>}
+
+              {fsJob?.status === "running" && (
+                <div className="progress-block" aria-live="polite">
+                  <div className="progress-head">
+                    <span>{lastProgress || "Ejecutando tsk_fls -m sobre la evidencia…"}</span>
+                  </div>
+                  <div className="progress-track">
+                    <div className="progress-fill progress-fill--indeterminate" />
+                  </div>
+                  <div className="progress-note">
+                    Es un trabajo asíncrono: puedes seguir investigando mientras corre.
+                  </div>
+                </div>
+              )}
+              {fsJob?.status === "error" && (
+                <div className="error-state">{fsJob.error ?? "El análisis falló."}</div>
+              )}
+
+              {selectedEvidence && !fsJob && !fsResult && !fsError && (
+                <div className="empty-rail">
+                  <div className="empty-rail-title">Super-timeline sin generar</div>
+                  <div className="empty-rail-body">
+                    La línea temporal MACB se construye ejecutando <span className="mono">
+                      tsk_fls -m
+                    </span>{" "}
+                    sobre la evidencia seleccionada. Es un trabajo asíncrono: puedes seguir
+                    investigando mientras corre.
+                  </div>
+                </div>
+              )}
+
+              {fsResult && fsResult.generated_at && !fsJob && (
+                <div className="inline-note">
+                  Super-timeline generada el {fmtUtc(fsResult.generated_at).date} a las{" "}
+                  {fmtUtc(fsResult.generated_at).time} UTC · {fsResult.total_events} eventos.
+                  Vuelve a pulsar «Generar super-timeline» para recalcularla.
+                </div>
+              )}
+
+              {fsResult && layer === "filesystem" && (
                 <>
-                  {fsResult.relevant_truncated && (
-                    <div className="tl-truncated">
-                      Mostrando {fsResult.relevant_returned} de {fsResult.total_relevant} eventos
-                      relevantes (recortado). Afina con la búsqueda.
+                  {fsResult.truncated && (
+                    <div className="inline-note">
+                      Mostrando {fsResult.returned} de {fsResult.total_events} eventos (recortado
+                      para acotar el tamaño). Afina con la búsqueda.
                     </div>
                   )}
-                  {relevantFiltered.length === 0 ? (
-                    <div className="tl-empty">
-                      {(fsResult.total_relevant ?? 0) === 0
-                        ? "El triage no marcó ningún evento del sistema de ficheros como relevante."
-                        : "No hay eventos relevantes que coincidan con la búsqueda."}
+                  {fsFiltered.length === 0 ? (
+                    <div className="inline-note">
+                      {fsResult.total_events === 0
+                        ? "La evidencia no produjo eventos de sistema de ficheros."
+                        : "Ningún evento coincide con la búsqueda."}
                     </div>
                   ) : (
                     <>
-                      <table className="tl-fstable tl-reltable">
-                        <thead>
-                          <tr>
-                            <th>Fecha (UTC)</th>
-                            <th>Hora</th>
-                            <th>Categoría</th>
-                            <th>Motivo</th>
-                            <th>MACB</th>
-                            <th>Ruta</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {(fsPageRows as FsRelevantEvent[]).map((ev, i) => (
-                            <tr key={`${ev.inode}-${ev.ts}-${ev.category}-${i}`}>
-                              <td className="tl-fs-time">{fmtUtc(ev.ts).date}</td>
-                              <td className="tl-fs-time">{fmtUtc(ev.ts).time}</td>
-                              <td>
-                                <span className={`tl-cat tl-cat--${ev.category}`}>
-                                  {CATEGORY_LABEL[ev.category] ?? ev.category}
-                                </span>
-                              </td>
-                              <td>{ev.reason}</td>
-                              <td>
-                                <code className="tl-macb">{ev.macb}</code>
-                              </td>
-                              <td className="tl-fs-path">{ev.path}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                      {fsDays.map((day) => (
+                        <div className="tl-day" key={day.label}>
+                          <div className="tl-day-head">
+                            <span className="tl-day-label">{day.label} · UTC</span>
+                            <span className="rule" />
+                            <span className="rule-count">{day.rows.length} eventos</span>
+                          </div>
+                          <div className="table-scroll">
+                            <table className="data-table">
+                              <thead>
+                                <tr>
+                                  <th>Hora (UTC)</th>
+                                  <th>MACB</th>
+                                  <th>Tamaño</th>
+                                  <th>Inodo</th>
+                                  <th>Ruta</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {day.rows.map((ev, i) => (
+                                  <tr key={`${ev.inode}-${ev.ts}-${i}`}>
+                                    <td className="cell-dim">{fmtUtc(ev.ts).time}</td>
+                                    <td className="cell-mono">{ev.macb}</td>
+                                    <td className="cell-dim">{ev.size.toLocaleString("es-ES")}</td>
+                                    <td className="cell-dim">{ev.inode}</td>
+                                    <td className="cell-path">{ev.path}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      ))}
                       <Pager
                         page={safeFsPage}
                         pageCount={fsPageCount}
-                        total={relevantFiltered.length}
-                        noun="eventos relevantes"
+                        total={fsFiltered.length}
+                        noun="eventos"
                         onPage={setFsPage}
                       />
                     </>
                   )}
                 </>
               )}
-            </div>
-          )}
 
-          {!fsJob && !fsError && !fsResult && evidences.length > 0 && (
-            <div className="tl-empty">
-              Pulsa «Generar super-timeline» para construir la línea temporal MACB del sistema
-              de ficheros a partir de la evidencia seleccionada.
-            </div>
+              {fsResult && layer === "relevant" && (
+                <>
+                  {fsResult.relevant_events === undefined ? (
+                    <div className="inline-note">
+                      Esta super-timeline se generó con una versión anterior sin triage de
+                      relevancia. Vuelve a pulsar «Generar super-timeline» para calcular los
+                      eventos relevantes.
+                    </div>
+                  ) : (
+                    <>
+                      {fsResult.relevant_truncated && (
+                        <div className="inline-note">
+                          Mostrando {fsResult.relevant_returned} de {fsResult.total_relevant}{" "}
+                          eventos relevantes (recortado). Afina con la búsqueda.
+                        </div>
+                      )}
+                      {relevantFiltered.length === 0 ? (
+                        <div className="inline-note">
+                          {(fsResult.total_relevant ?? 0) === 0
+                            ? "El triage no marcó ningún evento del sistema de ficheros como relevante."
+                            : "Ningún evento relevante coincide con la búsqueda."}
+                        </div>
+                      ) : (
+                        <>
+                          <div className="table-scroll">
+                            <table className="data-table">
+                              <thead>
+                                <tr>
+                                  <th>Fecha (UTC)</th>
+                                  <th>Hora</th>
+                                  <th>Categoría</th>
+                                  <th>Motivo</th>
+                                  <th>MACB</th>
+                                  <th>Ruta</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(fsPageRows as FsRelevantEvent[]).map((ev, i) => (
+                                  <tr key={`${ev.inode}-${ev.ts}-${ev.category}-${i}`}>
+                                    <td className="cell-dim">{fmtUtc(ev.ts).date}</td>
+                                    <td className="cell-dim">{fmtUtc(ev.ts).time}</td>
+                                    <td>
+                                      <span className="tag tag--accent">
+                                        {CATEGORY_LABEL[ev.category] ?? ev.category}
+                                      </span>
+                                    </td>
+                                    <td className="cell-text">{ev.reason}</td>
+                                    <td className="cell-mono">{ev.macb}</td>
+                                    <td className="cell-path">{ev.path}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          <Pager
+                            page={safeFsPage}
+                            pageCount={fsPageCount}
+                            total={relevantFiltered.length}
+                            noun="eventos relevantes"
+                            onPage={setFsPage}
+                          />
+                        </>
+                      )}
+                    </>
+                  )}
+                </>
+              )}
+            </>
           )}
-        </>
-      )}
+        </div>
+      </div>
     </div>
   );
 }

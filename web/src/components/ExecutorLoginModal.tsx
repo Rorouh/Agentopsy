@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import type { ExecutorId, ExecutorLoginCapability, ExecutorLoginStart } from "../api/types";
 import { Modal } from "../ui/Modal";
-import { Button } from "../ui/Button";
 
 // Conecta un ejecutor CLI cloud (Codex/Claude) DESDE LA WEB, sin abrir terminal.
 // El backend relaya el flujo device/OAuth del propio CLI; este modal muestra la
@@ -197,8 +196,8 @@ export function ExecutorLoginModal({
               El login de <strong>{executorName}</strong> no puede completarse desde la web.
               {reason ? ` ${reason}` : ""}
             </p>
-            <div className="form-field">
-              <label className="form-label">Ejecuta este comando en una terminal</label>
+            <div className="field">
+              <label className="eyebrow">Ejecuta este comando en una terminal</label>
               <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
                 <code
                   style={{
@@ -212,13 +211,13 @@ export function ExecutorLoginModal({
                 >
                   {capability.manual_command}
                 </code>
-                <Button variant="chip" onClick={() => copy("url", capability.manual_command)}>
+                <button type="button" className="link-action" onClick={() => copy("url", capability.manual_command)}>
                   {copied === "url" ? "✓" : "Copiar"}
-                </Button>
+                </button>
               </div>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              <Button variant="primary" disabled={checking} onClick={checkNow}>
+              <button type="button" className="action-invert" disabled={checking} onClick={checkNow}>
                 {checking ? (
                   <>
                     <span className="spinner" aria-hidden="true" /> Comprobando…
@@ -226,13 +225,13 @@ export function ExecutorLoginModal({
                 ) : (
                   "Comprobar"
                 )}
-              </Button>
-              <Button variant="chip" onClick={onClose}>
+              </button>
+              <button type="button" className="link-action" onClick={onClose}>
                 Cerrar
-              </Button>
+              </button>
             </div>
             {reason && (
-              <div className="settings-form-error" role="status" aria-live="polite">
+              <div className="error-state" role="status" aria-live="polite">
                 {reason}
               </div>
             )}
@@ -241,8 +240,8 @@ export function ExecutorLoginModal({
 
         {phase === "waiting" && start && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <div className="form-field">
-              <label className="form-label">1 · Abre esta URL en tu navegador</label>
+            <div className="field">
+              <label className="eyebrow">1 · Abre esta URL en tu navegador</label>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <a
                   href={start.url}
@@ -252,15 +251,15 @@ export function ExecutorLoginModal({
                 >
                   {start.url}
                 </a>
-                <Button variant="chip" onClick={() => copy("url", start.url)}>
+                <button type="button" className="link-action" onClick={() => copy("url", start.url)}>
                   {copied === "url" ? "✓" : "Copiar"}
-                </Button>
+                </button>
               </div>
             </div>
 
             {start.code && (
-              <div className="form-field">
-                <label className="form-label">2 · Introduce este código EN EL NAVEGADOR</label>
+              <div className="field">
+                <label className="eyebrow">2 · Introduce este código EN EL NAVEGADOR</label>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <code
                     style={{
@@ -274,9 +273,9 @@ export function ExecutorLoginModal({
                   >
                     {start.code}
                   </code>
-                  <Button variant="chip" onClick={() => copy("code", start.code!)}>
+                  <button type="button" className="link-action" onClick={() => copy("code", start.code!)}>
                     {copied === "code" ? "✓" : "Copiar"}
-                  </Button>
+                  </button>
                 </div>
                 <span className="field-hint">
                   El código caduca en ~15 min. No lo compartas con nadie.
@@ -285,14 +284,14 @@ export function ExecutorLoginModal({
             )}
 
             {start.needs_code_input && (
-              <div className="form-field">
-                <label className="form-label" htmlFor="exec-login-code">
+              <div className="field">
+                <label className="eyebrow" htmlFor="exec-login-code">
                   {start.code ? "3" : "2"} · Pega aquí el código que te da el navegador
                 </label>
                 <div style={{ display: "flex", gap: 8 }}>
                   <input
                     id="exec-login-code"
-                    className="form-input"
+                    className="field-input field-input--sm"
                     type="text"
                     autoComplete="off"
                     spellCheck={false}
@@ -304,8 +303,9 @@ export function ExecutorLoginModal({
                     }}
                     style={{ flex: 1 }}
                   />
-                  <Button
-                    variant="primary"
+                  <button
+                    type="button"
+                    className="action-invert"
                     disabled={submitting || !codeDraft.trim()}
                     onClick={submitCode}
                   >
@@ -316,7 +316,7 @@ export function ExecutorLoginModal({
                     ) : (
                       "Enviar código"
                     )}
-                  </Button>
+                  </button>
                 </div>
               </div>
             )}
@@ -329,15 +329,15 @@ export function ExecutorLoginModal({
             </div>
 
             {reason && (
-              <div className="settings-form-error" role="alert" aria-live="polite">
+              <div className="error-state" role="alert" aria-live="polite">
                 {reason}
               </div>
             )}
 
             <div>
-              <Button variant="chip" onClick={onClose}>
+              <button type="button" className="link-action" onClick={onClose}>
                 Cancelar
-              </Button>
+              </button>
             </div>
           </div>
         )}
@@ -351,19 +351,19 @@ export function ExecutorLoginModal({
 
         {phase === "error" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <div className="settings-form-error" role="alert" aria-live="polite">
+            <div className="error-state" role="alert" aria-live="polite">
               {reason ?? "No se pudo completar el login."}
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              <Button variant="primary" onClick={beginRelay}>
+              <button type="button" className="action-invert" onClick={beginRelay}>
                 Reintentar
-              </Button>
-              <Button variant="chip" disabled={checking} onClick={checkNow}>
+              </button>
+              <button type="button" className="link-action" disabled={checking} onClick={checkNow}>
                 {checking ? "Comprobando…" : "Comprobar"}
-              </Button>
-              <Button variant="chip" onClick={onClose}>
+              </button>
+              <button type="button" className="link-action" onClick={onClose}>
                 Cerrar
-              </Button>
+              </button>
             </div>
           </div>
         )}

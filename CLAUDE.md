@@ -327,7 +327,20 @@ PATH (dev) or else routes `[binary, *argv]` to the tool's maletín via `POST /ex
 fallback (RULE 2) — so the agent executes tools end-to-end from the chat (verified: `tsk_fls`
 over a real image → 22 entries + ArtifactRun + hash-chained audit). Remaining: absorb the
 last Windows tools into the maletín Dockerfiles, and drop the now-unused legacy
-`delivery`/`container_image` on `Tool` (docs/operacion/proximos-pasos.md §B.bis / §A). The SPA talks to the api
+`delivery`/`container_image` on `Tool` (docs/operacion/proximos-pasos.md §B.bis / §A).
+**The web UI is the redesign of `docs/diseno/rediseno-2026-07/` (applied end to end
+2026-07-27)**: paper palette + terracotta accent, square corners and 1px hairlines — no
+cards, sections separated by a mono label, a rule and space. The sidebar stopped being a
+menu and is now the CASE STATE (active case → «Nuevo caso» → the five-phase ladder →
+utilities → theme), with two independent signals: the DOT says where the CASE is, the ROW
+says where YOU are. There is ONE contextual header for the whole app, published by each
+page with `usePublishShellHeader` and painted by `AppShell` — it carries data the page
+already resolved, never rules (RULE 3). Case management (search / edit / close / delete
+with a type-the-name confirm) lives in the shell's dialogs, reachable from any view, and
+`ActiveCaseProvider` is now the single store of the case list. The mock is the
+authoritative source of FORM; what it omits and the product keeps —async-register progress
+bar, case delete confirmation, the ATT&CK «descartada» state, pagination and the OS-profile
+mismatch banner— is justified in `plan-migracion.md` §5. The SPA talks to the api
 through
 `web/src/api/client.ts` (token from `GET /api/session`, memory-only), carries the
 executor selector (cloud-egress consent removed 2026-07-16 — the cloud warning now

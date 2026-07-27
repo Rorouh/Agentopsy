@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { DragEvent, KeyboardEvent } from "react";
 import type { EvidenceRegisterJob, EvidenceSource } from "../api/types";
-import { Badge } from "../ui/Badge";
-import { Button } from "../ui/Button";
 import { formatBytes } from "../utils/format";
 import {
   FILE_INPUT_ACCEPT_EXTENSIONS,
@@ -133,12 +131,15 @@ export function EvidenceInbox({
   const canRegister =
     !caseClosed && !registering && selectedSourcePath !== "" && selectedRegistrable;
 
-  // Estado B — caso cerrado: zona deshabilitada, sin bandeja.
+  // Caso cerrado: zona deshabilitada, sin bandeja.
   if (caseClosed) {
     return (
-      <div className="dropzone dropzone--disabled">
-        <div className="dropzone-title">
-          Este caso está cerrado. Reabre el caso para registrar más evidencia.
+      <div className="dashed-panel">
+        <div className="dashed-panel-main">
+          <div className="dashed-panel-title">Este caso está cerrado</div>
+          <div className="dashed-panel-body">
+            Reábrelo desde «cambiar caso» en el lateral para registrar más evidencia.
+          </div>
         </div>
       </div>
     );
@@ -185,16 +186,10 @@ export function EvidenceInbox({
     Array.from(e.dataTransfer?.types ?? []).includes("Files");
   const busy = uploading || registering;
 
-  const browseButton = (
-    <Button variant="chip" disabled={uploading} onClick={openFileDialog}>
-      Examinar…
-    </Button>
-  );
-
   return (
     <>
       <div
-        className={`dropzone${dragActive ? " dropzone--active" : ""}`}
+        className={`dashed-panel${dragActive ? " is-dragging" : ""}`}
         onDragEnter={(e) => {
           if (!carriesFiles(e)) return;
           e.preventDefault();
@@ -249,189 +244,180 @@ export function EvidenceInbox({
           }}
         />
 
-        {uploading ? (
-          // Estado I — subiendo a la bandeja: progreso real (XHR upload.onprogress),
-          // agregado sobre toda la tanda cuando son varios ficheros.
-          <div className="loading-state" aria-live="polite">
-            <span className="spinner" aria-hidden="true" />
-            <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
-              <div>
-                Subiendo evidencia a la bandeja… {Math.round(uploadProgress * 100)}%
-              </div>
-              <div className="upload-progress" aria-hidden="true">
-                <div
-                  className="upload-progress-bar"
-                  style={{ width: `${Math.round(uploadProgress * 100)}%` }}
-                />
-              </div>
-              <div className="dropzone-hint">
-                No cierres esta ventana hasta que termine.
-              </div>
-            </div>
+        <div className="dashed-panel-main">
+          <div className="dashed-panel-title">
+            Arrastra la imagen forense o el volcado aquí
           </div>
-        ) : registering ? (
-          // Estado G — registrando: PROGRESO REAL del hash-gate (bytes de las
-          // tres pasadas), sondeado del job. No hay cancelación a propósito: el
-          // registro es atómico (se publica entero o no se publica).
-          <>
-            <div className="dropzone-title">
-              {selectedSource?.name ??
-                registerJob?.source_path.split(/[\\/]/).pop() ??
-                "Registrando evidencia"}
-            </div>
-            <div className="loading-state" aria-live="polite">
-              <span className="spinner" aria-hidden="true" />
-              <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
-                <div>Registrando… {registerProgressLabel(registerJob)}</div>
-                {registerJob && registerJob.bytes_total > 0 && (
-                  <div className="upload-progress" aria-hidden="true">
-                    <div
-                      className="upload-progress-bar"
-                      style={{
-                        width: `${Math.min(
-                          100,
-                          Math.round((registerJob.bytes_done / registerJob.bytes_total) * 100),
-                        )}%`,
-                      }}
-                    />
-                  </div>
-                )}
-                <div className="dropzone-hint">
-                  El hash-gate recorre la imagen tres veces (SHA-256 del origen →
-                  copia inmutable → re-hash de la copia): puede tardar varios
-                  minutos. Puedes cerrar esta ventana — el registro sigue en el
-                  servidor y se retoma al volver.
-                </div>
-              </div>
-            </div>
-          </>
-        ) : sources === null ? (
-          // Estado C — bandeja no consultada todavía.
-          <>
-            <div className="dropzone-title">
-              Arrastra aquí la imagen forense (.E01 · .raw · .vmdk · volcado de memoria)
-              para subirla, o cópiala a la carpeta <code>./evidence</code> del host.
-            </div>
-            <div className="dropzone-hint">
-              Formatos soportados: {FORMATS_HINT}
-              <br />
-              {EWF_HINT}
-            </div>
-            <div className="cta-row" style={{ justifyContent: "center" }}>
-              {browseButton}
-              <Button variant="chip" disabled={loadingSources} onClick={onLoadSources}>
-                {loadingSources ? "Buscando…" : "Buscar en la bandeja"}
-              </Button>
-            </div>
-          </>
-        ) : loadingSources ? (
-          // Estado D — recargando la bandeja.
-          <div className="loading-state">
-            <span className="spinner" aria-hidden="true" />
-            <span>Buscando en la bandeja…</span>
+          <div className="dashed-panel-body">
+            Agentopsy calcula el SHA-256 baseline y la deja en solo lectura antes de que
+            ninguna herramienta la toque. También puedes copiarla a <code>./evidence</code> en
+            el host. Formatos: {FORMATS_HINT}. {EWF_HINT}
           </div>
-        ) : sources.length === 0 ? (
-          // Estado E — bandeja vacía.
-          <>
-            <div className="dropzone-title">
-              La bandeja está vacía. Arrastra la imagen forense aquí para subirla.
-            </div>
-            <div className="dropzone-hint">
-              También puedes copiarla a <code>./evidence</code> en el host.
-              <br />
-              Formatos soportados: {FORMATS_HINT}
-              <br />
-              {EWF_HINT}
-            </div>
-            <div className="cta-row" style={{ justifyContent: "center" }}>
-              {browseButton}
-              <Button variant="chip" onClick={onLoadSources}>
-                Actualizar bandeja
-              </Button>
-            </div>
-          </>
-        ) : (
-          // Estado F — fuentes disponibles: filas seleccionables (solo las
-          // registrables; las continuaciones EWF se listan pero no se eligen).
-          <>
-            <div className="dropzone-title">
-              Elige la imagen forense desde la bandeja de evidencias
-            </div>
-            <div className="dropzone-hint">
-              …o arrastra otra imagen aquí para subirla. {EWF_HINT}
-            </div>
-            <div className="file-list" style={{ marginTop: 10, textAlign: "left" }}>
-              {sources.map((s) => {
-                const continuation = isEwfContinuationSegment(s.name);
-                const registrable = isRegistrableEvidence(s.name);
-                const selected = s.path === selectedSourcePath;
-                const select = () => onSelectSource(selected ? "" : s.path);
-                return (
-                  <div
-                    key={s.path}
-                    className={`file-row${
-                      registrable ? " file-row--clickable" : ""
-                    }${selected && registrable ? " file-row--active" : ""}`}
-                    role={registrable ? "button" : undefined}
-                    tabIndex={registrable ? 0 : undefined}
-                    aria-selected={registrable ? selected : undefined}
-                    onClick={registrable ? select : undefined}
-                    onKeyDown={
-                      registrable
-                        ? (e: KeyboardEvent<HTMLDivElement>) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              select();
-                            }
-                          }
-                        : undefined
-                    }
-                  >
-                    <div className="file-row-main">
-                      <div style={{ minWidth: 0 }}>
-                        <div className="file-row-name" title={s.name}>
-                          {s.name}
-                        </div>
-                        <div className="file-row-meta">
-                          {formatBytes(s.size)} · {fileExtension(s.name) || "sin extensión"}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="file-row-side">
-                      {continuation ? (
-                        <Badge variant="neutral">
-                          segmento EWF · se registra desde el .E01
-                        </Badge>
-                      ) : (
-                        !registrable && <Badge variant="medium">Formato no compatible</Badge>
-                      )}
-                      {selected && registrable && <Badge variant="low">Seleccionada</Badge>}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="cta-row" style={{ justifyContent: "center" }}>
-              {browseButton}
-              <Button variant="chip" disabled={loadingSources} onClick={onLoadSources}>
-                Actualizar bandeja
-              </Button>
-              <Button variant="primary" disabled={!canRegister} onClick={onRegister}>
-                Registrar evidencia
-              </Button>
-            </div>
-          </>
-        )}
-
-        {rejectHint && !uploading && (
-          <div className="dropzone-hint" aria-live="polite" style={{ marginTop: 10 }}>
-            {rejectHint}
-          </div>
-        )}
+        </div>
+        <div className="cta-row">
+          <button
+            type="button"
+            className="action-outline"
+            disabled={uploading}
+            onClick={openFileDialog}
+          >
+            Examinar…
+          </button>
+          <button
+            type="button"
+            className="action-outline"
+            disabled={loadingSources || uploading}
+            onClick={onLoadSources}
+          >
+            {loadingSources ? "Buscando…" : "Examinar bandeja"}
+          </button>
+        </div>
       </div>
 
+      {/* Subiendo a la bandeja: progreso real (XHR upload.onprogress), agregado
+          sobre toda la tanda cuando son varios ficheros. */}
+      {uploading && (
+        <div className="progress-block" aria-live="polite">
+          <div className="progress-head">
+            <span>Subiendo evidencia a la bandeja…</span>
+            <span className="mono">{Math.round(uploadProgress * 100)}%</span>
+          </div>
+          <div className="progress-track" aria-hidden="true">
+            <div
+              className="progress-fill"
+              style={{ width: `${Math.round(uploadProgress * 100)}%` }}
+            />
+          </div>
+          <div className="progress-note">No cierres esta ventana hasta que termine.</div>
+        </div>
+      )}
+
+      {/* Registrando: PROGRESO REAL del hash-gate (bytes de las tres pasadas),
+          sondeado del job. No hay cancelación a propósito: el registro es
+          atómico — se publica entero o no se publica. */}
+      {registering && !uploading && (
+        <div className="progress-block" aria-live="polite">
+          <div className="progress-head">
+            <span>
+              Registrando{" "}
+              <span className="mono">
+                {selectedSource?.name ??
+                  registerJob?.source_path.split(/[\\/]/).pop() ??
+                  "evidencia"}
+              </span>
+            </span>
+            <span className="mono">{registerProgressLabel(registerJob)}</span>
+          </div>
+          {registerJob && registerJob.bytes_total > 0 && (
+            <div className="progress-track" aria-hidden="true">
+              <div
+                className="progress-fill"
+                style={{
+                  width: `${Math.min(
+                    100,
+                    Math.round((registerJob.bytes_done / registerJob.bytes_total) * 100),
+                  )}%`,
+                }}
+              />
+            </div>
+          )}
+          <div className="progress-note">
+            El hash-gate recorre la imagen tres veces (SHA-256 del origen → copia inmutable →
+            re-hash de la copia): puede tardar varios minutos. Puedes cerrar esta ventana — el
+            registro sigue en el servidor y se retoma al volver.
+          </div>
+        </div>
+      )}
+
+      {/* Bandeja: filas seleccionables. Las continuaciones EWF se listan pero no
+          se eligen — el punto de entrada del set es el .E01. */}
+      {!busy && sources !== null && sources.length > 0 && (
+        <div className="inbox-list">
+          <div className="rule-label">
+            <span className="eyebrow">Bandeja ./evidence</span>
+            <span className="rule" />
+            <span className="rule-count">{sources.length}</span>
+          </div>
+          <div className="source-rows">
+            {sources.map((s) => {
+              const continuation = isEwfContinuationSegment(s.name);
+              const registrable = isRegistrableEvidence(s.name);
+              const selected = s.path === selectedSourcePath;
+              const select = () => onSelectSource(selected ? "" : s.path);
+              return (
+                <div
+                  key={s.path}
+                  className={`source-row${registrable ? " is-selectable" : ""}${
+                    selected && registrable ? " is-selected" : ""
+                  }`}
+                  role={registrable ? "button" : undefined}
+                  tabIndex={registrable ? 0 : undefined}
+                  aria-selected={registrable ? selected : undefined}
+                  onClick={registrable ? select : undefined}
+                  onKeyDown={
+                    registrable
+                      ? (e: KeyboardEvent<HTMLDivElement>) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            select();
+                          }
+                        }
+                      : undefined
+                  }
+                >
+                  <span className="source-row-name">{s.name}</span>
+                  <span className="source-row-meta">
+                    {formatBytes(s.size)} · {fileExtension(s.name) || "sin extensión"}
+                  </span>
+                  <span className="source-row-side">
+                    {continuation ? (
+                      <span className="tag tag--muted">segmento EWF · se registra desde el .E01</span>
+                    ) : !registrable ? (
+                      <span className="tag tag--muted">formato no compatible</span>
+                    ) : selected ? (
+                      <span className="tag tag--accent">seleccionada</span>
+                    ) : null}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          <div className="cta-row">
+            <button
+              type="button"
+              className="action-invert"
+              disabled={!canRegister}
+              onClick={onRegister}
+            >
+              Registrar evidencia
+            </button>
+            <button
+              type="button"
+              className="link-action"
+              disabled={loadingSources}
+              onClick={onLoadSources}
+            >
+              Actualizar bandeja
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!busy && sources !== null && sources.length === 0 && (
+        <div className="inline-note" aria-live="polite">
+          La bandeja está vacía. Arrastra la imagen forense arriba para subirla, o cópiala a{" "}
+          <code>./evidence</code> en el host.
+        </div>
+      )}
+
+      {rejectHint && !uploading && (
+        <div className="inline-note" aria-live="polite">
+          {rejectHint}
+        </div>
+      )}
+
       {registerSuccess && (
-        <div className="register-feedback register-feedback--success" aria-live="polite">
+        <div className="inline-note inline-note--ok" aria-live="polite">
           ✓ Evidencia registrada
         </div>
       )}
@@ -439,27 +425,25 @@ export function EvidenceInbox({
       {uploadNotice && !uploading && (
         // Informativo, no error: p. ej. segmentos que ya estaban en la bandeja
         // (el backend nunca sobrescribe evidencia).
-        <div className="dropzone-hint" aria-live="polite" style={{ marginTop: 8 }}>
+        <div className="inline-note" aria-live="polite">
           {uploadNotice}
         </div>
       )}
 
       {uploadError && !uploading && (
-        // Estado J — error de subida, inline y accionable.
-        <div className="error-state" aria-live="polite" style={{ marginTop: 8 }}>
+        <div className="error-state" aria-live="polite">
           <strong>No se pudo subir la evidencia:</strong> {uploadError}
         </div>
       )}
 
       {registerError && !registering && (
-        // Estado H — error de registro, inline y accionable.
-        <div className="error-state" aria-live="polite" style={{ marginTop: 8 }}>
+        <div className="error-state" aria-live="polite">
           <strong>No se pudo registrar la evidencia:</strong> {registerError}
           {selectedSourcePath && (
-            <div style={{ marginTop: 8 }}>
-              <Button variant="chip" onClick={onRegister}>
+            <div className="cta-row">
+              <button type="button" className="link-action" onClick={onRegister}>
                 Reintentar
-              </Button>
+              </button>
             </div>
           )}
         </div>

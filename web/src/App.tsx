@@ -69,9 +69,9 @@ export function App() {
       <ActiveCaseProvider>
       <ShellHeaderProvider>
       <AppShell activeView={activeView} onViewChange={setActiveView} error={error}>
-        {/* Demo visual con mock data — ver src/mocks/frontendPreviewData.ts.
-            Cuando exista backend real, cada página recibirá sus props desde
-            llamadas a forensia/routers/* en lugar de los arrays mock. */}
+        {/* Las siete vistas llaman al backend real (forensia/routers/*). El caso
+            activo y su lista los sirve ActiveCaseProvider; la cabecera de cada
+            vista se publica en el armazón con usePublishShellHeader. */}
         {activeView === "guide" && <GuidePage onNavigate={setActiveView} />}
         {activeView === "repository" && <RepositoryPage onNavigate={setActiveView} />}
         {activeView === "document-viewer" && <DocumentsPage />}
