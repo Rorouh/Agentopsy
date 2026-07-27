@@ -1,4 +1,4 @@
-# FORENSIA — Guía de pruebas con CLI / Ollama (mientras el motor no está)
+# Agentopsy — Guía de pruebas con CLI / Ollama (mientras el motor no está)
 
 Cómo hacer pruebas útiles con Codex CLI, Gemini CLI o modelos Ollama **sin** el
 front ni el orquestador completos, y qué entregar para análisis. Hay **dos vías**
@@ -56,7 +56,7 @@ alto = deduce los hallazgos; `fuera_semilla` = alucinación MITRE (malo);
 
 ## 3. VÍA 2 — Análisis real de LoneWolf con un CLI agéntico
 
-Aquí el CLI (codex/gemini) actúa **como FORENSIA-WIN**: le das los prompts del
+Aquí el CLI (codex/gemini) actúa **como Agentopsy-WIN**: le das los prompts del
 paquete como instrucciones y deja que ejecute las herramientas forenses sobre la
 evidencia. Es la validación cualitativa del playbook.
 

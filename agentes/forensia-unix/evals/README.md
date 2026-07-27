@@ -1,4 +1,4 @@
-# `evals/` — Casos de prueba de FORENSIA-UNIX
+# `evals/` — Casos de prueba de Agentopsy-UNIX
 
 Casos sintéticos que el **harness comparativo cloud-vs-local** (slice S6) ejecuta
 contra el agente para medir las métricas del TFM: precisión de invocación de

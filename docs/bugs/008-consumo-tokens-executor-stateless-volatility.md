@@ -54,9 +54,9 @@ hasta 18 vueltas se re-emite por el cable, sin caché ni sesión:
 Peor caso `Σ(12K + 2K·i)` para i∈[0,17] ≈ **>300 K tokens de input** en un solo `/query`. Con un
 executor de contexto pequeño o cuenta cloud, eso es «50 % en una pasada / funde el 100 %».
 
-## Estrategia: gestión de contexto **nativa de FORENSIA** (provider-agnóstica)
+## Estrategia: gestión de contexto **nativa de Agentopsy** (provider-agnóstica)
 
-La decisión de diseño (2026-07-07): FORENSIA **no** debe apoyarse en mecanismos
+La decisión de diseño (2026-07-07): Agentopsy **no** debe apoyarse en mecanismos
 del proveedor (prompt caching de Anthropic, `claude --resume`, context caching de
 Gemini/OpenAI) para amortizar el coste. Esos mecanismos difieren por proveedor,
 son opacos detrás del harness del CLI y su uso rompería la agnosticidad del
@@ -64,7 +64,7 @@ executor (`supports_native_tools=False`, «una sola variable independiente»,
 `base.py:104-110`) y RULE 2 (no fallbacks específicos por CLI).
 
 Corolario: la **única palanca uniforme** para los cuatro executors es **enviar
-menos por iteración**. FORENSIA ya es *stateful* (posee `messages` canónico); el
+menos por iteración**. Agentopsy ya es *stateful* (posee `messages` canónico); el
 fallo es que re-envía toda esa memoria cada vuelta. La solución es una **capa de
 proyección propia** en `forensia/*` que produce el `outbound` (lo que va por el
 cable) a partir del `messages` canónico, minimizándolo — exactamente el patrón que
@@ -93,11 +93,11 @@ iteración → recortar el prefijo importa **más**, no menos.
    de JSON inválido.
 5. **Bajar `max_iterations` 18 → 8-10** (`agentes/*/agent.yaml:14`) — mitigación barata del techo del
    escenario runaway; no arregla el derroche por iteración (por eso va después de 1-4).
-6. **Continuidad de contexto propia** (el equivalente FORENSIA de un «resume», provider-agnóstico) — la
-   forma fuerte de #3. En vez de re-serializar el transcript, FORENSIA mantiene su `messages` canónico y,
+6. **Continuidad de contexto propia** (el equivalente Agentopsy de un «resume», provider-agnóstico) — la
+   forma fuerte de #3. En vez de re-serializar el transcript, Agentopsy mantiene su `messages` canónico y,
    por encima del umbral de ventana, **resume los turnos viejos a un running summary que genera y controla
    él mismo** (no el CLI). Lo que viaja es delta + resumen, idéntico para los cuatro executors. El estado
-   sigue viviendo en FORENSIA (custodia/replay intactos). Va después de #1–#4 porque #3 (ventana + stubs)
+   sigue viviendo en Agentopsy (custodia/replay intactos). Va después de #1–#4 porque #3 (ventana + stubs)
    ya corta la O(N²); la compactación con resumen es el siguiente escalón si aún hace falta.
 
 ## Implementación (2026-07-07)
@@ -126,7 +126,7 @@ en investigaciones muy largas; y afinar #1 troceando también el Anexo por herra
 - **Apoyarse en `claude -p --resume <session_id>`** (el `session_id` que hoy se descarta en
   `claude_code.py:70`): reanudar la conversación del lado del CLI delegaría el estado en el proveedor, no
   sería uniforme (Codex usa `exec resume`, Gemini checkpoints, Ollama `/api/chat`) y sacaría parte del
-  contexto fuera de FORENSIA, complicando la reproducibilidad y la auditoría del argv literal (INVARIANTE
+  contexto fuera de Agentopsy, complicando la reproducibilidad y la auditoría del argv literal (INVARIANTE
   4). Rechazado a favor de la continuidad de contexto **nativa** (#6 arriba). Mismo motivo para no
   depender del **prompt caching del proveedor**: opaco tras el harness del CLI y no fiable de forma
   uniforme → la estrategia es minimizar bytes enviados, no cachearlos.

@@ -1,4 +1,4 @@
-# FORENSIA — Sistema de almacenamiento
+# Agentopsy — Sistema de almacenamiento
 
 Capa de persistencia del lado del backend (servicio `api`). No hay base de datos pesada: todo en filesystem
 + JSON / JSONL. Es exactamente lo que la práctica forense pide — un caso es una carpeta

@@ -1,6 +1,6 @@
-# FORENSIA — Inventario de herramientas (maletín extendido)
+# Agentopsy — Inventario de herramientas (maletín extendido)
 
-Catálogo candidato de herramientas forenses CLI evaluadas para el maletín de FORENSIA,
+Catálogo candidato de herramientas forenses CLI evaluadas para el maletín de Agentopsy,
 agrupadas por dominio. La selección final de las que se integran en las imágenes de los
 maletines del compose (`toolkit-windows` / `toolkit-unix` — único mecanismo de entrega,
 RULE 1) vive en `backend/forensia/toolkit/catalog.py`; la construcción de las imágenes,

@@ -2,7 +2,7 @@
 
 Computes several hashes (MD5 / SHA-1 / SHA-256 / …) of a file or a directory tree in
 one pass. On a raw evidence image it yields the image's hashes (integrity cross-check
-against the baseline FORENSIA registered); recursively over an extracted tree it produces
+against the baseline Agentopsy registered); recursively over an extracted tree it produces
 the hash set for the report. hashdeep also supports an **audit** mode (`-a -k <known>`)
 that filters a tree against a known set (e.g. NSRL) — not exposed here yet.
 
@@ -25,7 +25,7 @@ def build_argv(params: dict[str, Any]) -> list[str]:
 
     params:
         image_path (str, required): file or directory to hash (evidence image or
-            an extracted tree). FORENSIA injects the evidence path here.
+            an extracted tree). Agentopsy injects the evidence path here.
         algorithms (list[str], optional): subset of md5/sha1/sha256/sha512/tiger/
             whirlpool. Default ["md5", "sha256"].
         recursive (bool, optional): recurse into directories (`-r`). Default False.

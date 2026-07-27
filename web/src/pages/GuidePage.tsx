@@ -44,7 +44,7 @@ export function GuidePage({ onNavigate }: GuidePageProps) {
         <h3>Ejecutor de IA: iniciar sesión</h3>
         <div className="status-card-body" style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6 }}>
           <p style={{ marginTop: 0 }}>
-            FORENSIA no usa API keys. <strong>Ollama</strong> funciona sin nada más (100 % local). Para un
+            Agentopsy no usa API keys. <strong>Ollama</strong> funciona sin nada más (100 % local). Para un
             ejecutor cloud (Claude Code, Codex CLI o Gemini CLI) necesitas tu propia sesión: en el primer
             arranque el stack intenta reutilizar la del host, y si no la hay inicias sesión <strong>una única
             vez dentro del contenedor</strong> (la sesión persiste en el volumen <code>forensia-cli-auth</code>):
@@ -76,7 +76,7 @@ docker compose exec -it -e NO_BROWSER=true api gemini  # Gemini CLI (URL + códi
           <h3>Coste y tiempo del análisis</h3>
           <div className="status-card-body" style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6 }}>
             Las iteraciones, tokens, tiempo y coste de un análisis son <strong>orientativos</strong>, no un
-            presupuesto: salen del histórico del caso o de una heurística. FORENSIA no inventa tarifas; con una
+            presupuesto: salen del histórico del caso o de una heurística. Agentopsy no inventa tarifas; con una
             suscripción de CLI el coste marginal puede ser 0. Un disco real grande puede tardar varios minutos.
           </div>
         </Card>
@@ -95,7 +95,7 @@ docker compose exec -it -e NO_BROWSER=true api gemini  # Gemini CLI (URL + códi
         <Card>
           <h3>Alcance académico</h3>
           <div className="status-card-body" style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6 }}>
-            FORENSIA es post-mortem y de escritorio: no realiza forensia en vivo ni adquisición desde el equipo
+            Agentopsy es post-mortem y de escritorio: no realiza forensia en vivo ni adquisición desde el equipo
             original. Sin validez legal certificada, pero con rigor forense real.
           </div>
         </Card>

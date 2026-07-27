@@ -1,4 +1,4 @@
-// Contratos de dominio para el frontend de FORENSIA.
+// Contratos de dominio para el frontend de Agentopsy.
 // Estos tipos son el "contrato" que el backend/lógica deberá satisfacer cuando
 // se conecten las APIs reales (ver forensia/routers/* en el backend). Hoy solo
 // se usan con datos mock (ver src/mocks/frontendPreviewData.ts).

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 # =============================================================================
-# FORENSIA — Maletín forense contenedorizado (multi-stage)
+# Agentopsy — Maletín forense contenedorizado (multi-stage)
 #
 #  stage  base    -> herramientas "Cross" (sirven a Windows y Unix-like)
 #  stage  windows -> base + artefactos Windows (RegRipper, hayabusa, chainsaw,
@@ -119,7 +119,7 @@ EOF
 # Script informativo: muestra el catálogo y versiones instaladas
 RUN cat > /opt/forensia/bin/forensia-info <<'EOF'
 #!/bin/sh
-echo "==================== FORENSIA — Maletín forense ===================="
+echo "==================== Agentopsy — Maletín forense ===================="
 echo "Stage: ${FORENSIA_STAGE:-base}"
 echo "-------------------------------------------------------------------"
 echo "Herramientas comunes (Cross):"
@@ -201,7 +201,7 @@ ARG CHAINSAW_SHA256=5d46cd140838413aeb5711451a282b3922443d9ec6afaea3e6b6b220454f
 # Linux (RULE 1) y esas dos jamás correrán aquí. Sus artefactos siguen cubiertos por
 # tools del maletín: Prefetch → prefetch.py (windowsprefetch); SRUDB.dat → parser
 # `srum` de plaso (log2timeline). KAPE.exe y los Targets tampoco entran: son
-# adquisición en vivo y FORENSIA es post-mortem.
+# adquisición en vivo y Agentopsy es post-mortem.
 ARG DOTNET_CHANNEL=9.0
 ARG EVTXECMD_SHA256=4d740e51c4532c340d080f832c766c2acb0351832dae118d1abe9bb49203faa4
 ARG MFTECMD_SHA256=60ae857a554b830243e38e91fafdfdf6066f31c703282c5c6f40daf3b64d3160
@@ -299,7 +299,7 @@ ENV DOTNET_EnableWriteXorExecute=0 \
 # -f/-d no procesan en no-Windows en el build 2026.5.0 (verificado 2026-07-07).
 # PECmd y SrumECmd NO se despliegan (Windows-only — ver el bloque de ARGs);
 # KAPE.exe y los Targets (recolección en vivo) quedan FUERA de alcance:
-# FORENSIA es post-mortem — solo los parsers que consumen artefactos ya extraídos.
+# Agentopsy es post-mortem — solo los parsers que consumen artefactos ya extraídos.
 RUN set -e; cd /tmp \
  && mkdir -p /opt/eztools \
  && printf '# EZ Tools — SHA-256 del zip desplegado + versión reportada por la tool\n' > /opt/eztools/VERSIONS.txt \
@@ -363,7 +363,7 @@ RUN rm -f /usr/local/bin/evtx_* \
 #!/usr/bin/env python3
 """Vuelca un log de eventos .evtx de Windows a XML por stdout.
 
-Wrapper propio de FORENSIA equivalente al scripts/evtx_dump.py del repo
+Wrapper propio de Agentopsy equivalente al scripts/evtx_dump.py del repo
 upstream de python-evtx, cuyos entrypoints el wheel de PyPI empaqueta rotos.
 """
 import argparse

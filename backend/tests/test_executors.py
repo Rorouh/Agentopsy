@@ -470,7 +470,7 @@ def test_no_api_key_strings_anywhere_in_backend() -> None:
 # executor_models — selector de modelos del composer (por proveedor)
 # --------------------------------------------------------------------------- #
 def test_executor_models_cloud_is_editable_with_suggestions_and_custom() -> None:
-    """El operador elige el modelo del CLI cloud (--model); FORENSIA no puede
+    """El operador elige el modelo del CLI cloud (--model); Agentopsy no puede
     ENUMERAR el catálogo sin API key (SECURITY 7), así que ofrece atajos + texto
     libre y lo dice en la nota."""
     for cid in ("claude-code", "codex", "gemini"):

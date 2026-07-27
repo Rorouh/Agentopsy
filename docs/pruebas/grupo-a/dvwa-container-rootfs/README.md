@@ -36,7 +36,7 @@ herramienta probada.
 | [`tsk_fls`](tsk_fls.md) | ✅ | Mapeó 14.234 entradas + inodes clave (config.inc.php 13552, main.sh 1030) + bodyfile; **Bug 002**: `entries_count` recursivo subcuenta (→22) |
 | [`tsk_icat`](tsk_icat.md) | ✅ | **Integrada** (fix Bug 003); extrae por inode (config.inc.php→app/vulnerables, main.sh, passwd/shadow); trampa: no elegir inode por nombre |
 | [`tsk_mactime`](tsk_mactime.md) | ✅ | 43.604 eventos; ráfaga de creación 2026-07-03 (mkfs) vs instalación 2018; matiz: histograma agrupa por segundo con ISO |
-| [`hashdeep`](hashdeep.md) | ✅ | **Integrada** (wrapper implementado, fix Bug 003); SHA-256 de la imagen **== baseline FORENSIA** (integridad OK) + hash set estructurado |
+| [`hashdeep`](hashdeep.md) | ✅ | **Integrada** (wrapper implementado, fix Bug 003); SHA-256 de la imagen **== baseline Agentopsy** (integridad OK) + hash set estructurado |
 | [`foremost`](foremost.md) | ✅ | **Integrada** (fix Bug 003); carveó 277 ficheros por firma (160 png/111 gif/5 jpg/1 pdf) = assets embebidos; el resumen está en audit.txt, no en `parsed` |
 | [`bulk_extractor`](bulk_extractor.md) | ✅ | 87k dominios/70k emails/16k URLs (provenencia de software, no actividad); trampa: `url` no es escáner válido en BE 2.1.0 (exit 5) |
 | [`jq`](jq.md) | ✅ | Filtró `baseline.json` → campos de custodia; utilidad *downstream* (brilla con JSON grande de volatility/plaso); sin finding |

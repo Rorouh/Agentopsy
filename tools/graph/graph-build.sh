@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# graph-build.sh — construye el grafo de conocimiento del repo FORENSIA con graphify.
+# graph-build.sh — construye el grafo de conocimiento del repo Agentopsy con graphify.
 #
 # Equivalente Linux/macOS de graph-build.ps1. Determinista y sin API key: usa
 # 'extract --code-only' (AST local con tree-sitter, salta doc/imágenes) + luego

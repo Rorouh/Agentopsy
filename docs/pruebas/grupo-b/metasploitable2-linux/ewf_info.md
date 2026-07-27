@@ -46,7 +46,7 @@ argv = ewfinfo <E01>   →   exit 0, run 328bf83d
 ## Lecciones para entrenar al agente
 
 1. **Con evidencia `.E01`/`.Ex01`, empieza por `ewf_info`**: te da la ficha de adquisición y
-   el **hash embebido** — cótejalo con el baseline de FORENSIA para validar integridad antes
+   el **hash embebido** — cótejalo con el baseline de Agentopsy para validar integridad antes
    de analizar.
 2. **El resto de TSK sobre E01**: usa `-i ewf` (o convierte a raw). El hash del E01 es de los
    *datos*, no del fichero .E01 (que comprime).

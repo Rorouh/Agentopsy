@@ -1,6 +1,6 @@
 # Guía de despliegue y pruebas desde la interfaz (usuario)
 
-> Cómo levantar FORENSIA con `docker compose`, prepararlo, y **probar el proyecto de
+> Cómo levantar Agentopsy con `docker compose`, prepararlo, y **probar el proyecto de
 > principio a fin desde el navegador** como lo haría un investigador. Incluye qué comprobar
 > en disco para verificar la cadena de custodia, y — con honestidad — **qué está cableado al
 > backend real y qué todavía es maqueta**.
@@ -81,7 +81,7 @@ está *healthy* — espera y recarga.
 
 ## 3. Preparar un ejecutor (obligatorio: sin ejecutor no hay análisis)
 
-FORENSIA **nunca elige ejecutor por ti** (RULE 2). Tienes que dejar uno disponible y
+Agentopsy **nunca elige ejecutor por ti** (RULE 2). Tienes que dejar uno disponible y
 seleccionarlo.
 
 ### Opción A — Ollama (100 % local, recomendado para probar)
@@ -103,7 +103,7 @@ la elección se **recuerda** por proveedor (`DEFAULT_EXECUTOR` + `OLLAMA_MODEL` 
 Para los **CLIs cloud** (Claude Code / Codex / Gemini) el modelo se pasa como `--model`. El
 menú *Modelo* ofrece atajos (p. ej. `opus`, `sonnet` para Claude) y admite escribir cualquier
 id que acepte el CLI; *Por defecto del CLI* lo deja sin fijar y manda el modelo por defecto del
-CLI. FORENSIA **no puede enumerar** el catálogo de un CLI cloud sin API key (SECURITY 7): la
+CLI. Agentopsy **no puede enumerar** el catálogo de un CLI cloud sin API key (SECURITY 7): la
 lista son sugerencias, no el catálogo completo. Ollama sí lista los modelos realmente instalados.
 
 ### Opción B — Claude Code / Codex CLI / Gemini CLI (tu suscripción, sin API keys)
@@ -192,11 +192,11 @@ audit**.
      `./evidence` en el host: suelto, `.EAA` no se distingue de una extensión corriente, así que
      la subida por navegador no lo acepta (el registro del set sí lo contempla).
 2. En **Registrar evidencia**, con el fichero **seleccionado** pulsa
-   **Registrar**. FORENSIA ejecuta el **hash gate**: calcula el **SHA-256 baseline**, copia la
+   **Registrar**. Agentopsy ejecuta el **hash gate**: calcula el **SHA-256 baseline**, copia la
    evidencia a una copia inmutable (solo lectura), corre el **triage** (deriva `os_profile` y
    tipo) y registra el evento en el audit. La fila aparece en *Evidencias del caso*.
    - **EWF multi-segmento (`.E01`…`.E0N`):** selecciona el **primer segmento** (`.E01` /
-     `.Ex01`); registrarlo ingiere el **set completo como UNA evidencia** — FORENSIA copia
+     `.Ex01`); registrarlo ingiere el **set completo como UNA evidencia** — Agentopsy copia
      todos los segmentos hermanos del **mismo directorio** (hash gate por segmento) para que
      `ewfmount` reensamble la imagen. Si falta un segmento intermedio, el registro **se
      rechaza** (no deja evidencia a medias): completa el set y reintenta. Deja siempre los

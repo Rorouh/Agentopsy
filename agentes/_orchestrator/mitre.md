@@ -1,7 +1,7 @@
 # Orquestador — Correlación con MITRE ATT&CK
 
 > **ESQUEMA OBJETIVO del entregable.** La correlación MITRE que hoy ejecuta
-> FORENSIA es **determinista** (`forensia.mitre.coverage` / `forensia.reports.generator`),
+> Agentopsy es **determinista** (`forensia.mitre.coverage` / `forensia.reports.generator`),
 > no un LLM. El eje «propuesta» sale de los `mitre_hints` de hallazgos reales y de
 > las anotaciones `annotate_mitre`; el eje «veredicto» lo fija el perito en la UI.
 > Este prompt define el **contrato** que esa síntesis —o un futuro LLM de síntesis—

@@ -301,7 +301,7 @@ def _datos_informe(
         {"k": "Apertura del caso", "v": case.created_at},
         {"k": "Emisión del informe", "v": generated_at},
         {"k": "Versión del informe", "v": version},
-        {"k": "Herramienta", "v": f"FORENSIA {__version__}"},
+        {"k": "Herramienta", "v": f"Agentopsy {__version__}"},
     ])
     return {
         "num": "2",

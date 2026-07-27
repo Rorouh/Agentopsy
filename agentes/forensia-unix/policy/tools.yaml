@@ -1,4 +1,4 @@
-# Allowlist de FORENSIA-UNIX — subset del catálogo (forensia.toolkit.catalog)
+# Allowlist de Agentopsy-UNIX — subset del catálogo (forensia.toolkit.catalog)
 # que ESTE agente puede invocar. El dispatcher rechaza cualquier tool_id fuera
 # de esta lista aunque el modelo lo emita. Todos los ids:
 #   (1) existen en el catálogo, y

@@ -1,4 +1,4 @@
-# FORENSIA — Soundness forense (cadena de custodia)
+# Agentopsy — Soundness forense (cadena de custodia)
 
 Resumen de la revisión DFIR de la fase de planificación. El riesgo número uno **no** es la
 tecnología: es asumir que `mount -o ro` equivale a integridad. No lo es.
@@ -347,7 +347,7 @@ segunda narración — el acta es un render fiel y reproducible de esos dos orí
   (`forensia.custody.build_custody_act`, lógica pura — RULE 3): caso + examinador,
   evidencia (origen, `sha256`, tamaño, timestamps), **cadena de custodia** (el `entry_hash`
   y `prev_hash` del evento de registro, más si la cadena entera verifica hoy —
-  `hash_chain_verified`), nivel de solo-lectura y herramienta/versión (`FORENSIA` +
+  `hash_chain_verified`), nivel de solo-lectura y herramienta/versión (`Agentopsy` +
   `__version__`). La UI («Casos y evidencias» → «Cadena de custodia») la muestra por
   evidencia y permite descargarla en JSON.
 

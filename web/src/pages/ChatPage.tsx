@@ -200,7 +200,7 @@ function AgentActivity({ activity, streaming }: { activity: StreamEvent[]; strea
 const CHAT_SESSION_ID = "main";
 
 // Config key que persiste el modelo elegido POR proveedor (espejo de
-// backend/forensia/executors/__init__.py MODEL_CONFIG_KEY). Así FORENSIA recuerda
+// backend/forensia/executors/__init__.py MODEL_CONFIG_KEY). Así Agentopsy recuerda
 // el último modelo de cada ejecutor entre recargas.
 const MODEL_CONFIG_KEY: Record<ExecutorId, string> = {
   "claude-code": "CLAUDE_CODE_MODEL",
@@ -325,7 +325,7 @@ export function ChatPage({
   }, [openMenu]);
 
   // Persist the operator's model choice for the CURRENT provider. An empty value
-  // clears it (cloud → CLI default; Ollama → package model) — RULE 2: FORENSIA
+  // clears it (cloud → CLI default; Ollama → package model) — RULE 2: Agentopsy
   // never invents one. The backend accepts "" as an unset for the model keys.
   const saveModel = async (value: string) => {
     if (!executor) return;

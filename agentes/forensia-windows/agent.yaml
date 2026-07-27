@@ -1,12 +1,12 @@
-# FORENSIA-WIN — agente forense post-mortem para imágenes Windows.
+# Agentopsy-WIN — agente forense post-mortem para imágenes Windows.
 # Paquete declarativo real (Fase 2). Sustituye a sample-windows.
 # El loader (forensia.agent.loader) valida este manifiesto en seco al arrancar.
 id: forensia-windows
-name: "FORENSIA-WIN · Analista forense post-mortem (Windows)"
+name: "Agentopsy-WIN · Analista forense post-mortem (Windows)"
 version: "0.1.0"
 os_profile: windows
 authors:
-  - "FORENSIA Team"
+  - "Agentopsy Team"
 
 model:
   name: "llama3.1:8b"       # base local de la comparativa; cambiar aquí no toca prompts

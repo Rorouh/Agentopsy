@@ -1,4 +1,4 @@
-# FORENSIA — Plan de ruta del sub-agente FORENSIA-WIN (Fase 2)
+# Agentopsy — Plan de ruta del sub-agente Agentopsy-WIN (Fase 2)
 
 **Rol:** creación, desarrollo y entrenamiento de agentes · perfil `windows`
 **Rama:** `tools` (rama de trabajo del rol de agentes)
@@ -449,7 +449,7 @@ LoneWolf y de **iteración de prompts guiada por corridas reales**.
 **Estado de motores:**
 - **codex (gpt-5.5): FUNCIONA.** Análisis completo de LoneWolf-memoria de manual:
   ejecuta Volatility, crea artefactos JSON por plugin + `findings.json` con SHA-256
-  (modelo de custodia), formato FORENSIA (Resumen/Hallazgos/Lagunas). Nota: el
+  (modelo de custodia), formato Agentopsy (Resumen/Hallazgos/Lagunas). Nota: el
   *script* daba `WinError 5` porque el **sandbox de codex** con `approval:never`
   bloqueaba el spawn de `vol`; en **interactivo** funciona aprobando comandos.
   Pendiente: añadir al `argv` de codex en `motors.yaml` el flag de bypass de

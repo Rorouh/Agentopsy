@@ -1,4 +1,4 @@
-# FORENSIA — Frontend Journal
+# Agentopsy — Frontend Journal
 
 Registro técnico de decisiones y cambios en la capa de presentación.
 Propósito: dar contexto a todo el equipo (frontend, backend, lógica forense) más allá de lo que los commits explican.
@@ -302,7 +302,7 @@ Función definida en `ChatPage.tsx:4-9` que nunca se llamaba desde ningún lado 
 ## Entrada 2026-06-24 (tarde) — Demo visual navegable, rama `feature/saas-theming`
 
 **Cubre:** trabajo posterior a `37aa036`, todavía sin commitear al cierre de esta entrada.
-**Autores:** equipo frontend FORENSIA
+**Autores:** equipo frontend Agentopsy
 **Objetivo de la sesión:** dejar una demo navegable y presentable (capturas para el equipo), sin tocar backend, Electron main/preload, ni la arquitectura local-first. Cero `fetch` directo, cero APIs falsas en `window.forensia`, cero librerías nuevas (Router/Zustand/Redux/Tailwind/UI libs).
 
 ### Qué se añadió
@@ -342,7 +342,7 @@ La entrada anterior decía "revisar React Router cuando haya más de 4-5 vistas"
 ## Entrada 2026-06-24 — Rama `feature/saas-theming`
 
 **Commits cubiertos:** `d8e7dfa` → `37aa036` (6 commits sobre `main`)
-**Autores:** equipo frontend FORENSIA
+**Autores:** equipo frontend Agentopsy
 **Archivos netos modificados:** 13 (+910 líneas, −797 líneas)
 
 ---
@@ -369,7 +369,7 @@ Ahora `App.tsx` tiene 42 líneas: es exclusivamente un ensamblador de contexto (
 
 **Confirmación: Electron desktop local-first, no SaaS web**
 
-Aunque el nombre de la rama dice "saas-theming", el término se refiere solo a la estética visual (limpia, profesional, modo claro/oscuro). No hay ningún cambio en la arquitectura de distribución. FORENSIA sigue siendo una app Electron desktop con un sidecar Python. No hay ningún `fetch` desde el renderer hacia internet, no hay sesiones remotas, no hay backend en la nube.
+Aunque el nombre de la rama dice "saas-theming", el término se refiere solo a la estética visual (limpia, profesional, modo claro/oscuro). No hay ningún cambio en la arquitectura de distribución. Agentopsy sigue siendo una app Electron desktop con un sidecar Python. No hay ningún `fetch` desde el renderer hacia internet, no hay sesiones remotas, no hay backend en la nube.
 
 **El sistema de theming usa `data-theme` en el `<html>`**
 

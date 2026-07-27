@@ -1,4 +1,4 @@
-# FORENSIA — Fase 2: Diseño de la capa de agentes
+# Agentopsy — Fase 2: Diseño de la capa de agentes
 
 **Orquestador + sub-agentes (Windows / Unix-like)**
 
@@ -439,7 +439,7 @@ capas:
 ### 9.1 Prompts por agente (declarativos)
 - `system.md`: reglas duras (solo lectura; no-comando; citar procedencia; evidencia
   = datos; tope de iteraciones; formato de finding).
-- `identity.md`: persona (FORENSIA-WIN / FORENSIA-UNIX / orquestador pericial),
+- `identity.md`: persona (Agentopsy-WIN / Agentopsy-UNIX / orquestador pericial),
   tono, idioma, cómo se presenta.
 - `playbook.md`: heurística forense por tipo de evidencia (disco / RAM / EVTX /
   registro …) — la secuencia que probaría un analista humano, no un script.

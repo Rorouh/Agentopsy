@@ -22,7 +22,7 @@
 > standalone corren en venv sobre los tres SOs. Las menciones a "sidecar"/"instalable" en
 > el cuerpo histórico reflejan el estado de la propuesta v1.1 en el cierre de S1.
 
-Plan operativo para construir el primer servidor MCP de FORENSIA y dejarlo demoable a los
+Plan operativo para construir el primer servidor MCP de Agentopsy y dejarlo demoable a los
 compañeros y al PI. Es el desglose accionable del MCP número 1 declarado en
 [`docs/maletin/inventario-mcps.md`](inventario-mcps.md): un servidor que publica los 16 `Tool` del
 catálogo (`backend/forensia/toolkit/catalog.py`) por protocolo MCP, delegando en el
@@ -30,17 +30,17 @@ catálogo (`backend/forensia/toolkit/catalog.py`) por protocolo MCP, delegando e
 evidencia**.
 
 > **Objetivo de la demo**: arrancar Claude Desktop (cliente MCP de terceros, sin saber
-> nada de FORENSIA) y reproducir un flujo natural — "¿qué casos tengo?" → "usa el caso
+> nada de Agentopsy) y reproducir un flujo natural — "¿qué casos tengo?" → "usa el caso
 > Windows" → "analiza la evidencia con `volatility3 windows.pslist`" — sobre una evidencia
 > ya registrada (el memdump real Windows 7 SP1 de 5 GiB del caso `f3abd274...`). En
-> paralelo, en otro panel, el `ForensicAgent` propio de FORENSIA ejecuta la misma cadena
+> paralelo, en otro panel, el `ForensicAgent` propio de Agentopsy ejecuta la misma cadena
 > conectándose como cliente MCP in-process. El cierre: `tail -f audit.jsonl` mostrando
 > los runs con argv idénticos por par y `output_files[].sha256` coincidentes — la
 > traducción literal de "integración avanzada de los agentes con las herramientas CLI
 > mediante protocolos de contexto" del email del PI.
 
 Este plan integra los hallazgos de un panel de 4 expertos (arquitecto MCP, ingeniería
-FORENSIA, forensic-soundness/threat model, DFIR practitioner) que revisó la primera
+Agentopsy, forensic-soundness/threat model, DFIR practitioner) que revisó la primera
 versión del plan el 2026-06-29. Sus desacuerdos están resueltos en §2 y §8.
 
 ---
@@ -132,7 +132,7 @@ docs/
 
 - [ ] `python -m forensia.mcp` arranca el servidor stdio sin errores con `FORENSIA_CLOUD_CONSENT=claude_desktop` exportado.
 - [ ] `mcp` CLI conecta, hace `initialize`, recibe `serverInfo`, hace `tools/list` (4 Jira tools + ningún tool forense hasta select_case), llama `list_cases` → ve la lista real, llama `select_case(uuid)` → recibe `notifications/tools/list_changed`, hace `tools/list` de nuevo → ve N tools forenses filtradas por `os_profile + policy.allowed_tools`.
-- [ ] Claude Desktop con FORENSIA configurado puede listar casos, seleccionar uno, listar evidencias, seleccionar una, y ejecutar `volatility3 plugin=windows.pslist.PsList` con resultado real.
+- [ ] Claude Desktop con Agentopsy configurado puede listar casos, seleccionar uno, listar evidencias, seleccionar una, y ejecutar `volatility3 plugin=windows.pslist.PsList` con resultado real.
 - [ ] El run queda registrado en `~/.forensia/cases/<id>/audit.jsonl` con argv literal — exactamente como si lo hubiera lanzado el agente nativo.
 - [ ] `audit.jsonl` también contiene `mcp_session_open` con `consent_ref` + `mcp_session_select_case` + `mcp_session_close`.
 - [ ] `output_files` se sirven vía `artifact://` y Claude Desktop puede leerlos (handler `resources/read` funcional).
@@ -206,7 +206,7 @@ docs/
 ## 10. Materiales para la reunión del equipo
 
 - Este `mcp-toolkit-s1.md` + `inventario-mcps.md` en el repo.
-- `claude_desktop_config.json` de ejemplo con FORENSIA registrado y el consent flag.
+- `claude_desktop_config.json` de ejemplo con Agentopsy registrado y el consent flag.
 - Grabación de 90 s del flujo natural "list_cases → select_case → list_evidence → volatility3 windows.pslist" en Claude Desktop.
 - Captura del `audit.jsonl` post-run con argv literal idéntico al del agente nativo.
 - Una slide con la tabla de §2 (las 7 decisiones cerradas) — para los compañeros que prefieran texto a demo.

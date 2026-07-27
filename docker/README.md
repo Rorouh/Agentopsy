@@ -1,4 +1,4 @@
-# FORENSIA — Maletín forense contenedorizado
+# Agentopsy — Maletín forense contenedorizado
 
 Maletín de herramientas forenses CLI empaquetado en Docker, en dos imágenes:
 **`toolkit-windows`** (artefactos de Windows) y **`toolkit-unix`** (artefactos

@@ -1,4 +1,4 @@
-# FORENSIA
+# Agentopsy
 
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
@@ -49,7 +49,7 @@ Abre <http://127.0.0.1:5173> en el navegador. Todos los puertos se publican úni
 
 El HOME del servicio `api` vive en el volumen `forensia-cli-auth`. En el primer arranque, el entrypoint **seedea** a ese volumen las credenciales que ya existan en tu host (`~/.claude`, `~/.claude.json`, `~/.codex`, `~/.gemini`, montadas en solo lectura como staging); desde entonces los CLIs leen y **refrescan sus tokens solo en el volumen**, nunca en tus ficheros.
 
-**Conectar desde la web (recomendado).** Si un ejecutor aparece *No disponible* en *Ajustes → Ejecutores / IA* (o en el selector de proveedor del chat), pulsa **«Conectar»**: FORENSIA lanza el login del propio CLI dentro del contenedor y te muestra en un diálogo la **URL** a abrir y el **código** del flujo *device*/OAuth, sin abrir una terminal. La sesión se guarda en el volumen `forensia-cli-auth` igual que el login manual.
+**Conectar desde la web (recomendado).** Si un ejecutor aparece *No disponible* en *Ajustes → Ejecutores / IA* (o en el selector de proveedor del chat), pulsa **«Conectar»**: Agentopsy lanza el login del propio CLI dentro del contenedor y te muestra en un diálogo la **URL** a abrir y el **código** del flujo *device*/OAuth, sin abrir una terminal. La sesión se guarda en el volumen `forensia-cli-auth` igual que el login manual.
 
 - **Codex** (`codex login --device-auth`): abre la URL e **introduce el código en el navegador**; el diálogo pasa a *Disponible* solo cuando terminas.
 - **Claude Code** (`claude auth login`): abre la URL, autoriza y **pega de vuelta** en el diálogo el código que te da el navegador.

@@ -1,4 +1,4 @@
-# FORENSIA — Mapa de arquitectura (contexto rápido)
+# Agentopsy — Mapa de arquitectura (contexto rápido)
 
 > **Para qué es este fichero.** Un mapa curado de la estructura del código, para
 > orientarte al empezar sin recorrer los ~160 ficheros. Léelo en vez de grepear:

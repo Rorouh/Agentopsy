@@ -2,7 +2,7 @@
   "name": "forensia-web",
   "version": "0.1.0",
   "private": true,
-  "description": "FORENSIA web UI — SPA React servida por el servicio `web` del compose (nginx). Habla con el servicio `api` por HTTP mismo-origen (/api proxificado).",
+  "description": "Agentopsy web UI — SPA React servida por el servicio `web` del compose (nginx). Habla con el servicio `api` por HTTP mismo-origen (/api proxificado).",
   "type": "module",
   "scripts": {
     "dev": "vite",

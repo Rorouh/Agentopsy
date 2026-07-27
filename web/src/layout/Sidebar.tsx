@@ -77,7 +77,7 @@ export function Sidebar({ activeView, onViewChange }: SidebarProps) {
   return (
     <aside className="sidebar">
       <div className="brand-section">
-        <span className="brand-name">FORENSIA</span>
+        <span className="brand-name">Agentopsy</span>
       </div>
 
       <div className="nav-list">

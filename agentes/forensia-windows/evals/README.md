@@ -1,4 +1,4 @@
-# `evals/` — Casos de prueba de FORENSIA-WIN
+# `evals/` — Casos de prueba de Agentopsy-WIN
 
 Casos sintéticos para el **harness comparativo cloud-vs-local** (slice S6). Miden
 las métricas del TFM: precisión de invocación de herramientas, recall/precision de

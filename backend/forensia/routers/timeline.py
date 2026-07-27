@@ -86,7 +86,7 @@ def export_investigation_timeline_csv(case_id: str) -> Response:
 
 
 class FilesystemTimelineRequest(BaseModel):
-    # The evidence to build the filesystem super-timeline from. REQUIRED — FORENSIA
+    # The evidence to build the filesystem super-timeline from. REQUIRED — Agentopsy
     # never assumes "the only" / "the most recent" evidence (RULE 2).
     evidence_id: str | None = None
 
@@ -111,7 +111,7 @@ def get_persisted_filesystem_timeline(
         raise HTTPException(
             status_code=422,
             detail="evidence_id is required: indica la evidencia cuya super-timeline "
-                   "quieres recuperar (FORENSIA no asume 'la única' ni 'la última' — RULE 2).",
+                   "quieres recuperar (Agentopsy no asume 'la única' ni 'la última' — RULE 2).",
         )
     try:
         evidence_manager.get(case_id, evidence_id)
@@ -141,7 +141,7 @@ def start_filesystem_timeline(
         raise HTTPException(
             status_code=422,
             detail="evidence_id is required: selecciona una evidencia registrada en el "
-                   "caso para construir la super-timeline (FORENSIA no asume 'la única' "
+                   "caso para construir la super-timeline (Agentopsy no asume 'la única' "
                    "ni 'la última' — RULE 2).",
         )
 

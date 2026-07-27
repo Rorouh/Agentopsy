@@ -184,7 +184,7 @@ def inject_evidence_path(
             return params
         raise PathPolicyError(
             f"{spec.name}: caller/model may not choose an EVIDENCE_INPUT path; "
-            "FORENSIA injects it from the selected evidence handle"
+            "Agentopsy injects it from the selected evidence handle"
         )
     params[spec.name] = evidence_path
     return params

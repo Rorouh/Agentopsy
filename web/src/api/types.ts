@@ -32,10 +32,10 @@ export interface ExecutorStatus {
 
 // Modelos que el selector del composer ofrece para un ejecutor
 // (/api/executors/{id}/models). Todos son `editable`: el operador elige el modelo
-// y FORENSIA lo respeta (Ollama por HTTP; los CLIs cloud como flag --model). La
+// y Agentopsy lo respeta (Ollama por HTTP; los CLIs cloud como flag --model). La
 // lista difiere: Ollama devuelve los modelos REALES instalados; los CLIs cloud,
 // solo atajos como sugerencia (`allow_custom` siempre true — se puede escribir
-// cualquier id que acepte el CLI). FORENSIA no puede enumerar el catálogo de un
+// cualquier id que acepte el CLI). Agentopsy no puede enumerar el catálogo de un
 // CLI cloud sin API key (SECURITY INVARIANT 7); vacío = el modelo por defecto del
 // CLI (RULE 2). El modelo elegido se persiste por proveedor (MODEL_CONFIG_KEY).
 export interface ExecutorModels {

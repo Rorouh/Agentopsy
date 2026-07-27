@@ -490,7 +490,7 @@ export const api = {
 
   // Modelos que ofrece el selector del composer para un ejecutor. Ollama devuelve
   // los instalados; los CLIs cloud, atajos + texto libre (allow_custom) que se
-  // pasan como --model — FORENSIA no puede enumerar su catálogo sin API key
+  // pasan como --model — Agentopsy no puede enumerar su catálogo sin API key
   // (SECURITY 7). El modelo elegido se persiste por proveedor (MODEL_CONFIG_KEY).
   executorModels: (id: ExecutorId) =>
     request<ExecutorModels>(`/api/executors/${id}/models`),

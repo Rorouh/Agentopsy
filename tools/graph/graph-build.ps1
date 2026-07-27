@@ -1,5 +1,5 @@
 <#
-  graph-build.ps1 — construye el grafo de conocimiento del repo FORENSIA con graphify.
+  graph-build.ps1 — construye el grafo de conocimiento del repo Agentopsy con graphify.
 
   Determinista y sin API key: usa 'extract --code-only' (AST local con tree-sitter,
   salta doc/imágenes). Apunta SOLO a backend/ y web/ (nunca al repo entero, para no

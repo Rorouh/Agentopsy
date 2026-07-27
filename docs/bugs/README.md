@@ -1,6 +1,6 @@
 # Bugs conocidos
 
-Registro de fallos observados en FORENSIA que **aún no están corregidos**. Un fichero
+Registro de fallos observados en Agentopsy que **aún no están corregidos**. Un fichero
 por bug (`NNN-slug.md`), numerados por orden de descubrimiento. Cuando uno se arregle,
 marca su estado como `resuelto` y enlaza el commit/PR; no borres la entrada (el histórico
 de por qué falló es útil).

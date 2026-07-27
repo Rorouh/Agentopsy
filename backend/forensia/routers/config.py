@@ -16,7 +16,7 @@ logging in inside the container). Editable keys:
 - ``OLLAMA_MODEL`` — model name for the ``ollama`` executor (e.g. llama3.1:8b).
 - ``CLAUDE_CODE_MODEL`` / ``CODEX_MODEL`` / ``GEMINI_MODEL`` — model the operator
   chose for each cloud CLI, passed as ``--model``. Optional: unset (empty) means
-  the CLI's own default (RULE 2 — FORENSIA never invents one). Validated with the
+  the CLI's own default (RULE 2 — Agentopsy never invents one). Validated with the
   same id gate as the executor layer (SECURITY INVARIANT 5).
 - ``FORENSIA_EXECUTOR_TIMEOUT`` — seconds one executor run may take before it
   is aborted (and audited) as a timeout; see ``forensia.executors.base``.

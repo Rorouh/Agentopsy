@@ -75,7 +75,7 @@ _TACTIC_ES: dict[str, str] = {
     "TA0040": "Impacto",
 }
 
-#: Agrupación **editorial** de FORENSIA para la matriz (ATT&CK no define fases).
+#: Agrupación **editorial** de Agentopsy para la matriz (ATT&CK no define fases).
 _TACTIC_PHASE: dict[str, str] = {
     "TA0002": "access",
     "TA0003": "root",

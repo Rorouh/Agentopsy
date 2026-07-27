@@ -304,7 +304,7 @@ class YaraParams(_StrictModel):
     """``yara`` — match rules against the evidence (target_path injected).
 
     ``rules_path`` is a path to a YARA rules file or directory. **Confined**
-    to the active FORENSIA case by the shared dispatcher policy; the
+    to the active Agentopsy case by the shared dispatcher policy; the
     operator stages rule bundles under e.g. ``~/.forensia/cases/<case>/rules/``.
     """
 
@@ -313,7 +313,7 @@ class YaraParams(_StrictModel):
         max_length=2048,
         description=(
             "Path to a YARA rules file or directory. Must live inside the "
-            "active FORENSIA case directory."
+            "active Agentopsy case directory."
         ),
     )
     recursive: bool = Field(
@@ -352,7 +352,7 @@ class FtkImagerParams(_StrictModel):
 class JqParams(_StrictModel):
     """``jq`` — query a JSON artifact already on disk (typically a prior run's output).
 
-    ``input_path`` MUST live under the active FORENSIA case directory (SEC-1). Typically
+    ``input_path`` MUST live under the active Agentopsy case directory (SEC-1). Typically
     an artifact at ``~/.forensia/cases/<case>/artifacts/<run>/stdout.txt``
     (or similar) emitted by an earlier tool call.
     """
@@ -364,7 +364,7 @@ class JqParams(_StrictModel):
     )
     input_path: str | ArtifactRef = Field(
         description=(
-            "Path to the JSON file to query. Confined to the active FORENSIA case "
+            "Path to the JSON file to query. Confined to the active Agentopsy case "
             "directory; typically an artifact from a "
             "previous run."
         ),
@@ -518,7 +518,7 @@ class HayabusaParams(_StrictModel):
 class ChainsawParams(_StrictModel):
     """``chainsaw hunt`` — Sigma rules over EVTX dir (target injected).
 
-    ``sigma_dir`` and ``rules_dir`` MUST live under the active FORENSIA case directory
+    ``sigma_dir`` and ``rules_dir`` MUST live under the active Agentopsy case directory
     (SEC-1). Bundled rule sets go under e.g. ``~/.forensia/cases/<case>/rules/``.
     """
 
@@ -526,7 +526,7 @@ class ChainsawParams(_StrictModel):
         default=None,
         max_length=2048,
         description=(
-            "Path to a Sigma rules directory. Confined to the active FORENSIA "
+            "Path to a Sigma rules directory. Confined to the active Agentopsy "
             "case directory."
         ),
     )
@@ -535,7 +535,7 @@ class ChainsawParams(_StrictModel):
         max_length=2048,
         description=(
             "Path to a Chainsaw rules directory (e.g. mappings). Confined to "
-            "the active FORENSIA case directory."
+            "the active Agentopsy case directory."
         ),
     )
     ruleset: Optional[Literal["chainsaw-native"]] = Field(

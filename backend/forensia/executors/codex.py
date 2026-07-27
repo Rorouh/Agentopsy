@@ -6,7 +6,7 @@ Flags verified against the official docs (developers.openai.com/codex/cli/refere
   final positional argument.
 - ``--skip-git-repo-check`` allows running outside a Git repository (the api
   container's workdir is not a repo).
-- ``--sandbox read-only`` pins the strictest sandbox: FORENSIA uses the CLI as a
+- ``--sandbox read-only`` pins the strictest sandbox: Agentopsy uses the CLI as a
   pure LLM — its own agentic writes are unwanted.
 - ``--output-last-message <path>`` writes the assistant's FINAL message to a
   file. This is the documented stable way to capture the answer; ``--json``

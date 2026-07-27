@@ -1,6 +1,6 @@
 # Timeline forense del caso
 
-FORENSIA ofrece **tres capas** de línea temporal, todas deterministas y con marcas de
+Agentopsy ofrece **tres capas** de línea temporal, todas deterministas y con marcas de
 tiempo en **UTC explícito** (ISO-8601 con `Z`; la UI etiqueta la zona y nunca convierte a
 hora local — hallazgo F). La lógica vive en `backend/forensia/timeline/` (RULE 3) y se
 expone por el router fino `backend/forensia/routers/timeline.py`; la UI la consume en
@@ -41,7 +41,7 @@ GET /api/cases/{case_id}/timeline
 
 ### Export CSV (hallazgo D)
 
-La capa 1 se lleva fuera de FORENSIA como CSV. Reusa el **mismo builder**
+La capa 1 se lleva fuera de Agentopsy como CSV. Reusa el **mismo builder**
 (`build_investigation_timeline`) — no reconstruye nada ni ejecuta herramientas — y el
 formateo vive en `backend/forensia/timeline/export.py` (`timeline_to_csv`, RULE 3). Un
 caso sin actividad devuelve un CSV con **sólo la cabecera** (0 filas, honesto), nunca un
@@ -81,7 +81,7 @@ POST /api/cases/{case_id}/timeline/filesystem   { "evidence_id": "..." }
 → 200 { "job_id", "status": "running", "case_id", "kind": "fs_timeline",
         "evidence_id", "os_profile", ... }
 
-# Sin evidence_id → 422 (RULE 2: FORENSIA no asume "la única" ni "la última").
+# Sin evidence_id → 422 (RULE 2: Agentopsy no asume "la única" ni "la última").
 # os_profile no resoluble (unknown / baja confianza / conflicto) → 409: el operador ancla.
 
 GET /api/cases/{case_id}/timeline/filesystem/jobs/{job_id}?since=0

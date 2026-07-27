@@ -40,7 +40,7 @@ def test_forensia_unix_package_loads() -> None:
     assert "tsk_mmls" in pkg.policy.allowed_tools
     assert "volatility3" in pkg.policy.allowed_tools
     # Prompts loaded as text from disk.
-    assert "FORENSIA-UNIX" in pkg.prompts.identity
+    assert "Agentopsy-UNIX" in pkg.prompts.identity
 
 
 def test_forensia_windows_package_loads() -> None:

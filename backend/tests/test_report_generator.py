@@ -56,7 +56,7 @@ def _generate(w, case_id, perito=None):
 
 def _register_evidence(w, case_id) -> str:
     src = w["tmp"] / "disk.raw"
-    src.write_bytes(b"\x00FORENSIA-TEST-IMAGE\x00" * 64)
+    src.write_bytes(b"\x00Agentopsy-TEST-IMAGE\x00" * 64)
     return w["evidence"].register(case_id, str(src)).evidence_id
 
 

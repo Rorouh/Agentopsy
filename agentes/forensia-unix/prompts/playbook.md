@@ -1,4 +1,4 @@
-# Playbook — FORENSIA-UNIX
+# Playbook — Agentopsy-UNIX
 
 Heurística forense por tipo de evidencia. **No es un script**: es lo que un analista
 humano probaría primero. El perito dirige; si una pista lleva a otro camino, lo sigues.
@@ -75,7 +75,7 @@ Punto de partida sugerido.
 > Volatility3 con `-r json` devuelve filas estructuradas (el wrapper ya lo pide). Si el
 > volcado es Windows (lo dirá `detected_os`, o un `windows.info.Info` de diagnóstico),
 > **no es tu caso**: detente y pide a la operadora que **ancle el perfil a `windows`**
-> (el relevo a FORENSIA-WIN es automático; no se cierra ni se reabre el caso). No
+> (el relevo a Agentopsy-WIN es automático; no se cierra ni se reabre el caso). No
 > improvises `windows.*` plugins — no son de tu allowlist.
 
 ---

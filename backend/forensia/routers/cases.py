@@ -204,7 +204,7 @@ def register_evidence_async(case_id: str, req: RegisterEvidenceRequest) -> dict[
         raise HTTPException(
             status_code=422,
             detail="source_path is required: elige la evidencia de la bandeja "
-                   "(FORENSIA no asume 'la única' ni 'la más reciente' — RULE 2).",
+                   "(Agentopsy no asume 'la única' ni 'la más reciente' — RULE 2).",
         )
     try:
         case_manager.load(case_id)

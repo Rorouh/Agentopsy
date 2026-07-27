@@ -1,4 +1,4 @@
-# FORENSIA — Documentación
+# Agentopsy — Documentación
 
 Índice de la documentación técnica. La fuente única de alcance y planificación del TFM vive en [`FORENSIA_Alcance_y_Planificacion.md`](../FORENSIA_Alcance_y_Planificacion.md) (raíz del repo); este árbol contiene los documentos de diseño, decisiones y operación que sostienen ese plan.
 
@@ -18,7 +18,7 @@
 ## Maletín forense
 
 - [`maletin/inventario-tools.md`](maletin/inventario-tools.md) — catálogo extendido de herramientas CLI candidatas con estado de viabilidad por SO.
-- [`maletin/inventario-mcps.md`](maletin/inventario-mcps.md) — inventario priorizado P0-P3 de servidores MCP que FORENSIA expone.
+- [`maletin/inventario-mcps.md`](maletin/inventario-mcps.md) — inventario priorizado P0-P3 de servidores MCP que Agentopsy expone.
 - [`maletin/mcp-toolkit-s1.md`](maletin/mcp-toolkit-s1.md) — plan de implementación del `mcp-toolkit` (Sprint S1, cerrado el 2026-06-29).
 
 ## Operación y estado

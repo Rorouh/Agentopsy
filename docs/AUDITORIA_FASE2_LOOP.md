@@ -10,7 +10,7 @@
 ## Resumen ejecutivo
 
 El loop está bien construido en lo estructural: **enforce de allowlist por
-paquete**, **inyección de paths por FORENSIA** (el LLM nunca elige el path de la
+paquete**, **inyección de paths por Agentopsy** (el LLM nunca elige el path de la
 evidencia), **una tool por round-trip** (audit lineal), y **selección de backend
 sin default silencioso** (RULE 2). Buen trabajo de base.
 
@@ -46,7 +46,7 @@ un tercero. Esto rompe el gate 9 y la frontera de egreso de `FORENSIC_SOUNDNESS 
 - **Allowlist por paquete enforced** en el loop: `agent.py:187` rechaza cualquier
   `tool_id` fuera de `package.policy.allowed_tools` y deja que el modelo se
   recupere (gate 6 ✓).
-- **Inyección de paths por FORENSIA**: `agent.py:199` + `_inject_runtime_paths`
+- **Inyección de paths por Agentopsy**: `agent.py:199` + `_inject_runtime_paths`
   (`agent.py:312-323`) fija el path de la evidencia y **elimina** cualquier clave
   auto-inyectada que el modelo intente colar (defensa contra prompt-injection de
   paths, gate 8 ✓).

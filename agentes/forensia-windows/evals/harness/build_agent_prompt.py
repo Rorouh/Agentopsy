@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ensambla el "prompt de agente" FORENSIA-WIN para pegarlo en un CLI agéntico.
+"""Ensambla el "prompt de agente" Agentopsy-WIN para pegarlo en un CLI agéntico.
 
 NO ejecuta herramientas ni el CLI: solo concatena los prompts del paquete
 (system + identity + playbook) y añade una tarea concreta según el tipo de
@@ -55,7 +55,7 @@ def read(path: Path) -> str:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Ensambla el prompt de agente FORENSIA-WIN.")
+    ap = argparse.ArgumentParser(description="Ensambla el prompt de agente Agentopsy-WIN.")
     ap.add_argument("--type", required=True, choices=sorted(TASKS), help="tipo de evidencia")
     ap.add_argument("--evidence", required=True, help="ruta a la evidencia (copia, solo lectura)")
     ap.add_argument("--out", default="agente-win.txt", help="fichero de salida (UTF-8)")
@@ -69,7 +69,7 @@ def main() -> None:
     bar = "=" * 78
     text = (
         f"{bar}\n"
-        "INSTRUCCIONES DEL AGENTE (FORENSIA-WIN) — compórtate según ellas:\n"
+        "INSTRUCCIONES DEL AGENTE (Agentopsy-WIN) — compórtate según ellas:\n"
         f"{bar}\n"
         f"\n## IDENTIDAD\n{identity}\n"
         f"\n## REGLAS DE SISTEMA\n{system}\n"

@@ -48,7 +48,7 @@ paso que el triage marcó `ext_magic` al ingerir la evidencia.
 2. **Encadenado:** `volatility3 (-r json)` → `jq` `.[] | select(.PID==…)`; `plaso_psort`
    (json) → `jq` por rango; etc.
 3. **`slurp` (-s)** para reunir varios documentos JSON en un array antes de agregarlos.
-4. **`input_path` es un artefacto, no la evidencia:** FORENSIA no lo inyecta — hay que
+4. **`input_path` es un artefacto, no la evidencia:** Agentopsy no lo inyecta — hay que
    pasarle el path del JSON que quieres consultar.
 
 ## Registro en el caso

@@ -17,7 +17,7 @@ What the acta answers, for a court-style annex:
 - **Nivel de solo-lectura**: the HONEST label from ``forensia.evidence`` —
   ``fs`` (chmod 0444) today; block-level is Phase 2, NOT implemented. RULE 2:
   the acta never claims a guarantee we don't enforce.
-- **Herramienta / versión**: FORENSIA + ``__version__`` and the concrete
+- **Herramienta / versión**: Agentopsy + ``__version__`` and the concrete
   acquisition mechanism (``EvidenceManager`` stream-hash + verified copy).
 
 Failure modes are loud, never guessed (RULE 2): an unknown case/evidence raises
@@ -108,7 +108,7 @@ def build_custody_act(
     return {
         "generated_at": _utc_now_iso(),
         "tool": {
-            "name": "FORENSIA",
+            "name": "Agentopsy",
             "version": __version__,
             "component": "forensia.evidence.EvidenceManager",
             "method": "SHA-256 stream hash + verified copy (chmod 0444)",

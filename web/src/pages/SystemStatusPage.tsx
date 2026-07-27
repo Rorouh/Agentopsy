@@ -18,7 +18,7 @@ export function SystemStatusPage({ caps, isConnected, version }: SystemStatusPag
     <div>
       <PageHeader
         title="Estado del Sistema"
-        subtitle="Visualiza el entorno de ejecución, los ejecutores de IA y las herramientas cargadas en FORENSIA."
+        subtitle="Visualiza el entorno de ejecución, los ejecutores de IA y las herramientas cargadas en Agentopsy."
       />
 
       {caps ? (

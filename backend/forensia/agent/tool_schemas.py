@@ -5,7 +5,7 @@ ejecutores entienden dentro del prompt estructurado del camino degradado).
 El LLM ve estos schemas y propone llamadas tipadas. El agent loop intercepta cada
 llamada, inyecta los paths reales (evidence handle, output_dir del ArtifactRun)
 y luego dispatcha contra el wrapper. El modelo NUNCA elige el path absoluto de
-la evidencia — eso lo controla FORENSIA, no el LLM (defensa en profundidad
+la evidencia — eso lo controla Agentopsy, no el LLM (defensa en profundidad
 contra prompt-injection que intente saltar a otro archivo).
 """
 
@@ -19,11 +19,11 @@ from forensia.artifact_ref import artifact_ref_json_schema
 # `hive_path` de regripper, aceptan la ArtifactRef {run_id, relpath} que produjo un
 # `tsk_icat` previo, para encadenar `tsk_icat.output → tool.input` con custodia del
 # derivado (el dispatcher re-hashea el artefacto antes de ejecutar). Omítelo y
-# FORENSIA inyecta el path de la evidencia directamente.
+# Agentopsy inyecta el path de la evidencia directamente.
 _EZ_INPUT_DESC = (
     "ArtifactRef {{run_id, relpath}} emitida por un `tsk_icat` previo que extrajo "
     "{what}. Encadena tsk_icat.output → esta tool. Omítelo para correr sobre la "
-    "evidencia que FORENSIA inyecta."
+    "evidencia que Agentopsy inyecta."
 )
 
 # Schemas de parámetros por tool_id. Solo los params QUE EL LLM PUEDE ELEGIR.

@@ -1,5 +1,5 @@
 """Render de un ``Document`` a PDF real con fpdf2, siguiendo la lógica del
-**informe pericial** de FORENSIA (portada + metadata, índice, secciones
+**informe pericial** de Agentopsy (portada + metadata, índice, secciones
 numeradas H2/H3, tablas, hallazgos con severidad, citas y listas, con
 cabecera/pie por página). fpdf2 es pure-python (sin libs de sistema).
 
@@ -44,7 +44,7 @@ def _s(text: Any) -> str:
 
 
 class _Report(FPDF):
-    header_left = "FORENSIA - Informe pericial forense"
+    header_left = "Agentopsy - Informe pericial forense"
     header_right = "Confidencial"
     footer_left = ""
     footer_author = ""
@@ -296,7 +296,7 @@ def _signature(pdf: _Report, doc: Document) -> None:
     pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(*_FAINT)
     status = "FIRMADO - version final" if doc.status == "final" else "BORRADOR - sin firmar"
-    pdf.multi_cell(0, 5, _s(f"Generado por FORENSIA - {status} - {doc.created_at}"),
+    pdf.multi_cell(0, 5, _s(f"Generado por Agentopsy - {status} - {doc.created_at}"),
                    new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Courier", "", 8)
     pdf.multi_cell(0, 5, _s(f"SHA-256 {doc.sha256}"), new_x="LMARGIN", new_y="NEXT",

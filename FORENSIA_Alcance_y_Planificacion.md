@@ -1,4 +1,4 @@
-# FORENSIA — Alcance y Diseño del TFM
+# Agentopsy — Alcance y Diseño del TFM
 
 **Herramienta con integración de IA para la práctica forense**
 
@@ -14,7 +14,7 @@ Trabajo Final de Máster · Documento de alcance, diseño y planificación
 
 ## 1. Resumen ejecutivo
 
-FORENSIA es una herramienta de análisis forense **post-mortem** asistida por IA, **autoalojada y desplegada con Docker Compose**: el usuario clona el repositorio, ejecuta `docker compose up --build` y trabaja desde el navegador (`http://127.0.0.1:5173`), en Windows, macOS o Linux por igual. El compose levanta cinco servicios: la interfaz web (`web`, React), el backend (`api`, FastAPI — con el agente orquestador y los dos sub-agentes de IA especializados por sistema operativo), el modelo local (`ollama`) y los dos maletines forenses contenedorizados (`toolkit-windows`, `toolkit-unix`). Los prompts de la investigación se ejecutan mediante el **ejecutor** que el usuario elija — Claude Code, Codex CLI o Gemini CLI, autenticados con su propia cuenta, u Ollama, 100 % local — **sin API keys de ningún proveedor**.
+Agentopsy es una herramienta de análisis forense **post-mortem** asistida por IA, **autoalojada y desplegada con Docker Compose**: el usuario clona el repositorio, ejecuta `docker compose up --build` y trabaja desde el navegador (`http://127.0.0.1:5173`), en Windows, macOS o Linux por igual. El compose levanta cinco servicios: la interfaz web (`web`, React), el backend (`api`, FastAPI — con el agente orquestador y los dos sub-agentes de IA especializados por sistema operativo), el modelo local (`ollama`) y los dos maletines forenses contenedorizados (`toolkit-windows`, `toolkit-unix`). Los prompts de la investigación se ejecutan mediante el **ejecutor** que el usuario elija — Claude Code, Codex CLI o Gemini CLI, autenticados con su propia cuenta, u Ollama, 100 % local — **sin API keys de ningún proveedor**.
 
 El usuario carga evidencias ya extraídas (`.E01` / `.raw` / `.vmdk` / volcado), conduce la investigación mediante prompts y obtiene un informe forense estructurado, su línea temporal y la correlación con MITRE ATT&CK.
 
@@ -87,7 +87,7 @@ La aplicación expone seis secciones, accesibles tras crear o seleccionar un cas
 
 ## 4. Fase 1 — Selección y empaquetado del maletín forense
 
-Selección de las herramientas forenses CLI (todas gratuitas) para los sistemas operativos en los que trabaja FORENSIA (Windows y Unix-like). Se priorizan herramientas de línea de comandos por encima de GUIs por su control determinista y su mejor integración con LLMs.
+Selección de las herramientas forenses CLI (todas gratuitas) para los sistemas operativos en los que trabaja Agentopsy (Windows y Unix-like). Se priorizan herramientas de línea de comandos por encima de GUIs por su control determinista y su mejor integración con LLMs.
 
 Cada herramienta se cataloga en uno de los dos maletines contenedorizados que construye el compose:
 

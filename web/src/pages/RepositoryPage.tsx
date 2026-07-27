@@ -688,7 +688,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
     <div>
       <PageHeader
         title="Casos y evidencias"
-        subtitle="Crea el caso, registra la evidencia y deja que FORENSIA calcule el hash baseline antes de exponerla a cualquier herramienta."
+        subtitle="Crea el caso, registra la evidencia y deja que Agentopsy calcule el hash baseline antes de exponerla a cualquier herramienta."
         actions={
           <>
             <Button variant="chip" onClick={() => setSearchOpen(true)}>

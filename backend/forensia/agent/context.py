@@ -1,6 +1,6 @@
 """Provider-agnostic context-window management for the agent loop (Bug 008).
 
-The executor is stateless: FORENSIA re-sends the whole conversation on every
+The executor is stateless: Agentopsy re-sends the whole conversation on every
 iteration, so an append-only transcript grows O(N) and the total wire cost of a
 run grows O(N^2). Prompt caching can't be relied on uniformly across the four
 executors (Claude Code / Codex / Gemini / Ollama), so the only uniform lever is

@@ -1,7 +1,7 @@
 # hashdeep — set de hashes (binario directo; wrapper stub, Bug 003)
 # formato hashdeep: size,md5,sha1,sha256,ruta
 
-## Imagen (md5,sha1,sha256) — SHA256 coincide con baseline FORENSIA d9d08eab…
+## Imagen (md5,sha1,sha256) — SHA256 coincide con baseline Agentopsy d9d08eab…
 1189085184,5038e35cf58e3a9595beb91d30edb990,68f0ab16617b16babe2e100c1dc3b274a50027d0,d9d08eabe8008bccc1c6252364fff6c5f2685257f727d12e2dfa2bdda609f8f9,/evidence/dvwa-container-rootfs/dvwa-disk.raw
 
 ## Ficheros extraídos (size,md5,sha256,ruta)

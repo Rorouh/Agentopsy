@@ -1,7 +1,7 @@
-# Apuntes de perito — prueba end-to-end de FORENSIA
+# Apuntes de perito — prueba end-to-end de Agentopsy
 
 > Cuaderno de campo escrito **desde la óptica de un perito forense** mientras uso
-> FORENSIA de punta a punta sobre el caso **"Caso Con playwright"** con evidencia
+> Agentopsy de punta a punta sobre el caso **"Caso Con playwright"** con evidencia
 > real. Anoto: lo que la herramienta **captura**, lo que **no**, lo **útil**, y lo
 > que **falta** y sería necesario en un peritaje serio. Fecha: 2026-07-15.
 
@@ -125,7 +125,7 @@ registró* la conclusión), NO una **super-timeline forense del sistema** (cuán
 ocurrieron los hechos en la evidencia: tiempos MACB de `$MFT`/ext, EVTX, prefetch,
 etc.). Un peritaje real necesita la segunda: reconstruir la secuencia de eventos
 del SISTEMA (p. ej. con `plaso`/`mactime`, que el maletín SÍ tiene) sobre una
-línea temporal absoluta. Hoy FORENSIA ejecuta esas herramientas pero **no vuelca
+línea temporal absoluta. Hoy Agentopsy ejecuta esas herramientas pero **no vuelca
 su salida a esta vista**: el timeline muestra el momento del análisis, no el
 momento del hecho. Sería la mejora de mayor valor pericial.
 

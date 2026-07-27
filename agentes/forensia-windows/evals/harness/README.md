@@ -1,4 +1,4 @@
-# `harness/` — Runner single-shot agnóstico de motor (FORENSIA-WIN)
+# `harness/` — Runner single-shot agnóstico de motor (Agentopsy-WIN)
 
 Mide la **DECISIÓN** del sub-agente `windows` —qué herramientas planifica y qué
 hallazgos propone— frente a la traza dorada de un `case-win-*.yaml`, usando

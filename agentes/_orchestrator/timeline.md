@@ -1,7 +1,7 @@
 # Orquestador — Construcción de la línea temporal
 
 > **ESQUEMA OBJETIVO del entregable.** La consolidación de la timeline que hoy
-> ejecuta FORENSIA es **determinista** (Python en `forensia.reports.generator` y
+> ejecuta Agentopsy es **determinista** (Python en `forensia.reports.generator` y
 > `forensia.timeline`), no un LLM. Este prompt define el **contrato** que esa
 > síntesis —o un futuro LLM de síntesis— debe cumplir; no describe un modelo que
 > se invoque hoy para consolidar.

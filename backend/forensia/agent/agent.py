@@ -23,7 +23,7 @@ Safety (THREAT_MODEL gates 5-7):
 - The model proposes a ``tool_id`` from a closed allowlist (the package's
   ``policy/tools.yaml``). Anything outside the allowlist is refused as a tool
   message and the loop continues so the model can recover.
-- Evidence paths and output directories are injected by FORENSIA, not by the
+- Evidence paths and output directories are injected by Agentopsy, not by the
   model.
 - Every tool run goes through the dispatcher → ``ArtifactRun`` + ``audit.jsonl``.
 
@@ -354,7 +354,7 @@ class ForensicAgent:
         FINDING_NUDGE_AFTER = 3
 
         for iteration in range(max_iter):
-            # Bug 008 — provider-agnostic context management. FORENSIA owns the
+            # Bug 008 — provider-agnostic context management. Agentopsy owns the
             # conversation; the executor is stateless and re-charges the whole
             # transcript each iteration. Project the canonical `messages` to a
             # windowed OUTBOUND copy (older tool results collapsed to stubs) so a
@@ -756,12 +756,12 @@ class ForensicAgent:
             mismatch_block = (
                 "\n\n## ⚠️ DESAJUSTE DE PERFIL DETECTADO\n"
                 f"El caso declara `os_profile = {self.os_profile}` pero el triage "
-                f"de FORENSIA fingerprintó la evidencia como `{detected_os}`.\n"
+                f"de Agentopsy fingerprintó la evidencia como `{detected_os}`.\n"
                 "Aplica la regla del guard rail de perfil: **no ejecutes "
                 "herramientas**. Responde al usuario en lenguaje natural pidiéndole "
                 f"**ANCLAR el perfil del caso a `{detected_os}`** (en la UI, o vía "
                 f"`POST /api/cases/{{case_id}}/os-profile` con `os_profile="
-                f"{detected_os}`). Al anclarlo, FORENSIA **re-enruta automáticamente** "
+                f"{detected_os}`). Al anclarlo, Agentopsy **re-enruta automáticamente** "
                 f"al sub-agente que corresponde (`forensia-{detected_os}`) en la "
                 "siguiente consulta — **NO hace falta cerrar ni reabrir el caso**, y "
                 "la cadena de custodia de la evidencia ya registrada se conserva. No "
@@ -822,9 +822,9 @@ class ForensicAgent:
             f"## Caso activo\n"
             f"- Caso: `{case_id}`\n"
             f"- Perfil del sistema operativo: `{self.os_profile}`\n"
-            f"- Evidencia: `{evidence_filename}` — FORENSIA te inyecta su path "
+            f"- Evidencia: `{evidence_filename}` — Agentopsy te inyecta su path "
             "absoluto en cada tool call; NUNCA incluyas un path absoluto tú.\n\n"
-            f"## Contexto de evidencia (triage de FORENSIA)\n"
+            f"## Contexto de evidencia (triage de Agentopsy)\n"
             f"- detected_os: `{detected_os}`\n"
             f"- detected_kind: `{detected_kind}`\n"
             "Los valores los computa `forensia.triage.fingerprint_evidence` "
@@ -834,7 +834,7 @@ class ForensicAgent:
             f"{kind_routing}"
             f"{mismatch_block}\n"
             f"## Toolkit disponible\n"
-            "Elige siempre las herramientas por su id. FORENSIA valida cada llamada "
+            "Elige siempre las herramientas por su id. Agentopsy valida cada llamada "
             "contra tu allowlist y resuelve el path real de la evidencia "
             "automáticamente. Los outputs (CSV, body files) van a un directorio "
             "que también te inyecta el dispatcher — no lo pongas tú.\n\n"
@@ -930,7 +930,7 @@ class ForensicAgent:
         # evidencia: se envuelven en delimitadores de NO-confianza (spotlighting) para
         # que el modelo los lea como DATOS y nunca como instrucciones. Los resultados
         # de las tools internas (record_finding/annotate_mitre) y los rechazos los
-        # genera FORENSIA — son de confianza y NO se envuelven.
+        # genera Agentopsy — son de confianza y NO se envuelven.
         if untrusted:
             content = f"{_UNTRUSTED_OPEN}\n{content}\n{_UNTRUSTED_CLOSE}"
         return {

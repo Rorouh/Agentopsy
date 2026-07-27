@@ -1,4 +1,4 @@
-# Notas de reflexión — mejora iterativa de FORENSIA-WIN (2026-07-03)
+# Notas de reflexión — mejora iterativa de Agentopsy-WIN (2026-07-03)
 
 Auditoría de las corridas reales del sub-agente windows sobre LoneWolf-memoria
 (`evals/harness/results/investigations/`, gitignored pero en disco) más el

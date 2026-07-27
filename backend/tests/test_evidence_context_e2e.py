@@ -84,7 +84,7 @@ _RIP = (
     "import sys\n"
     "args = sys.argv[1:]\n"
     'hive = args[args.index("-r") + 1] if "-r" in args else ""\n'
-    'sys.stdout.write("ComputerName = FORENSIA-PC\\n")\n'
+    'sys.stdout.write("ComputerName = Agentopsy-PC\\n")\n'
     'sys.stdout.write("hive=" + hive + "\\n")\n'
 )
 

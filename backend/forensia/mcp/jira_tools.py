@@ -7,7 +7,7 @@ four calls. The model (LLM) calls them in natural conversation, just like the
 Atlassian/Jira MCP server's ``getProjects`` → ``selectProject`` flow.
 
 Schema choices:
-- ``list_*`` take no arguments — they read the filesystem state of FORENSIA.
+- ``list_*`` take no arguments — they read the filesystem state of Agentopsy.
 - ``select_*`` take a single ``id`` argument (UUID). RULE 2: no defaults, no
   "the only one", no "the most recent". If the id is missing or invalid the
   tool returns ``INVALID_PARAMS`` semantics via ``isError: true``.
@@ -34,7 +34,7 @@ JIRA_TOOL_DEFINITIONS: list[types.Tool] = [
     types.Tool(
         name="list_cases",
         description=(
-            "List forensic cases registered in FORENSIA. Each case has an id "
+            "List forensic cases registered in Agentopsy. Each case has an id "
             "(UUID), a human name (e.g. 'Windows IR 2026-001'), the examiner, "
             "and an os_profile that is DERIVED from the evidence content by "
             "triage ('unix' | 'windows' | null when undetermined/ambiguous). "

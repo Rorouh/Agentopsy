@@ -1,6 +1,6 @@
 #!/bin/sh
 # =============================================================================
-# FORENSIA — entrypoint del servicio `api`: seeding de credenciales de CLIs
+# Agentopsy — entrypoint del servicio `api`: seeding de credenciales de CLIs
 #
 # El HOME del contenedor (/root) vive en el volumen con nombre
 # `forensia-cli-auth`. En el PRIMER arranque (sin marker), este script copia al

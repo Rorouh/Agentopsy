@@ -1,6 +1,6 @@
-# FORENSIA — Paquetes de agente entrenado
+# Agentopsy — Paquetes de agente entrenado
 
-Este documento describe el **contrato** que FORENSIA exige al equipo que entrena
+Este documento describe el **contrato** que Agentopsy exige al equipo que entrena
 el agente forense, cómo el backend (servicio `api`) descubre los paquetes y cómo
 la UI web los conecta. El catálogo de herramientas y los invariantes forenses
 están en otros documentos; aquí sólo se trata el **agente**.
@@ -106,7 +106,7 @@ y las dos del rediseño de memoria:
   \<fecha\>?», «artefactos web». Si la timeline no existe aún, devuelve
   `status=no_timeline` (nunca un vacío que se lea como «no pasó nada», RULE 2).
 
-## 4. Cómo lo descubre FORENSIA
+## 4. Cómo lo descubre Agentopsy
 
 1. El compose monta `agentes/` del repo en el servicio `api`
    (`FORENSIA_AGENTS_DIR` permite sobreescribir la ruta; en dev con venv,
@@ -386,8 +386,8 @@ allowlist del paquete activo se enforce en dos puntos (MCP `tools/list`
 filtrado + dispatcher contra catálogo).
 
 Esto es el "MCP como núcleo" que pidió el PI (email 2026-06-24): un
-agente arbitrario puede operar el maletín FORENSIA hablando el protocolo
-estándar, sin código FORENSIA propio. Detalle en
+agente arbitrario puede operar el maletín Agentopsy hablando el protocolo
+estándar, sin código Agentopsy propio. Detalle en
 [`mcp-toolkit-s1.md`](../maletin/mcp-toolkit-s1.md) y
 [`inventario-mcps.md`](../maletin/inventario-mcps.md). En sprint S2 el propio
 `ForensicAgent` también pasará a ser cliente MCP in-process del mismo

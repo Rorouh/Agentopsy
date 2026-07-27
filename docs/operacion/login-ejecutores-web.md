@@ -1,7 +1,7 @@
 # Login web de los ejecutores CLI cloud (2026-07-15)
 
 Cómo el operador **conecta un ejecutor CLI cloud (Codex/Claude/Gemini) desde la
-web**, sin abrir una terminal. FORENSIA relaya el flujo *device*/OAuth del propio
+web**, sin abrir una terminal. Agentopsy relaya el flujo *device*/OAuth del propio
 CLI dentro del contenedor `api`: lanza el login shell-free, lee su salida hasta
 la URL (+ código), y mantiene el proceso vivo hasta que el flujo termina. La
 sesión sigue viviendo en el volumen `forensia-cli-auth` (SECURITY INVARIANT 7 —
@@ -106,7 +106,7 @@ gemini}` (Ollama es 100 % local: no tiene login → 422 accionable).
   registran; el módulo de lógica no hace `print()` (RULE 3). Los tails de error
   redactan el código capturado.
 - **Sin API keys** (SECURITY INVARIANT 7): el login crea/renueva la sesión del
-  usuario en el volumen; FORENSIA no maneja claves.
+  usuario en el volumen; Agentopsy no maneja claves.
 - **Token de sesión** en cada POST (SECURITY INVARIANT 3); bind `127.0.0.1` por el
   compose (SECURITY INVARIANT 1).
 

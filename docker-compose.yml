@@ -1,5 +1,5 @@
 # =============================================================================
-# FORENSIA — docker compose raíz (la herramienta completa, un solo comando)
+# Agentopsy — docker compose raíz (la herramienta completa, un solo comando)
 #
 #   Desplegar:                 docker compose up --build
 #   Usar:                      http://127.0.0.1:5173 en el navegador

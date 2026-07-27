@@ -1,7 +1,7 @@
-# FORENSIA Frontend AI Context
+# Agentopsy Frontend AI Context
 
 > **This file is operational context for AI assistants (Claude, Codex, etc.) working on
-> the FORENSIA frontend.** It is not a changelog, not a journal, and not a replacement
+> the Agentopsy frontend.** It is not a changelog, not a journal, and not a replacement
 > for `CLAUDE.md` or `arquitectura.md`. It answers one question: *what does an AI session
 > need to know to touch frontend code without breaking things?*
 >
@@ -11,7 +11,7 @@
 
 ## Purpose
 
-Provide an AI assistant with enough persistent context to work on the FORENSIA frontend
+Provide an AI assistant with enough persistent context to work on the Agentopsy frontend
 without requiring the human to re-explain architecture, decisions, or constraints every
 session. This file should be read **instead of asking the user** how things are wired.
 
@@ -23,7 +23,7 @@ Companions for other areas should follow the same structure:
 
 ## The 2026-07-02 pivot — read this first
 
-FORENSIA is a **self-hosted web tool deployed with Docker Compose** (propuesta v1.2).
+Agentopsy is a **self-hosted web tool deployed with Docker Compose** (propuesta v1.2).
 The frontend is a **React SPA served by the `web` compose service**, used from the
 analyst's own browser at `http://127.0.0.1:5173`. There is no Electron shell, no native
 installer, no auto-update — delivery is `git clone` + `docker compose up --build`,
@@ -378,7 +378,7 @@ These are standing notes for when frontend changes touch other teams' boundaries
 
 ## How Future AI Sessions Should Work
 
-If you are an AI assistant starting a new session to work on the FORENSIA frontend:
+If you are an AI assistant starting a new session to work on the Agentopsy frontend:
 
 1. **Read this file first.** Do not ask the user to explain the architecture.
 2. **Read `CLAUDE.md`.** RULE 0 (no AI attribution) applies to every commit, comment, and doc.

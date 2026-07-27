@@ -284,7 +284,7 @@ def _require_cloud_id(executor_id: str) -> LoginSpec:
     if spec is None:
         raise ValueError(
             f"ejecutor {executor_id!r} no admite login web. Válidos: "
-            f"{', '.join(CLOUD_EXECUTOR_IDS)} (RULE 2: FORENSIA no sustituye)."
+            f"{', '.join(CLOUD_EXECUTOR_IDS)} (RULE 2: Agentopsy no sustituye)."
         )
     return spec
 

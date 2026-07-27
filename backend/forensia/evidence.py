@@ -480,7 +480,7 @@ class EvidenceManager:
         elif _is_ewf_middle_segment(suffix):
             raise ValueError(
                 f"{src.name} is a non-first EWF segment. Register the first segment "
-                f"of the set (…{suffix[:2]}01) instead — FORENSIA ingests the whole "
+                f"of the set (…{suffix[:2]}01) instead — Agentopsy ingests the whole "
                 "co-located set from it; a middle segment alone cannot assemble the "
                 "image (RULE 2)."
             )

@@ -12,7 +12,7 @@ request. RULE 2 — nothing is inferred:
 
 Selecting a cloud-backed executor sends case-derived content to that vendor under
 the operator's own account (SECURITY INVARIANT 7 / RGPD); the UI warns about this
-in the Guía page, but FORENSIA no longer requires or records a separate consent
+in the Guía page, but Agentopsy no longer requires or records a separate consent
 step (removed 2026-07-16).
 
 The old keyword demo loop and the listing-skeleton fallback are gone: both were
@@ -118,13 +118,13 @@ def _prepare_run(req: QueryRequest) -> tuple[ForensicAgent, str, list, str | Non
         raise HTTPException(
             status_code=422,
             detail="case_id is required: selecciona un caso antes de consultar al "
-                   "agente (FORENSIA no asume 'el único caso' — RULE 2).",
+                   "agente (Agentopsy no asume 'el único caso' — RULE 2).",
         )
     if not req.evidence_id:
         raise HTTPException(
             status_code=422,
             detail="evidence_id is required: selecciona una evidencia registrada en "
-                   "el caso (FORENSIA no asume 'la última registrada' — RULE 2).",
+                   "el caso (Agentopsy no asume 'la última registrada' — RULE 2).",
         )
 
     executor_id = req.executor or config.get("DEFAULT_EXECUTOR")
@@ -133,7 +133,7 @@ def _prepare_run(req: QueryRequest) -> tuple[ForensicAgent, str, list, str | Non
             status_code=422,
             detail="executor is required: selecciona un ejecutor "
                    f"({' | '.join(EXECUTOR_IDS)}) en la petición, o fija "
-                   "DEFAULT_EXECUTOR explícitamente en Settings. FORENSIA no "
+                   "DEFAULT_EXECUTOR explícitamente en Settings. Agentopsy no "
                    "elige uno por ti (RULE 2).",
         )
     try:
@@ -191,7 +191,7 @@ def _prepare_run(req: QueryRequest) -> tuple[ForensicAgent, str, list, str | Non
         run_context["model"] = configured_model or pkg.model.name
     elif configured_model:
         # Cloud CLI: pass the chosen model as --model. Unset → the CLI's own
-        # default (FORENSIA does not override it).
+        # default (Agentopsy does not override it).
         run_context["model"] = configured_model
 
     model = ExecutorBackend(executor, run_context=run_context)
@@ -298,7 +298,7 @@ def analyze_estimate(case_id: str, executor: str, evidence_id: str | None = None
     """Estimación HONESTA (rangos + supuestos) del coste de lanzar un análisis:
     iteraciones, tokens, coste monetario y tiempo — ANTES de lanzarlo.
 
-    `executor` es obligatorio (RULE 2: FORENSIA no elige uno por ti); un id
+    `executor` es obligatorio (RULE 2: Agentopsy no elige uno por ti); un id
     desconocido → 422. `evidence_id` es opcional (enriquece con el tamaño). Toda
     la lógica y las tarifas viven en `forensia.agent.estimate` (RULE 3)."""
     try:

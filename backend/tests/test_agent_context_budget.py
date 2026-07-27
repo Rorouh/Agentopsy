@@ -1,8 +1,8 @@
 """Context-budget / token-consumption guards (Bug 008).
 
-The executor is stateless and provider-agnostic: FORENSIA re-sends the whole
+The executor is stateless and provider-agnostic: Agentopsy re-sends the whole
 conversation on every iteration. To keep a single run from burning the token
-budget, FORENSIA manages its own outbound context — bounding tool results,
+budget, Agentopsy manages its own outbound context — bounding tool results,
 trimming the fixed prefix, and windowing the transcript. These tests pin the
 provider-agnostic pieces (no docker, no executor, pure functions).
 """

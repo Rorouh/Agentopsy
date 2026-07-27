@@ -1,6 +1,6 @@
 # MITRE ATT&CK — Semilla (Enterprise)
 
-Subconjunto curado para FORENSIA. **Enum cerrada** que `mitre.md` puede emitir hoy
+Subconjunto curado para Agentopsy. **Enum cerrada** que `mitre.md` puede emitir hoy
 (el orquestador no debe inventar ids fuera de esta lista hasta que el corpus
 completo aterrice en S5). Cada entrada: id, nombre, táctica(s) y qué artefacto
 forense suele sostenerla. Referencia: ATT&CK Enterprise (revisar versión al

@@ -92,7 +92,7 @@ existente (no quise introducir una convención distinta para una sola pestaña).
 
 ## Export de la cobertura (hallazgo D)
 
-El perito se lleva la cobertura ATT&CK del caso fuera de FORENSIA en dos formatos.
+El perito se lleva la cobertura ATT&CK del caso fuera de Agentopsy en dos formatos.
 El formateo vive en `backend/forensia/mitre/export.py` (RULE 3); ambos derivan de
 `CoverageStore.coverage` (propuestas del agente + dictámenes del perito, sin fundir los
 dos ejes) y toman nombres/tácticas del **catálogo Enterprise** — nunca inventados. Un
@@ -128,7 +128,7 @@ GET /api/cases/{case_id}/mitre/navigator
 → 200  Content-Type: application/json; charset=utf-8
        Content-Disposition: attachment; filename="mitre-navigator-{case_id}.json"
 
-{ "name": "FORENSIA — <caso>", "versions": { "layer": "4.5" },
+{ "name": "Agentopsy — <caso>", "versions": { "layer": "4.5" },
   "domain": "enterprise-attack",
   "techniques": [ { "techniqueID": "T1055", "color": "#c1121f",
                     "comment": "Dictamen del perito: Confirmada — …",

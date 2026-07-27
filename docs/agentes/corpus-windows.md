@@ -77,7 +77,7 @@ independiente (ya computada por segmento para la variante E01; ver «Detalle»):
 > Distinción importante: el hash FTK atestigua la **adquisición original** del
 > contenido del disco. El `SHA-256 baseline` de la tabla se computa sobre los
 > **ficheros descargados** (los segmentos `.E01` y, por separado, `memdump.mem`)
-> y es el que FORENSIA re-verifica en cada sesión.
+> y es el que Agentopsy re-verifica en cada sesión.
 
 ## Detalle por imagen
 
@@ -96,7 +96,7 @@ independiente (ya computada por segmento para la variante E01; ver «Detalle»):
   - **(a) set E01 multi-segmento** — apuntar la herramienta a `LoneWolf.E01`;
     `libewf` carga `LoneWolf.E02`–`E09` automáticamente si están en la misma
     carpeta. Es la variante nativa de la descarga por segmentos. Al **registrar**
-    el `LoneWolf.E01` en la bandeja, FORENSIA ingiere el **set completo como UNA
+    el `LoneWolf.E01` en la bandeja, Agentopsy ingiere el **set completo como UNA
     evidencia**: copia los 9 segmentos co-localizados a `original.E01`…`original.E09`
     (hash gate por segmento, `segments[]` en `baseline.json`) para que `ewfmount`
     reensamble desde `original.E01`. Deja los `.E02`–`.E09` junto al `.E01` en la

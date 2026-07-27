@@ -63,15 +63,15 @@ _MODEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
 def validate_model_id(model: str) -> str:
     """Return ``model`` unchanged if it is a safe id, else raise ``ExecutorError``.
 
-    The operator picks the model explicitly; FORENSIA passes it verbatim as a
+    The operator picks the model explicitly; Agentopsy passes it verbatim as a
     ``--model`` argv element. This gate stops a value from masquerading as a CLI
-    flag (SECURITY INVARIANT 5) — it is NOT a catalog check (FORENSIA cannot
+    flag (SECURITY INVARIANT 5) — it is NOT a catalog check (Agentopsy cannot
     enumerate a cloud CLI's models without an API key — SECURITY INVARIANT 7).
     """
     if not isinstance(model, str) or not _MODEL_ID_RE.match(model):
         raise ExecutorError(
             f"id de modelo inválido {model!r}: debe empezar por un carácter "
-            "alfanumérico y usar solo [A-Za-z0-9 . _ : / -] (máx. 128). FORENSIA lo "
+            "alfanumérico y usar solo [A-Za-z0-9 . _ : / -] (máx. 128). Agentopsy lo "
             "rechaza para que no pueda colarse como un flag del CLI (SECURITY "
             "INVARIANT 5)."
         )
@@ -238,7 +238,7 @@ def resolve_timeout(context: dict[str, Any]) -> int:
     if value <= 0:
         raise ExecutorError(
             f"timeout de ejecutor inválido en {source}: {raw!r}. Debe ser un "
-            "entero de segundos > 0 — FORENSIA no lo sustituye por el default "
+            "entero de segundos > 0 — Agentopsy no lo sustituye por el default "
             "(RULE 2)."
         )
     return value
@@ -306,7 +306,7 @@ class CliPromptExecutor(PromptExecutor):
         ``model`` is the operator-selected model id (already validated by
         ``run``): when set, the subclass appends the CLI's model flag; when
         ``None`` it appends nothing, so the CLI uses its own configured model —
-        FORENSIA never invents one (RULE 2)."""
+        Agentopsy never invents one (RULE 2)."""
 
     def suggested_models(self) -> list[str]:
         """Model-id shortcuts the composer's picker offers for this CLI.
@@ -342,7 +342,7 @@ class CliPromptExecutor(PromptExecutor):
             raise ExecutorError(availability.reason or f"{self.id} is not available")
 
         # Operator-selected model (optional). Absent → the CLI's own default
-        # (RULE 2: FORENSIA does not invent one). Present → validated so it can
+        # (RULE 2: Agentopsy does not invent one). Present → validated so it can
         # never masquerade as a CLI flag before it reaches argv (SECURITY 5).
         model = ctx.get("model")
         if isinstance(model, str):

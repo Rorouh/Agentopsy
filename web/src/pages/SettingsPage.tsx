@@ -51,7 +51,7 @@ const KEY_LABELS: Record<Exclude<EditableKey, "DEFAULT_EXECUTOR">, string> = {
 };
 
 const CLOUD_MODEL_HINT =
-  "Id que se pasa al CLI como --model (p. ej. opus, gpt-5.5). FORENSIA no puede enumerar el catálogo sin API key (SECURITY 7); déjalo vacío para usar el modelo por defecto del CLI. También se elige desde el chat.";
+  "Id que se pasa al CLI como --model (p. ej. opus, gpt-5.5). Agentopsy no puede enumerar el catálogo sin API key (SECURITY 7); déjalo vacío para usar el modelo por defecto del CLI. También se elige desde el chat.";
 
 const KEY_HINTS: Record<Exclude<EditableKey, "DEFAULT_EXECUTOR">, string> = {
   OLLAMA_HOST:
@@ -141,7 +141,7 @@ export function SettingsPage({ caps, version, onNavigate, onCapsRefresh }: Setti
     <div>
       <PageHeader
         title="Configuración"
-        subtitle="Ejecutores de IA, datos del operador, apariencia y diagnóstico del stack. FORENSIA no guarda ningún secreto: no hay API keys en ninguna parte."
+        subtitle="Ejecutores de IA, datos del operador, apariencia y diagnóstico del stack. Agentopsy no guarda ningún secreto: no hay API keys en ninguna parte."
       />
 
       <div className="settings-tabs" role="tablist" aria-label="Secciones de configuración">
@@ -273,7 +273,7 @@ export function SettingsPage({ caps, version, onNavigate, onCapsRefresh }: Setti
                   </select>
                   <span className="field-hint">
                     Opcional. Si no lo fijas, cada consulta exige elegir ejecutor (RULE 2:
-                    FORENSIA nunca elige uno por ti). Los no disponibles muestran su razón al
+                    Agentopsy nunca elige uno por ti). Los no disponibles muestran su razón al
                     pasar el cursor.
                   </span>
                   {savedKey === "DEFAULT_EXECUTOR" && (

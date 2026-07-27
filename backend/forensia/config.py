@@ -33,7 +33,7 @@ class Config:
             raise KeyError(
                 f"Required config '{key}' is not set. "
                 f"Set env {key.upper()} or add it to {CONFIG_FILE}. "
-                f"FORENSIA does not fall back to a default (see CLAUDE.md RULE 2)."
+                f"Agentopsy does not fall back to a default (see CLAUDE.md RULE 2)."
             )
         return value
 

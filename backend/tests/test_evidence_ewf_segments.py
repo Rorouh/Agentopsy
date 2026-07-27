@@ -269,7 +269,7 @@ class TestLoneFirstSegment:
 class TestSingleFileNoRegression:
     def test_raw_file_has_no_segments_and_same_shape(self, manager, case, tmp_path):
         src = tmp_path / "disk.raw"
-        payload = b"FORENSIA-EVIDENCE-PAYLOAD-12345"
+        payload = b"Agentopsy-EVIDENCE-PAYLOAD-12345"
         src.write_bytes(payload)
 
         handle = manager.register(case.id, str(src))

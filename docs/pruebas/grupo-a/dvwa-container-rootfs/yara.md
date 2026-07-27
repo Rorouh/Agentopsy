@@ -38,7 +38,7 @@ argv = yara /…/dvwa.yar <img>   →   exit 0, run 177b21da
 
 - **Eficaz**: matching por regla con salida parseada (rule + target). Escalable a rulesets
   reales (signature-base / Yara-Rules) para cazar webshells/malware/persistencia.
-- **El caller aporta las reglas**: FORENSIA no inyecta `rules_path` (no es la evidencia) — hay
+- **El caller aporta las reglas**: Agentopsy no inyecta `rules_path` (no es la evidencia) — hay
   que darle el path del `.yar` (como `jq` con su `input_path`).
 - **Dirígelo a ficheros extraídos** (webshells en `/var/www`, binarios sospechosos) más que a
   la imagen entera cuando puedas — más rápido y con menos ruido; usa `recursive` sobre un dir.

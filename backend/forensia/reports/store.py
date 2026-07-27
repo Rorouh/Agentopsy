@@ -184,7 +184,7 @@ class DocumentStore:
             raise ValueError("document.evidence_id must be a string or null")
         sections = _validate_sections(data.get("sections"))
         version = str(data.get("version") or "v0.1").strip()
-        author = str(data.get("author") or "").strip() or "FORENSIA agent"
+        author = str(data.get("author") or "").strip() or "Agentopsy agent"
 
         content = {
             "title": title, "type": doc_type, "evidence_id": evidence_id,

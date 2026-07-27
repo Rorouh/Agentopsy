@@ -41,7 +41,7 @@ def case(cases):
 @pytest.fixture
 def known_file(tmp_path):
     src = tmp_path / "disk.raw"
-    payload = b"FORENSIA-EVIDENCE-PAYLOAD-12345" * 40
+    payload = b"Agentopsy-EVIDENCE-PAYLOAD-12345" * 40
     src.write_bytes(payload)
     return src, payload, hashlib.sha256(payload).hexdigest()
 
@@ -144,7 +144,7 @@ class TestCustodyAct:
         assert acta["read_only"]["level"] == "fs"
 
         # Tool identity.
-        assert acta["tool"]["name"] == "FORENSIA"
+        assert acta["tool"]["name"] == "Agentopsy"
         assert acta["tool"]["version"]
 
         # Chain of custody: the register event's entry_hash is a real 64-hex

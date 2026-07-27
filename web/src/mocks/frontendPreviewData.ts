@@ -137,7 +137,7 @@ export const mockFindings: InvestigationFinding[] = [
 
 export const guideSteps: GuideStep[] = [
   { step: 1, title: "Crear caso / repositorio", description: "Registra un nuevo caso y define el examinador responsable antes de tocar evidencia." },
-  { step: 2, title: "Registrar evidencia", description: "Sube la imagen forense o el volcado de memoria; FORENSIA calcula el hash baseline y lo deja en solo lectura." },
+  { step: 2, title: "Registrar evidencia", description: "Sube la imagen forense o el volcado de memoria; Agentopsy calcula el hash baseline y lo deja en solo lectura." },
   { step: 3, title: "Investigar con el agente", description: "Conversa con el agente de IA, que ejecuta el maletín de herramientas forenses sobre la evidencia verificada." },
   { step: 4, title: "Revisar el timeline", description: "Reconstruye la secuencia de eventos detectados por las distintas herramientas, ordenados cronológicamente." },
   { step: 5, title: "Visualizar documentos/reportes", description: "Consulta los informes generados, con su metadata de integridad (hash, fecha, evidencia de origen)." },

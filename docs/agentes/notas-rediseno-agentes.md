@@ -26,12 +26,12 @@ libertad para el perito, menos prompt masivo, ejecución más dirigida.
 
 ## 1. `identity.md` — pulir
 
-Partir de esta base (FORENSIA-UNIX) e ir refinando:
+Partir de esta base (Agentopsy-UNIX) e ir refinando:
 
 - **Identidad:** analista forense post-mortem especializada en UNIX/Linux y macOS.
   Tono profesional, pausado, preciso, en español. Sin emojis. Nunca promete lo que
   no puede ejecutar.
-- **Mensaje de presentación** (primer turno del chat): se presenta como FORENSIA-UNIX,
+- **Mensaje de presentación** (primer turno del chat): se presenta como Agentopsy-UNIX,
   agente forense post-mortem para imágenes Linux/macOS; trabaja en solo lectura sobre
   la evidencia ya registrada y verificada; pide qué reconstruir (accesos, persistencia,
   ejecución, exfiltración, ventana temporal) o propone un barrido inicial con plan.
@@ -149,8 +149,8 @@ tocar el backend.
   `stdin=DEVNULL`), NO la causa. El `exit 1` real viene de un **fallo del turno que Codex
   reporta como evento JSONL en STDOUT**: `{"type":"error","message":"…"}`. En la repro fue
   un **límite de uso de la cuenta** (`"You've hit your usage limit… try again at Jul 19th"`)
-  — una condición de cuenta, no un bug de FORENSIA.
-- **El bug de FORENSIA (arreglado):** el manejo de exit≠0 solo mostraba el `stderr` (el
+  — una condición de cuenta, no un bug de Agentopsy.
+- **El bug de Agentopsy (arreglado):** el manejo de exit≠0 solo mostraba el `stderr` (el
   mensaje de stdin, ruido), ocultando la causa real del stdout. Además, como el turno falla,
   el `--output-last-message` queda vacío y el `_extract_text` viejo daba *"Codex CLI no
   escribió el fichero…"* — críptico. **Arreglo:** nuevo hook `_extract_error(stdout, stderr)`
@@ -340,7 +340,7 @@ vez:
 - **`EvidenceManager` es el único dueño de la evidencia** (FORENSIC INVARIANT 1). Ningún
   tool ni agente toca un path `.raw`/`.vmdk`/dump directamente; piden un **handle**
   hash-verificado y read-only a nivel de bloque. El `image_path` que ve un wrapper lo
-  **inyecta FORENSIA** desde el handle del caso — el LLM no lo pone.
+  **inyecta Agentopsy** desde el handle del caso — el LLM no lo pone.
 - **El LLM emite un id de tool de enum cerrado + params tipados, nunca una cadena de
   comando ni un path** (SECURITY INVARIANT 5). El backend resuelve el argv real desde un
   allowlist. Un path arbitrario del modelo no tiene por dónde entrar.
@@ -468,7 +468,7 @@ por esto**.
 
 - El coste no es *leer* la entrada (pequeña; además el windowing de `context.py:47-56`
   la elide a stub tras `K=4` turnos). El coste es el **round-trip extra**: el ejecutor es
-  stateless y FORENSIA reenvía el transcript entero cada iteración (`context.py:4-8`), así
+  stateless y Agentopsy reenvía el transcript entero cada iteración (`context.py:4-8`), así
   que cada consulta re-shippea todo el contexto una vez más (~5-8k tok de input) — O(N²)
   sobre el caso.
 - **Bien diseñada** (consulta rara/condicional, filtrada en backend a 1-5 filas, que evita
@@ -506,7 +506,7 @@ por esto**.
   enrutado (coherente con cómo `os_profile` unknown/low-confidence escala al operador).
 - **Alcance:** ~~por caso~~ **GLOBAL de producto** — decisión del perito (2026-07-17), ver
   **§5.ter**. La recomendación previa de «por caso» queda **anulada**: no cumple el objetivo
-  de que *FORENSIA entera* sea más inteligente. El riesgo de envenenamiento que motivaba «por
+  de que *Agentopsy entera* sea más inteligente. El riesgo de envenenamiento que motivaba «por
   caso» se resuelve haciendo el store global **contenido-independiente y de aprendizaje
   ADITIVO** (solo aprende recuperaciones que funcionan, nunca «evita X» — §5.ter/§5.quater),
   no aislándolo por caso.
@@ -539,10 +539,10 @@ están hechos — la bitácora es el siguiente paso natural.)*
 ### 5.ter — Decisión de alcance (perito, 2026-07-17): la bitácora es GLOBAL de producto, no per-usuario
 
 **Corrección** a la duda de alcance de §5 y a la recomendación «por caso» de §5.bis-B. La
-bitácora es para **FORENSIA entera**: un **activo del producto** que se versiona en el repo
+bitácora es para **Agentopsy entera**: un **activo del producto** que se versiona en el repo
 y viaja en la imagen (RULE 1), para que **cada despliegue sea más inteligente** con el
 tiempo. NO es estado que cada usuario acumula por separado en su máquina, ni un store
-per-caso aislado. El objetivo es que *FORENSIA aprenda* qué le funciona y qué no, y ese
+per-caso aislado. El objetivo es que *Agentopsy aprenda* qué le funciona y qué no, y ese
 aprendizaje beneficie a todos, no solo al caso en curso.
 
 **Qué guarda: heurísticas GENERALES de herramienta**, independientes del contenido de una
@@ -562,7 +562,7 @@ recuperaciones que FUNCIONAN**, nunca evitaciones:
   Captura el disparador (el fallo) **y** el remedio (lo que funciona), pero **solo puede
   AÑADIR un paso válido, jamás quitar una herramienta**.
 - Consecuencia clave: un fallo sembrado **sin** recuperación válida **no genera lección** —
-  FORENSIA se comporta como hoy (lo intenta). **Nunca aprende a dejar de mirar** → imposible
+  Agentopsy se comporta como hoy (lo intenta). **Nunca aprende a dejar de mirar** → imposible
   de cegar. (Bugs 4 y 5 SON justo esta forma: «vmdk + fls-raw falla → desencapsular qemu →
   funciona».)
 - Se consolida **sola, por corroboración**: una regla se activa cuando la misma firma
@@ -589,7 +589,7 @@ lecciones generales de herramienta/formato**, jamás nada derivado de una eviden
   observación de runtime *dispara* la lección; no la copia tal cual.
 
 En una frase: **conocimiento de producto que crece de forma autónoma** (por corroboración de
-lo que FORENSIA observa que funciona), **sin datos sensibles ni de casos**, y **sin revisión
+lo que Agentopsy observa que funciona), **sin datos sensibles ni de casos**, y **sin revisión
 humana por entrada**. Lo demás de §5.bis sigue en pie: **inyectar, no consultar por turno**
 (A, eficiencia), y **advisory, sin auto-skip** (B, rigor). Dónde vive: un fichero versionado
 del repo servido como `knowledge/` (candidato:
@@ -598,7 +598,7 @@ horneado en la imagen — pendiente de decidir formato en implementación.
 
 ### 5.quater — Convergencia: que aprenda sin crecer sin fin ni inundarnos (perito, 2026-07-17)
 
-Riesgo que plantea el perito: si FORENSIA «sigue aprendiendo y mandándonos info», ¿converge
+Riesgo que plantea el perito: si Agentopsy «sigue aprendiendo y mandándonos info», ¿converge
 o crece/spamea sin parar? **Converge por construcción**, con cuatro piezas:
 
 1. **Firma canónica, no stderr crudo.** Cada observación se normaliza a una CLAVE
@@ -621,9 +621,9 @@ o crece/spamea sin parar? **Converge por construcción**, con cuatro piezas:
    de la firma, no del contenido). Un fallo/acierto puntual no genera ruido; solo patrones
    robustos y repetidos suben.
 
-**Cómo el aprendizaje es «global» sin phone-home (opción B, decisión del perito).** FORENSIA
+**Cómo el aprendizaje es «global» sin phone-home (opción B, decisión del perito).** Agentopsy
 no hace llamadas de salida (SECURITY INVARIANT 7): un despliegue de cliente **no manda
-nada**. Modelo: (1) FORENSIA viaja con una **semilla** de reglas consolidadas en el repo, así
+nada**. Modelo: (1) Agentopsy viaja con una **semilla** de reglas consolidadas en el repo, así
 cada instalación arranca lista; (2) **cada despliegue sigue aprendiendo solo** encima, local;
 (3) en los despliegues de **desarrollo/prueba del propio equipo**, las reglas de alta
 confianza se **vuelcan mecánicamente al repo** (fichero → repo) al preparar cada versión — no

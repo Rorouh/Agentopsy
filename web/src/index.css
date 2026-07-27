@@ -2184,7 +2184,7 @@ details.agent-activity > summary::-webkit-details-marker { display: none; }
   background: var(--accent-bg); color: var(--accent-text);
 }
 
-/* Ribbon de fases — agrupación editorial de FORENSIA, no de ATT&CK. */
+/* Ribbon de fases — agrupación editorial de Agentopsy, no de ATT&CK. */
 .mitre-ribbon { display: flex; align-items: stretch; flex-wrap: wrap; }
 .mitre-phase-wrap { display: flex; align-items: center; }
 .mitre-phase {

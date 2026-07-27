@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 # =============================================================================
-# FORENSIA — imagen del servicio `web`
+# Agentopsy — imagen del servicio `web`
 #
 # Multi-stage: node compila la SPA React de web/ (typecheck incluido) y nginx
 # sirve dist/ proxificando /api y /ws hacia el servicio `api` por la red

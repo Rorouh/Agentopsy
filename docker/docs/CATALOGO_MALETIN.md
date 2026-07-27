@@ -1,4 +1,4 @@
-# Catálogo del maletín forense — FORENSIA
+# Catálogo del maletín forense — Agentopsy
 
 Inventario de herramientas contenedorizadas, agrupadas como en el documento de
 alcance (sección 4.3). Todas son CLI gratuitas. Los contenedores son **Linux**;
@@ -167,7 +167,7 @@ pinneados como `ARG *_SHA256` en el Dockerfile (el build falla en claro si el
 CDN publica una versión nueva — re-pinnear, igual que hayabusa/chainsaw).
 
 > **Fuera de alcance — adquisición:** `KAPE.exe` y los *Targets* (recolección)
-> NO se incluyen: son adquisición en vivo y FORENSIA es post-mortem; solo
+> NO se incluyen: son adquisición en vivo y Agentopsy es post-mortem; solo
 > entran los parsers que consumen artefactos ya extraídos.
 >
 > **Excluidas por plataforma (verificado 2026-07-07, build 2026.5.0):**

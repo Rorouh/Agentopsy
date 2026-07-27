@@ -1,4 +1,4 @@
-"""FORENSIA's MCP server — `mcp-toolkit` (S1).
+"""Agentopsy's MCP server — `mcp-toolkit` (S1).
 
 This package implements the first MCP server in the inventory: a single
 in-process / standalone server that exposes the curated maletín

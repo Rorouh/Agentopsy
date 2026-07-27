@@ -26,7 +26,7 @@ def build_argv(params: dict[str, Any]) -> list[str]:
     """Compose argv for foremost.
 
     params:
-        image_path (str, required): raw image to carve. Injected by FORENSIA.
+        image_path (str, required): raw image to carve. Injected by Agentopsy.
         output_dir (str, required): run dir injected by the dispatcher. We carve into
             ``<output_dir>/foremost`` (fresh; foremost refuses an existing dir).
         types (list[str], optional): foremost type names to carve (default: all).

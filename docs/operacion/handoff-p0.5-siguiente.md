@@ -49,7 +49,7 @@ Léete `CLAUDE.md` completo primero — esto es solo el resumen operativo:
 
 ---
 
-## 1. Qué es FORENSIA (contexto mínimo si es tu primera vez aquí)
+## 1. Qué es Agentopsy (contexto mínimo si es tu primera vez aquí)
 
 Herramienta pericial forense **post-mortem**, self-hosted vía `docker compose up --build`
 (5 servicios: `web`, `api`, `ollama`, `toolkit-windows`, `toolkit-unix`). Un

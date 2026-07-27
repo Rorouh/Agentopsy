@@ -14,7 +14,7 @@ Esperaba que dijera *"ext4 filesystem"* con algún metadato (UUID, volumen, feat
 ## Cómo la usé (params + porqué + argv real)
 
 El wrapper (`backend/forensia/toolkit/wrappers/file_info.py`) expone:
-- `image_path` (req.) — lo inyecta FORENSIA.
+- `image_path` (req.) — lo inyecta Agentopsy.
 - `also_mime` (bool) — añade info MIME. Flags permitidos: `-b -i -z -L --brief --mime`.
 
 Probé **las dos pasadas** para exprimirla y comparar:

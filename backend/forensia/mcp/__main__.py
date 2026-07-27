@@ -41,7 +41,7 @@ def _consent_or_die() -> str:
     consent = os.environ.get("FORENSIA_CLOUD_CONSENT", "").strip()
     if not consent:
         sys.stderr.write(
-            "FORENSIA MCP server refusing to start: missing FORENSIA_CLOUD_CONSENT.\n"
+            "Agentopsy MCP server refusing to start: missing FORENSIA_CLOUD_CONSENT.\n"
             "If this server will be reached by a cloud MCP client (Claude Desktop,\n"
             "Continue, Cline, ...), set FORENSIA_CLOUD_CONSENT=<client-name>; that\n"
             "value is recorded in the audit log of every case touched during the\n"
@@ -163,7 +163,7 @@ def _force_exit() -> None:
     job, and it ran before we get here unless the loop itself is stuck).
     """
     sys.stderr.write(
-        "FORENSIA MCP server: forced exit after shutdown timeout. The "
+        "Agentopsy MCP server: forced exit after shutdown timeout. The "
         "stdio_server stdin reader did not unwind cooperatively.\n"
     )
     os._exit(0)

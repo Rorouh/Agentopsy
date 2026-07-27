@@ -2,7 +2,7 @@
 
 On Windows, ``os.symlink`` needs the ``SeCreateSymbolicLinkPrivilege`` — absent
 for a non-admin account without Developer Mode, where it raises
-``OSError [WinError 1314]``. The affected tests assert how FORENSIA handles
+``OSError [WinError 1314]``. The affected tests assert how Agentopsy handles
 symlinks (evidence rejects them, artifact finalize + evidence-sources skip
 them); they need a real symlink to exist. Rather than weaken those assertions,
 we skip them ONLY on hosts that cannot create a symlink at all — on Linux/CI

@@ -156,7 +156,7 @@ def build_server(consent_ref: str) -> tuple[Server, Lifecycle]:
                 types.Tool(
                     name=tool_id,
                     description=(params_schema.__doc__ or "").strip()
-                    or f"FORENSIA forensic tool {tool_id!r} (see catalog.py)",
+                    or f"Agentopsy forensic tool {tool_id!r} (see catalog.py)",
                     inputSchema=_pydantic_to_json_schema(params_schema),
                 )
             )

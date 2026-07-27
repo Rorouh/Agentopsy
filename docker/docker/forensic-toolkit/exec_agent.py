@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""FORENSIA exec-agent — el canal api→maletín (§B, sin socket de Docker).
+"""Agentopsy exec-agent — el canal api→maletín (§B, sin socket de Docker).
 
 Corre DENTRO de cada maletín (`toolkit-unix` / `toolkit-windows`) y expone un HTTP
 mínimo en la red interna del compose. El servicio `api` lo llama para consultar y

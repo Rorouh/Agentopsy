@@ -2,7 +2,7 @@
 
 Esta carpeta es el punto de entrega de los **paquetes de agente entrenado**. El equipo
 que entrena el agente forense (system prompt, persona, playbook, allowlist de tools,
-políticas de redacción) deja aquí su carpeta y FORENSIA la descubre al arrancar.
+políticas de redacción) deja aquí su carpeta y Agentopsy la descubre al arrancar.
 
 > Convención: una sola carpeta por agente. **Un único agente por `os_profile`**
 > (`unix` / `windows`). Si la registry encuentra dos agentes declarando el mismo
@@ -51,11 +51,11 @@ Nada de código Python del entrenador. Todo el loop de razonamiento lo ejecuta
 
 ```yaml
 id: forensia-unix            # kebab-case, único dentro de agentes/
-name: "FORENSIA-UNIX · Analista forense post-mortem (Linux/macOS)"
+name: "Agentopsy-UNIX · Analista forense post-mortem (Linux/macOS)"
 version: "0.1.0"             # semver
 os_profile: unix             # unix | windows  (UN agente por os_profile)
 authors:                     # equipo de entrenamiento — NO atribución a IA
-  - "FORENSIA Team"
+  - "Agentopsy Team"
 
 model:
   # SIN `backend`: el ejecutor (Claude Code | Codex CLI | Gemini CLI | Ollama)
@@ -125,7 +125,7 @@ patterns:
 
 ---
 
-## Cómo lo descubre FORENSIA
+## Cómo lo descubre Agentopsy
 
 1. El servicio `api` arranca y `forensia.agent.registry.AgentRegistry` escanea esta
    carpeta (el compose la monta en solo lectura en `/opt/forensia/agentes` y fija

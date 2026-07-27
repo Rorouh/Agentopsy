@@ -1,6 +1,6 @@
-# FORENSIA — Inventario de MCPs (núcleo del TFM)
+# Agentopsy — Inventario de MCPs (núcleo del TFM)
 
-Catálogo de **servidores MCP** que FORENSIA expone para que el agente — y, opcionalmente, un
+Catálogo de **servidores MCP** que Agentopsy expone para que el agente — y, opcionalmente, un
 cliente externo — opere el maletín forense, consulte conocimiento y emita el informe a través
 de un protocolo único. Mirroreado en estructura con
 [`docs/maletin/inventario-tools.md`](inventario-tools.md): este documento es la lista larga; la
@@ -14,12 +14,12 @@ está ahí — ver [`mcp-toolkit-s1.md`](mcp-toolkit-s1.md)).
 > `main` el 2026-06-29 para sostenerla.
 
 > Inventario construido el 2026-06-29 a partir de un panel de 4 perspectivas en paralelo
-> (arquitecto MCP, perito DFIR, ingeniería de FORENSIA, knowledge / threat-intel). Los
+> (arquitecto MCP, perito DFIR, ingeniería de Agentopsy, knowledge / threat-intel). Los
 > desacuerdos del panel y cómo se resolvieron están en §8.
 
 ---
 
-## 1. Arquitectura de despliegue (cómo viven los MCPs en FORENSIA)
+## 1. Arquitectura de despliegue (cómo viven los MCPs en Agentopsy)
 
 ```
         ┌──── UI web (React) ──── HTTP + token de sesión ────► api (FastAPI) ───┐
@@ -171,7 +171,7 @@ memoria.
 
 ## 7. El MCP número 1 — `mcp-toolkit`
 
-Si FORENSIA solo pudiese tener **un** servidor MCP, sería `mcp-toolkit`. Tres argumentos
+Si Agentopsy solo pudiese tener **un** servidor MCP, sería `mcp-toolkit`. Tres argumentos
 que el panel coincidió (excepto el de knowledge, que vota por `mcp-mitre-attack` — ver §8):
 
 1. **Coste mínimo, señal máxima.** El `dispatcher` ya es shell-free, allowlisted,
@@ -182,7 +182,7 @@ que el panel coincidió (excepto el de knowledge, que vota por `mcp-mitre-attack
 2. **Es el reframing que pide el supervisor.** "MCP es el núcleo" no se sostiene con
    knowledge MCPs por sí solos — al evaluador hay que poder mostrarle que **el agente
    habla con el maletín forense vía MCP**, y que un cliente MCP externo arbitrario
-   (Claude Desktop, Continue.dev) puede operar el maletín FORENSIA sin saber nada
+   (Claude Desktop, Continue.dev) puede operar el maletín Agentopsy sin saber nada
    internamente del proyecto. Eso es `mcp-toolkit` con su stdio externo opcional.
 
 3. **Habilita a los demás MCPs.** `mcp-evidence`, `mcp-cases`, `mcp-audit`,
@@ -252,7 +252,7 @@ primero "el agente opera por protocolo", luego "el agente razona con KB por prot
 | S3 | `mcp-mitre-attack` (P0) — bundle ATT&CK Enterprise + cliente MCP en el orquestador | 1 | Pendiente. El informe cita técnicas + sub-técnicas + data sources del bundle, no del prompt. ~30 MB bundleados. |
 | S4 | `mcp-cases` (P1) + `mcp-audit` (P1) + `mcp-artifact-playbooks` (P1) + `mcp-yara-rules` (P1) + `mcp-sigma-rules` (P1) | 3 (paralelo) | Pendiente. Conocimiento + custodia accesibles vía protocolo en toda la app. |
 | S5 | `mcp-timeline` (P0 conceptual / P1 real — después de `forensia.timeline` nativo) | 2 | Pendiente. Timeline correlacionada por protocolo; consultable por ventana ± delta. |
-| S6 (cierre) | `mcp-report` (P2) + cliente demo finalizado (Claude Desktop / Continue) | 2 | Pendiente. Cliente MCP externo opera el maletín sin código FORENSIA propio — demo estrella del TFM. |
+| S6 (cierre) | `mcp-report` (P2) + cliente demo finalizado (Claude Desktop / Continue) | 2 | Pendiente. Cliente MCP externo opera el maletín sin código Agentopsy propio — demo estrella del TFM. |
 | Posterior | `mcp-cve-cpe-local`, `mcp-hash-reputation-local`, `mcp-ioc-local` (P2) + `mcp-vt-cloud`/`mcp-otx-cloud` (P3 opt-in) | — | Enriquecimiento offline + opcionales online con consent. |
 
 Reparto entre 6 personas (alineado con el email del 2026-06-24):

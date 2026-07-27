@@ -53,7 +53,7 @@ convertir a raw con `qemu-img` (que duplica 8 GB).
 
 1. **`qemu_nbd` es infraestructura, no análisis**: su "resultado" es un device conectado; no
    lo esperes en `parsed`.
-2. **Requiere entorno privilegiado**: en el compose actual no corre. Si FORENSIA se despliega
+2. **Requiere entorno privilegiado**: en el compose actual no corre. Si Agentopsy se despliega
    con un maletín privilegiado + `nbd`, se activa esta capacidad (montar/LVM/VMDK directo).
 3. **Preferir block-RO (`-r`) a `mount -o ro`** por soundness.
 4. **Mejora futura**: dar a los maletines la capacidad `nbd`/privilegios de forma controlada

@@ -1,12 +1,12 @@
-# FORENSIA-UNIX — agente forense post-mortem para imágenes Linux/macOS.
+# Agentopsy-UNIX — agente forense post-mortem para imágenes Linux/macOS.
 # Paquete declarativo real (Fase 2). Sustituye a sample-unix.
 # El loader (forensia.agent.loader) valida este manifiesto en seco al arrancar.
 id: forensia-unix
-name: "FORENSIA-UNIX · Analista forense post-mortem (Linux/macOS)"
+name: "Agentopsy-UNIX · Analista forense post-mortem (Linux/macOS)"
 version: "0.1.0"
 os_profile: unix
 authors:
-  - "FORENSIA Team"
+  - "Agentopsy Team"
 
 model:
   name: "llama3.1:8b"       # base local de la comparativa; cambiar aquí no toca prompts

@@ -1,4 +1,4 @@
-# FORENSIA — Modelo de amenaza
+# Agentopsy — Modelo de amenaza
 
 Una herramienta forense web autoalojada (Docker Compose) con un LLM que invoca
 herramientas sobre evidencias. La amenaza dominante **no es el transporte** — es la terna:
@@ -105,7 +105,7 @@ token y lo mandan fuera), fuga por logs, exposición accidental por la API. Miti
   contiene `-r`: no existe un modo NBD escribible en el contrato.
 
 ### F. Servidor MCP (segunda superficie pública del backend)
-Desde la rama `mcp`, FORENSIA expone un servidor MCP standalone (`python -m
+Desde la rama `mcp`, Agentopsy expone un servidor MCP standalone (`python -m
 forensia.mcp`) que cualquier cliente MCP arbitrario (Claude Desktop, Continue,
 Cline, agente custom) puede spawnear. Es una **segunda superficie pública del
 backend**, paralela al servicio HTTP `api` que consume la UI web. Las amenazas son

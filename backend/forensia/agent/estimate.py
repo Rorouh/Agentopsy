@@ -25,7 +25,7 @@ How the estimate is grounded (the ``basis`` axis, per quantity):
   subscription the marginal cost may well be 0, which the disclaimer states.
 
 A missing/invalid ``executor_id`` fails loud (``ValueError`` → 422 at the
-router): FORENSIA never guesses "the local one" (RULE 2).
+router): Agentopsy never guesses "the local one" (RULE 2).
 """
 
 from __future__ import annotations
@@ -117,7 +117,7 @@ def estimate_analysis(
 
     Ranges for iterations, tokens, monetary cost and time, each tagged with the
     ``basis`` it rests on. ``executor_id`` is REQUIRED and validated against the
-    closed enum — an unknown id raises ``ValueError`` (FORENSIA never substitutes
+    closed enum — an unknown id raises ``ValueError`` (Agentopsy never substitutes
     a default, RULE 2). Unknown ``case_id`` / ``evidence_id`` raise ``KeyError``;
     a malformed one raises ``ValueError`` (the router maps these to 404 / 422).
     """
@@ -281,7 +281,7 @@ def _estimate_cost(
             "tariff": None,
             "note": (
                 f"No hay tarifa pública configurada para el ejecutor '{executor_id}'. "
-                "El coste depende del plan/tarifa del proveedor; FORENSIA no inventa "
+                "El coste depende del plan/tarifa del proveedor; Agentopsy no inventa "
                 "un precio (RULE 2)."
             ),
         }

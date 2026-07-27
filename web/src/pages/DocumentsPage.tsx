@@ -544,7 +544,7 @@ export function DocumentsPage() {
 
                 <div className="docs-signfoot">
                   <span>
-                    Generado por FORENSIA · {selectedDoc.status === "final" ? "Firmado" : "Borrador"} ·{" "}
+                    Generado por Agentopsy · {selectedDoc.status === "final" ? "Firmado" : "Borrador"} ·{" "}
                     {fmtDate(selectedDoc.created_at)}
                   </span>
                   <span className="docs-mono">SHA-256 {shortHash(selectedDoc.sha256)}</span>

@@ -66,7 +66,7 @@ TASKS = {
 }
 
 # En MODO AUTÓNOMO se antepone este override: el CLI ejecuta las herramientas él
-# mismo (a diferencia del contrato FORENSIA, que asume el motor). Solo para
+# mismo (a diferencia del contrato Agentopsy, que asume el motor). Solo para
 # laboratorio, sobre una COPIA y con imágenes públicas (LoneWolf).
 # NOTA: se usa una variable _BAR + f-strings a propósito. Escribir "...\n" "=" * 78
 # concatena los literales adyacentes ANTES de multiplicar y repite todo x78 (bug).
@@ -76,7 +76,7 @@ AUTONOMOUS_OVERRIDE = (
     "MODO AUTÓNOMO DE LABORATORIO — LEE ESTO PRIMERO (tiene prioridad):\n"
     f"{_BAR}\n"
     "A DIFERENCIA de la regla 1 de las reglas de sistema de abajo (que asume el motor\n"
-    "FORENSIA y te prohíbe ejecutar comandos), en ESTA prueba de laboratorio TÚ tienes\n"
+    "Agentopsy y te prohíbe ejecutar comandos), en ESTA prueba de laboratorio TÚ tienes\n"
     "las herramientas instaladas (Volatility 3 como `vol`, y si aplica The Sleuth Kit)\n"
     "y acceso de shell. DEBES ejecutarlas tú mismo, en SOLO LECTURA, sobre la evidencia\n"
     "indicada, e interpretar sus salidas.\n\n"
@@ -102,7 +102,7 @@ def build_prompt(ev_type: str, evidence: str, mode: str = "forensia") -> str:
     override = AUTONOMOUS_OVERRIDE if mode == "autonomous" else ""
     parts = [
         "=" * 78,
-        "INSTRUCCIONES DEL AGENTE (FORENSIA-WIN) — compórtate según ellas:",
+        "INSTRUCCIONES DEL AGENTE (Agentopsy-WIN) — compórtate según ellas:",
         "=" * 78,
         "\n## IDENTIDAD\n" + read(PROMPTS / "identity.md").strip(),
         "\n## REGLAS DE SISTEMA\n" + read(PROMPTS / "system.md").strip(),
@@ -195,7 +195,7 @@ def main() -> None:
     exe = shutil.which(argv[0])
     if exe is None:
         msg = f"ERROR: '{argv[0]}' no está en PATH. Instálalo o corrige su argv en motors.yaml."
-        out.write_text(f"# Investigación FORENSIA-WIN\n- motor: {args.motor}\n\n{msg}\n",
+        out.write_text(f"# Investigación Agentopsy-WIN\n- motor: {args.motor}\n\n{msg}\n",
                        encoding="utf-8")
         sys.exit(msg)
     if exe.lower().endswith((".cmd", ".bat")):
@@ -233,7 +233,7 @@ def main() -> None:
     elapsed_h = str(_dt.timedelta(seconds=round(elapsed_s)))
 
     header = (
-        f"# Investigación FORENSIA-WIN\n"
+        f"# Investigación Agentopsy-WIN\n"
         f"- motor: {args.motor}\n- modelo: {args.model or motor.get('default_model','')}\n"
         f"- evidencia: {args.evidence}\n- tipo: {args.type or 'prompt-file'}\n"
         f"- cwd: {workdir}\n- comando: {argv}\n- fecha: {ts}\n"

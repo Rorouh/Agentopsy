@@ -1,6 +1,6 @@
 # `tools/graph/` — Grafo de conocimiento del repo con graphify
 
-Herramienta **de desarrollo** (no de producto) para convertir el código de FORENSIA
+Herramienta **de desarrollo** (no de producto) para convertir el código de Agentopsy
 en un **grafo de conocimiento** consultable: sirve para navegar la arquitectura, dar
 contexto a asistentes/agentes en chats nuevos, y ver qué conecta con qué sin leer
 todos los ficheros.

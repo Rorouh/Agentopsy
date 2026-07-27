@@ -34,7 +34,7 @@ El `parse` devuelve los hashes **estructurados** (no texto crudo). Queda en el `
 hashdeep -c md5,sha1,sha256 <img>
 → 1189085184, md5=5038e35c…, sha1=68f0ab16…, sha256=d9d08eab…
 ```
-El **SHA-256 coincide EXACTO** con el baseline que FORENSIA registró al ingerir la evidencia
+El **SHA-256 coincide EXACTO** con el baseline que Agentopsy registró al ingerir la evidencia
 (`d9d08eabe8008bccc1c6252364fff6c5f2685257f727d12e2dfa2bdda609f8f9`). → **verificación de
 integridad independiente** de la cadena de custodia. Y aporta MD5/SHA-1 que el baseline no
 tiene (útil para cotejar con sets antiguos MD5).
@@ -56,7 +56,7 @@ cada uno con su MD5 + SHA-256 — el set que iría al informe.
 1. **hashdeep hashea FICHEROS, no una imagen de disco por dentro**: sobre la imagen cruda da
    el hash del fichero-imagen (útil para integridad). Para hashear ficheros del sistema,
    extráelos antes (`tsk_icat`) o trabaja sobre un montaje/derivados.
-2. **Úsalo para cerrar la cadena de custodia**: coteja su SHA-256 con el baseline de FORENSIA;
+2. **Úsalo para cerrar la cadena de custodia**: coteja su SHA-256 con el baseline de Agentopsy;
    si difieren, la evidencia se alteró.
 3. **El oro está en el modo audit** (`-a -k NSRL`): en un disco real, filtra los miles de
    ficheros conocidos del SO y deja solo los desconocidos (candidatos a malware/artefactos).
@@ -66,5 +66,5 @@ cada uno con su MD5 + SHA-256 — el set que iría al informe.
 
 ## Registro en el caso
 
-- **Finding:** `a28a818a` — "Integridad verificada por hashdeep: SHA-256 == baseline FORENSIA" (low).
+- **Finding:** `a28a818a` — "Integridad verificada por hashdeep: SHA-256 == baseline Agentopsy" (low).
 - **Evidencia recopilada:** [`hashdeep/hashes.txt`](hashdeep/hashes.txt) (hashes de la imagen + set de los ficheros extraídos).

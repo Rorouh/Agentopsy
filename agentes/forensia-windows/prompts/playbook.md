@@ -1,4 +1,4 @@
-# Playbook — FORENSIA-WIN
+# Playbook — Agentopsy-WIN
 
 Heurística forense por tipo de evidencia. **No es un script**: es lo que un analista
 humano probaría primero. El perito dirige; libertad en **qué** investigar, disciplina en
@@ -43,7 +43,7 @@ humano probaría primero. El perito dirige; libertad en **qué** investigar, dis
 
 ## 0. Routing por tipo de evidencia (antes que nada)
 
-FORENSIA te inyecta arriba, en «Contexto de evidencia», un `detected_kind`; cuando
+Agentopsy te inyecta arriba, en «Contexto de evidencia», un `detected_kind`; cuando
 hay señal clara, además te inyecta un bloque **«Ruta del playbook»** que ya decide
 la sección. **Ese bloque manda**; esta tabla solo lo mapea a las secciones de abajo
 para que no gastes iteraciones probando la sección equivocada:
@@ -133,7 +133,7 @@ presente, síguelo tal cual; esta sección no lo contradice, solo lo traduce a A
 > Antes de empezar, confirma que `detected_os` del bloque «Contexto de
 > evidencia» dice `windows` (o que un probe diagnóstico ya lo confirmó). Si el
 > volcado es UNIX, **no es tu caso**: detente y pide a la operadora que **ancle el
-> perfil del caso a `unix`** (el re-enrutado a FORENSIA-UNIX es automático; no se
+> perfil del caso a `unix`** (el re-enrutado a Agentopsy-UNIX es automático; no se
 > cierra ni se reabre el caso). Ver regla 9 del system prompt.
 
 1. **Perfil.** `volatility3` con `plugin: "windows.info.Info"` → build y perfil.
@@ -320,7 +320,7 @@ u otro filtro y trae solo el top-N a tu razonamiento.
 ## Anexo — Playbook por herramienta
 
 Para cada `tool_id` de la allowlist: cuándo usarla, los **params que TÚ eliges**
-(FORENSIA inyecta el path de la evidencia/artefacto y el `output_dir`; **no los
+(Agentopsy inyecta el path de la evidencia/artefacto y el `output_dir`; **no los
 pongas tú**), coste, errores comunes y cómo leer su salida.
 
 ### Particiones / imagen
@@ -352,7 +352,7 @@ pongas tú**), coste, errores comunes y cómo leer su salida.
 ### Artefactos Windows (varias entregadas por contenedor)
 
 - **`mftecmd`** — `$MFT` **pre-extraído** → CSV. Params: ninguno que elijas
-  (FORENSIA monta el `$MFT` y el `output_dir`). Coste: medio/alto en `$MFT` grande
+  (Agentopsy monta el `$MFT` y el `output_dir`). Coste: medio/alto en `$MFT` grande
   — anúncialo. Uso: timestomping (`$SI` vs `$FN`). Lee el CSV con `jq`.
 - **`regripper`** — hive **pre-extraído** → texto. Params: `plugin` (p.ej. `run`,
   `soft_run`, `services`, `samparse`, `usbstor`, `mountdev`, `amcache`,
@@ -363,12 +363,12 @@ pongas tú**), coste, errores comunes y cómo leer su salida.
   ninguno que elijas. Coste: medio. Uso: consulta puntual de IDs
   (4624/4625/4688/7045/4720). Filtra el CSV, no lo vuelques.
 - **`hayabusa`** — detecciones **Sigma** sobre un dir de EVTX pre-extraídos. Params
-  que eliges: `min_level` (`info`…`critical`); la ruta de salida la asigna FORENSIA.
+  que eliges: `min_level` (`info`…`critical`); la ruta de salida la asigna Agentopsy.
   Coste: medio/alto en EVTX grandes — anúncialo; usa `min_level: high`. Salida:
   `summary` con contadores.
 - **`chainsaw`** — hunting Sigma sobre EVTX/JSON. Params: `output_format`
   (`csv`|`json`) y al menos uno de `sigma_dir` / `rules_dir`; las rutas de salida
-  las asigna FORENSIA. Coste: medio. Salida: nº de `detections`.
+  las asigna Agentopsy. Coste: medio. Salida: nº de `detections`.
 
 ### EZ Tools (parsers KAPE — maletín windows)
 
@@ -376,7 +376,7 @@ Parsers dedicados de Eric Zimmerman (los *Modules* de KAPE) que viven en el male
 windows y se ejecutan por el exec-agent como el resto de tools de contenedor: **misma
 disciplina de custodia** (regla 5) — `tsk_fls`→`tsk_icat` y procesar solo el artefacto
 derivado, nunca la imagen cruda. Todos **devuelven CSV como artefacto** → fíltralo con
-`jq`/top-N (regla 8). FORENSIA inyecta el path del artefacto pre-extraído y el
+`jq`/top-N (regla 8). Agentopsy inyecta el path del artefacto pre-extraído y el
 `output_dir`; **no los pongas tú**.
 
 - **`amcacheparser`** — `Amcache.hve` pre-extraído → CSV. Alternativa CSV-estructurada a

@@ -56,7 +56,7 @@ class OllamaExecutor(PromptExecutor):
                 reason=(
                     "OLLAMA_HOST no está configurado. En el compose lo fija el "
                     "servicio api (http://ollama:11434); en ejecución standalone "
-                    "defínelo en Settings o como variable de entorno. FORENSIA no "
+                    "defínelo en Settings o como variable de entorno. Agentopsy no "
                     "asume un host por defecto (RULE 2)."
                 ),
             )
@@ -120,7 +120,7 @@ class OllamaExecutor(PromptExecutor):
         if not isinstance(model, str) or not model.strip():
             raise ExecutorError(
                 "falta 'model' en el contexto del ejecutor ollama. Fija OLLAMA_MODEL "
-                "en Settings o declara model.name en el paquete de agente — FORENSIA "
+                "en Settings o declara model.name en el paquete de agente — Agentopsy "
                 "no elige un modelo por ti (RULE 2)."
             )
 

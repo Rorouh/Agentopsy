@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 # =============================================================================
-# FORENSIA — imagen del servicio `api`
+# Agentopsy — imagen del servicio `api`
 #
 #  - Backend FastAPI (backend/forensia) instalado con pip.
 #  - Node 20 + los tres CLIs de la capa de ejecución (RULE 1: nada se instala

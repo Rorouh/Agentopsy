@@ -128,7 +128,7 @@ def anchored(tmp_path):
     evidence = EvidenceManager(cases)
     case = cases.create(name="op", examiner="alice", os_profile="unix")
     src = tmp_path / "e.raw"
-    src.write_bytes(b"FORENSIA-EVIDENCE")
+    src.write_bytes(b"Agentopsy-EVIDENCE")
     handle = evidence.register(case.id, str(src))
     return {"cases": cases, "evidence": evidence, "case": case, "handle": handle}
 

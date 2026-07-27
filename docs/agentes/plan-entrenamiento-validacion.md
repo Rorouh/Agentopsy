@@ -1,4 +1,4 @@
-# FORENSIA — Plan de entrenamiento y validación del sub-agente Windows
+# Agentopsy — Plan de entrenamiento y validación del sub-agente Windows
 
 **Rol:** entrenamiento del sub-agente `windows` · rama `tools`
 **Continuación de:** `plan-ruta-forensia-win.md` (Bloque A completo → aquí empieza
@@ -49,7 +49,7 @@ local)** que es el resultado científico del TFM.
 > El agente se ejecuta a través de **dos formatos de motor**:
 > - **CLI agéntico** — Codex CLI / Gemini CLI / Claude Code. Mantiene sesión y
 >   **contexto** entre llamadas de herramienta (no se degrada como una API
->   stateless). Se conecta al maletín FORENSIA vía **MCP** y conduce las tools.
+>   stateless). Se conecta al maletín Agentopsy vía **MCP** y conduce las tools.
 > - **Ollama local** — loop tool-use con el camino degradado (`{tool_id, params}`
 >   parseable, ya soportado por los prompts A1).
 > El paquete declarativo del agente debe servir a AMBOS. **Aviso de privacidad:**
@@ -129,7 +129,7 @@ Las métricas solo valen si la traza dorada es correcta. Para LoneWolf:
 ## 5. El objetivo final — "analizar un Windows completo"
 
 Es la validación E2E cualitativa (Vía 2 sobre la imagen entera, no casos aislados):
-1. Cargar LoneWolf (disco `.E01` + `memdump.mem`) como caso en FORENSIA.
+1. Cargar LoneWolf (disco `.E01` + `memdump.mem`) como caso en Agentopsy.
 2. Lanzar la investigación: el agente recorre el playbook (partición → FS → `$MFT`
    → registro → EVTX → memoria), emitiendo findings con procedencia.
 3. `[proceed-to-report]`: el orquestador redacta informe + timeline + correlación

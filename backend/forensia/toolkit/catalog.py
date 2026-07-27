@@ -363,7 +363,7 @@ CATALOG: tuple[Tool, ...] = (
         # Derived handoff: the .evtx it parses is normally the byte-exact file a prior
         # TSK `icat` run extracted, so `evtx_path` accepts an ArtifactRef the dispatcher
         # resolves + re-hashes (custody of the derivative). A literal evidence path
-        # (or FORENSIA-injected evidence) still works when omitted.
+        # (or Agentopsy-injected evidence) still works when omitted.
         input_artifact_params=("evtx_path",),
         path_parameters=(
             _path("evtx_path", _ED, PathKind.FILE_OR_DIRECTORY),

@@ -1,7 +1,7 @@
 """Exportación CSV del timeline de investigación (CLAUDE.md RULE 3: lógica aquí).
 
 El perito se lleva la línea temporal de investigación (ejecuciones de herramienta del
-audit log + hallazgos) fuera de FORENSIA como CSV. Reusa los eventos que ensambla
+audit log + hallazgos) fuera de Agentopsy como CSV. Reusa los eventos que ensambla
 ``forensia.timeline.builder`` — no reconstruye nada ni ejecuta herramientas.
 
 Puro: recibe la lista de eventos (``build_investigation_timeline``) y devuelve el

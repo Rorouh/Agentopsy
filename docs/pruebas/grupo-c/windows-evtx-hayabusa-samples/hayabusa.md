@@ -43,7 +43,7 @@ técnica MITRE, hashes y línea de comandos:
 
 - **Muy eficaz** para triage EVTX: de logs crudos a **detecciones con técnica MITRE + IOCs**
   (hashes, IPs, cmdlines) en una pasada.
-- **Da `evtx_dir` (un directorio de .evtx), no un fichero**: FORENSIA lo inyecta como
+- **Da `evtx_dir` (un directorio de .evtx), no un fichero**: Agentopsy lo inyecta como
   `evtx_dir`; hayabusa recorre todos los `.evtx`.
 - **Prioriza por nivel** (`--min-level high`) para no ahogarte en los 77 "info".
 - **Binarios de terceros → build estático** (musl) y **flags non-interactive** (`-w`): dos

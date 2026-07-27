@@ -77,7 +77,7 @@ _RESPONSE_CONTRACT = (
     '2. Respuesta final al usuario: {"action": "final", "text": "<respuesta en '
     'markdown>"}\n'
     "No inventes tool_ids fuera de la lista de especificaciones. No incluyas "
-    "paths absolutos en params — FORENSIA los inyecta."
+    "paths absolutos en params — Agentopsy los inyecta."
 )
 
 

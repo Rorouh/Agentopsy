@@ -1,4 +1,4 @@
-"""The FORENSIA api (FastAPI). Standalone mode binds 127.0.0.1 on an ephemeral port
+"""The Agentopsy api (FastAPI). Standalone mode binds 127.0.0.1 on an ephemeral port
 (never 0.0.0.0).
 
 In the compose, `docker/api/serve.py` builds the app via `create_app()` on port 8000.
@@ -55,7 +55,7 @@ def create_app(port: int, ui_origins: Sequence[str] = ()) -> FastAPI:
     comportamiento standalone de siempre. Allowlist EXACTA en ambos casos —
     nunca un regex sobre localhost.
     """
-    app = FastAPI(title="FORENSIA api", version=__version__)
+    app = FastAPI(title="Agentopsy api", version=__version__)
     app.state.token = new_session_token()
     app.state.port = port
 

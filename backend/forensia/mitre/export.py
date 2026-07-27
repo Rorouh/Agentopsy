@@ -1,6 +1,6 @@
 """Exportaciones de la cobertura ATT&CK de un caso — CSV y ATT&CK Navigator layer.
 
-El perito necesita llevarse los datos fuera de FORENSIA. Dos formatos, ambos
+El perito necesita llevarse los datos fuera de Agentopsy. Dos formatos, ambos
 **derivados de la cobertura real** (`CoverageStore.coverage`): las propuestas del
 agente (eje 1) y los dictámenes del perito (eje 2), sin fundirlos.
 
@@ -169,13 +169,13 @@ def coverage_to_navigator_layer(
             "showSubtechniques": False,
         })
 
-    name = f"FORENSIA — {case_name}" if case_name else f"FORENSIA — caso {case_id}"
+    name = f"Agentopsy — {case_name}" if case_name else f"Agentopsy — caso {case_id}"
     return {
         "name": name[:255],
         "versions": {"layer": NAVIGATOR_LAYER_VERSION},
         "domain": "enterprise-attack",
         "description": (
-            "Cobertura MITRE ATT&CK del caso FORENSIA "
+            "Cobertura MITRE ATT&CK del caso Agentopsy "
             f"{case_name or case_id}. Rojo = confirmada, ámbar = sospechosa, "
             "gris = descartada (dictamen del perito); azul = propuesta del agente "
             "sin dictaminar. Los dos ejes no se funden."
@@ -189,7 +189,7 @@ def coverage_to_navigator_layer(
         ],
         "metadata": [
             {"name": "case_id", "value": case_id},
-            {"name": "generated_by", "value": "FORENSIA"},
+            {"name": "generated_by", "value": "Agentopsy"},
         ],
         "showTacticRowBackground": False,
         "hideDisabled": False,

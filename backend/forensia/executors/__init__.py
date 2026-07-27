@@ -28,7 +28,7 @@ EXECUTOR_IDS: tuple[str, ...] = ("claude-code", "codex", "gemini", "ollama")
 # choice survives a reload — "recuerda el último modelo"). Read by the agent
 # router into the run context and written by the composer's model picker. RULE 2:
 # an unset key means "no operator choice" — Ollama then demands the package's
-# model, a cloud CLI uses its own default; FORENSIA never invents one.
+# model, a cloud CLI uses its own default; Agentopsy never invents one.
 MODEL_CONFIG_KEY: dict[str, str] = {
     "claude-code": "CLAUDE_CODE_MODEL",
     "codex": "CODEX_MODEL",
@@ -50,7 +50,7 @@ def get_executor(executor_id: str) -> PromptExecutor:
     if factory is None:
         raise ValueError(
             f"ejecutor desconocido {executor_id!r}. Válidos: {', '.join(EXECUTOR_IDS)} "
-            "(RULE 2: FORENSIA no sustituye por un default)."
+            "(RULE 2: Agentopsy no sustituye por un default)."
         )
     return factory()
 
@@ -58,7 +58,7 @@ def get_executor(executor_id: str) -> PromptExecutor:
 def executor_models(executor_id: str) -> dict[str, object]:
     """Models selectable for ``executor_id``, for the composer's model picker.
 
-    Every executor is ``editable``: the operator chooses the model and FORENSIA
+    Every executor is ``editable``: the operator chooses the model and Agentopsy
     honours it via ``MODEL_CONFIG_KEY`` (Ollama over HTTP, the cloud CLIs as a
     ``--model`` argv flag). What differs is the list:
 
@@ -67,9 +67,9 @@ def executor_models(executor_id: str) -> dict[str, object]:
       explicitly.
     - the cloud CLIs return only the documented shortcut aliases as SUGGESTIONS
       (``allow_custom`` is always true — the operator can type any id the CLI
-      accepts). FORENSIA cannot ENUMERATE their catalogs: that would need an API
+      accepts). Agentopsy cannot ENUMERATE their catalogs: that would need an API
       key (SECURITY INVARIANT 7). Leaving the model empty uses the CLI's own
-      default (RULE 2: FORENSIA never invents one).
+      default (RULE 2: Agentopsy never invents one).
     """
     executor = get_executor(executor_id)  # loud on unknown id
     if isinstance(executor, OllamaExecutor):
@@ -96,7 +96,7 @@ def executor_models(executor_id: str) -> dict[str, object]:
         "allow_custom": True,
         "models": executor.suggested_models(),
         "note": (
-            f"FORENSIA no puede enumerar los modelos de {executor.name} sin una API "
+            f"Agentopsy no puede enumerar los modelos de {executor.name} sin una API "
             "key (SECURITY INVARIANT 7). Escribe el id que aceptes en su CLI — se "
             "pasa como --model; déjalo vacío para usar el modelo por defecto del CLI."
         ),

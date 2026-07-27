@@ -1,4 +1,4 @@
-# FORENSIA — Arquitectura
+# Agentopsy — Arquitectura
 
 Fuente de verdad del diseño. Decisiones tomadas en la fase de planificación (junio–julio 2026)
 tras un panel de 5 expertos (empaquetado, DFIR, seguridad, orquestación IA, gestión).

@@ -26,7 +26,7 @@ def build_argv(params: dict[str, Any]) -> list[str]:
     """Compose argv for qemu-nbd (read-only connect).
 
     params:
-        image_path (str, required): image to expose. Injected by FORENSIA.
+        image_path (str, required): image to expose. Injected by Agentopsy.
         nbd_device (str, required): exact `/dev/nbd0` path mapped from id `nbd0`.
         image_format (str, optional): raw (default) / qcow2 / vmdk / vdi / vhdx / vpc.
         There is no writable mode: `-r` is unconditional and caller-controlled

@@ -32,7 +32,7 @@ def build_argv(params: dict[str, Any]) -> list[str]:
     """Compose argv for icat.
 
     params:
-        image_path (str, required): raw image. Injected by FORENSIA.
+        image_path (str, required): raw image. Injected by Agentopsy.
         inode (int | str, required): TSK metadata address of the file to extract.
         partition_offset (int, optional): partition offset in sectors (`-o`).
         filesystem (str, optional): filesystem type hint (`-f`).

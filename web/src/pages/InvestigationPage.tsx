@@ -217,11 +217,11 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
               Desajuste de perfil — el agente activo no es el adecuado para esta evidencia
             </div>
             <div>
-              El caso declara <code>perfil = {activeCase.os_profile}</code> pero el triage de FORENSIA
+              El caso declara <code>perfil = {activeCase.os_profile}</code> pero el triage de Agentopsy
               identificó la evidencia como <code>{profileMismatch}</code>. El agente del caso
               (<code>forensia-{activeCase.os_profile}</code>) se negará a invocar herramientas hasta
               que cierres este caso y lo reabras con <code>perfil = {profileMismatch}</code> para que
-              lo lleve <code>forensia-{profileMismatch}</code>. FORENSIA no cambia el perfil por ti
+              lo lleve <code>forensia-{profileMismatch}</code>. Agentopsy no cambia el perfil por ti
               (RULE 2 — la decisión es del operador).
             </div>
           </div>

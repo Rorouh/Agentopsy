@@ -34,7 +34,7 @@ def case(cases):
 def known_file(tmp_path):
     """A file with known content + known sha256."""
     src = tmp_path / "evidence.raw"
-    payload = b"FORENSIA-EVIDENCE-PAYLOAD-12345"
+    payload = b"Agentopsy-EVIDENCE-PAYLOAD-12345"
     src.write_bytes(payload)
     digest = hashlib.sha256(payload).hexdigest()
     return src, payload, digest
