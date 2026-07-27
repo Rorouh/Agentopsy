@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: #fbf9f6; }
+  a { color: #8c3a2b; text-decoration: none; }
+  a:hover { color: #6d2b1f; text-decoration: underline; }
+  ::selection { background: #f0dfd9; }
+  /* El rail de fases del mock es una barra de ancho fijo en escritorio; apilarlo
+     es lo único que los estilos inline no pueden expresar. */
+  @media (max-width: 520px) {
+    #hero-mock { grid-template-columns: minmax(0, 1fr) !important; min-width: 0 !important; }
+    #hero-mock-rail { border-right: none !important; border-bottom: 1px solid #e5dfd6; }
+  }
+</style>
+</helmet>
+
+<div style="background: #fbf9f6; font-family: 'IBM Plex Sans', system-ui, sans-serif; color: #1b1815; -webkit-font-smoothing: antialiased;">
+
+  <header style="border-bottom: 1px solid #e5dfd6; background: #fbf9f6; position: sticky; top: 0; z-index: 10;">
+    <div style="max-width: 1120px; margin: 0 auto; padding: 18px 40px; display: flex; align-items: center; gap: 28px;">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-weight: 600; letter-spacing: .26em;">AGENTOPSY</div>
+      <nav style="display: flex; gap: 26px; margin-left: 18px;">
+        <a href="#flujo" style="font-size: 13.5px; color: #55504a;">Flujo</a>
+        <a href="#custodia" style="font-size: 13.5px; color: #55504a;">Cadena de custodia</a>
+        <a href="#ejecutores" style="font-size: 13.5px; color: #55504a;">Ejecutores</a>
+        <a href="#instalacion" style="font-size: 13.5px; color: #55504a;">Instalación</a>
+      </nav>
+      <div style="margin-left: auto; display: flex; align-items: center; gap: 20px;">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: #a39a90;">MIT · autoalojado</span>
+        <a href="#instalacion" style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: #ffffff; background: #1b1815; padding: 10px 18px;">Desplegar</a>
+      </div>
+    </div>
+  </header>
+
+  <section style="border-bottom: 1px solid #e5dfd6;">
+    <div style="max-width: 1120px; margin: 0 auto; padding: 88px 40px 76px; display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 64px; align-items: start;">
+      <div style="display: flex; flex-direction: column; gap: 26px;">
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: .18em; text-transform: uppercase; color: #8c3a2b;">Análisis forense post-mortem asistido por IA</div>
+        <h1 style="margin: 0; font-size: clamp(34px, 7vw, 52px); line-height: 1.08; font-weight: 600; letter-spacing: -0.03em; text-wrap: balance;">El expediente forense, de la evidencia al informe.</h1>
+        <p style="margin: 0; font-size: 17.5px; line-height: 1.65; color: #55504a; max-width: 30em; text-wrap: pretty;">Carga la imagen o el volcado que ya extrajiste. Conduce el análisis con prompts contra dos sub-agentes especializados — Windows y Unix-like — y obtén un informe estructurado, su línea temporal y la correlación con MITRE ATT&amp;CK.</p>
+        <p style="margin: 0; font-size: 15.5px; line-height: 1.65; color: #55504a; max-width: 30em;">Se despliega en tu máquina con <span style="font-family: 'IBM Plex Mono', monospace; font-size: 14.5px;">git clone</span> y <span style="font-family: 'IBM Plex Mono', monospace; font-size: 14.5px;">docker compose up</span>. Sin instaladores nativos y sin API keys.</p>
+        <div style="display: flex; align-items: center; gap: 26px; margin-top: 6px; flex-wrap: wrap;">
+          <a href="#instalacion" style="font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase; color: #ffffff; background: #8c3a2b; padding: 14px 26px;">Desplegar en local</a>
+          <a href="#flujo" style="font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase; color: #8c3a2b; border-bottom: 1px solid #d8c4bd; padding-bottom: 3px;">Ver el flujo →</a>
+        </div>
+      </div>
+
+      <div id="hero-mock" style="border: 1px solid #d8d2c9; background: #ffffff; display: grid; grid-template-columns: 172px minmax(0, 1fr); min-width: min(420px, 100%);">
+        <div id="hero-mock-rail" style="border-right: 1px solid #e5dfd6; padding: 20px 18px; display: flex; flex-direction: column; gap: 16px;">
+          <div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; letter-spacing: .22em;">AGENTOPSY</div>
+          <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: .16em; text-transform: uppercase; color: #a39a90;">Fases del caso</div>
+          <div style="display: grid; grid-template-columns: 14px 1fr; column-gap: 11px;">
+            <div style="display: flex; flex-direction: column; align-items: center;"><span style="width: 13px; height: 13px; border-radius: 50%; background: #4a7c59; color: #fff; font-family: 'IBM Plex Mono', monospace; font-size: 8px; display: grid; place-items: center;">✓</span><span style="width: 1px; flex: 1; min-height: 22px; background: #4a7c59;"></span></div>
+            <div style="padding-bottom: 14px;"><div style="font-size: 12px; font-weight: 500; color: #55504a;">Evidencia</div></div>
+            <div style="display: flex; flex-direction: column; align-items: center;"><span style="width: 13px; height: 13px; border-radius: 50%; background: #fff; border: 1.5px solid #8c3a2b; box-shadow: inset 0 0 0 2px #8c3a2b;"></span><span style="width: 1px; flex: 1; min-height: 22px; background: #e5dfd6;"></span></div>
+            <div style="padding-bottom: 14px;"><div style="font-size: 12px; font-weight: 600; color: #8c3a2b;">Investigación</div><div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #8c3a2b; margin-top: 3px;">2 hallazgos</div></div>
+            <div style="display: flex; flex-direction: column; align-items: center;"><span style="width: 13px; height: 13px; border-radius: 50%; border: 1.5px solid #c0a49c;"></span><span style="width: 1px; flex: 1; min-height: 22px; background: #e5dfd6;"></span></div>
+            <div style="padding-bottom: 14px;"><div style="font-size: 12px; color: #7a736b;">ATT&amp;CK</div></div>
+            <div style="display: flex; flex-direction: column; align-items: center;"><span style="width: 13px; height: 13px; border-radius: 50%; border: 1.5px dashed #ddd6cc;"></span><span style="width: 1px; flex: 1; min-height: 22px; background: #e5dfd6;"></span></div>
+            <div style="padding-bottom: 14px;"><div style="font-size: 12px; color: #7a736b;">Timeline</div></div>
+            <div style="display: flex; flex-direction: column; align-items: center;"><span style="width: 13px; height: 13px; border-radius: 50%; border: 1.5px dashed #ddd6cc;"></span></div>
+            <div><div style="font-size: 12px; color: #7a736b;">Informe</div></div>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column;">
+          <div style="padding: 15px 20px; border-bottom: 1px solid #e5dfd6;">
+            <div style="font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: .16em; text-transform: uppercase; color: #a39a90;">Fase 2 de 5</div>
+            <div style="font-size: 15px; font-weight: 600; margin-top: 5px;">Investigación</div>
+          </div>
+          <div style="padding: 20px; display: flex; flex-direction: column; gap: 18px;">
+            <div style="display: grid; grid-template-columns: 54px 1fr; gap: 12px;">
+              <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #a39a90; padding-top: 2px;">09:41:02</div>
+              <div style="border-left: 2px solid #1b1815; padding-left: 12px; font-size: 13px; line-height: 1.55;">Analiza el volcado <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px;">memory-dump.raw</span> y dime si hay señales de inyección.</div>
+            </div>
+            <div style="display: grid; grid-template-columns: 54px 1fr; gap: 12px;">
+              <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #a39a90; padding-top: 2px;">09:41:18</div>
+              <div style="display: flex; flex-direction: column; gap: 12px; min-width: 0;">
+                <div style="background: #faf7f3; border: 1px solid #e5dfd6; padding: 11px 12px; display: flex; flex-direction: column; gap: 6px; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; line-height: 1.55;">
+                  <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; color: #a39a90; font-size: 8.5px; letter-spacing: .14em; text-transform: uppercase;"><span style="white-space: nowrap;">Cadena de ejecución</span><span style="white-space: nowrap;">registrada</span></div>
+                  <div><span style="color: #4a7c59;">✓</span>&nbsp; vol -f memory-dump.raw windows.pslist</div>
+                  <div><span style="color: #4a7c59;">✓</span>&nbsp; vol -f memory-dump.raw windows.malfind</div>
+                </div>
+                <div style="font-size: 13px; line-height: 1.6;">Hueco de memoria consistente con <strong style="font-weight: 600;">process hollowing</strong> sobre svchost.exe (PID 4421).</div>
+                <div style="border-top: 1px solid #e5dfd6; border-bottom: 1px solid #e5dfd6; padding: 10px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;">
+                  <span style="font-family: 'IBM Plex Mono', monospace; font-size: 8.5px; letter-spacing: .12em; text-transform: uppercase; color: #8c3a2b; border: 1px solid #8c3a2b; padding: 2px 6px; white-space: nowrap;">Crítica</span>
+                  <span style="font-size: 12.5px; font-weight: 600;">Hallazgo 02 registrado</span>
+                  <span style="margin-left: auto; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #a39a90;">T1055</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section style="border-bottom: 1px solid #e5dfd6; background: #ffffff;">
+    <div style="max-width: 1120px; margin: 0 auto; padding: 44px 40px; display: flex; gap: 60px; flex-wrap: wrap;">
+      <sc-for list="{{ claims }}" as="c" hint-placeholder-count="4">
+        <div style="display: flex; flex-direction: column; gap: 7px; min-width: 190px;">
+          <div style="font-family: 'IBM Plex Mono', monospace; font-size: 22px; font-weight: 500; color: #1b1815;">{{ c.value }}</div>
+          <div style="font-size: 13.5px; line-height: 1.5; color: #7a736b; max-width: 15em;">{{ c.label }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section id="flujo" style="border-bottom: 1px solid #e5dfd6;">
+    <div style="max-width: 1120px; margin: 0 auto; padding: 80px 40px;">
+      <div style="display: flex; align-items: baseline; gap: 16px; margin-bottom: 44px;">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: .18em; text-transform: uppercase; color: #a39a90;">El flujo</span>
+        <span style="flex: 1; height: 1px; background: #e5dfd6;"></span>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 56px; align-items: start;">
+        <div>
+          <h2 style="margin: 0 0 18px; font-size: 34px; line-height: 1.15; font-weight: 600; letter-spacing: -0.02em; text-wrap: balance;">Seis pasos, en el orden que exige un peritaje.</h2>
+          <p style="margin: 0; font-size: 16px; line-height: 1.7; color: #55504a; text-wrap: pretty;">La interfaz no te deja saltarte el orden porque el backend tampoco lo hace: sin caso no hay evidencia, sin hash baseline no hay análisis, y sin hallazgos registrados no hay informe. La navegación <em>es</em> el estado del expediente.</p>
+        </div>
+        <div style="display: flex; flex-direction: column;">
+          <sc-for list="{{ steps }}" as="s" hint-placeholder-count="6">
+            <div style="display: grid; grid-template-columns: 34px 1fr; gap: 18px; padding: 20px 0; border-top: 1px solid #e5dfd6;">
+              <div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #8c3a2b; padding-top: 2px;">{{ s.n }}</div>
+              <div>
+                <div style="font-size: 15.5px; font-weight: 600;">{{ s.title }}</div>
+                <div style="font-size: 14px; line-height: 1.6; color: #7a736b; margin-top: 6px; text-wrap: pretty;">{{ s.desc }}</div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="custodia" style="border-bottom: 1px solid #e5dfd6; background: #ffffff;">
+    <div style="max-width: 1120px; margin: 0 auto; padding: 80px 40px;">
+      <div style="display: flex; align-items: baseline; gap: 16px; margin-bottom: 44px;">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: .18em; text-transform: uppercase; color: #a39a90;">Soundness forense</span>
+        <span style="flex: 1; height: 1px; background: #e5dfd6;"></span>
+      </div>
+      <h2 style="margin: 0 0 46px; font-size: 34px; line-height: 1.15; font-weight: 600; letter-spacing: -0.02em; max-width: 22em; text-wrap: balance;">Cada afirmación del informe se puede rastrear hasta el comando que la produjo.</h2>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 46px 60px;">
+        <sc-for list="{{ custody }}" as="c" hint-placeholder-count="4">
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: #8c3a2b;">{{ c.tag }}</div>
+            <div style="font-size: 17px; font-weight: 600; line-height: 1.35;">{{ c.title }}</div>
+            <div style="font-size: 14.5px; line-height: 1.7; color: #55504a; text-wrap: pretty;">{{ c.body }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </section>
+
+  <section id="ejecutores" style="border-bottom: 1px solid #e5dfd6;">
+    <div style="max-width: 1120px; margin: 0 auto; padding: 80px 40px;">
+      <div style="display: flex; align-items: baseline; gap: 16px; margin-bottom: 44px;">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: .18em; text-transform: uppercase; color: #a39a90;">Ejecutores</span>
+        <span style="flex: 1; height: 1px; background: #e5dfd6;"></span>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 56px; align-items: start;">
+        <div>
+          <h2 style="margin: 0 0 18px; font-size: 34px; line-height: 1.15; font-weight: 600; letter-spacing: -0.02em; text-wrap: balance;">Sin API keys. El modelo lo eliges tú.</h2>
+          <p style="margin: 0 0 16px; font-size: 16px; line-height: 1.7; color: #55504a; text-wrap: pretty;">Los prompts se ejecutan con el ejecutor que elijas. Los CLIs consumen tu propia suscripción a través de una sesión guardada en un volumen local del stack: ninguna clave de proveedor vive en el proyecto y las sesiones no salen de tu máquina.</p>
+          <p style="margin: 0; font-size: 16px; line-height: 1.7; color: #55504a; text-wrap: pretty;">Si eliges un ejecutor respaldado por la nube, Agentopsy lo advierte y lo registra. Sin ejecutor seleccionado no hay análisis — nunca un valor por defecto silencioso.</p>
+        </div>
+        <div style="display: flex; flex-direction: column;">
+          <sc-for list="{{ executors }}" as="e" hint-placeholder-count="4">
+            <div style="display: flex; align-items: baseline; gap: 20px; padding: 19px 0; border-top: 1px solid #e5dfd6; flex-wrap: wrap;">
+              <span style="font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-weight: 500; min-width: 130px;">{{ e.id }}</span>
+              <span style="font-size: 14px; color: #55504a; flex: 1; min-width: 200px; line-height: 1.5;">{{ e.note }}</span>
+              <span style="{{ e.scopeStyle }}">{{ e.scope }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="instalacion" style="border-bottom: 1px solid #e5dfd6; background: #ffffff;">
+    <div style="max-width: 1120px; margin: 0 auto; padding: 80px 40px;">
+      <div style="display: flex; align-items: baseline; gap: 16px; margin-bottom: 44px;">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: .18em; text-transform: uppercase; color: #a39a90;">Instalación</span>
+        <span style="flex: 1; height: 1px; background: #e5dfd6;"></span>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 56px; align-items: start;">
+        <div>
+          <h2 style="margin: 0 0 18px; font-size: 34px; line-height: 1.15; font-weight: 600; letter-spacing: -0.02em; text-wrap: balance;">Un solo comando.</h2>
+          <p style="margin: 0 0 26px; font-size: 16px; line-height: 1.7; color: #55504a; text-wrap: pretty;">El compose levanta la interfaz, el backend, el modelo local y los dos maletines forenses. Todos los puertos se publican únicamente en <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px;">127.0.0.1</span>: nada queda expuesto fuera de tu máquina.</p>
+          <div style="display: flex; flex-direction: column;">
+            <sc-for list="{{ requisites }}" as="r" hint-placeholder-count="2">
+              <div style="display: flex; gap: 14px; padding: 14px 0; border-top: 1px solid #e5dfd6; font-size: 14.5px; line-height: 1.6;">
+                <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #a39a90; padding-top: 3px;">{{ r.n }}</span>
+                <span style="color: #55504a;">{{ r.text }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 16px;">
+          <div style="background: #1b1815; padding: 26px 28px; display: flex; flex-direction: column; gap: 9px; font-family: 'IBM Plex Mono', monospace; font-size: 13.5px; line-height: 1.7;">
+            <div style="color: #8a827a;"># clona y levanta el stack</div>
+            <div style="color: #f4f1ec;"><span style="color: #c0a49c;">$</span> git clone https://github.com/Rorouh/Agentopsy.git</div>
+            <div style="color: #f4f1ec;"><span style="color: #c0a49c;">$</span> cd Agentopsy</div>
+            <div style="color: #f4f1ec;"><span style="color: #c0a49c;">$</span> docker compose up --build</div>
+            <div style="color: #8a827a; margin-top: 8px;"># abre la interfaz</div>
+            <div style="color: #f4f1ec;">http://127.0.0.1:5173</div>
+          </div>
+          <div style="font-size: 13.5px; line-height: 1.6; color: #7a736b; text-wrap: pretty;">En Apple Silicon los maletines se fijan a <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12.5px;">linux/amd64</span> y corren bajo emulación: funcionan igual, pero su build y sus análisis pesados van más lentos.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div style="max-width: 1120px; margin: 0 auto; padding: 88px 40px 96px; display: flex; flex-direction: column; align-items: flex-start; gap: 26px;">
+      <h2 style="margin: 0; font-size: 40px; line-height: 1.12; font-weight: 600; letter-spacing: -0.025em; max-width: 20em; text-wrap: balance;">Tu evidencia no sale de tu máquina.</h2>
+      <p style="margin: 0; font-size: 17px; line-height: 1.65; color: #55504a; max-width: 34em; text-wrap: pretty;">Clona el repositorio, levanta el compose y abre el navegador. Si quieres análisis 100 % local, elige Ollama y ni un byte cruza la red.</p>
+      <a href="#instalacion" style="font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase; color: #ffffff; background: #8c3a2b; padding: 15px 28px; margin-top: 4px;">Desplegar en local</a>
+    </div>
+  </section>
+
+  <footer style="border-top: 1px solid #e5dfd6; background: #ffffff;">
+    <div style="max-width: 1120px; margin: 0 auto; padding: 34px 40px; display: flex; align-items: center; gap: 28px; flex-wrap: wrap;">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; letter-spacing: .24em;">AGENTOPSY</div>
+      <div style="font-size: 13px; color: #7a736b;">Trabajo Final de Máster · entrega 7 de septiembre de 2026</div>
+      <div style="margin-left: auto; display: flex; gap: 24px; font-family: 'IBM Plex Mono', monospace; font-size: 11.5px;">
+        <a href="#flujo">Documentación</a>
+        <a href="#custodia">Modelo de amenazas</a>
+        <span style="color: #a39a90;">Licencia MIT</span>
+      </div>
+    </div>
+  </footer>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 1440}}">
+const MONO = "'IBM Plex Mono', monospace";
+const SCOPE = "font-family: " + MONO + "; font-size: 10px; letter-spacing: .14em; text-transform: uppercase; min-width: 118px;";
+
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      claims: [
+        { value: "1 comando", label: "git clone + docker compose up --build" },
+        { value: "0 API keys", label: "los CLIs usan tu propia suscripción" },
+        { value: "127.0.0.1", label: "todos los puertos, solo en tu máquina" },
+        { value: "SHA-256", label: "hash baseline y audit log encadenado" },
+      ],
+      steps: [
+        { n: "01", title: "Crear el caso", desc: "Registra el caso y el examinador responsable antes de tocar evidencia." },
+        { n: "02", title: "Registrar evidencia", desc: "Sube la imagen o el volcado; Agentopsy calcula el hash baseline y la deja en solo lectura." },
+        { n: "03", title: "Investigar con el agente", desc: "Conversa con el sub-agente que corresponda al perfil del sistema; él ejecuta el maletín sobre la evidencia verificada." },
+        { n: "04", title: "Revisar el timeline", desc: "Reconstruye la secuencia de eventos detectados por cada herramienta, en UTC explícito." },
+        { n: "05", title: "Correlacionar con ATT&CK", desc: "El agente propone técnicas; el dictamen — confirmada, sospechosa, descartada — siempre es tuyo y exige motivo." },
+        { n: "06", title: "Emitir el informe", desc: "Consulta los informes generados con su metadata de integridad: hash, fecha y evidencia de origen." },
+      ],
+      custody: [
+        { tag: "Adquisición", title: "Lectura a nivel de bloque, en solo lectura", body: "La evidencia se monta en solo lectura y se expone así a los maletines. Ninguna herramienta puede escribir sobre el original." },
+        { tag: "Integridad", title: "Hash baseline en la ingesta", body: "SHA-256 calculado al registrar, re-verificable en cualquier momento. Un desajuste se muestra como tal, nunca se oculta." },
+        { tag: "Trazabilidad", title: "Audit log encadenado por hash", body: "Append-only: cada entrada enlaza con la anterior, así que romper la cadena es detectable. Incluye el acta de adquisición." },
+        { tag: "Reproducibilidad", title: "El argv literal de cada ejecución", body: "Se registra el comando exacto que se lanzó, sin shell intermedia. Cualquier tercero puede repetirlo y llegar al mismo sitio." },
+      ],
+      executors: [
+        { id: "Ollama", note: "Servicio del propio compose. La opción 100 % local: nada cruza la red.", scope: "local", scopeStyle: SCOPE + " color: #4a7c59;" },
+        { id: "Claude Code", note: "Tu suscripción, vía sesión guardada en el volumen del stack.", scope: "nube · advertido", scopeStyle: SCOPE + " color: #8c3a2b;" },
+        { id: "Codex CLI", note: "Login por device-code dentro del contenedor, una única vez.", scope: "nube · advertido", scopeStyle: SCOPE + " color: #8c3a2b;" },
+        { id: "Gemini CLI", note: "Login manual: el proveedor rechaza el relay individual, y se dice claro.", scope: "nube · advertido", scopeStyle: SCOPE + " color: #8c3a2b;" },
+      ],
+      requisites: [
+        { n: "01", text: "Docker con el plugin Compose — Docker Desktop en Windows y macOS; docker-ce más docker-compose-plugin en Linux." },
+        { n: "02", text: "Un ejecutor de IA a tu elección. Con Ollama no necesitas nada más: lo levanta el propio compose." },
+      ],
+    };
+  }
+}
+
+</script>
+</body>
+</html>

@@ -26,6 +26,10 @@
 - [`operacion/proximos-pasos.md`](operacion/proximos-pasos.md) — inventario único de deuda técnica y trabajo pendiente (incluye el estado del pivote 2026-07-02 a compose + ejecutores).
 - [`operacion/frontend-journal.md`](operacion/frontend-journal.md) — bitácora histórica de decisiones de la capa de presentación.
 
+## Diseño de la interfaz
+
+- [`diseno/rediseno-2026-07/`](diseno/rediseno-2026-07/README.md) — rediseño de la SPA (julio 2026): mocks navegables del destino visual y estructural, plan de migración y la secuencia de encargos con la que se ejecuta.
+
 ## Contexto para asistentes IA
 
 - [`ai-context/frontend.md`](ai-context/frontend.md) — contexto operativo persistente para sesiones de IA tocando el frontend web.
