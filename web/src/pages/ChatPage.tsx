@@ -845,17 +845,15 @@ export function ChatPage({
         <div className="chat-welcome">
           <div className="welcome-title">¿Qué analizamos hoy?</div>
 
-          <div className="agent-badge" title={activeAgent?.path ?? ""}>
-            {activeAgent ? (
-              <>
-                <span className="agent-badge-dot agent-badge-dot--ok" />
-                Agente activo: <strong>{activeAgent.name}</strong>{" "}
-                <span className="agent-badge-meta">
-                  v{activeAgent.version} · {activeAgent.os_profile} · modelo local
-                  recomendado: {activeAgent.model.name}
-                </span>
-              </>
-            ) : activeProfile === null ? (
+          {/* Anclaje de perfil: NO es decoración. Cuando el triage no ha
+              determinado el os_profile del caso, el orquestador no puede rutar a
+              ningún sub-agente y la RULE 2 prohíbe elegir uno en silencio: el
+              operador tiene que anclarlo. Éste es el único punto de la UI desde
+              el que puede hacerlo, así que sólo se pinta en ese caso — con el
+              perfil ya determinado no aparece nada (la insignia informativa
+              "Agente activo" se retiró a propósito). */}
+          {activeProfile === null && (
+            <div className="agent-badge">
               <span className="agent-anchor">
                 <span className="agent-anchor-msg">
                   <span className="agent-badge-dot agent-badge-dot--warn" />
@@ -886,14 +884,8 @@ export function ChatPage({
                   </span>
                 )}
               </span>
-            ) : (
-              <>
-                <span className="agent-badge-dot agent-badge-dot--warn" />
-                Sin agente para perfil <code>{activeProfile}</code>. Suelta su
-                carpeta en <code>agentes/</code> y reinicia FORENSIA.
-              </>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Composer inside welcome */}
           <div className="composer-wrapper" style={{ width: "100%" }}>

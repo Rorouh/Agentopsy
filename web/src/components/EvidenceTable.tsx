@@ -123,16 +123,18 @@ export function EvidenceTable({ evidence, verifyingIds, onVerify, verifyError }:
                     <td>{DETECTED_KIND_LABEL[ev.detected_kind]}</td>
                     <td>{formatBytes(ev.size)}</td>
                     <td>
-                      <span className="evidence-table-hash" title={ev.sha256}>
-                        {shortHash(ev.sha256)}
-                      </span>{" "}
-                      <Button
-                        variant="chip"
+                      <button
+                        type="button"
+                        className={`evidence-hash-copy${copiedId === ev.evidence_id ? " is-copied" : ""}`}
                         onClick={() => copyHash(ev.evidence_id, ev.sha256)}
-                        title="Copiar el SHA-256 completo"
+                        title={`${ev.sha256}\n\nClic para copiar el SHA-256 completo`}
+                        aria-label="Copiar el SHA-256 completo"
                       >
-                        {copiedId === ev.evidence_id ? "Copiado" : "Copiar"}
-                      </Button>
+                        <span className="evidence-hash-copy-value">{shortHash(ev.sha256)}</span>
+                        <span className="evidence-hash-copy-icon" aria-hidden="true">
+                          {copiedId === ev.evidence_id ? "✓" : "⧉"}
+                        </span>
+                      </button>
                     </td>
                     <td>
                       {verifying ? (

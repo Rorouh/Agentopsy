@@ -62,14 +62,6 @@ const NAV_ICONS: Record<ViewId, ReactNode> = {
       <line x1="12" y1="2" x2="12" y2="22" />
     </svg>
   ),
-  system: (
-    <svg {...ICON_PROPS}>
-      <rect x="2" y="2" width="20" height="8" rx="2" ry="2" />
-      <rect x="2" y="14" width="20" height="8" rx="2" ry="2" />
-      <line x1="6" y1="6" x2="6.01" y2="6" />
-      <line x1="6" y1="18" x2="6.01" y2="18" />
-    </svg>
-  ),
   settings: (
     <svg {...ICON_PROPS}>
       <circle cx="12" cy="12" r="3" />
@@ -85,7 +77,6 @@ export function Sidebar({ activeView, onViewChange }: SidebarProps) {
   return (
     <aside className="sidebar">
       <div className="brand-section">
-        <div className="brand-dot" />
         <span className="brand-name">FORENSIA</span>
       </div>
 

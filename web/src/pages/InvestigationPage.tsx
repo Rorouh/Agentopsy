@@ -52,6 +52,7 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
   const [executorCost, setExecutorCost] = useState<ExecutorCost[]>([]);
   const [phase, setPhase] = useState<Phase>("loading");
   const [error, setError] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const refreshFindings = useCallback(async (caseId: string) => {
     try {
@@ -227,7 +228,14 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
         </div>
       )}
 
-      <div className="investigation-layout" style={{ flex: 1, minHeight: 0 }}>
+      <div
+        className="investigation-layout"
+        style={{
+          flex: 1,
+          minHeight: 0,
+          gridTemplateColumns: sidebarOpen ? "1fr 300px" : "1fr 28px",
+        }}
+      >
         <ChatPage
           caps={caps}
           activeCase={activeCase}
@@ -237,7 +245,45 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
           onCaseUpdated={onCaseUpdated}
         />
 
-        <div className="investigation-sidebar">
+        <div
+          className="investigation-sidebar"
+          style={{ overflow: "hidden", minWidth: 0 }}
+        >
+          {/* Toggle collapse/expand */}
+          <button
+            onClick={() => setSidebarOpen((o) => !o)}
+            title={sidebarOpen ? "Colapsar panel" : "Expandir panel"}
+            style={{
+              alignSelf: "flex-end",
+              flexShrink: 0,
+              width: 24,
+              height: 24,
+              border: "1px solid var(--border)",
+              borderRadius: 4,
+              background: "var(--surface)",
+              color: "var(--text-muted)",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 13,
+              lineHeight: 1,
+              padding: 0,
+              transition: "color 0.15s, border-color 0.15s",
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.color = "var(--text-primary)";
+              (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--text-muted)";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.color = "var(--text-muted)";
+              (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--border)";
+            }}
+          >
+            {sidebarOpen ? "›" : "‹"}
+          </button>
+
+          {sidebarOpen && (<>
         <div className="findings-panel case-panel">
           <div
             className="findings-panel-title"
@@ -364,6 +410,7 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
         </div>
 
         <ExecutorCostPanel rows={executorCost} />
+          </>)}
         </div>
       </div>
     </div>

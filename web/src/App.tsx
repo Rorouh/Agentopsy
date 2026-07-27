@@ -12,7 +12,6 @@ import { DocumentsPage } from "./pages/DocumentsPage";
 import { TimelinePage } from "./pages/TimelinePage";
 import { InvestigationPage } from "./pages/InvestigationPage";
 import { MitreAttackPage } from "./pages/MitreAttackPage";
-import { SystemStatusPage } from "./pages/SystemStatusPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
 // Recuerda la vista activa entre recargas: si no, un F5 desde el Chat vuelve a
@@ -80,9 +79,6 @@ export function App() {
         )}
         {activeView === "mitre" && (
           <MitreAttackPage />
-        )}
-        {activeView === "system" && (
-          <SystemStatusPage caps={caps} isConnected={isConnected} version={version} />
         )}
         {activeView === "settings" && (
           <SettingsPage

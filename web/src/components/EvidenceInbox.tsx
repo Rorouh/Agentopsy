@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import type { KeyboardEvent } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { DragEvent, KeyboardEvent } from "react";
 import type { EvidenceRegisterJob, EvidenceSource } from "../api/types";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
@@ -100,6 +100,30 @@ export function EvidenceInbox({
   // (feedback inmediato; el backend re-valida igualmente).
   const [rejectHint, setRejectHint] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // dragenter/dragleave también disparan al cruzar los HIJOS de la zona. Con un
+  // booleano el resaltado parpadea; contamos entradas/salidas para que sólo se
+  // apague cuando el puntero abandona la zona de verdad.
+  const dragDepth = useRef(0);
+
+  // Guardia global: si el perito suelta la imagen FUERA de la zona, el
+  // comportamiento por defecto del navegador es NAVEGAR al fichero (la app
+  // desaparece y se abre el .E01 crudo). Cancelamos ese default en toda la
+  // ventana; la zona detiene la propagación, así que sus propios drops no pasan
+  // por aquí. Sólo intervenimos si el arrastre trae ficheros (no rompe el
+  // drag-and-drop de texto o de la propia UI).
+  useEffect(() => {
+    const block = (e: globalThis.DragEvent) => {
+      if (!e.dataTransfer || !Array.from(e.dataTransfer.types).includes("Files")) return;
+      e.preventDefault();
+      if (e.type === "dragover") e.dataTransfer.dropEffect = "none";
+    };
+    window.addEventListener("dragover", block);
+    window.addEventListener("drop", block);
+    return () => {
+      window.removeEventListener("dragover", block);
+      window.removeEventListener("drop", block);
+    };
+  }, []);
 
   const selectedSource = sources?.find((s) => s.path === selectedSourcePath) ?? null;
   // Solo un formato single-file soportado o el PRIMER segmento EWF es un punto
@@ -120,25 +144,46 @@ export function EvidenceInbox({
     );
   }
 
-  const handleFiles = (files: FileList | null) => {
+  const handleFiles = (files: FileList | null, droppedFolder = false) => {
     setRejectHint(null);
     const picked = Array.from(files ?? []);
-    if (picked.length === 0) return;
+    if (picked.length === 0) {
+      setRejectHint(
+        droppedFolder
+          ? "Has soltado una carpeta. Suelta los FICHEROS de imagen forense, no el " +
+            "directorio que los contiene."
+          : "No se ha recibido ningún fichero. Vuelve a intentarlo o usa «Examinar…».",
+      );
+      return;
+    }
+    const hints: string[] = [];
+    if (droppedFolder) {
+      hints.push(
+        "Se han ignorado las carpetas del arrastre: suelta los ficheros de imagen " +
+          "forense directamente.",
+      );
+    }
     // Se suben TODOS los ficheros subibles de la tanda (un EWF partido son N);
     // los no soportados se nombran, no se cuelan en silencio.
     const uploadable = picked.filter((f) => isUploadableEvidence(f.name));
     const rejected = picked.filter((f) => !isUploadableEvidence(f.name));
     if (rejected.length > 0) {
-      setRejectHint(
+      hints.push(
         `${rejected.map((f) => `«${f.name}»`).join(", ")} no ${
           rejected.length === 1 ? "es un formato soportado" : "son formatos soportados"
         }. Formatos válidos: ${FORMATS_HINT} (y los segmentos de un EWF partido).`,
       );
     }
+    setRejectHint(hints.length > 0 ? hints.join(" ") : null);
     if (uploadable.length > 0) onUploadFiles(uploadable);
   };
 
   const openFileDialog = () => fileInputRef.current?.click();
+
+  // Un arrastre "de ficheros" (no de texto ni de la propia UI).
+  const carriesFiles = (e: DragEvent<HTMLElement>) =>
+    Array.from(e.dataTransfer?.types ?? []).includes("Files");
+  const busy = uploading || registering;
 
   const browseButton = (
     <Button variant="chip" disabled={uploading} onClick={openFileDialog}>
@@ -151,22 +196,43 @@ export function EvidenceInbox({
       <div
         className={`dropzone${dragActive ? " dropzone--active" : ""}`}
         onDragEnter={(e) => {
+          if (!carriesFiles(e)) return;
           e.preventDefault();
-          if (!uploading && !registering) setDragActive(true);
+          e.stopPropagation();
+          dragDepth.current += 1;
+          if (!busy) setDragActive(true);
         }}
         onDragOver={(e) => {
+          if (!carriesFiles(e)) return;
+          // preventDefault en dragover es lo que marca el elemento como destino
+          // válido; sin dropEffect el cursor puede mostrar "prohibido".
           e.preventDefault();
-          if (!uploading && !registering) setDragActive(true);
+          e.stopPropagation();
+          e.dataTransfer.dropEffect = busy ? "none" : "copy";
+          if (!busy) setDragActive(true);
         }}
         onDragLeave={(e) => {
+          if (!carriesFiles(e)) return;
           e.preventDefault();
-          setDragActive(false);
+          e.stopPropagation();
+          dragDepth.current -= 1;
+          if (dragDepth.current <= 0) {
+            dragDepth.current = 0;
+            setDragActive(false);
+          }
         }}
         onDrop={(e) => {
+          if (!carriesFiles(e)) return;
           e.preventDefault();
+          e.stopPropagation();
+          dragDepth.current = 0;
           setDragActive(false);
-          if (uploading || registering) return;
-          handleFiles(e.dataTransfer.files);
+          if (busy) return;
+          // webkitGetAsEntry SÓLO es válido de forma síncrona dentro del handler.
+          const droppedFolder = Array.from(e.dataTransfer.items ?? []).some(
+            (it) => it.kind === "file" && it.webkitGetAsEntry()?.isDirectory === true,
+          );
+          handleFiles(e.dataTransfer.files, droppedFolder);
         }}
       >
         <input

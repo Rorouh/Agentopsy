@@ -10,7 +10,6 @@ export type ViewId =
   | "timeline"
   | "investigation"
   | "mitre"
-  | "system"
   | "settings";
 
 export type NavSection = "primary" | "secondary";
@@ -27,7 +26,6 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "timeline", label: "Timeline", section: "primary" },
   { id: "document-viewer", label: "Documentos", section: "primary" },
   { id: "mitre", label: "MITRE ATT&CK", section: "primary" },
-  { id: "system", label: "Estado del Sistema", section: "secondary" },
   { id: "settings", label: "Configuración", section: "secondary" },
   { id: "guide", label: "Guía", section: "secondary" },
 ];

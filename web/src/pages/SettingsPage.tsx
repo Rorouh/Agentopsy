@@ -7,8 +7,10 @@ import { ThemeToggle } from "../ThemeToggle";
 import { PageHeader } from "../ui/PageHeader";
 import { KeyValueList } from "../ui/KeyValueList";
 import { Button } from "../ui/Button";
+import { Card } from "../ui/Card";
 import { EmptyState } from "../ui/EmptyState";
 import { LoadingState } from "../ui/LoadingState";
+import { StatusDot } from "../ui/StatusDot";
 import { ExecutorLoginModal } from "../components/ExecutorLoginModal";
 
 interface SettingsPageProps {
@@ -22,8 +24,8 @@ type TabId = "executors" | "appearance" | "system";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "executors", label: "Ejecutores / IA" },
+  { id: "system", label: "Sistema / Maletín" },
   { id: "appearance", label: "Apariencia" },
-  { id: "system", label: "Sistema" },
 ];
 
 // Claves editables del backend (allowlist cerrada de routers/config.py).
@@ -374,36 +376,72 @@ export function SettingsPage({ caps, version, onNavigate, onCapsRefresh }: Setti
           id="settings-panel-system"
           role="tabpanel"
           aria-labelledby="settings-tab-system"
-          className="settings-panel"
         >
-          <div className="settings-form">
-            {caps ? (
-              <div className="form-field">
-                <label className="form-label">Diagnóstico</label>
+          {caps ? (
+            <div className="status-grid">
+              <Card fullWidth>
+                <h3>Ejecutores de IA</h3>
                 <KeyValueList
-                  items={[
-                    { label: "Producto", value: "FORENSIA" },
-                    { label: "Versión", value: version ? `v${version}` : "—" },
-                    { label: "Python (servicio api)", value: caps.python },
-                    { label: "Ejecutores disponibles", value: `${executors.filter(([, s]) => s.available).length} / ${executors.length}` },
-                    { label: "Herramientas detectadas", value: `${Object.values(caps.tools).filter((t) => t.available).length} / ${Object.keys(caps.tools).length}` },
-                  ]}
+                  items={Object.entries(caps.executors).map(([id, status]) => ({
+                    label: `${status.name}${status.local ? " (local)" : ""}`,
+                    value: (
+                      <span
+                        style={{ display: "flex", alignItems: "center", gap: 6 }}
+                        title={status.available ? id : status.reason ?? ""}
+                      >
+                        <StatusDot online={status.available} />
+                        {status.available ? "Disponible" : "No disponible"}
+                      </span>
+                    ),
+                  }))}
                 />
-                {onNavigate && (
-                  <div className="cta-row">
-                    <Button variant="chip" onClick={() => onNavigate("system")}>
-                      Ver Estado del Sistema completo →
-                    </Button>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <EmptyState
-                title="Sin conexión con el servicio api"
-                description="No se pudo obtener el diagnóstico del stack."
-              />
-            )}
-          </div>
+              </Card>
+
+              <Card fullWidth>
+                <h3>Maletines forenses (toolkit-windows / toolkit-unix)</h3>
+                <KeyValueList
+                  items={Object.values(caps.toolkits).map((m) => ({
+                    label: m.service,
+                    value: (
+                      <span
+                        style={{ display: "flex", alignItems: "center", gap: 6 }}
+                        title={m.running === true ? m.container : m.reason ?? ""}
+                      >
+                        <StatusDot online={m.running === true} />
+                        {m.running === true
+                          ? "En ejecución"
+                          : m.running === false
+                            ? "Detenido / inaccesible"
+                            : "No consultable desde el api"}
+                      </span>
+                    ),
+                  }))}
+                />
+              </Card>
+
+              <Card fullWidth>
+                <h3>Herramientas del catálogo (por maletín)</h3>
+                <div className="tools-grid">
+                  {Object.entries(caps.tools).map(([k, v]) => (
+                    <div
+                      className="tool-indicator"
+                      key={k}
+                      style={{ opacity: v.available ? 1 : 0.5 }}
+                      title={v.available ? `${k} — ${v.toolkits.join(", ")}` : v.reason ?? k}
+                    >
+                      <span className={`dot ${v.available ? "" : "inactive"}`} />
+                      <span className="tool-name">{k}</span>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            </div>
+          ) : (
+            <EmptyState
+              title="Sin conexión con el servicio api"
+              description="No se pudo obtener el diagnóstico del stack."
+            />
+          )}
         </div>
       )}
 
