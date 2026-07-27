@@ -216,53 +216,61 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
 
           {panelOpen && (
             <div className="inv-panel">
+              {/* Los tres bloques se reparten la altura del raíl y cada uno
+                  scrollea POR DENTRO: el encabezado siempre visible, y una
+                  lista larga de hallazgos ya no empuja Herramientas y Coste
+                  fuera de la pantalla. */}
               <section className="inv-block">
                 <div className="eyebrow">
                   Hallazgos · {String(findings.length).padStart(2, "0")}
                 </div>
-                {findings.length === 0 ? (
-                  <div className="inv-empty">
-                    Aún no hay hallazgos. El agente los irá apilando aquí a medida que analice.
-                  </div>
-                ) : (
-                  findings.map((f) => (
-                    <div
-                      className={`finding-rail${
-                        f.severity === "critical" || f.severity === "high" ? " is-hot" : ""
-                      }`}
-                      key={f.id}
-                    >
-                      <div className="finding-rail-title">{f.title}</div>
-                      <div className="finding-rail-summary">{f.summary}</div>
-                      <div className="finding-rail-meta">
-                        {SEVERITY_LABEL[f.severity]}
-                        {f.tool_id ? ` · ${f.tool_id}` : ""}
-                      </div>
+                <div className="inv-block-scroll">
+                  {findings.length === 0 ? (
+                    <div className="inv-empty">
+                      Aún no hay hallazgos. El agente los irá apilando aquí a medida que analice.
                     </div>
-                  ))
-                )}
+                  ) : (
+                    findings.map((f) => (
+                      <div
+                        className={`finding-rail${
+                          f.severity === "critical" || f.severity === "high" ? " is-hot" : ""
+                        }`}
+                        key={f.id}
+                      >
+                        <div className="finding-rail-title">{f.title}</div>
+                        <div className="finding-rail-summary">{f.summary}</div>
+                        <div className="finding-rail-meta">
+                          {SEVERITY_LABEL[f.severity]}
+                          {f.tool_id ? ` · ${f.tool_id}` : ""}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </section>
 
               <section className="inv-block">
                 <div className="eyebrow">
                   Herramientas · {String(toolTotal).padStart(2, "0")}
                 </div>
-                {toolUsage.length === 0 ? (
-                  <div className="inv-empty">
-                    Aún no se ha ejecutado ninguna herramienta. Aparecerán aquí con su número de
-                    usos cuando el agente las invoque.
-                  </div>
-                ) : (
-                  toolUsage.map((t) => (
-                    <div className="usage-row" key={t.tool_id}>
-                      <span>{t.tool_id}</span>
-                      <span className="usage-count">
-                        {t.ok > 0 ? `${t.ok} ok` : ""}
-                        {t.failed > 0 ? `${t.ok > 0 ? " · " : ""}${t.failed} fallo${t.failed > 1 ? "s" : ""}` : ""}
-                      </span>
+                <div className="inv-block-scroll">
+                  {toolUsage.length === 0 ? (
+                    <div className="inv-empty">
+                      Aún no se ha ejecutado ninguna herramienta. Aparecerán aquí con su número de
+                      usos cuando el agente las invoque.
                     </div>
-                  ))
-                )}
+                  ) : (
+                    toolUsage.map((t) => (
+                      <div className="usage-row" key={t.tool_id}>
+                        <span>{t.tool_id}</span>
+                        <span className="usage-count">
+                          {t.ok > 0 ? `${t.ok} ok` : ""}
+                          {t.failed > 0 ? `${t.ok > 0 ? " · " : ""}${t.failed} fallo${t.failed > 1 ? "s" : ""}` : ""}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
               </section>
 
               <ExecutorCostBlock rows={executorCost} />
@@ -296,6 +304,7 @@ function ExecutorCostBlock({ rows }: { rows: ExecutorCost[] }) {
           </span>
         )}
       </div>
+      <div className="inv-block-scroll">
       {rows.length === 0 ? (
         <div className="inv-empty">
           Sin ejecuciones registradas todavía. El coste en tokens aparece por ejecutor cuando el
@@ -332,6 +341,7 @@ function ExecutorCostBlock({ rows }: { rows: ExecutorCost[] }) {
           );
         })
       )}
+      </div>
     </section>
   );
 }

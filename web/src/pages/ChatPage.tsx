@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { ApiError, api } from "../api/client";
 import type {
   AgentSummary,
@@ -32,26 +33,158 @@ function renderInline(text: string) {
   });
 }
 
+// ── Bloques ────────────────────────────────────────────────────────────────
+// El agente responde en markdown: las correlaciones ATT&CK y los inventarios de
+// artefactos llegan SIEMPRE como tabla, y una tabla en crudo (`| a | b |` línea
+// a línea) es ilegible para el perito. El parser va por bloques, no por líneas:
+// una tabla, una lista o un bloque de código son una unidad.
+
+const isTableRow = (s: string) => s.startsWith("|") && s.endsWith("|") && s.length > 2;
+// La fila de guiones es lo que CONVIERTE un bloque de pipes en tabla; sin ella
+// son párrafos que casualmente llevan pipes y se pintan como tales.
+const isTableDivider = (s: string) => isTableRow(s) && /^\|[\s:|-]*-[\s:|-]*\|$/.test(s);
+
+// `| a | b |` → ["a", "b"]. Los pipes de los extremos no son celdas.
+const splitRow = (s: string) => s.slice(1, -1).split("|").map((c) => c.trim());
+
+type CellAlign = "left" | "center" | "right";
+const alignOf = (spec: string): CellAlign => {
+  const left = spec.startsWith(":");
+  const right = spec.endsWith(":");
+  return left && right ? "center" : right ? "right" : "left";
+};
+
+const BULLET = /^[*-]\s+(.*)/;
+const NUMBERED = /^(\d+)[.)]\s+(.*)/;
+const HEADING = /^(#{1,6})\s+(.*)/;
+const RULE = /^(-{3,}|_{3,}|\*{3,})$/;
+
 function formatMessageContent(content: string) {
-  return content.split("\n").map((line, idx) => {
-    const text = line.trim();
-    if (text.startsWith("* ") || text.startsWith("- ")) {
-      return <li key={idx}>{renderInline(text.substring(2))}</li>;
-    }
-    const numMatch = text.match(/^(\d+)\.\s+(.*)/);
-    if (numMatch) {
-      return (
-        <li key={idx} value={parseInt(numMatch[1], 10)}>
-          {renderInline(numMatch[2])}
-        </li>
+  const lines = content.split("\n");
+  const out: ReactNode[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const text = lines[i].trim();
+
+    // Bloque de código cercado. Se conserva la indentación literal: suele ser
+    // salida de herramienta, y ahí un espacio significa algo.
+    if (text.startsWith("```")) {
+      const body: string[] = [];
+      i += 1;
+      while (i < lines.length && !lines[i].trim().startsWith("```")) {
+        body.push(lines[i]);
+        i += 1;
+      }
+      i += 1; // el cierre (o el fin del texto, si el turno se cortó)
+      out.push(
+        <pre className="turn-code" key={out.length}>
+          {body.join("\n")}
+        </pre>,
       );
+      continue;
     }
-    if (text.startsWith("### ")) return <h4 key={idx}>{renderInline(text.substring(4))}</h4>;
-    if (text.startsWith("## ")) return <h3 key={idx}>{renderInline(text.substring(3))}</h3>;
-    if (text.startsWith("# ")) return <h3 key={idx}>{renderInline(text.substring(2))}</h3>;
-    if (text === "") return <div key={idx} className="turn-gap" />;
-    return <p key={idx}>{renderInline(line)}</p>;
-  });
+
+    // Tabla: cabecera + fila de guiones + cuerpo hasta la primera línea que ya
+    // no es fila.
+    if (isTableRow(text) && i + 1 < lines.length && isTableDivider(lines[i + 1].trim())) {
+      const head = splitRow(text);
+      const aligns = splitRow(lines[i + 1].trim()).map(alignOf);
+      i += 2;
+      const rows: string[][] = [];
+      while (i < lines.length && isTableRow(lines[i].trim())) {
+        rows.push(splitRow(lines[i].trim()));
+        i += 1;
+      }
+      out.push(
+        <div className="turn-table-wrap" key={out.length}>
+          <table className="turn-table">
+            <thead>
+              <tr>
+                {head.map((c, k) => (
+                  <th key={k} style={{ textAlign: aligns[k] ?? "left" }}>
+                    {renderInline(c)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, k) => (
+                <tr key={k}>
+                  {/* Se recorre la CABECERA, no la fila: una fila corta deja
+                      celdas vacías en su sitio en vez de descuadrar la tabla. */}
+                  {head.map((_, c) => (
+                    <td key={c} style={{ textAlign: aligns[c] ?? "left" }}>
+                      {renderInline(r[c] ?? "")}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>,
+      );
+      continue;
+    }
+
+    // Lista: se agrupan las líneas consecutivas en UN <ul>/<ol>, que es lo que
+    // les da sangría y marcador de verdad.
+    if (BULLET.test(text) || NUMBERED.test(text)) {
+      const ordered = NUMBERED.test(text);
+      const items: { value?: number; text: string }[] = [];
+      while (i < lines.length) {
+        const t = lines[i].trim();
+        const num = NUMBERED.exec(t);
+        const bullet = BULLET.exec(t);
+        if (ordered && num) items.push({ value: parseInt(num[1], 10), text: num[2] });
+        else if (!ordered && bullet) items.push({ text: bullet[1] });
+        else break;
+        i += 1;
+      }
+      const children = items.map((it, k) => (
+        <li key={k} value={it.value}>
+          {renderInline(it.text)}
+        </li>
+      ));
+      out.push(
+        ordered ? (
+          <ol className="turn-list" key={out.length}>
+            {children}
+          </ol>
+        ) : (
+          <ul className="turn-list" key={out.length}>
+            {children}
+          </ul>
+        ),
+      );
+      continue;
+    }
+
+    const heading = HEADING.exec(text);
+    if (heading) {
+      const Tag = heading[1].length <= 2 ? "h3" : "h4";
+      out.push(<Tag key={out.length}>{renderInline(heading[2])}</Tag>);
+      i += 1;
+      continue;
+    }
+
+    if (RULE.test(text)) {
+      out.push(<hr className="turn-hr" key={out.length} />);
+      i += 1;
+      continue;
+    }
+
+    if (text === "") {
+      out.push(<div className="turn-gap" key={out.length} />);
+      i += 1;
+      continue;
+    }
+
+    out.push(<p key={out.length}>{renderInline(text)}</p>);
+    i += 1;
+  }
+
+  return out;
 }
 
 // Instrucciones de arranque del mock: verbos del oficio, no botones de demo.

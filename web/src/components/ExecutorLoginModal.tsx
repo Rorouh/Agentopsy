@@ -264,7 +264,7 @@ export function ExecutorLoginModal({
                   <code
                     style={{
                       flex: 1,
-                      fontSize: 20,
+                      fontSize: 23,
                       letterSpacing: 2,
                       padding: "8px 10px",
                       background: "var(--surface-2, rgba(127,127,127,0.12))",
