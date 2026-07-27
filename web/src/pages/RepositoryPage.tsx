@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api } from "../api/client";
+import { ApiError, api } from "../api/client";
 import type {
   Case,
   CustodyAct,
@@ -23,6 +23,7 @@ import { Modal } from "../ui/Modal";
 import { PageHeader } from "../ui/PageHeader";
 import { PageSection } from "../ui/PageSection";
 import { formatBytes, formatDate, shortHash } from "../utils/format";
+import { isEwfFirstSegment } from "../utils/evidence";
 
 // Etiqueta corta del nivel de solo-lectura para la lista de custodia. La fuente
 // AUTORITATIVA es el backend (metadata.read_only_label / acta.read_only.label);
@@ -83,6 +84,13 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
   const [editError, setEditError] = useState<string | null>(null);
   const [caseActionBusy, setCaseActionBusy] = useState(false);
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
+  // Borrado PERMANENTE del caso: modal tipo-a-confirmar (el operador escribe el
+  // nombre exacto). El backend re-valida `confirm_name` (RULE 2) y responde 409
+  // si no cuadra, sin borrar nada.
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [deleteConfirmName, setDeleteConfirmName] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [registering, setRegistering] = useState(false);
   // Flash de éxito de registro (2 s) — aria-live en EvidenceInbox.
@@ -100,6 +108,10 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  // Resumen informativo de la última tanda (p. ej. segmentos EWF que ya estaban
+  // en la bandeja: 409 del backend, que NUNCA sobrescribe evidencia). No es un
+  // error — el operador puede seguir adelante y registrar.
+  const [uploadNotice, setUploadNotice] = useState<string | null>(null);
 
   // Acta de adquisición: modal por evidencia con la metadata de custodia + el
   // acta estructurada (cadena hash-encadenada), ambas del backend.
@@ -234,7 +246,9 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
     }
   }, [form]);
 
-  const loadSources = useCallback(async () => {
+  // Devuelve la bandeja recién leída (además de fijarla en el estado) para que
+  // quien la refresca pueda decidir sobre la lista NUEVA sin esperar al render.
+  const loadSources = useCallback(async (): Promise<EvidenceSource[] | null> => {
     setLoadingSources(true);
     setEvidenceError(null);
     try {
@@ -245,33 +259,88 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
       setSelectedSourcePath((prev) =>
         res.sources.some((s) => s.path === prev) ? prev : ""
       );
+      return res.sources;
     } catch (err) {
       setSources(null);
       setEvidenceError({
         kind: "register",
         message: String(err instanceof Error ? err.message : err),
       });
+      return null;
     } finally {
       setLoadingSources(false);
     }
   }, []);
 
-  const uploadSource = useCallback(
-    async (file: File) => {
+  // Sube una TANDA de ficheros a la bandeja, en serie. Un EWF partido son N
+  // ficheros (.E01 … .E0N) y la bandeja los necesita todos para que ewfmount
+  // reensamble la imagen; por eso se sube el conjunto, no solo el primero.
+  // Un 409 («ya está en la bandeja») NO es un fallo: el backend nunca
+  // sobrescribe evidencia, así que re-soltar un set del que ya había parte es
+  // el caso normal — se cuenta como informativo. Al terminar refresca la
+  // bandeja y autoselecciona el .E01 de la tanda (lo único registrable de un
+  // set), para que al operador solo le quede pulsar «Registrar».
+  const uploadSources = useCallback(
+    async (files: File[]) => {
+      if (files.length === 0) return;
       setUploading(true);
       setUploadProgress(0);
       setUploadError(null);
+      setUploadNotice(null);
+
+      const uploaded: EvidenceSource[] = [];
+      const already: string[] = [];
+      const failed: string[] = [];
       try {
-        const src = await api.evidence.uploadSource(file, setUploadProgress);
-        // Refresca la bandeja (ahora incluye lo subido) y autoselecciona el
-        // fichero recién subido, listo para «Registrar».
-        await loadSources();
-        setSelectedSourcePath(src.path);
-      } catch (err) {
-        setUploadError(String(err instanceof Error ? err.message : err));
+        for (let i = 0; i < files.length; i += 1) {
+          const file = files[i];
+          try {
+            const src = await api.evidence.uploadSource(file, (fraction) =>
+              // Progreso agregado sobre la tanda completa.
+              setUploadProgress((i + fraction) / files.length),
+            );
+            uploaded.push(src);
+          } catch (err) {
+            if (err instanceof ApiError && err.status === 409) {
+              already.push(file.name);
+            } else {
+              failed.push(
+                `${file.name}: ${String(err instanceof Error ? err.message : err)}`,
+              );
+            }
+          }
+        }
       } finally {
         setUploading(false);
+        setUploadProgress(1);
       }
+
+      if (failed.length > 0) setUploadError(failed.join(" · "));
+      const notes: string[] = [];
+      if (uploaded.length > 0) {
+        notes.push(
+          `${uploaded.length} ${uploaded.length === 1 ? "fichero subido" : "ficheros subidos"} a la bandeja`,
+        );
+      }
+      if (already.length > 0) {
+        notes.push(
+          `${already.length} ya ${already.length === 1 ? "estaba" : "estaban"} en la bandeja (${already.join(", ")}); no se sobrescribe evidencia`,
+        );
+      }
+      setUploadNotice(notes.length > 0 ? `${notes.join(" · ")}.` : null);
+
+      // Refresca SIEMPRE (incluso si todo eran duplicados: la bandeja ya los
+      // tiene y el operador debe poder registrarlos).
+      const refreshed = await loadSources();
+      if (!refreshed) return;
+      const batch = new Set(files.map((f) => f.name));
+      const inBatch = refreshed.filter((s) => batch.has(s.name.split(/[\\/]/).pop() ?? s.name));
+      // Punto de entrada del set: el primer segmento EWF de la tanda. Si no hay
+      // ninguno y la tanda era un único fichero, se selecciona ese.
+      const entry =
+        inBatch.find((s) => isEwfFirstSegment(s.name)) ??
+        (files.length === 1 ? inBatch[0] : undefined);
+      if (entry) setSelectedSourcePath(entry.path);
     },
     [loadSources],
   );
@@ -426,6 +495,36 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
       setCaseActionBusy(false);
     }
   }, [activeCase]);
+
+  const openDeleteModal = useCallback(() => {
+    setDeleteConfirmName("");
+    setDeleteError(null);
+    setConfirmDeleteOpen(true);
+  }, []);
+
+  // Borrado PERMANENTE del caso activo. El backend exige el nombre exacto y
+  // borra el directorio entero (evidencia, audit, hallazgos, artefactos); aquí
+  // solo se recarga la lista, que deselecciona el caso si era el activo.
+  const deleteActiveCase = useCallback(async () => {
+    if (!activeCase) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await api.cases.delete(activeCase.id, deleteConfirmName);
+      setConfirmDeleteOpen(false);
+      setDeleteConfirmName("");
+      // El caso ya no existe: limpia lo que colgaba de él antes de recargar.
+      setEvidence([]);
+      setSources(null);
+      setSelectedSourcePath("");
+      setActiveCaseId((prev) => (prev === activeCase.id ? null : prev));
+      await loadCases();
+    } catch (err) {
+      setDeleteError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setDeleting(false);
+    }
+  }, [activeCase, deleteConfirmName, loadCases, setActiveCaseId]);
 
   const startEdit = useCallback(() => {
     if (!activeCase) return;
@@ -608,6 +707,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
                     }
                     onEdit={startEdit}
                     onRequestClose={() => setConfirmCloseOpen(true)}
+                    onRequestDelete={openDeleteModal}
                     onReopen={reopenActiveCase}
                   />
                 )}
@@ -646,10 +746,11 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
                     uploading={uploading}
                     uploadProgress={uploadProgress}
                     uploadError={uploadError}
+                    uploadNotice={uploadNotice}
                     onSelectSource={setSelectedSourcePath}
-                    onLoadSources={loadSources}
+                    onLoadSources={() => void loadSources()}
                     onRegister={registerSelectedSource}
-                    onUploadFile={uploadSource}
+                    onUploadFiles={uploadSources}
                   />
                 </PageSection>
               </div>
@@ -886,6 +987,59 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
           </Button>
           <Button variant="primary" disabled={caseActionBusy} onClick={closeActiveCase}>
             {caseActionBusy ? "Cerrando…" : "Cerrar caso"}
+          </Button>
+        </div>
+      </Modal>
+
+      <Modal
+        open={confirmDeleteOpen}
+        title="Eliminar caso"
+        onClose={() => {
+          if (!deleting) setConfirmDeleteOpen(false);
+        }}
+      >
+        <div className="danger-notice">
+          <strong>Esta acción es irreversible.</strong> Se borrará de forma
+          PERMANENTE todo el caso «{activeCase?.name}» y con él su cadena de
+          custodia completa: las copias de evidencia registradas, el log de
+          auditoría hash-encadenado, los hallazgos, los artefactos, los chats y
+          los informes. No hay papelera ni deshacer.
+        </div>
+        <div className="form-field full-width">
+          <label className="form-label" htmlFor="delete-case-confirm">
+            Escribe el nombre del caso ({activeCase?.name}) para confirmar
+          </label>
+          <input
+            id="delete-case-confirm"
+            className="form-input"
+            value={deleteConfirmName}
+            onChange={(e) => setDeleteConfirmName(e.target.value)}
+            placeholder={activeCase?.name ?? ""}
+            autoComplete="off"
+            autoFocus
+          />
+        </div>
+        {deleteError && (
+          <div className="error-state" style={{ marginTop: 8 }}>
+            <strong>No se pudo eliminar el caso:</strong> {deleteError}
+          </div>
+        )}
+        <div className="cta-row">
+          <Button
+            variant="chip"
+            disabled={deleting}
+            onClick={() => setConfirmDeleteOpen(false)}
+          >
+            Cancelar
+          </Button>
+          <Button
+            variant="primary"
+            className="btn-danger"
+            // Habilitado solo con el nombre EXACTO; el backend lo re-valida.
+            disabled={deleting || deleteConfirmName !== (activeCase?.name ?? "")}
+            onClick={deleteActiveCase}
+          >
+            {deleting ? "Eliminando…" : "Eliminar permanentemente"}
           </Button>
         </div>
       </Modal>

@@ -12,18 +12,22 @@ interface ActiveCaseHeaderProps {
   onEdit: () => void;
   // Abre el Modal de confirmación de cierre (vive en la página, no aquí).
   onRequestClose: () => void;
+  // Abre el Modal de borrado PERMANENTE (tipo-a-confirmar; vive en la página).
+  onRequestDelete: () => void;
   onReopen: () => void;
 }
 
 // Header compacto del caso activo: identidad en 2 líneas + acciones. La
-// acción primaria es Investigar; cerrar queda detrás del menú «Más» porque
-// es infrecuente y pide confirmación.
+// acción primaria es Investigar; cerrar y ELIMINAR quedan detrás del menú
+// «Más» porque son infrecuentes y piden confirmación (eliminar, además,
+// escribiendo el nombre del caso: es irreversible).
 export function ActiveCaseHeader({
   c,
   busy,
   onInvestigate,
   onEdit,
   onRequestClose,
+  onRequestDelete,
   onReopen,
 }: ActiveCaseHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -61,6 +65,32 @@ export function ActiveCaseHeader({
           <Button variant="primary" disabled={busy} onClick={onReopen}>
             {busy ? "Reabriendo…" : "Reabrir caso"}
           </Button>
+          <div className="context-menu-wrap" ref={menuRef}>
+            <Button
+              variant="chip"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((v) => !v)}
+            >
+              Más ▾
+            </Button>
+            {menuOpen && (
+              <div className="context-menu" role="menu">
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="context-menu-item context-menu-item--danger"
+                  disabled={busy}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onRequestDelete();
+                  }}
+                >
+                  Eliminar caso
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       ) : (
         <div className="active-case-actions">
@@ -94,6 +124,18 @@ export function ActiveCaseHeader({
                   }}
                 >
                   Cerrar caso
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="context-menu-item context-menu-item--danger"
+                  disabled={busy}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onRequestDelete();
+                  }}
+                >
+                  Eliminar caso
                 </button>
               </div>
             )}

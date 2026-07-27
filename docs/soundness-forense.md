@@ -272,9 +272,13 @@ En el modelo compose **todas** las herramientas corren dentro de los maletines
 lectura** (`/evidence:ro`) gobernado por `EvidenceManager`. Ese `ro` es para el
 AGENTE/maletines: nunca mutan la imagen. El servicio `api` monta la MISMA bandeja en
 lectura-escritura (`/evidence:rw`) porque es el camino del **perito** para SUBIR evidencia
-desde la web (`POST /api/evidence/upload`, drag-and-drop). Subir solo deposita el fichero en
-la bandeja (`forensia.evidence.save_uploaded_source`: valida nombre y formato, rechaza
-traversal y sobrescritura, escribe a un temporal oculto y renombra atómicamente); el
+desde la web (`POST /api/evidence/upload`, drag-and-drop de uno o VARIOS ficheros). Subir solo
+deposita el fichero en la bandeja (`forensia.evidence.save_uploaded_source`: valida nombre y
+formato, rechaza traversal y sobrescritura, escribe a un temporal oculto y renombra
+atómicamente). Un EWF partido se sube ENTERO: los segmentos de continuación (`.E02` … `.E99`,
+`.Ex02` …) son **subibles** aunque no sean **registrables** — sin todos ellos en el mismo
+directorio `ewfmount` no reensambla la imagen (`is_uploadable_evidence_ext` vs
+`is_registrable_evidence_ext`; registrar sigue siendo cosa del `.E01`, que ingiere el set). El
 hash-gate y la copia inmutable ocurren después, al **registrar**, exactamente como cuando el
 fichero se copia a mano a `./evidence`. La regla dura se conserva
 intacta: **ningún contenedor monta la imagen raw como filesystem**. Las herramientas

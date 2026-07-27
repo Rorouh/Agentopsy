@@ -8,6 +8,11 @@ discovering the rest (``.E02`` … ``.E0N``) IN THE SAME DIRECTORY. Copying only
 ingests the full set as ``original.E01`` … ``original.E0N`` (shared stem, so libewf
 reassembles from ``original.E01``), and ``verify`` re-hashes every segment.
 
+También cubre el INTAKE del set: la bandeja acepta SUBIR cualquier segmento EWF
+(las continuaciones ``.E02`` … no están en ``SUPPORTED_EVIDENCE_EXTENSIONS``, pero
+sin ellas no hay imagen que reensamblar), mientras que el punto de entrada
+REGISTRABLE sigue siendo solo el primer segmento.
+
 No docker / no real ``ewfmount`` needed — this pins the ingestion + custody contract
 of ``EvidenceManager``. The mount/assembly mechanism itself lives in
 ``test_ewf_routing.py``.
@@ -16,6 +21,7 @@ of ``EvidenceManager``. The mount/assembly mechanism itself lives in
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import stat
@@ -30,6 +36,9 @@ from forensia.evidence import (
     _ewf_segment_index,
     _is_ewf_first_segment,
     _is_ewf_middle_segment,
+    is_registrable_evidence_ext,
+    is_uploadable_evidence_ext,
+    save_uploaded_source,
 )
 
 
@@ -303,3 +312,93 @@ class TestVerifyWholeSet:
         victim.write_bytes(b"TAMPERED-SEGMENT-CONTENT")
         os.chmod(victim, 0o444)
         assert manager.verify(case.id, handle.evidence_id) is False
+
+
+# ── intake: SUBIR el conjunto ≠ REGISTRAR el punto de entrada ────────────────
+#
+# La bandeja necesita TODOS los segmentos de un EWF partido (si falta uno,
+# ``ewfmount`` no reensambla la imagen), así que las continuaciones son subibles
+# aunque no estén en ``SUPPORTED_EVIDENCE_EXTENSIONS``. Registrable sigue siendo
+# solo el PRIMER segmento (o un formato single-file): registrar una continuación
+# suelta lo rechaza ``register`` (RULE 2).
+
+
+class TestIntakePredicates:
+    @pytest.mark.parametrize(
+        "ext", [".raw", ".dd", ".vmdk", ".mem", ".e01", ".E01", ".Ex01"]
+    )
+    def test_single_file_and_first_segment_are_uploadable_and_registrable(self, ext):
+        assert is_uploadable_evidence_ext(ext)
+        assert is_registrable_evidence_ext(ext)
+
+    @pytest.mark.parametrize("ext", [".E02", ".e02", ".E09", ".E99", ".Ex02"])
+    def test_numeric_continuation_segments_are_uploadable_but_not_registrable(self, ext):
+        assert is_uploadable_evidence_ext(ext)
+        assert not is_registrable_evidence_ext(ext)
+
+    @pytest.mark.parametrize("ext", [".txt", ".pdf", ".exe", ".eml", ".E00", ".E1", ""])
+    def test_unsupported_extensions_are_neither(self, ext):
+        assert not is_uploadable_evidence_ext(ext)
+        assert not is_registrable_evidence_ext(ext)
+
+    @pytest.mark.parametrize("ext", [".EAA", ".EZZ", ".eaa"])
+    def test_alpha_continuation_is_not_uploadable_on_its_own(self, ext):
+        # Suelta, ``.EAA`` no se distingue de una extensión corriente que empiece
+        # por «e» (.exe, .eml…): admitirla convertiría la bandeja en un buzón de
+        # ficheros arbitrarios. Un set de >99 segmentos se deposita copiándolo a
+        # ./evidence en el host; el descubrimiento del set sí la contempla
+        # (``_ewf_segment_index`` la indexa dentro de un set anclado en su .E01).
+        assert not is_uploadable_evidence_ext(ext)
+        assert not is_registrable_evidence_ext(ext)
+        assert _ewf_segment_index(ext) is not None
+
+
+class TestUploadSegmentSet:
+    @pytest.fixture
+    def inbox(self, tmp_path, monkeypatch):
+        root = tmp_path / "inbox"
+        root.mkdir()
+        monkeypatch.setenv("FORENSIA_EVIDENCE_DIR", str(root))
+        return root
+
+    def _upload(self, name: str, payload: bytes) -> dict:
+        return save_uploaded_source(name, io.BytesIO(payload))
+
+    @pytest.mark.parametrize(
+        "name",
+        ["caso.E02", "caso.E09", "caso.E99", "caso.Ex02", "caso.e03", "disco.raw"],
+    )
+    def test_uploadable_names_land_in_the_inbox(self, inbox, name):
+        entry = self._upload(name, b"payload")
+        assert entry["name"] == name
+        assert (inbox / name).read_bytes() == b"payload"
+
+    def test_whole_segment_set_can_be_uploaded_then_registered(
+        self, inbox, manager, case
+    ):
+        # El camino del perito: sube los 3 segmentos desde el navegador y luego
+        # registra el .E01 — que ingiere el set completo.
+        for i in range(1, 4):
+            self._upload(f"LoneWolf.E{i:02d}", f"segmento-{i}".encode())
+        handle = manager.register(case.id, str(inbox / "LoneWolf.E01"))
+        assert [s.name for s in handle.segments] == [
+            "original.E01",
+            "original.E02",
+            "original.E03",
+        ]
+
+    def test_unsupported_extension_is_still_rejected(self, inbox):
+        with pytest.raises(ValueError, match="Formato no soportado"):
+            self._upload("notas.txt", b"nope")
+        assert list(inbox.iterdir()) == []
+
+    def test_duplicate_name_never_overwrites(self, inbox):
+        self._upload("caso.E02", b"original")
+        with pytest.raises(FileExistsError):
+            self._upload("caso.E02", b"nuevo")
+        assert (inbox / "caso.E02").read_bytes() == b"original"
+
+    def test_traversal_in_a_segment_name_is_rejected(self, inbox, tmp_path):
+        with pytest.raises(ValueError, match="no válido"):
+            self._upload("../fuera.E02", b"x")
+        assert not (tmp_path / "fuera.E02").exists()

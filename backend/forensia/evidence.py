@@ -226,6 +226,25 @@ def _is_ewf_middle_segment(suffix: str) -> bool:
     return bool(_EWF_ANY_RE.match(suffix)) and not _is_ewf_first_segment(suffix)
 
 
+def _is_ewf_numeric_segment(suffix: str) -> bool:
+    """A segment in the NUMERIC part of the naming scheme (``.E01`` … ``.E99`` /
+    ``.Ex01`` … ``.Ex99``).
+
+    The alpha continuation (``.EAA`` …, i.e. segment 100 onwards) is deliberately
+    NOT included: as a bare extension it is indistinguishable from ordinary
+    ones that start with ``e`` (``.exe``, ``.eml``, ``.eps`` …), so accepting it
+    as "evidence" on a per-filename basis would turn the inbox into a drop for
+    arbitrary files. Within a SET it stays supported — ``_discover_ewf_segment_set``
+    only ever considers siblings of a real ``.E01``, where the numbering gives
+    the context this predicate lacks.
+    """
+    match = _EWF_ANY_RE.match(suffix)
+    if match is None:
+        return False
+    tail = match.group(2)
+    return tail.isdigit() and int(tail) >= 1
+
+
 def _discover_ewf_segment_set(first: Path) -> list[Path]:
     """The ordered, GAP-FREE EWF segment set co-located with ``first`` (a
     ``.E01`` / ``.Ex01``).
@@ -769,6 +788,37 @@ SUPPORTED_EVIDENCE_EXTENSIONS: frozenset[str] = frozenset(
     {".raw", ".dd", ".img", ".vmdk", ".vmem", ".e01", ".aff", ".vhd", ".mem", ".lime", ".dmp"}
 )
 
+
+# «Subible a la bandeja» y «punto de entrada registrable» NO son lo mismo, y
+# confundirlos es lo que impedía subir un EWF segmentado desde el navegador:
+#
+#   - SUBIBLE   = formato single-file soportado ∪ segmento EWF numerado
+#     (``.E01`` … ``.E99`` / ``.Ex01`` … ``.Ex99``). Un set EWF son N ficheros y
+#     la bandeja los necesita TODOS, así que las continuaciones también se suben
+#     aunque no estén en ``SUPPORTED_EVIDENCE_EXTENSIONS``. La continuación
+#     ALFA (``.EAA`` …, del segmento 100 en adelante) queda fuera a propósito:
+#     suelta es indistinguible de extensiones corrientes (``.exe``, ``.eml``…) y
+#     abriría la bandeja a ficheros arbitrarios — un set de >99 segmentos se
+#     deposita copiándolo a ``./evidence`` en el host, donde el descubrimiento
+#     del set sí la contempla.
+#   - REGISTRABLE = formato single-file soportado ∪ PRIMER segmento EWF
+#     (``.E01`` / ``.Ex01``). Registrar el primero ingiere el set entero
+#     (``EvidenceManager.register`` descubre los hermanos co-localizados); un
+#     segmento intermedio suelto no puede ensamblar la imagen y ``register`` lo
+#     rechaza (RULE 2).
+def is_uploadable_evidence_ext(ext: str) -> bool:
+    """¿Se puede DEPOSITAR en la bandeja un fichero con esta extensión?"""
+    ext = ext.lower()
+    return ext in SUPPORTED_EVIDENCE_EXTENSIONS or _is_ewf_numeric_segment(ext)
+
+
+def is_registrable_evidence_ext(ext: str) -> bool:
+    """¿Es esta extensión un punto de entrada REGISTRABLE (lo que el operador
+    puede elegir y pulsar «Registrar»)? Espejo en ``web/src/utils/evidence.ts``."""
+    ext = ext.lower()
+    return ext in SUPPORTED_EVIDENCE_EXTENSIONS or _is_ewf_first_segment(ext)
+
+
 # Tamaño de bloque al escribir un upload en la bandeja (imágenes multi-GB).
 _UPLOAD_CHUNK = 1024 * 1024  # 1 MiB
 
@@ -811,7 +861,11 @@ def save_uploaded_source(filename: str, stream: BinaryIO) -> dict:
     - ``filename`` debe ser un basename limpio: sin separadores de ruta, sin
       ``..``, sin punto inicial (los ocultos no se listan). Se rechaza, no se
       recorta.
-    - la extensión debe estar en ``SUPPORTED_EVIDENCE_EXTENSIONS``.
+    - la extensión debe ser SUBIBLE (``is_uploadable_evidence_ext``): un formato
+      single-file soportado, o un segmento EWF numerado — incluidas las
+      continuaciones ``.E02`` … ``.E99`` / ``.Ex02`` …, para poder subir el
+      CONJUNTO de un EWF segmentado desde el navegador (registrar sigue siendo
+      cosa del ``.E01`` — ``is_registrable_evidence_ext``).
     - el destino queda confinado a la raíz de la bandeja.
     - si ya existe un fichero con ese nombre → ``FileExistsError`` (nunca se
       sobrescribe evidencia; el operador resuelve el conflicto).
@@ -831,10 +885,12 @@ def save_uploaded_source(filename: str, stream: BinaryIO) -> dict:
             "sin rutas, sin '..' y sin punto inicial."
         )
     ext = Path(name).suffix.lower()
-    if ext not in SUPPORTED_EVIDENCE_EXTENSIONS:
+    if not is_uploadable_evidence_ext(ext):
         raise ValueError(
             f"Formato no soportado: {ext or '(sin extensión)'}. Formatos válidos: "
             + ", ".join(sorted(SUPPORTED_EVIDENCE_EXTENSIONS))
+            + ", y los segmentos de continuación de un EWF segmentado "
+            "(.E02 … .E99 / .Ex02 …), que se suben junto a su .E01."
         )
 
     dest = (root / name).resolve()
@@ -867,6 +923,11 @@ def list_source_files() -> list[dict]:
     ``save_uploaded_source``). En ambos casos el fichero aparece aquí y el
     operador lo ELIGE explícitamente (agencia del operador — RULE 2: nunca se
     registra "el único" ni "el más reciente").
+
+    Un EWF segmentado aparece aquí como N entradas (``caso.E01`` … ``caso.E0N``):
+    todas viven en la bandeja, pero solo el PRIMER segmento es un punto de entrada
+    registrable (``is_registrable_evidence_ext``) — registrarlo ingiere el set
+    completo; una continuación suelta la rechaza ``register`` (RULE 2).
 
     Se listan los ficheros regulares bajo la bandeja de forma **recursiva** (``rglob``),
     con la ruta relativa como ``name`` (p. ej. ``metasploitable2-linux/…vmdk``), para

@@ -31,6 +31,11 @@ docker compose up --build                # levanta web, api, ollama y los dos ma
 #   http://127.0.0.1:5173
 ```
 
+> Alternativa desde el navegador: en *Registrar evidencia* puedes **arrastrar (o elegir con
+> «Examinar…») TODOS los segmentos a la vez** — la bandeja acepta también las continuaciones
+> `.E02` … `.E99` / `.Ex02` … Al terminar queda auto-seleccionado el `.E01`. Un set de más de
+> 99 segmentos (continuación alfabética `.EAA`…) se deposita copiándolo al host, como arriba.
+
 Comprobación rápida de que el maletín trae `ewfmount` y su exec-agent responde:
 
 ```bash

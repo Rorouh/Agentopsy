@@ -39,6 +39,13 @@ class AnchorOsProfileRequest(BaseModel):
     os_profile: str
 
 
+class DeleteCaseRequest(BaseModel):
+    # El nombre del caso, tecleado por el operador para confirmar el borrado.
+    # RULE 2: obligatorio y comparado EXACTO en el manager — sin él no se borra
+    # nada, y no hay "borrar el caso activo" implícito.
+    confirm_name: str
+
+
 class UpdateCaseRequest(BaseModel):
     # All optional — the operator sends only the fields they're changing.
     # RULE 2: sending none is a caller bug, not a silent no-op; the manager
@@ -145,6 +152,22 @@ def update_case(case_id: str, req: UpdateCaseRequest) -> dict[str, Any]:
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return _case_dict(case)
+
+
+@router.post("/api/cases/{case_id}/delete", dependencies=[Depends(require_token)])
+def delete_case(case_id: str, req: DeleteCaseRequest) -> dict[str, Any]:
+    """Borra el caso y TODO su directorio (evidencia, audit hash-encadenado,
+    hallazgos, artefactos, chats, informes). Irreversible: el operador debe
+    repetir el nombre del caso en ``confirm_name`` (RULE 2 — jamás se borra por
+    id "a secas"). Caso inexistente → 404; confirmación que no cuadra (o id
+    malformado, o directorio fuera de la raíz de casos) → 409 sin borrar nada."""
+    try:
+        case_manager.delete_case(case_id, req.confirm_name)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"deleted": True, "case_id": case_id}
 
 
 # ---- evidence ------------------------------------------------------------

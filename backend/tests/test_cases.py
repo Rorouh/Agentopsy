@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from dataclasses import asdict
 
 import pytest
@@ -225,6 +226,89 @@ class TestReopen:
         case = manager.create(name="op", examiner="alice", os_profile="unix")
         manager.reopen(case.id)
         assert _audit(manager, case.id) == []
+
+
+class TestDelete:
+    """Borrado PERMANENTE del caso: destruye TODA la cadena de custodia, así que
+    la confirmación (repetir el nombre del caso) es parte del contrato, no de la
+    UI — RULE 2: sin ella no se borra nada."""
+
+    def test_delete_removes_the_whole_case_directory(self, manager):
+        case = manager.create(name="op", examiner="alice", os_profile="unix")
+        case_dir = manager.root / case.id
+        # Contenido representativo de la cadena de custodia del caso.
+        (case_dir / "audit.jsonl").write_text('{"action":"case_created"}\n')
+        (case_dir / "evidence" / "e1").mkdir()
+        (case_dir / "evidence" / "e1" / "original.raw").write_bytes(b"x" * 16)
+
+        assert manager.delete_case(case.id, "op") == case.id
+        assert not case_dir.exists()
+        assert manager.list() == []
+        with pytest.raises(KeyError):
+            manager.load(case.id)
+
+    def test_delete_leaves_other_cases_untouched(self, manager):
+        keep = manager.create(name="keep", examiner="alice", os_profile="unix")
+        drop = manager.create(name="drop", examiner="alice", os_profile="unix")
+        manager.delete_case(drop.id, "drop")
+        assert [c.id for c in manager.list()] == [keep.id]
+        assert manager.load(keep.id) == keep
+
+    def test_delete_with_wrong_confirm_name_raises_and_keeps_the_case(self, manager):
+        case = manager.create(name="Operación X", examiner="alice", os_profile="unix")
+        with pytest.raises(ValueError, match="confirm_name"):
+            manager.delete_case(case.id, "operación x")  # casi, pero no
+        assert (manager.root / case.id).is_dir()
+        assert manager.load(case.id) == case
+
+    @pytest.mark.parametrize("bad_confirm", ["", "   ", None, 5, ["op"]])
+    def test_delete_rejects_empty_or_non_string_confirm(self, manager, bad_confirm):
+        case = manager.create(name="op", examiner="alice", os_profile="unix")
+        with pytest.raises(ValueError, match="confirm_name"):
+            manager.delete_case(case.id, bad_confirm)
+        assert (manager.root / case.id).is_dir()
+
+    def test_delete_unknown_id_raises_keyerror(self, manager):
+        with pytest.raises(KeyError):
+            manager.delete_case("11111111-1111-4111-8111-111111111111", "op")
+
+    def test_delete_malformed_id_raises_valueerror(self, manager):
+        with pytest.raises(ValueError, match="UUID4"):
+            manager.delete_case("../../etc", "op")
+
+    def test_delete_refuses_a_case_dir_outside_the_root(self, manager, tmp_path, monkeypatch):
+        """El rmtree JAMÁS corre sobre una ruta que se resolvió fuera de la raíz
+        de casos (SECURITY INVARIANT 6). Se fuerza el escenario sustituyendo la
+        resolución del directorio (un case dir enlazado fuera resolvería así): la
+        guarda de confinamiento es lo que se está probando."""
+        case = manager.create(name="op", examiner="alice", os_profile="unix")
+        outside = tmp_path / "fuera" / case.id
+        outside.mkdir(parents=True)
+        # Un case.json válido: así la carga y la confirmación pasan y lo ÚNICO
+        # que puede detener el borrado es la guarda de confinamiento.
+        shutil.copy2(manager.root / case.id / "case.json", outside / "case.json")
+        (outside / "no-tocar.txt").write_text("intacto")
+        monkeypatch.setattr(manager, "case_dir", lambda _case_id: outside)
+
+        with pytest.raises(ValueError, match="outside the cases root"):
+            manager.delete_case(case.id, "op")
+        assert (outside / "no-tocar.txt").read_text() == "intacto"
+
+    def test_delete_removes_read_only_evidence_copies(self, manager, tmp_path):
+        """Las copias de evidencia son inmutables (chmod 0444). Borrar el caso
+        debe llevárselas igualmente — si no, el borrado quedaría a medias (en
+        Windows el unlink de un fichero de solo lectura falla)."""
+        from forensia.evidence import EvidenceManager
+
+        case = manager.create(name="op", examiner="alice", os_profile="unix")
+        source = tmp_path / "disco.raw"
+        source.write_bytes(b"EVIDENCIA" * 64)
+        EvidenceManager(manager).register(case.id, str(source))
+
+        manager.delete_case(case.id, "op")
+        assert not (manager.root / case.id).exists()
+        # El origen en la bandeja NO se toca: solo se borra la copia del caso.
+        assert source.exists()
 
 
 class TestUpdate:

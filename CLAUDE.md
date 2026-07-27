@@ -344,7 +344,21 @@ siblings (`.E02`…`.E0N`, gap-checked — a hole rejects the register, RULE 2) 
 source dir, each copied under a shared `original` stem (`original.E01`…`original.E0N`)
 with the per-segment hash gate, so `ewfmount` reassembles the full image (before, only
 the `.E01` was copied → truncated reads); `baseline.json` gains `segments[]`, `verify`
-re-hashes every segment, and a single-file evidence is unchanged. **MITRE ATT&CK is wired end to end (2026-07-14)**
+re-hashes every segment, and a single-file evidence is unchanged. The INTAKE of that set
+is wired too (2026-07-27): the inbox now accepts UPLOADING any numbered EWF segment
+(`is_uploadable_evidence_ext` — the `.E02`…`.E99`/`.Ex02`… continuations are not in
+`SUPPORTED_EVIDENCE_EXTENSIONS`, so a segmented set could not be uploaded whole from the
+browser; the alpha continuation `.EAA`… stays out, indistinguishable from `.exe`/`.eml`
+on its own → copy those to `./evidence` on the host), while the REGISTRABLE entry point
+is still the single-file formats ∪ the FIRST segment (`is_registrable_evidence_ext`).
+The UI uploads a whole batch (multi-select + multi-drop), treats a 409 as informational
+("already in the inbox" — evidence is never overwritten), auto-selects the batch's `.E01`
+and labels continuations as *segmento EWF · se registra desde el .E01* (not selectable).
+A case can also be DELETED (2026-07-27, `CaseManager.delete_case` →
+`POST /api/cases/{id}/delete`): irreversible removal of the whole case dir (evidence,
+hash-chained audit, findings, artifacts), gated by a type-to-confirm `confirm_name` that
+must equal `case.name` exactly (409 otherwise, nothing deleted) and confined to the cases
+root before any `rmtree` (SEC INV 6). **MITRE ATT&CK is wired end to end (2026-07-14)**
 (`backend/forensia/mitre/`): `record_finding` now accepts the `mitre_hints` the
 package prompts had been prescribing all along (the engine's `additionalProperties:
 false` was silently blocking them), validated server-side against a **closed enum

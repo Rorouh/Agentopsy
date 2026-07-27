@@ -12,7 +12,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+import shutil
+import stat
 import uuid
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
@@ -119,6 +122,21 @@ def _validate_notes(value: str) -> str:
     if len(value) > 10_000:
         raise ValueError(f"notes must be <= 10000 characters (got {len(value)})")
     return value
+
+
+def _clear_readonly_and_retry(func, path: str, _exc: BaseException) -> None:
+    """``shutil.rmtree`` error handler for the immutable evidence copies.
+
+    Evidence lives in the case directory as read-only files (``chmod 0444`` — the
+    hash gate freezes them). On Windows an unlink of a read-only file raises
+    ``PermissionError``, so deleting a case with registered evidence would fail
+    halfway; on POSIX the directory's own permissions govern the unlink, so this
+    handler never fires. Clearing the bit here is not eroding the invariant: the
+    read-only mode protects the evidence from being MODIFIED, and this path only
+    runs inside an explicit, name-confirmed deletion of the whole case.
+    """
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
 
 
 def _validate_case_id(case_id: str) -> str:
@@ -246,6 +264,59 @@ class CaseManager:
             {"action": "case_reopened", "case_id": case_id}
         )
         return updated
+
+    def delete_case(self, case_id: str, confirm_name: str) -> str:
+        """Delete a case and its ENTIRE directory, irreversibly. Returns the id.
+
+        This destroys the whole chain of custody of the case: the registered
+        evidence copies, the append-only hash-chained ``audit.jsonl``, the
+        findings, the artifacts, the chats and the reports. There is no undo and
+        no recycle bin — which is why the caller must repeat the case NAME back
+        (``confirm_name``), exactly. A mismatch (or a non-string) is a
+        ``ValueError`` and NOTHING is deleted; RULE 2: we never interpret a
+        near-miss as "they meant this case".
+
+        Nothing is written to the case's audit log on the way out — the log is
+        inside the directory being removed, so an "I was deleted" entry would be
+        deleted with it. The deletion is logged to the server log instead.
+
+        Raises ``KeyError`` when the case does not exist and ``ValueError`` when
+        the id is malformed, the confirmation does not match, or the resolved
+        directory is not a direct child of the cases root (SECURITY INVARIANT 6 —
+        an ``rmtree`` never runs on a path that escaped the root).
+        """
+        # ``load`` validates the id and raises KeyError for an unknown case, so a
+        # bad id never reaches the confirmation (nor the filesystem).
+        case = self.load(case_id)
+        if not isinstance(confirm_name, str):
+            raise ValueError(
+                f"confirm_name must be a string, got {type(confirm_name).__name__}"
+            )
+        if confirm_name != case.name:
+            raise ValueError(
+                f"confirm_name does not match the case name: expected {case.name!r}, "
+                f"got {confirm_name!r}. Nothing was deleted — type the case name "
+                "exactly to confirm the deletion."
+            )
+
+        case_dir = self.case_dir(case_id).resolve()
+        # Confinement, belt-and-braces before a recursive delete: the case dir is
+        # always a DIRECT child of the (already resolved) cases root. If it
+        # resolves anywhere else — a symlinked case dir, a tampered root — we
+        # refuse rather than rmtree an arbitrary path.
+        if case_dir.parent != self.root or not case_dir.is_dir():
+            raise ValueError(
+                f"case directory resolves outside the cases root ({self.root}); "
+                f"refusing to delete {case_dir}"
+            )
+
+        shutil.rmtree(case_dir, onexc=_clear_readonly_and_retry)
+        logger.warning(
+            "case %s (%r) deleted permanently, including its chain of custody",
+            case_id,
+            case.name,
+        )
+        return case_id
 
     def update(
         self,

@@ -10,8 +10,14 @@ Covers:
   (RULE 2 — jamás se adivina una bandeja); con la bandeja montada lista solo
   ficheros regulares no ocultos.
 - ``/api/evidence/upload`` (subida del perito): deposita el fichero en la
-  bandeja; rechaza formato no soportado (422), traversal en el nombre (422) y
-  sobrescritura de evidencia existente (409); exige token.
+  bandeja; acepta también los segmentos de continuación de un EWF partido
+  (``.E02`` … — sin ellos no se puede subir el CONJUNTO desde el navegador, y
+  sin el conjunto ``ewfmount`` no reensambla la imagen); rechaza formato no
+  soportado (422), traversal en el nombre (422) y sobrescritura de evidencia
+  existente (409); exige token.
+- ``/api/cases/{id}/delete``: borra el caso ENTERO solo si ``confirm_name``
+  coincide EXACTO con el nombre (RULE 2) — 409 si no, 404 si no existe, 401 sin
+  token.
 - ``/api/agent/query``: un ejecutor cloud disponible ya NO exige consentimiento
   (el consent de egress cloud se eliminó 2026-07-16) — pasa la validación de
   ejecutor; un ``os_profile`` sin resolver → 409 accionable (RULE 2 enmendada,
@@ -221,6 +227,77 @@ def test_upload_requires_token(client: TestClient) -> None:
     assert r.status_code == 401
 
 
+@pytest.mark.parametrize("segment", ["caso.E02", "caso.E09", "caso.Ex02"])
+def test_upload_accepts_ewf_continuation_segments(
+    client: TestClient, auth: dict, monkeypatch: pytest.MonkeyPatch, tmp_path, segment
+) -> None:
+    # Un EWF partido son N ficheros y la bandeja los necesita TODOS (ewfmount
+    # reensambla desde el .E01 a sus hermanos co-localizados): las
+    # continuaciones se suben aunque no sean puntos de entrada registrables.
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    monkeypatch.setenv("FORENSIA_EVIDENCE_DIR", str(inbox))
+
+    r = client.post(
+        "/api/evidence/upload",
+        headers=auth,
+        files={"file": (segment, b"S" * 16, "application/octet-stream")},
+    )
+    assert r.status_code == 200, r.text
+    assert (inbox / segment).read_bytes() == b"S" * 16
+
+
+def test_upload_whole_ewf_set_then_register_ingests_it_as_one_evidence(
+    client: TestClient, auth: dict, isolated_cases: CaseManager,
+    monkeypatch: pytest.MonkeyPatch, tmp_path,
+) -> None:
+    # Camino completo del perito por la web: subir los 3 segmentos y registrar
+    # el .E01 (el único registrable) → UNA evidencia con el set entero.
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    monkeypatch.setenv("FORENSIA_EVIDENCE_DIR", str(inbox))
+    case_id = _create_case(client, auth)
+
+    for i in (1, 2, 3):
+        r = client.post(
+            "/api/evidence/upload",
+            headers=auth,
+            files={"file": (f"LoneWolf.E{i:02d}", f"seg-{i}".encode(), "application/octet-stream")},
+        )
+        assert r.status_code == 200, r.text
+
+    reg = client.post(
+        f"/api/cases/{case_id}/evidence",
+        headers=auth,
+        json={"source_path": str(inbox / "LoneWolf.E01")},
+    )
+    assert reg.status_code == 200, reg.text
+    assert [s["name"] for s in reg.json()["segments"]] == [
+        "original.E01",
+        "original.E02",
+        "original.E03",
+    ]
+
+
+def test_upload_of_a_continuation_that_is_already_there_is_409(
+    client: TestClient, auth: dict, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    # La UI trata este 409 como informativo (re-soltar un set del que ya había
+    # parte es normal), pero el backend sigue sin sobrescribir evidencia jamás.
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "caso.E02").write_bytes(b"original")
+    monkeypatch.setenv("FORENSIA_EVIDENCE_DIR", str(inbox))
+
+    r = client.post(
+        "/api/evidence/upload",
+        headers=auth,
+        files={"file": ("caso.E02", b"nuevo", "application/octet-stream")},
+    )
+    assert r.status_code == 409
+    assert (inbox / "caso.E02").read_bytes() == b"original"
+
+
 def _create_case(client: TestClient, auth: dict) -> str:
     r = client.post(
         "/api/cases",
@@ -229,6 +306,65 @@ def _create_case(client: TestClient, auth: dict) -> str:
     )
     assert r.status_code == 200, r.text
     return r.json()["id"]
+
+
+# ---- /api/cases/{id}/delete ----------------------------------------------------
+
+
+def test_delete_case_removes_it_when_the_name_matches(
+    client: TestClient, auth: dict, isolated_cases: CaseManager, tmp_path
+) -> None:
+    case_id = _create_case(client, auth)
+    source = tmp_path / "disco.raw"
+    source.write_bytes(b"EVIDENCIA" * 32)
+    reg = client.post(
+        f"/api/cases/{case_id}/evidence", headers=auth, json={"source_path": str(source)}
+    )
+    assert reg.status_code == 200, reg.text
+
+    r = client.post(
+        f"/api/cases/{case_id}/delete", headers=auth, json={"confirm_name": "Caso RGPD"}
+    )
+    assert r.status_code == 200, r.text
+    assert r.json() == {"deleted": True, "case_id": case_id}
+    # El directorio entero (evidencia + audit incluidos) ya no existe.
+    assert not (isolated_cases.root / case_id).exists()
+    assert client.get(f"/api/cases/{case_id}", headers=auth).status_code == 404
+
+
+def test_delete_case_with_wrong_name_is_409_and_keeps_the_case(
+    client: TestClient, auth: dict, isolated_cases: CaseManager
+) -> None:
+    case_id = _create_case(client, auth)
+    r = client.post(
+        f"/api/cases/{case_id}/delete", headers=auth, json={"confirm_name": "caso rgpd"}
+    )
+    assert r.status_code == 409
+    assert "confirm_name" in r.json()["detail"]
+    assert (isolated_cases.root / case_id).is_dir()
+    assert client.get(f"/api/cases/{case_id}", headers=auth).status_code == 200
+
+
+def test_delete_unknown_case_is_404(client: TestClient, auth: dict) -> None:
+    r = client.post(
+        "/api/cases/11111111-1111-4111-8111-111111111111/delete",
+        headers=auth,
+        json={"confirm_name": "lo que sea"},
+    )
+    assert r.status_code == 404
+
+
+def test_delete_without_confirm_name_is_422(client: TestClient, auth: dict) -> None:
+    # RULE 2: la confirmación es obligatoria — sin ella el body ni siquiera valida.
+    case_id = _create_case(client, auth)
+    r = client.post(f"/api/cases/{case_id}/delete", headers=auth, json={})
+    assert r.status_code == 422
+
+
+def test_delete_requires_token(client: TestClient, auth: dict) -> None:
+    case_id = _create_case(client, auth)
+    r = client.post(f"/api/cases/{case_id}/delete", json={"confirm_name": "Caso RGPD"})
+    assert r.status_code == 401
 
 
 # ---- /api/agent/query: validación de ejecutor / os_profile (backend) -----------

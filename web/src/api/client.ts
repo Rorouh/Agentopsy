@@ -276,6 +276,15 @@ export const api = {
       post<Case>(`/api/cases/${encodeURIComponent(caseId)}/reopen`, {}),
     update: (caseId: string, body: UpdateCaseRequest) =>
       post<Case>(`/api/cases/${encodeURIComponent(caseId)}/update`, body),
+    // Borrado PERMANENTE del caso y toda su cadena de custodia (evidencia,
+    // audit hash-encadenado, hallazgos, artefactos). Irreversible: el backend
+    // exige que `confirmName` sea EXACTAMENTE el nombre del caso (RULE 2) y
+    // responde 409 si no cuadra — sin borrar nada.
+    delete: (caseId: string, confirmName: string) =>
+      post<{ deleted: boolean; case_id: string }>(
+        `/api/cases/${encodeURIComponent(caseId)}/delete`,
+        { confirm_name: confirmName },
+      ),
     // Anclaje MANUAL del os_profile por el operador (RULE 2: acción explícita,
     // nunca adivinada) — cuando el triage quedó ambiguo/sin determinar. Devuelve
     // el caso actualizado; queda registrado en el audit log del caso.

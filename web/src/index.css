@@ -1279,6 +1279,36 @@ details.agent-activity > summary::-webkit-details-marker { display: none; }
   opacity: 0.45;
   cursor: not-allowed;
 }
+/* Acción destructiva (eliminar caso): se lee como tal antes de pulsarla. */
+.context-menu-item--danger {
+  color: var(--danger);
+}
+.context-menu-item--danger:hover {
+  background: rgba(220, 38, 38, 0.08);
+}
+
+/* Confirmación de borrado permanente: aviso + campo tipo-a-confirmar */
+.danger-notice {
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  border-radius: 5px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+.danger-notice strong {
+  color: var(--danger);
+}
+.btn-danger {
+  background: var(--danger);
+  border: 1px solid var(--danger);
+  color: #ffffff;
+}
+.btn-danger:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 
 /* Zona de registro deshabilitada (caso cerrado) */
 .dropzone--disabled {

@@ -159,6 +159,18 @@ audit**.
 *notas* (opcional) → **Guardar**. **No eliges el sistema operativo**: lo deriva el orquestador
 (triage) del contenido de la evidencia. Al crear, la UI te baja directo a *Registrar evidencia*.
 
+**Cerrar vs. eliminar un caso.** En la tarjeta del caso activo, el menú **Más ▾** ofrece las dos:
+
+- **Cerrar caso** — congela el caso (no admite más evidencia ni consultas al agente) pero
+  **conserva todo**. Se reabre desde la misma tarjeta.
+- **Eliminar caso** — **borrado PERMANENTE** de todo el directorio del caso: copias de
+  evidencia registradas, `audit.jsonl` (el log hash-encadenado), hallazgos, artefactos, chats e
+  informes. **No hay papelera ni deshacer.** Para confirmarlo hay que **escribir el nombre exacto
+  del caso** en el modal; el botón *Eliminar permanentemente* sigue deshabilitado hasta que
+  coincida, y el backend re-valida esa confirmación (`POST /api/cases/{id}/delete` con
+  `confirm_name`; si no cuadra responde 409 y **no borra nada**). Los ficheros **originales de la
+  bandeja** (`./evidence`) no se tocan: solo desaparece la copia del caso.
+
 ### 5.2 Registrar evidencia (aquí se ve la cadena de custodia)
 
 1. Lleva el fichero de evidencia a la bandeja de una de estas dos formas (formatos: `.E01`,
@@ -170,6 +182,15 @@ audit**.
      **Buscar en la bandeja**.
    *El api monta la bandeja en lectura-escritura solo para esta subida del perito; el
    agente/maletines la ven en solo lectura (cadena de custodia).*
+   - **Un EWF partido se sube ENTERO:** selecciona (o arrastra) **todos** sus segmentos a la vez
+     — `caso.E01`, `caso.E02`, … El diálogo y el drop admiten **varios ficheros**, y la bandeja
+     acepta también las continuaciones `.E02` … `.E99` (`.Ex02` … para EWF2), que por sí solas
+     no son registrables. Al terminar la tanda la bandeja se refresca y queda **auto-seleccionado
+     el `.E01`**, listo para *Registrar*. Un segmento que **ya estaba** en la bandeja se informa
+     («ya estaba en la bandeja») y no se sobrescribe — no es un error, sigue adelante. Un set de
+     **más de 99 segmentos** (continuación alfabética `.EAA`…) se deposita **copiándolo** a
+     `./evidence` en el host: suelto, `.EAA` no se distingue de una extensión corriente, así que
+     la subida por navegador no lo acepta (el registro del set sí lo contempla).
 2. En **Registrar evidencia**, con el fichero **seleccionado** pulsa
    **Registrar**. FORENSIA ejecuta el **hash gate**: calcula el **SHA-256 baseline**, copia la
    evidencia a una copia inmutable (solo lectura), corre el **triage** (deriva `os_profile` y
