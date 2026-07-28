@@ -23,7 +23,7 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Literal
+from typing import Any, Literal
 
 from forensia.cases.manager import CaseManager, case_manager
 
@@ -43,6 +43,11 @@ _UUID4_RE = re.compile(
     re.IGNORECASE,
 )
 _CHUNK_SIZE = 1024 * 1024  # 1 MiB — never read whole files into memory.
+# Topes de `read_run_output`: acotan lo que puede entrar en el contexto del modelo
+# de una sola lectura. Superarlos NO trunca en silencio — la respuesta declara
+# `hay_mas`/`siguiente_desde` para que el agente pagine (RULE 2).
+_MAX_LINES_PER_READ = 400
+_MAX_CHARS_PER_READ = 12000
 
 RunStatus = Literal["running", "finished", "error"]
 
@@ -444,6 +449,111 @@ class ArtifactStore:
             runs.append(self._manifest_to_run(case_id, manifest))
         runs.sort(key=lambda r: r.started_at, reverse=True)
         return runs
+
+    # ---------- lectura de la salida de un run (para el agente) ----------
+
+    def read_run_output(
+        self,
+        case_id: str,
+        run_id: str,
+        *,
+        fichero: str = "stdout",
+        buscar: str | None = None,
+        desde: int = 1,
+        lineas: int = 200,
+    ) -> dict[str, Any]:
+        """Lee y filtra por LÍNEAS la salida de un run ya ejecutado.
+
+        Es lo que le faltaba al agente para poder mirar lo que él mismo produjo: hasta
+        ahora solo veía un ``stdout_sample`` de 2000 chars, así que una salida de
+        ``regripper`` o un árbol de ``fls`` eran practicamente opacos y acababa
+        re-ejecutando la herramienta o infiriendo sin sostén.
+
+        Equivale al ``grep``/``head`` sobre ``output/`` de un analista, pero SIN shell:
+        el modelo pasa un ``run_id`` (no una ruta), el backend resuelve el fichero
+        dentro del run y confina el acceso; ``buscar`` es una SUBCADENA literal
+        (case-insensitive), nunca una expresión regular del modelo.
+
+        ``fichero`` es ``"stdout"``/``"stderr"`` o el ``relpath`` de un fichero de
+        salida declarado en el manifiesto — en ese caso pasa por
+        ``resolve_output_file``, que re-hashea contra el manifiesto (custodia).
+
+        Devuelve un dict con el tramo pedido y CUÁNTO queda, para que el agente pueda
+        paginar en vez de pedir "todo". Un fichero binario NO se sirve como texto: se
+        devuelve un error accionable que nombra las herramientas adecuadas (RULE 2).
+        """
+        run = self.get_run(case_id, run_id)  # KeyError si el run no es de este caso
+
+        if fichero in ("stdout", "stderr"):
+            target = self._run_dir(case_id, run_id) / f"{fichero}.txt"
+            if not target.is_file():
+                raise KeyError(
+                    f"el run {run_id} no tiene {fichero} persistido "
+                    "(¿sigue en ejecución?)"
+                )
+        else:
+            # Fichero de salida declarado: confinado y re-hasheado contra el manifiesto.
+            target, _sha, _size = self.resolve_output_file(case_id, run_id, fichero)
+
+        try:
+            desde = max(1, int(desde))
+            lineas = max(1, min(int(lineas), _MAX_LINES_PER_READ))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"desde/lineas deben ser enteros: {exc}") from exc
+
+        needle = (buscar or "").strip().lower() or None
+
+        with target.open("rb") as fh:
+            head = fh.read(8192)
+        if b"\x00" in head:
+            raise ValueError(
+                f"{fichero!r} del run {run_id} es BINARIO: no se sirve como texto. "
+                "Usa `strings_head` o `xxd_head` sobre él, o la herramienta que "
+                "corresponda a su formato."
+            )
+
+        total = 0
+        matched = 0
+        picked: list[str] = []
+        chars = 0
+        truncated_by_size = False
+        # Se recorre en streaming: una salida de `fls -r` puede pesar decenas de MB y
+        # no debe cargarse entera en memoria para contar sus líneas.
+        with target.open("r", encoding="utf-8", errors="replace") as fh:
+            for raw in fh:
+                total += 1
+                line = raw.rstrip("\n")
+                if needle is not None and needle not in line.lower():
+                    continue
+                matched += 1
+                # `desde` numera sobre las líneas RELEVANTES (las que casan con el
+                # filtro), que es lo que el agente espera al paginar una búsqueda.
+                if matched < desde:
+                    continue
+                if len(picked) >= lineas:
+                    continue
+                if chars + len(line) > _MAX_CHARS_PER_READ:
+                    truncated_by_size = True
+                    continue
+                picked.append(line)
+                chars += len(line) + 1
+
+        relevantes = matched if needle is not None else total
+        siguiente = desde + len(picked)
+        return {
+            "run_id": run_id,
+            "tool_id": run.tool_id,
+            "fichero": fichero,
+            "buscar": buscar,
+            "total_lineas": total,
+            "lineas_relevantes": relevantes,
+            "desde": desde,
+            "devueltas": len(picked),
+            "hay_mas": siguiente <= relevantes,
+            "siguiente_desde": siguiente if siguiente <= relevantes else None,
+            "truncado_por_tamano": truncated_by_size,
+            "lineas": picked,
+        }
 
 
 artifact_store = ArtifactStore(case_manager)

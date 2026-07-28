@@ -47,11 +47,30 @@ class ToolCall:
 
 
 @dataclass(frozen=True)
+class ToolBatch:
+    """Varias herramientas pedidas en UN turno del modelo.
+
+    El coste de una corrida es ``contexto × turnos``: el ejecutor es stateless y
+    Agentopsy le reenvía el transcript entero en cada iteración. Encadenar de una
+    vez las herramientas cuyo resultado no condiciona a la siguiente (un lote de
+    plugins de Volatility, ``mmls``+``fls``, extraer varios hives) es la diferencia
+    entre 25 turnos y 3 — y es como trabaja un analista real, que no espera a leer
+    un plugin para lanzar el siguiente.
+
+    El loop las ejecuta EN ORDEN dentro de la misma iteración; cada una conserva su
+    ArtifactRun, su entrada de audit con el argv literal y su mensaje de resultado.
+    """
+
+    calls: tuple[ToolCall, ...]
+    assistant_message: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
 class FinalAnswer:
     text: str
 
 
-Action = ToolCall | FinalAnswer
+Action = ToolCall | ToolBatch | FinalAnswer
 
 
 class ModelBackend(ABC):
@@ -74,8 +93,16 @@ _RESPONSE_CONTRACT = (
     "fences de markdown. Exactamente una de estas dos formas:\n"
     '1. Invocar una herramienta: {"action": "tool_call", "tool_id": "<id de la '
     'allowlist>", "params": { ... }}\n'
-    '2. Respuesta final al usuario: {"action": "final", "text": "<respuesta en '
+    '2. Varias herramientas de una vez: {"action": "tool_batch", "calls": '
+    '[{"tool_id": "...", "params": {...}}, {"tool_id": "...", "params": {...}}]}\n'
+    '3. Respuesta final al usuario: {"action": "final", "text": "<respuesta en '
     'markdown>"}\n'
+    "USA `tool_batch` siempre que puedas: encadena de una vez las herramientas "
+    "cuyo resultado NO necesitas leer para decidir la siguiente (un lote de "
+    "plugins, mmls+fls, extraer varios artefactos). Cada turno re-envía toda la "
+    "conversación, así que 5 herramientas en un turno cuestan mucho menos que 5 "
+    "turnos de una. Reserva `tool_call` para cuando de verdad dependas del "
+    "resultado anterior.\n"
     "No inventes tool_ids fuera de la lista de especificaciones. No incluyas "
     "paths absolutos en params — Agentopsy los inyecta."
 )
@@ -203,7 +230,30 @@ class ExecutorBackend(ModelBackend):
                 call_id=uuid.uuid4().hex,
                 assistant_message={"role": "assistant", "content": text},
             )
+        if action == "tool_batch":
+            raw_calls = envelope.get("calls")
+            if not isinstance(raw_calls, list) or not raw_calls:
+                raise ValueError(
+                    'la acción "tool_batch" debe traer una lista "calls" no vacía'
+                )
+            calls: list[ToolCall] = []
+            for i, raw in enumerate(raw_calls):
+                if not isinstance(raw, dict):
+                    raise ValueError(f'calls[{i}] debe ser un objeto JSON')
+                tool_id = raw.get("tool_id")
+                if not isinstance(tool_id, str) or not tool_id:
+                    raise ValueError(f'calls[{i}] no trae un "tool_id" válido')
+                params = raw.get("params") or {}
+                if not isinstance(params, dict):
+                    raise ValueError(f'en calls[{i}], "params" debe ser un objeto JSON')
+                calls.append(
+                    ToolCall(tool_id=tool_id, params=params, call_id=uuid.uuid4().hex)
+                )
+            return ToolBatch(
+                calls=tuple(calls),
+                assistant_message={"role": "assistant", "content": text},
+            )
         raise ValueError(
             f'acción desconocida {action!r} en la respuesta del ejecutor '
-            '(esperado "tool_call" o "final")'
+            '(esperado "tool_call", "tool_batch" o "final")'
         )

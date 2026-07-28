@@ -17,7 +17,7 @@ Mantenemos **UN ForensicAgent** parametrizado por `os_profile`
 (`unix` / `windows`). El loop de razonamiento es idéntico; lo que cambia por
 perfil es el **paquete** cargado:
 
-- los prompts (system / identity / playbook),
+- los prompts (system / identity) y la ruta `objetivos:`,
 - los parámetros de generación (temperatura, tope de iteraciones del loop),
 - la allowlist de herramientas (subset del catálogo),
 - las políticas de redacción aplicadas antes de que una salida cruce a un
@@ -37,8 +37,8 @@ agentes/<id>/
 ├── agent.yaml          # manifiesto
 ├── prompts/
 │   ├── system.md       # reglas de operación (no repite la identidad)
-│   ├── identity.md     # persona/voz (quién eres y cómo hablas)
-│   └── playbook.md     # heurística por tipo de evidencia (no un script)
+│   └── identity.md     # persona/voz (quién eres y cómo hablas)
+│                       # (playbook.md BORRADO el 2026-07-28 — ver §3.quinquies)
 ├── policy/
 │   ├── tools.yaml
 │   └── redaction.yaml
@@ -71,7 +71,10 @@ es estricto:
 | `model.name` | string | modelo recomendado para el ejecutor `ollama` (`llama3.1:8b`); los ejecutores CLI usan el modelo de la suscripción del usuario |
 | `model.temperature` | number | `[0.0, 2.0]` |
 | `model.max_iterations` | int | `[1, 100]`. Tope del loop tool-use |
-| `prompts.{system,identity,playbook}` | string | path RELATIVO al directorio del agente; no se permite `..` ni absolutos |
+| `prompts.{system,identity}` | string | path RELATIVO al directorio del agente; no se permite `..` ni absolutos |
+| `prompts.playbook` | string | **OPCIONAL y en desuso** (borrado de los paquetes el 2026-07-28, ver §3.quinquies). Si se declara, su texto viaja DETRÁS del índice de objetivos |
+| `objetivos` | list | la RUTA PRINCIPAL. Cada entrada `{id, pregunta, artefactos, herramientas[], knowledge?}` (ver §3.quinquies) |
+| `objetivos[].herramientas` | list[string] | ids del catálogo; uno inexistente hace fallar la CARGA del paquete |
 | `policy.tools` | string | path RELATIVO a un YAML con clave `allowed: [tool_id, …]` |
 | `policy.redaction` | string | path RELATIVO a un YAML con clave `patterns: [{name, regex, replacement}]` |
 | `knowledge` | list | opcional; cada entrada `{id, title, description, path}` (ver §3.bis) |
@@ -162,6 +165,122 @@ regla explícita de **no exigir contexto que no se le ha dado**.
 íntegro). No hay verbo de escritura a propósito: el grafo lo escribe el agente
 dentro del loop, donde cada bloque queda anclado en la cadena de audit; una
 segunda vía HTTP rompería esa trazabilidad.
+
+## 3.quater Capacidades de análisis: ver, encadenar y pivotar (2026-07-28)
+
+Tres huecos que el análisis comparativo (`docs/estado-actual/08-analisis-comparativo.md`)
+identificó como la mayor parte de la distancia con un analista trabajando a mano.
+
+### `leer_artefacto(run_id, fichero?, buscar?, desde?, lineas?)`
+
+**El agente puede LEER sus propias salidas.** Antes solo veía un `stdout_sample`
+recortado a 2000 chars, así que una salida de `regripper` (400 líneas) o un árbol
+de `fls` (52 MB) eran opacos: acababa re-ejecutando la herramienta o infiriendo sin
+sostén.
+
+Es un `grep`/`head` **sin shell**: el modelo pasa un `run_id` (nunca una ruta), el
+backend resuelve el fichero dentro del run y confina el acceso. `buscar` es una
+**subcadena literal** case-insensitive — nunca una expresión regular del modelo
+(ReDoS + sorpresas). Sirve `stdout`/`stderr` o el `relpath` de un fichero de salida
+declarado, que además pasa por `resolve_output_file` (re-hash contra el manifiesto,
+custodia). Un binario **no se sirve como texto**: error accionable que nombra
+`strings_head`/`xxd_head`. Pagina con `hay_mas`/`siguiente_desde` — jamás trunca en
+silencio (RULE 2). Lo que vuelve va marcado **NO CONFIABLE**: son bytes derivados
+de la evidencia.
+
+### `tool_batch` — varias herramientas en un turno
+
+El coste de una corrida es **`contexto × turnos`**: el ejecutor es stateless y
+Agentopsy le reenvía el transcript entero en cada iteración. Con una herramienta
+por turno, un barrido de ~25 ejecuciones no cabe ni en presupuesto ni en el tope.
+
+Nueva forma del contrato de respuesta, junto a `tool_call` y `final`:
+
+```json
+{"action": "tool_batch", "calls": [{"tool_id": "…", "params": {…}}, …]}
+```
+
+El loop las ejecuta **en orden dentro de la misma iteración**. **No relaja ninguna
+garantía**: cada call conserva su `ArtifactRun`, su entrada de audit con el argv
+literal, su mensaje de resultado y el guardrail anti-bucle; una tool fuera de la
+allowlist se rechaza sin abortar el resto del lote, y un `exit≠0` en medio tampoco
+lo aborta (política «emitir lo legible + listar las saltadas»).
+
+### `declarar_pivote(via_cerrada, motivo, via_alternativa)`
+
+Cambiar de vía cuando una se cierra es la jugada que resuelve casos reales —*el
+disco no abre → volcar los hives desde la RAM → responder igual*—. El agente no
+tenía forma de expresarlo y seguía empujando la misma puerta hasta agotar
+iteraciones.
+
+**RULE 2 prohíbe el fallback SILENCIOSO, no el pivote razonado.** La diferencia la
+imponen los tres campos obligatorios: qué se descarta, **con qué prueba** (exit
+code, stderr o `run_id`) y qué se hace en su lugar. Sin los tres se rechaza — un
+descarte sin sostén podría estar tapando un fallo puntual en vez de una vía
+cerrada. Queda en la cadena de custodia (`agent_pivot`) y se emite como evento
+propio para que el perito lo vea. **No ejecuta nada**: declarar no es actuar.
+
+### `max_iterations`: 12 → 30
+
+El tope cuenta **turnos del modelo**, no herramientas. Con `tool_batch` un turno
+lanza un lote entero y con `leer_artefacto` el agente relee en vez de re-ejecutar,
+así que el techo que el Bug 008 bajó por coste (18 → 12, cuando cada herramienta
+gastaba un turno completo) ya no aplica.
+
+## 3.quinquies El playbook se borró: la ruta entra por OBJETIVO (2026-07-28)
+
+**Qué se quitó.** `prompts/playbook.md` de los dos paquetes (636 líneas). Era una
+marcha numerada **por tipo de evidencia**:
+
+```
+A. Imagen de disco → 1. contenedor · 2. particiones · 3. timeline COMPLETA · 4. $MFT · 5. registro…
+B. Volcado de RAM  → 1. perfil · 2. procesos · 3. red · 4. …
+```
+
+y el backend, además, **le ordenaba** cuál seguir («Ruta del playbook — DISK IMAGE:
+sigue la sección A») y **recortaba del prompt la rama que no aplicaba**.
+
+**Por qué se quitó.** El agente lo obedecía. En la corrida #001, para responder
+*«¿se accedió a los documentos confidenciales y cuándo?»* ejecutó `mmls` → `fls` →
+`fls -m` → `mactime`: **literalmente los pasos 2 y 3 de la sección A**. No estaba
+improvisando mal — estaba siguiendo la receta. Y esa receta manda construir la
+línea temporal de un disco de 20 GB antes de mirar el artefacto que responde la
+pregunta (RecentDocs, LNK, Jump Lists: tres pasos).
+
+**Qué lo sustituye.** `objetivos:` en `agent.yaml`, el método destilado a mano:
+
+> **No se elige la herramienta, se elige el ARTEFACTO que responde la pregunta, y
+> el artefacto dice la herramienta.**
+
+```yaml
+objetivos:
+  - id: acceso-a-documentos
+    pregunta: "¿Se abrió/accedió a un documento? ¿cuándo? ¿quién?"
+    artefactos: "RecentDocs y ComDlg32 del NTUSER.DAT, .lnk de Recent, Jump Lists…"
+    herramientas: [regripper, lecmd, jlecmd, sbecmd, mftecmd, tsk_icat, volatility3]
+    knowledge: artefactos-windows
+```
+
+- Se **valida al cargar**: una herramienta fuera del catálogo revienta el arranque
+  del `api`, no un análisis a mitad (RULE 2).
+- El índice viaja **siempre** en el system prompt (compacto: una fila por
+  objetivo); el detalle vive en `knowledge/`, bajo demanda.
+- Hay un objetivo `reconocimiento` para cuando **no hay pregunta todavía**, y la
+  `linea-temporal` queda como objetivo **aparte y declarado caro** — ya no es el
+  camino por defecto para fechar un fichero concreto.
+
+**El `kind` del triage pasa de imperativo a informativo.** Ya no dice «salta a la
+sección A»; dice qué **soporte** es la evidencia para que el agente no gaste
+llamadas en herramientas incompatibles (plugins de memoria sobre un disco, TSK
+sobre un memdump). La ruta la marca el objetivo. Con esto cae también
+`select_playbook_section` (el recorte de la rama), que era la pieza más agresiva
+del enrutado y la que motivó la objeción del perito sobre el enrutado vinculante.
+
+**Lo que sobrevivió del playbook** se movió a `system.md`: el método de ejecución
+(lote, leer antes de concluir, releer en vez de re-ejecutar, registrar en
+caliente, anotar en el grafo, pivotar declarando) y, en Windows, la **regla de oro
+de custodia** (las herramientas de contenedor nunca reciben la imagen cruda:
+`tsk_fls` → `tsk_icat` → procesar solo el derivado).
 
 ## 4. Cómo lo descubre Agentopsy
 

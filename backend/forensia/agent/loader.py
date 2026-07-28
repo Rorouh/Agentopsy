@@ -27,6 +27,7 @@ from forensia.agent.package import (
     AgentPackagePrompts,
     CaseKnowledgeNode,
     KnowledgeDoc,
+    Objetivo,
     RedactionPattern,
 )
 from forensia.knowledge import DOC_ID_PATTERN, MAX_NODES_PER_CASE
@@ -102,6 +103,7 @@ def load_package(agent_dir: Path) -> AgentPackage:
     policy = _parse_policy(raw.get("policy"), agent_dir, os_profile, manifest_path)
     knowledge = _parse_knowledge(raw.get("knowledge"), agent_dir, manifest_path)
     case_knowledge = _parse_case_knowledge(raw.get("case_knowledge"), manifest_path)
+    objetivos = _parse_objetivos(raw.get("objetivos"), manifest_path)
 
     return AgentPackage(
         id=pkg_id,
@@ -115,6 +117,7 @@ def load_package(agent_dir: Path) -> AgentPackage:
         policy=policy,
         knowledge=knowledge,
         case_knowledge=case_knowledge,
+        objetivos=objetivos,
     )
 
 
@@ -171,14 +174,93 @@ def _parse_model(value: Any, source: Path) -> AgentPackageModel:
 
 
 def _parse_prompts(value: Any, agent_dir: Path, source: Path) -> AgentPackagePrompts:
+    """``system`` e ``identity`` son obligatorios; ``playbook`` es OPCIONAL.
+
+    El playbook desapareció del contrato el 2026-07-28: era una marcha numerada por
+    TIPO DE EVIDENCIA («1. contenedor, 2. particiones, 3. timeline completa…») que el
+    agente seguía al pie de la letra, de modo que para responder «¿se accedió a este
+    documento?» empezaba inventariando el disco entero en vez de ir al artefacto que
+    responde la pregunta. La ruta ahora la marca ``objetivos:`` (pregunta → artefacto
+    → herramienta). Un paquete que aún declare ``playbook`` sigue cargando: su texto
+    viaja detrás del índice de objetivos, no delante."""
     if not isinstance(value, dict):
         raise AgentPackageError(
-            f"{source}: 'prompts' must be a mapping with system/identity/playbook"
+            f"{source}: 'prompts' must be a mapping with system/identity"
         )
     system = _read_relative_file(value.get("system"), agent_dir, "prompts.system", source)
     identity = _read_relative_file(value.get("identity"), agent_dir, "prompts.identity", source)
-    playbook = _read_relative_file(value.get("playbook"), agent_dir, "prompts.playbook", source)
+    playbook = ""
+    if value.get("playbook") is not None:
+        playbook = _read_relative_file(
+            value.get("playbook"), agent_dir, "prompts.playbook", source
+        )
     return AgentPackagePrompts(system=system, identity=identity, playbook=playbook)
+
+
+def _parse_objetivos(value: Any, source: Path) -> tuple[Objetivo, ...]:
+    """Parse the ``objetivos:`` list — la RUTA PRINCIPAL del agente.
+
+    Cada entrada es ``{id, pregunta, artefactos, herramientas, knowledge?}``. Es el
+    método destilado a mano: *no se elige la herramienta, se elige el ARTEFACTO que
+    responde la pregunta, y el artefacto dice la herramienta*. Viaja SIEMPRE en el
+    system prompt (es compacto: una fila por objetivo) y el detalle vive en
+    ``knowledge/``, consultado bajo demanda.
+
+    ``herramientas`` se valida contra el catálogo: un objetivo que apunte a una tool
+    inexistente falla al ARRANCAR el api, no en mitad de un análisis (RULE 2)."""
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise AgentPackageError(
+            f"{source}: 'objetivos' must be a list of mappings, got {type(value).__name__}"
+        )
+    out: list[Objetivo] = []
+    seen: set[str] = set()
+    for i, entry in enumerate(value):
+        if not isinstance(entry, dict):
+            raise AgentPackageError(
+                f"{source}: objetivos[{i}] must be a mapping, got {type(entry).__name__}"
+            )
+        obj_id = _require_str(entry, "id", source)
+        if not _ID_RE.match(obj_id):
+            raise AgentPackageError(
+                f"{source}: objetivos[{i}].id={obj_id!r} must be kebab-case"
+            )
+        if obj_id in seen:
+            raise AgentPackageError(
+                f"{source}: duplicate objetivo id {obj_id!r} — ids must be unique"
+            )
+        seen.add(obj_id)
+        pregunta = _require_str(entry, "pregunta", source)
+        artefactos = _require_str(entry, "artefactos", source)
+        raw_tools = entry.get("herramientas")
+        if not isinstance(raw_tools, list) or not raw_tools:
+            raise AgentPackageError(
+                f"{source}: objetivos[{obj_id}].herramientas must be a non-empty list"
+            )
+        tools: list[str] = []
+        for tool_id in raw_tools:
+            if not isinstance(tool_id, str) or tool_id not in TOOL_BY_ID:
+                raise AgentPackageError(
+                    f"{source}: objetivos[{obj_id}] apunta a la herramienta "
+                    f"{tool_id!r}, que no existe en el catálogo"
+                )
+            tools.append(tool_id)
+        knowledge_ref = entry.get("knowledge")
+        if knowledge_ref is not None and not isinstance(knowledge_ref, str):
+            raise AgentPackageError(
+                f"{source}: objetivos[{obj_id}].knowledge must be a string or absent"
+            )
+        out.append(
+            Objetivo(
+                id=obj_id,
+                pregunta=pregunta,
+                artefactos=artefactos,
+                herramientas=tuple(tools),
+                knowledge=knowledge_ref,
+            )
+        )
+    return tuple(out)
 
 
 def _parse_knowledge(

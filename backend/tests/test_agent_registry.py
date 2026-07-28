@@ -36,7 +36,11 @@ def test_forensia_unix_package_loads() -> None:
     assert pkg.id == "forensia-unix"
     assert pkg.os_profile == "unix"
     assert pkg.model.name == "llama3.1:8b"
-    assert pkg.model.max_iterations == 12  # Bug 008: lowered 18 → 12 (runaway cap)
+    # 2026-07-28: 12 → 30. El tope cuenta TURNOS DEL MODELO, no herramientas: con
+    # `tool_batch` un turno lanza un lote entero y con `leer_artefacto` el agente
+    # relee en vez de re-ejecutar, así que el techo que el Bug 008 bajó por coste
+    # (18 → 12, cuando cada herramienta gastaba un turno) ya no aplica.
+    assert pkg.model.max_iterations == 30
     assert "tsk_mmls" in pkg.policy.allowed_tools
     assert "volatility3" in pkg.policy.allowed_tools
     # Prompts loaded as text from disk.

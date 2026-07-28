@@ -1,8 +1,0 @@
-# Artefactos generados por run_eval.py — NO se versionan (contienen stdout crudo
-# del modelo y son reproducibles). Solo se versiona este .gitignore para que la
-# carpeta exista.
-*.json
-summary.md
-# Transcripciones de investigación (derivadas de evidencia) — NUNCA a git.
-# Path relativo a ESTE .gitignore (vive en results/), sin '/results/' delante.
-investigations/

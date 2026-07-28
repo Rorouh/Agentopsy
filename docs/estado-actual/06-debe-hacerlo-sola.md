@@ -162,6 +162,72 @@ Detalle en [`07-corrida-agente-001.md`](07-corrida-agente-001.md).
 
 ---
 
+## R5 — ✅ RESUELTO: la redacción cegaba al agente
+
+**Estado:** arreglado el 2026-07-28. Se documenta porque es la causa raíz de todo
+lo que §07 y §08 atribuyeron a fallo del modelo o de los prompts.
+
+### El bug
+
+`policy/redaction.yaml` declara un patrón `guid` para tapar el `MachineGuid` que
+aparezca **dentro de la evidencia**. Pero `redact_messages` lo aplicaba como un
+`re.sub` ciego sobre TODO el contenido de TODOS los mensajes salientes —
+**incluidos los identificadores que la propia Agentopsy inyecta**. El agente veía:
+
+```
+run_id: <GUID>
+```
+
+…y a la vez se le exigía citar el `run_id` para encadenar `tsk_mactime`, para leer
+un artefacto y para registrar un hallazgo. **Era imposible.** No alucinaba:
+copiaba literalmente lo único que se le enseñaba.
+
+Lo dijo él mismo, en su propio razonamiento:
+
+> *«my previous `record_finding` was rejected because I echoed the masked `run_id`
+> (`<GUID>`) literally, which fails the UUID4 validation»*
+
+### Lo que explica
+
+| Síntoma | Documentado en |
+|---|---|
+| `tsk_mactime` con `bodyfile_path: "dict"` | [`07`](07-corrida-agente-001.md) F1 — «decisivo» |
+| `leer_artefacto rejected: invalid run_id: '<GUID>'` | corrida del 2026-07-28 19:46 |
+| **0 hallazgos persistidos, siempre** | [`07`](07-corrida-agente-001.md) F4 — un hallazgo afirmativo EXIGE `run_id` |
+| «el agente no sabe citar procedencia» | [`08`](08-analisis-comparativo.md) §3, la causa nº 1 |
+
+**Coste medido de este único regex:** dos corridas completas, **$4,13 + $3,30**,
+sin un solo hallazgo. Y semanas de diagnóstico apuntando al modelo y al playbook.
+
+**Solo afectaba a ejecutores CLOUD**: con un backend local la redacción ni se
+aplica. Todas las corridas medidas fueron con Claude Code.
+
+### El arreglo
+
+Los identificadores del **plano de control** (`run_id`, `case_id`, `evidence_id`,
+`finding_id`) los genera Agentopsy, no salen de la evidencia y no contienen dato
+personal: **no hay nada que minimizar**. Se pasan como `protected` y el texto se
+**parte** por ellos, de modo que nunca llegan a pasar por un `re.sub` — es
+imposible que se redacten por accidente. Un GUID que venga del **contenido** de la
+evidencia se sigue tapando, que es para lo que existe el patrón.
+
+De paso, `apply_in` deja de ignorarse: declaraba en qué modo aplica cada patrón y
+el código los aplicaba todos. Ahora el modo es explícito (`strict`, el único
+cableado y el comportamiento de siempre) — sin inventar un modo laxo que nadie ha
+pedido (RULE 2).
+
+Regresión: `backend/tests/test_redaction_no_ciega_al_agente.py` (13 tests,
+incluido el gate de punta a punta con el paquete Windows real).
+
+### La lección
+
+Un regex de minimización de datos, pensado para proteger, **inutilizó el producto
+entero durante semanas** sin dar un solo error propio. Todos los síntomas
+aparecían lejos de la causa. Merece revisar si algún otro patrón de redacción pisa
+metadatos que el agente necesita.
+
+---
+
 ## Candidatos anotados, sin decidir
 
 Estos rozan la frontera con RULE 2 y **no** están catalogados como requisitos:

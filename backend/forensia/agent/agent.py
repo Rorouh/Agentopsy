@@ -47,13 +47,14 @@ import os
 from collections.abc import Callable
 from typing import Any
 
-from forensia.agent.context import select_playbook_section, window_messages
+from forensia.agent.context import window_messages
 from forensia.agent.package import AgentPackage
 from forensia.agent.redaction import redact_messages
 from forensia.agent.tool_schemas import (
     internal_tool_specs,
     tool_specs,
 )
+from forensia.artifacts.store import artifact_store
 from forensia.audit import AuditLog
 from forensia.evidence import EvidenceManager
 from forensia.evidence_context import EvidenceContext
@@ -61,7 +62,7 @@ from forensia.findings.store import finding_store
 from forensia.knowledge import knowledge_store
 from forensia.mitre.coverage import coverage_store
 from forensia.timeline import query_filesystem_timeline
-from forensia.models.base import FinalAnswer, ModelBackend, ToolCall
+from forensia.models.base import FinalAnswer, ModelBackend, ToolBatch, ToolCall
 from forensia.path_policy import inject_evidence_path
 from forensia.toolkit.catalog import BY_ID as TOOL_BY_ID
 from forensia.toolkit.tool import Tool
@@ -361,6 +362,12 @@ class ForensicAgent:
         tools_since_finding = 0
         FINDING_NUDGE_AFTER = 3
 
+        # Identificadores del PLANO DE CONTROL: los emite Agentopsy, no salen de la
+        # evidencia y el agente los necesita literales para citar procedencia. Se
+        # excluyen de la redacción de egress (ver forensia.agent.redaction). Crece
+        # con cada run: un `run_id` nuevo entra aquí antes de viajar al modelo.
+        protected_ids: set[str] = {i for i in (case_id, evidence_id) if i}
+
         for iteration in range(max_iter):
             # Bug 008 — provider-agnostic context management. Agentopsy owns the
             # conversation; the executor is stateless and re-charges the whole
@@ -372,8 +379,18 @@ class ForensicAgent:
             # copy with the package's patterns; the canonical `messages` stays
             # raw. F3 — audit each egress with the SHA-256 of the exact payload
             # sent (windowed + redacted), never the bytes.
+            # `protected_ids`: los identificadores que Agentopsy GENERÓ en esta
+            # corrida. Sin ellos, el patrón `guid` del paquete —pensado para tapar
+            # el MachineGuid que venga DENTRO de la evidencia— convertía cada
+            # `run_id` en `<GUID>`, y el agente no podía citar procedencia: ni
+            # encadenar tsk_mactime, ni leer un artefacto, ni registrar un
+            # hallazgo. No son datos de la evidencia y no hay nada que minimizar.
             outbound = (
-                redact_messages(windowed, self.package.policy.redaction_patterns)
+                redact_messages(
+                    windowed,
+                    self.package.policy.redaction_patterns,
+                    protected=protected_ids,
+                )
                 if is_cloud
                 else windowed
             )
@@ -415,373 +432,482 @@ class ForensicAgent:
                     tool_calls=tool_calls_log,
                 )
 
-            if isinstance(action, ToolCall):
+            if isinstance(action, (ToolCall, ToolBatch)):
                 if action.assistant_message is not None:
                     messages.append(action.assistant_message)
                     reasoning = _reasoning_from(action.assistant_message.get("content"))
                     if reasoning:
                         emit({"type": "reasoning", "iteration": iteration + 1, "text": reasoning})
 
-                # Internal side-channel tools — NOT in the catalog and NOT
-                # subject to the package allowlist. Handled in-process.
-                if action.tool_id == "record_finding":
-                    try:
-                        params = dict(action.params)
-                        # Inject evidence_id automatically if the model didn't.
-                        if not params.get("evidence_id"):
-                            params["evidence_id"] = evidence_id
-                        finding = finding_store.append(case_id, params)
-                        body = {"finding_id": finding.id, "stored": True}
-                        tools_since_finding = 0  # cerró el bucle: registró
-                        # F3 — record the finding's provenance in the audit chain
-                        # (only the id; the finding body lives in findings.jsonl).
-                        self._audit_event(
-                            "agent_finding",
-                            case_id=case_id,
-                            evidence_id=evidence_id,
-                            finding_id=finding.id,
-                        )
-                        emit({
-                            "type": "finding",
-                            "iteration": iteration + 1,
-                            "title": finding.title,
-                            "severity": finding.severity,
-                        })
-                    except (KeyError, ValueError) as exc:
-                        body = {"error": f"record_finding rejected: {exc}"}
-                    messages.append(self._tool_result_msg(action, body))
-                    tool_calls_log.append({
-                        "tool_id": "record_finding",
-                        "finding_id": body.get("finding_id"),
-                        "error": body.get("error"),
-                    })
-                    continue
+                # Un lote se ejecuta ENTERO dentro de esta iteración: el coste de
+                # una corrida es contexto × turnos, así que encadenar aquí las
+                # herramientas que no dependen unas de otras evita re-enviar el
+                # transcript una vez por herramienta. Cada call conserva su
+                # ArtifactRun, su audit con el argv literal y su mensaje de
+                # resultado — el lote no relaja ninguna garantía, solo agrupa.
+                batch = (
+                    list(action.calls) if isinstance(action, ToolBatch) else [action]
+                )
+                for call in batch:
 
-                if action.tool_id == "annotate_mitre":
-                    # Anchors ATT&CK techniques to an existing finding → shows up on
-                    # the MITRE board as an agent proposal (coverage eje 1). Same
-                    # in-process side-channel shape as record_finding.
-                    try:
-                        params = dict(action.params)
-                        finding_id = (params.get("finding_id") or "").strip()
-                        rec = coverage_store.annotate(
-                            case_id,
-                            finding_id,
-                            params.get("mitre_hints") or [],
-                            params.get("note"),
-                        )
-                        body = {
-                            "finding_id": finding_id,
-                            "technique_ids": rec["technique_ids"],
-                            "annotated": True,
-                        }
-                    except (KeyError, ValueError) as exc:
-                        body = {"error": f"annotate_mitre rejected: {exc}"}
-                    messages.append(self._tool_result_msg(action, body))
-                    tool_calls_log.append({
-                        "tool_id": "annotate_mitre",
-                        "finding_id": body.get("finding_id"),
-                        "error": body.get("error"),
-                    })
-                    continue
-
-                if action.tool_id == "anotar_conocimiento":
-                    # Lado de ESCRITURA del grafo por caso. Nunca toca la evidencia ni
-                    # los artefactos: escribe bajo `cases/<id>/knowledge/`, append-only
-                    # con vista consolidada. El modelo emite un ID de charset cerrado,
-                    # jamás una ruta (SECURITY INVARIANT 5-6).
-                    doc_id = ""
-                    try:
-                        params = dict(action.params)
-                        doc_id = str(params.get("doc_id") or "").strip()
-                        block = knowledge_store.append(
-                            case_id,
-                            doc_id,
-                            str(params.get("section") or ""),
-                            str(params.get("content") or ""),
-                            iteration=iteration + 1,
-                        )
-                        body = {
-                            "doc_id": block.doc_id,
-                            "section": block.section,
-                            "stored": True,
-                        }
-                        # F3 — metadatos y hash en la cadena, nunca el contenido.
-                        self._audit_event(
-                            "knowledge_written",
-                            case_id=case_id,
-                            evidence_id=evidence_id,
-                            doc_id=block.doc_id,
-                            section=block.section,
-                            content_sha256=block.sha256,
-                            content_chars=len(block.content),
-                            iteration=iteration + 1,
-                        )
-                    except (KeyError, ValueError, OSError) as exc:
-                        body = {"error": f"anotar_conocimiento rejected: {exc}"}
-                    messages.append(self._tool_result_msg(action, body))
-                    tool_calls_log.append({
-                        "tool_id": "anotar_conocimiento",
-                        "doc_id": doc_id,
-                        "error": body.get("error"),
-                    })
-                    emit({
-                        "type": "tool_result",
-                        "iteration": iteration + 1,
-                        "tool_id": "anotar_conocimiento",
-                        "status": "ok" if not body.get("error") else "error",
-                        "summary": (
-                            f"{body.get('doc_id')} · {body.get('section')}"
-                            if not body.get("error")
-                            else str(body.get("error"))
-                        )[:120],
-                    })
-                    continue
-
-                if action.tool_id == "consultar_conocimiento":
-                    # Mapa de memoria. Resuelve en DOS ámbitos, en este orden:
-                    #   1. Nodo del grafo de ESTE caso (lo escribió el agente) →
-                    #      vuelve marcado NO CONFIABLE: sus notas citan cadenas
-                    #      derivadas de la evidencia, y releerlas como contexto de
-                    #      confianza sería un canal de blanqueo de prompt-injection.
-                    #   2. Doc estático del paquete → contenido de CONFIANZA (autoría
-                    #      nuestra, cargado y path-confinado al arrancar), sin
-                    #      spotlighting.
-                    doc = None
-                    node = None
-                    try:
-                        # str(): el modelo podría emitir doc_id no-string (Ollama texto);
-                        # coerciona sin crashear el run (simetría con los otros handlers).
-                        doc_id = str(dict(action.params).get("doc_id") or "").strip()
+                    # Internal side-channel tools — NOT in the catalog and NOT
+                    # subject to the package allowlist. Handled in-process.
+                    if call.tool_id == "record_finding":
                         try:
-                            node = knowledge_store.read(case_id, doc_id)
-                        except (KeyError, ValueError):
-                            node = None  # id no válido como nodo → puede ser doc estático
-                        if node is not None:
-                            body = {
-                                "doc_id": node.doc_id,
-                                "scope": "caso",
-                                "sections": list(node.sections),
-                                "content": node.markdown,
-                            }
-                        else:
-                            doc = next(
-                                (d for d in self.package.knowledge if d.id == doc_id), None
+                            params = dict(call.params)
+                            # Inject evidence_id automatically if the model didn't.
+                            if not params.get("evidence_id"):
+                                params["evidence_id"] = evidence_id
+                            finding = finding_store.append(case_id, params)
+                            body = {"finding_id": finding.id, "stored": True}
+                            protected_ids.add(finding.id)
+                            tools_since_finding = 0  # cerró el bucle: registró
+                            # F3 — record the finding's provenance in the audit chain
+                            # (only the id; the finding body lives in findings.jsonl).
+                            self._audit_event(
+                                "agent_finding",
+                                case_id=case_id,
+                                evidence_id=evidence_id,
+                                finding_id=finding.id,
                             )
-                            if doc is None:
-                                valid = [d.id for d in self.package.knowledge]
-                                nodes = [n.doc_id for n in knowledge_store.index(case_id)]
+                            emit({
+                                "type": "finding",
+                                "iteration": iteration + 1,
+                                "title": finding.title,
+                                "severity": finding.severity,
+                            })
+                        except (KeyError, ValueError) as exc:
+                            body = {"error": f"record_finding rejected: {exc}"}
+                        messages.append(self._tool_result_msg(call, body))
+                        tool_calls_log.append({
+                            "tool_id": "record_finding",
+                            "finding_id": body.get("finding_id"),
+                            "error": body.get("error"),
+                        })
+                        continue
+
+                    if call.tool_id == "annotate_mitre":
+                        # Anchors ATT&CK techniques to an existing finding → shows up on
+                        # the MITRE board as an agent proposal (coverage eje 1). Same
+                        # in-process side-channel shape as record_finding.
+                        try:
+                            params = dict(call.params)
+                            finding_id = (params.get("finding_id") or "").strip()
+                            rec = coverage_store.annotate(
+                                case_id,
+                                finding_id,
+                                params.get("mitre_hints") or [],
+                                params.get("note"),
+                            )
+                            body = {
+                                "finding_id": finding_id,
+                                "technique_ids": rec["technique_ids"],
+                                "annotated": True,
+                            }
+                        except (KeyError, ValueError) as exc:
+                            body = {"error": f"annotate_mitre rejected: {exc}"}
+                        messages.append(self._tool_result_msg(call, body))
+                        tool_calls_log.append({
+                            "tool_id": "annotate_mitre",
+                            "finding_id": body.get("finding_id"),
+                            "error": body.get("error"),
+                        })
+                        continue
+
+                    if call.tool_id == "declarar_pivote":
+                        # Cambiar de vía cuando una se cierra es la jugada que resuelve
+                        # casos reales (el disco no abre → hives desde la RAM). RULE 2
+                        # prohíbe el fallback SILENCIOSO, no el pivote: aquí es
+                        # explícito, exige el sostén (exit/stderr/run_id) y queda en la
+                        # cadena de custodia para que el perito lo vea y lo discuta.
+                        try:
+                            params = dict(call.params)
+                            via = str(params.get("via_cerrada") or "").strip()
+                            motivo = str(params.get("motivo") or "").strip()
+                            alt = str(params.get("via_alternativa") or "").strip()
+                            if not (via and motivo and alt):
+                                raise ValueError(
+                                    "via_cerrada, motivo y via_alternativa son "
+                                    "obligatorios: un descarte sin sostén ni "
+                                    "alternativa no es un pivote"
+                                )
+                            body = {"registrado": True, "via_cerrada": via}
+                            self._audit_event(
+                                "agent_pivot",
+                                case_id=case_id,
+                                evidence_id=evidence_id,
+                                via_cerrada=via[:200],
+                                motivo=motivo[:1000],
+                                via_alternativa=alt[:1000],
+                                iteration=iteration + 1,
+                            )
+                        except (KeyError, ValueError) as exc:
+                            body = {"error": f"declarar_pivote rejected: {exc}"}
+                        messages.append(self._tool_result_msg(call, body))
+                        tool_calls_log.append({
+                            "tool_id": "declarar_pivote",
+                            "via_cerrada": body.get("via_cerrada"),
+                            "error": body.get("error"),
+                        })
+                        emit({
+                            "type": "pivot" if not body.get("error") else "tool_result",
+                            "iteration": iteration + 1,
+                            "tool_id": "declarar_pivote",
+                            "status": "ok" if not body.get("error") else "error",
+                            "summary": (
+                                body.get("via_cerrada") or str(body.get("error"))
+                            )[:120],
+                        })
+                        continue
+
+                    if call.tool_id == "leer_artefacto":
+                        # El agente mira lo que él mismo produjo. Sin esto solo ve un
+                        # `stdout_sample` de 2000 chars y una salida de regripper o un
+                        # árbol de fls le resultan opacos — acaba re-ejecutando la
+                        # herramienta o infiriendo sin sostén.
+                        # Es un `grep` SIN shell: el modelo pasa un run_id (nunca una
+                        # ruta), el store confina el fichero dentro del run y `buscar` es
+                        # una subcadena literal, jamás una regex del modelo.
+                        try:
+                            params = dict(call.params)
+                            body = artifact_store.read_run_output(
+                                case_id,
+                                str(params.get("run_id") or "").strip(),
+                                fichero=str(params.get("fichero") or "stdout").strip(),
+                                buscar=params.get("buscar"),
+                                desde=params.get("desde", 1),
+                                lineas=params.get("lineas", 200),
+                            )
+                        except (KeyError, ValueError, OSError) as exc:
+                            body = {"error": f"leer_artefacto rejected: {exc}"}
+                        # UNTRUSTED: son bytes derivados de la evidencia (dato hostil),
+                        # exactamente igual que el resultado de ejecutar la herramienta.
+                        messages.append(
+                            self._tool_result_msg(call, body, untrusted=True)
+                        )
+                        tool_calls_log.append({
+                            "tool_id": "leer_artefacto",
+                            "run_id": body.get("run_id"),
+                            "devueltas": body.get("devueltas"),
+                            "error": body.get("error"),
+                        })
+                        emit({
+                            "type": "tool_result",
+                            "iteration": iteration + 1,
+                            "tool_id": "leer_artefacto",
+                            "status": "ok" if not body.get("error") else "error",
+                            "summary": (
+                                f"{body.get('devueltas')}/{body.get('lineas_relevantes')} "
+                                f"líneas de {body.get('tool_id')}"
+                                if not body.get("error")
+                                else str(body.get("error"))
+                            )[:120],
+                        })
+                        continue
+
+                    if call.tool_id == "anotar_conocimiento":
+                        # Lado de ESCRITURA del grafo por caso. Nunca toca la evidencia ni
+                        # los artefactos: escribe bajo `cases/<id>/knowledge/`, append-only
+                        # con vista consolidada. El modelo emite un ID de charset cerrado,
+                        # jamás una ruta (SECURITY INVARIANT 5-6).
+                        doc_id = ""
+                        try:
+                            params = dict(call.params)
+                            doc_id = str(params.get("doc_id") or "").strip()
+                            block = knowledge_store.append(
+                                case_id,
+                                doc_id,
+                                str(params.get("section") or ""),
+                                str(params.get("content") or ""),
+                                iteration=iteration + 1,
+                            )
+                            body = {
+                                "doc_id": block.doc_id,
+                                "section": block.section,
+                                "stored": True,
+                            }
+                            # F3 — metadatos y hash en la cadena, nunca el contenido.
+                            self._audit_event(
+                                "knowledge_written",
+                                case_id=case_id,
+                                evidence_id=evidence_id,
+                                doc_id=block.doc_id,
+                                section=block.section,
+                                content_sha256=block.sha256,
+                                content_chars=len(block.content),
+                                iteration=iteration + 1,
+                            )
+                        except (KeyError, ValueError, OSError) as exc:
+                            body = {"error": f"anotar_conocimiento rejected: {exc}"}
+                        messages.append(self._tool_result_msg(call, body))
+                        tool_calls_log.append({
+                            "tool_id": "anotar_conocimiento",
+                            "doc_id": doc_id,
+                            "error": body.get("error"),
+                        })
+                        emit({
+                            "type": "tool_result",
+                            "iteration": iteration + 1,
+                            "tool_id": "anotar_conocimiento",
+                            "status": "ok" if not body.get("error") else "error",
+                            "summary": (
+                                f"{body.get('doc_id')} · {body.get('section')}"
+                                if not body.get("error")
+                                else str(body.get("error"))
+                            )[:120],
+                        })
+                        continue
+
+                    if call.tool_id == "consultar_conocimiento":
+                        # Mapa de memoria. Resuelve en DOS ámbitos, en este orden:
+                        #   1. Nodo del grafo de ESTE caso (lo escribió el agente) →
+                        #      vuelve marcado NO CONFIABLE: sus notas citan cadenas
+                        #      derivadas de la evidencia, y releerlas como contexto de
+                        #      confianza sería un canal de blanqueo de prompt-injection.
+                        #   2. Doc estático del paquete → contenido de CONFIANZA (autoría
+                        #      nuestra, cargado y path-confinado al arrancar), sin
+                        #      spotlighting.
+                        doc = None
+                        node = None
+                        try:
+                            # str(): el modelo podría emitir doc_id no-string (Ollama texto);
+                            # coerciona sin crashear el run (simetría con los otros handlers).
+                            doc_id = str(dict(call.params).get("doc_id") or "").strip()
+                            try:
+                                node = knowledge_store.read(case_id, doc_id)
+                            except (KeyError, ValueError):
+                                node = None  # id no válido como nodo → puede ser doc estático
+                            if node is not None:
                                 body = {
-                                    "error": (
-                                        f"doc_id {doc_id!r} no existe. Referencia del "
-                                        f"paquete: {valid}. Nodos de este caso: {nodes} "
-                                        "(créalo con anotar_conocimiento)."
-                                    )
+                                    "doc_id": node.doc_id,
+                                    "scope": "caso",
+                                    "sections": list(node.sections),
+                                    "content": node.markdown,
                                 }
                             else:
-                                body = {
-                                    "doc_id": doc.id,
-                                    "scope": "paquete",
-                                    "title": doc.title,
-                                    "content": doc.content,
-                                }
-                    except (KeyError, ValueError, TypeError, AttributeError) as exc:
-                        body = {"error": f"consultar_conocimiento rejected: {exc}"}
-                    messages.append(
-                        self._tool_result_msg(action, body, untrusted=node is not None)
-                    )
-                    tool_calls_log.append({
-                        "tool_id": "consultar_conocimiento",
-                        "doc_id": doc_id,
-                        "error": body.get("error"),
-                    })
-                    emit({
-                        "type": "tool_result",
-                        "iteration": iteration + 1,
-                        "tool_id": "consultar_conocimiento",
-                        "status": "ok" if not body.get("error") else "error",
-                        "summary": (
-                            node.doc_id if node else doc.title if doc
-                            else body.get("error", "")
-                        )[:120],
-                    })
-                    continue
-
-                if action.tool_id == "consultar_actividad":
-                    # Read-only projection over the evidence's persisted super-timeline —
-                    # answers date-range / category / path queries WITHOUT re-running fls
-                    # (the mapa vivo). In-process side-channel like record_finding.
-                    try:
-                        params = dict(action.params)
-                        body = query_filesystem_timeline(
-                            case_id,
-                            evidence_id,
-                            date_from=params.get("date_from"),
-                            date_to=params.get("date_to"),
-                            category=params.get("category"),
-                            path_contains=params.get("path_contains"),
-                            limit=params.get("limit", 100),
+                                doc = next(
+                                    (d for d in self.package.knowledge if d.id == doc_id), None
+                                )
+                                if doc is None:
+                                    valid = [d.id for d in self.package.knowledge]
+                                    nodes = [n.doc_id for n in knowledge_store.index(case_id)]
+                                    body = {
+                                        "error": (
+                                            f"doc_id {doc_id!r} no existe. Referencia del "
+                                            f"paquete: {valid}. Nodos de este caso: {nodes} "
+                                            "(créalo con anotar_conocimiento)."
+                                        )
+                                    }
+                                else:
+                                    body = {
+                                        "doc_id": doc.id,
+                                        "scope": "paquete",
+                                        "title": doc.title,
+                                        "content": doc.content,
+                                    }
+                        except (KeyError, ValueError, TypeError, AttributeError) as exc:
+                            body = {"error": f"consultar_conocimiento rejected: {exc}"}
+                        messages.append(
+                            self._tool_result_msg(call, body, untrusted=node is not None)
                         )
-                    except (KeyError, ValueError, RuntimeError, OSError) as exc:
-                        body = {"error": f"consultar_actividad rejected: {exc}"}
-                    messages.append(
-                        self._tool_result_msg(action, body, untrusted=True)
-                    )
-                    tool_calls_log.append({
-                        "tool_id": "consultar_actividad",
-                        "matched": body.get("matched"),
-                        "status": body.get("status"),
-                        "error": body.get("error"),
-                    })
+                        tool_calls_log.append({
+                            "tool_id": "consultar_conocimiento",
+                            "doc_id": doc_id,
+                            "error": body.get("error"),
+                        })
+                        emit({
+                            "type": "tool_result",
+                            "iteration": iteration + 1,
+                            "tool_id": "consultar_conocimiento",
+                            "status": "ok" if not body.get("error") else "error",
+                            "summary": (
+                                node.doc_id if node else doc.title if doc
+                                else body.get("error", "")
+                            )[:120],
+                        })
+                        continue
+
+                    if call.tool_id == "consultar_actividad":
+                        # Read-only projection over the evidence's persisted super-timeline —
+                        # answers date-range / category / path queries WITHOUT re-running fls
+                        # (the mapa vivo). In-process side-channel like record_finding.
+                        try:
+                            params = dict(call.params)
+                            body = query_filesystem_timeline(
+                                case_id,
+                                evidence_id,
+                                date_from=params.get("date_from"),
+                                date_to=params.get("date_to"),
+                                category=params.get("category"),
+                                path_contains=params.get("path_contains"),
+                                limit=params.get("limit", 100),
+                            )
+                        except (KeyError, ValueError, RuntimeError, OSError) as exc:
+                            body = {"error": f"consultar_actividad rejected: {exc}"}
+                        messages.append(
+                            self._tool_result_msg(call, body, untrusted=True)
+                        )
+                        tool_calls_log.append({
+                            "tool_id": "consultar_actividad",
+                            "matched": body.get("matched"),
+                            "status": body.get("status"),
+                            "error": body.get("error"),
+                        })
+                        emit({
+                            "type": "tool_result",
+                            "iteration": iteration + 1,
+                            "tool_id": "consultar_actividad",
+                            "status": "ok" if not body.get("error") else "error",
+                            "summary": _consulta_summary(body),
+                        })
+                        continue
+
+                    if call.tool_id not in allowed:
+                        refusal = (
+                            f"El tool `{call.tool_id}` no está en la allowlist del "
+                            f"paquete `{self.package.id}`. Elige uno de: "
+                            + ", ".join(f"`{t}`" for t in allowed)
+                        )
+                        messages.append(self._tool_result_msg(call, {"error": refusal}))
+                        tool_calls_log.append(
+                            {"tool_id": call.tool_id, "refused": True, "reason": "not_in_allowlist"}
+                        )
+                        emit({
+                            "type": "tool_result",
+                            "iteration": iteration + 1,
+                            "tool_id": call.tool_id,
+                            "status": "refused",
+                            "summary": "no está en la allowlist del agente",
+                        })
+                        continue
+
+                    # Guardrail anti-bucle (Bug 001): no reintentes una tool que ya falló
+                    # `max_attempts` veces en esta sesión — fuerza al modelo a cambiar de
+                    # herramienta o a cerrar, en vez de repetir un exit≠0 hasta agotar
+                    # iteraciones. Solo cuentan los FALLOS: una tool que va bien puede
+                    # llamarse cuantas veces haga falta (p. ej. tsk_icat por inodo).
+                    if tool_failures.get(call.tool_id, 0) >= max_attempts:
+                        blocked = (
+                            f"El tool `{call.tool_id}` ya se intentó {max_attempts} veces en "
+                            f"esta sesión y todas fallaron (exit≠0). NO lo reintentes: elige OTRA "
+                            f"herramienta del allowlist o, si ya tienes suficiente, responde con tu "
+                            f"análisis final."
+                        )
+                        messages.append(
+                            self._tool_result_msg(call, {"error": blocked, "blocked": True})
+                        )
+                        tool_calls_log.append(
+                            {"tool_id": call.tool_id, "blocked": True, "reason": "max_failed_attempts"}
+                        )
+                        emit({
+                            "type": "tool_result",
+                            "iteration": iteration + 1,
+                            "tool_id": call.tool_id,
+                            "status": "blocked",
+                            "summary": f"bloqueado tras {max_attempts} fallos",
+                        })
+                        continue
+
+                    try:
+                        params = self._inject_runtime_paths(
+                            call.tool_id, dict(call.params), evidence_path
+                        )
+                        emit({
+                            "type": "tool_call",
+                            "iteration": iteration + 1,
+                            "tool_id": call.tool_id,
+                            "params": _preview_params(params),
+                        })
+                        result = dispatch_tool(
+                            call.tool_id,
+                            params,
+                            case_id=case_id,
+                            os_profile=self.os_profile,
+                            evidence_context=evidence_context,
+                        )
+                    except ToolExecutionError as exc:
+                        tool_failures[call.tool_id] = tool_failures.get(call.tool_id, 0) + 1
+                        messages.append(
+                            self._tool_result_msg(call, {"error": f"ToolExecutionError: {exc}"})
+                        )
+                        tool_calls_log.append(
+                            {"tool_id": call.tool_id, "error": str(exc)}
+                        )
+                        emit({
+                            "type": "tool_result",
+                            "iteration": iteration + 1,
+                            "tool_id": call.tool_id,
+                            "status": "error",
+                            "summary": str(exc)[:200],
+                        })
+                        continue
+                    except Exception as exc:  # noqa: BLE001 — never crash the loop
+                        tool_failures[call.tool_id] = tool_failures.get(call.tool_id, 0) + 1
+                        messages.append(
+                            self._tool_result_msg(call, {"error": f"{type(exc).__name__}: {exc}"})
+                        )
+                        tool_calls_log.append(
+                            {"tool_id": call.tool_id, "error": str(exc)}
+                        )
+                        emit({
+                            "type": "tool_result",
+                            "iteration": iteration + 1,
+                            "tool_id": call.tool_id,
+                            "status": "error",
+                            "summary": f"{type(exc).__name__}: {exc}"[:200],
+                        })
+                        continue
+
+                    exit_code = result.get("exit_code")
+                    if isinstance(exit_code, int) and exit_code != 0:
+                        tool_failures[call.tool_id] = tool_failures.get(call.tool_id, 0) + 1
+
+                    # El run_id recién creado NO puede redactarse: es la clave con
+                    # la que el agente encadenará, leerá el artefacto y citará
+                    # procedencia en su hallazgo.
+                    if isinstance(result.get("run_id"), str):
+                        protected_ids.add(result["run_id"])
+
                     emit({
                         "type": "tool_result",
                         "iteration": iteration + 1,
-                        "tool_id": "consultar_actividad",
-                        "status": "ok" if not body.get("error") else "error",
-                        "summary": _consulta_summary(body),
-                    })
-                    continue
-
-                if action.tool_id not in allowed:
-                    refusal = (
-                        f"El tool `{action.tool_id}` no está en la allowlist del "
-                        f"paquete `{self.package.id}`. Elige uno de: "
-                        + ", ".join(f"`{t}`" for t in allowed)
-                    )
-                    messages.append(self._tool_result_msg(action, {"error": refusal}))
-                    tool_calls_log.append(
-                        {"tool_id": action.tool_id, "refused": True, "reason": "not_in_allowlist"}
-                    )
-                    emit({
-                        "type": "tool_result",
-                        "iteration": iteration + 1,
-                        "tool_id": action.tool_id,
-                        "status": "refused",
-                        "summary": "no está en la allowlist del agente",
-                    })
-                    continue
-
-                # Guardrail anti-bucle (Bug 001): no reintentes una tool que ya falló
-                # `max_attempts` veces en esta sesión — fuerza al modelo a cambiar de
-                # herramienta o a cerrar, en vez de repetir un exit≠0 hasta agotar
-                # iteraciones. Solo cuentan los FALLOS: una tool que va bien puede
-                # llamarse cuantas veces haga falta (p. ej. tsk_icat por inodo).
-                if tool_failures.get(action.tool_id, 0) >= max_attempts:
-                    blocked = (
-                        f"El tool `{action.tool_id}` ya se intentó {max_attempts} veces en "
-                        f"esta sesión y todas fallaron (exit≠0). NO lo reintentes: elige OTRA "
-                        f"herramienta del allowlist o, si ya tienes suficiente, responde con tu "
-                        f"análisis final."
-                    )
-                    messages.append(
-                        self._tool_result_msg(action, {"error": blocked, "blocked": True})
-                    )
-                    tool_calls_log.append(
-                        {"tool_id": action.tool_id, "blocked": True, "reason": "max_failed_attempts"}
-                    )
-                    emit({
-                        "type": "tool_result",
-                        "iteration": iteration + 1,
-                        "tool_id": action.tool_id,
-                        "status": "blocked",
-                        "summary": f"bloqueado tras {max_attempts} fallos",
-                    })
-                    continue
-
-                try:
-                    params = self._inject_runtime_paths(
-                        action.tool_id, dict(action.params), evidence_path
-                    )
-                    emit({
-                        "type": "tool_call",
-                        "iteration": iteration + 1,
-                        "tool_id": action.tool_id,
-                        "params": _preview_params(params),
-                    })
-                    result = dispatch_tool(
-                        action.tool_id,
-                        params,
-                        case_id=case_id,
-                        os_profile=self.os_profile,
-                        evidence_context=evidence_context,
-                    )
-                except ToolExecutionError as exc:
-                    tool_failures[action.tool_id] = tool_failures.get(action.tool_id, 0) + 1
-                    messages.append(
-                        self._tool_result_msg(action, {"error": f"ToolExecutionError: {exc}"})
-                    )
-                    tool_calls_log.append(
-                        {"tool_id": action.tool_id, "error": str(exc)}
-                    )
-                    emit({
-                        "type": "tool_result",
-                        "iteration": iteration + 1,
-                        "tool_id": action.tool_id,
-                        "status": "error",
-                        "summary": str(exc)[:200],
-                    })
-                    continue
-                except Exception as exc:  # noqa: BLE001 — never crash the loop
-                    tool_failures[action.tool_id] = tool_failures.get(action.tool_id, 0) + 1
-                    messages.append(
-                        self._tool_result_msg(action, {"error": f"{type(exc).__name__}: {exc}"})
-                    )
-                    tool_calls_log.append(
-                        {"tool_id": action.tool_id, "error": str(exc)}
-                    )
-                    emit({
-                        "type": "tool_result",
-                        "iteration": iteration + 1,
-                        "tool_id": action.tool_id,
-                        "status": "error",
-                        "summary": f"{type(exc).__name__}: {exc}"[:200],
-                    })
-                    continue
-
-                exit_code = result.get("exit_code")
-                if isinstance(exit_code, int) and exit_code != 0:
-                    tool_failures[action.tool_id] = tool_failures.get(action.tool_id, 0) + 1
-
-                emit({
-                    "type": "tool_result",
-                    "iteration": iteration + 1,
-                    "tool_id": action.tool_id,
-                    "status": "ok" if exit_code == 0 else "nonzero",
-                    "exit_code": exit_code,
-                    "run_id": result.get("run_id"),
-                    # El argv LITERAL que se ejecutó, para que el perito VEA el
-                    # comando lanzado en el chat (no sólo el resultado).
-                    "argv": result.get("argv"),
-                    "summary": _result_summary(result),
-                })
-                messages.append(
-                    self._tool_result_msg(
-                        action, self._tool_result_payload(result), untrusted=True
-                    )
-                )
-                tool_calls_log.append(
-                    {
-                        "tool_id": action.tool_id,
-                        "run_id": result.get("run_id"),
+                        "tool_id": call.tool_id,
+                        "status": "ok" if exit_code == 0 else "nonzero",
                         "exit_code": exit_code,
-                    }
-                )
-                # Nudge: si acumula herramientas sin registrar, se lo recuerda de
-                # forma explícita (además del prompt). Reinicia el contador para no
-                # repetir cada iteración.
-                tools_since_finding += 1
-                if tools_since_finding >= FINDING_NUDGE_AFTER:
-                    messages.append({
-                        "role": "system",
-                        "content": (
-                            f"[Recordatorio] Llevas {tools_since_finding} herramientas "
-                            "seguidas sin registrar ningún hallazgo. REGISTRA AHORA con "
-                            "record_finding lo que ya has concluido de esos ArtifactRun "
-                            "(o un hallazgo de descarte), ANTES de invocar otra "
-                            "herramienta — el análisis puede cortarse y se perdería."
-                        ),
+                        "run_id": result.get("run_id"),
+                        # El argv LITERAL que se ejecutó, para que el perito VEA el
+                        # comando lanzado en el chat (no sólo el resultado).
+                        "argv": result.get("argv"),
+                        "summary": _result_summary(result),
                     })
-                    tools_since_finding = 0
+                    messages.append(
+                        self._tool_result_msg(
+                            call, self._tool_result_payload(result), untrusted=True
+                        )
+                    )
+                    tool_calls_log.append(
+                        {
+                            "tool_id": call.tool_id,
+                            "run_id": result.get("run_id"),
+                            "exit_code": exit_code,
+                        }
+                    )
+                    # Nudge: si acumula herramientas sin registrar, se lo recuerda de
+                    # forma explícita (además del prompt). Reinicia el contador para no
+                    # repetir cada iteración.
+                    tools_since_finding += 1
+                    if tools_since_finding >= FINDING_NUDGE_AFTER:
+                        messages.append({
+                            "role": "system",
+                            "content": (
+                                f"[Recordatorio] Llevas {tools_since_finding} herramientas "
+                                "seguidas sin registrar ningún hallazgo. REGISTRA AHORA con "
+                                "record_finding lo que ya has concluido de esos ArtifactRun "
+                                "(o un hallazgo de descarte), ANTES de invocar otra "
+                                "herramienta — el análisis puede cortarse y se perdería."
+                            ),
+                        })
+                        tools_since_finding = 0
                 continue
 
             raise RuntimeError(
@@ -875,7 +1001,7 @@ class ForensicAgent:
         pkg_parts = [
             self.package.prompts.system,
             self.package.prompts.identity,
-            select_playbook_section(self.package.prompts.playbook, detected_kind),
+            self.package.prompts.playbook,  # opcional; vacío desde 2026-07-28
         ]
         identity_block = "\n\n".join(p.strip() for p in pkg_parts if p and p.strip())
 
@@ -922,6 +1048,35 @@ class ForensicAgent:
                 f"{docs}\n"
             )
 
+        # RUTA PRINCIPAL: objetivo → artefacto → herramienta. Sustituye al playbook
+        # (borrado 2026-07-28), que entraba por TIPO DE EVIDENCIA con una marcha
+        # numerada y que el agente seguía literalmente: para responder «¿se accedió
+        # a este documento?» empezaba inventariando el disco entero. Compacto a
+        # propósito — viaja en cada iteración; el detalle está en `knowledge/`.
+        objetivos_block = ""
+        if self.package.objetivos:
+            filas = []
+            for o in self.package.objetivos:
+                tools = ", ".join(f"`{t}`" for t in o.herramientas)
+                fila = (
+                    f"### {o.pregunta}\n"
+                    f"- **Artefactos:** {o.artefactos}\n"
+                    f"- **Herramientas:** {tools}"
+                )
+                if o.knowledge:
+                    fila += f"\n- **Detalle:** `consultar_conocimiento(\"{o.knowledge}\")`"
+                filas.append(fila)
+            objetivos_block = (
+                "\n## Objetivo → artefacto → herramienta (TU RUTA)\n"
+                "Localiza abajo lo que te han preguntado y ve **directo al artefacto** "
+                "que lo responde. No hay ninguna secuencia obligatoria que recorrer: "
+                "**no elijas la herramienta, elige el artefacto — el artefacto te dice "
+                "la herramienta**. Si la petición no encaja en ninguno, o todavía no "
+                "hay pregunta, empieza por el objetivo de reconocimiento.\n\n"
+                + "\n\n".join(filas)
+                + "\n"
+            )
+
         # Grafo de conocimiento DE ESTE CASO. Igual que el mapa de memoria, aquí
         # viaja SOLO el índice (id + secciones): el contenido se trae con
         # `consultar_conocimiento(doc_id)`. Es lo que evita que el estado del
@@ -930,32 +1085,36 @@ class ForensicAgent:
         # un `run_id` a los pocos turnos.
         case_graph = self._case_graph_block(case_id)
 
+        # El triage dice QUÉ es la evidencia; ya NO dice qué hacer con ella. Antes
+        # aquí se le ordenaba «salta a la sección A/B del playbook», y el agente
+        # obedecía: para responder «¿se accedió a este documento?» arrancaba
+        # inventariando el disco entero. La ruta la marca ahora el objetivo; esto
+        # solo evita que gaste llamadas en herramientas incompatibles con el soporte.
         kind_routing = ""
         if detected_kind == "memory":
             kind_routing = (
-                "\n## Ruta del playbook — MEMORY DUMP\n"
-                "El triage clasificó la evidencia como `kind=memory`. **Salta "
-                "directamente a la sección B del playbook** («Volcado de "
-                "memoria RAM»). La sección A (imagen de disco) NO APLICA — no "
-                "ejecutes `tsk_mmls`, `tsk_fls`, `tsk_mactime` ni `ewf_info` "
-                "sobre esta evidencia: van a fallar y no producirán hallazgos.\n"
+                "\n## Soporte de la evidencia — VOLCADO DE MEMORIA\n"
+                "El triage la clasificó como `kind=memory`. Las herramientas de "
+                "sistema de ficheros (`tsk_mmls`, `tsk_fls`, `tsk_mactime`, "
+                "`ewf_info`) NO aplican sobre un volcado de memoria: fallarían. "
+                "Los artefactos de tu objetivo hay que buscarlos aquí con "
+                "`volatility3` — incluidos los hives del registro, que se pueden "
+                "volcar desde la RAM.\n"
             )
-        elif detected_kind == "disk":
-            kind_routing = (
-                "\n## Ruta del playbook — DISK IMAGE\n"
-                "El triage clasificó la evidencia como `kind=disk`. Sigue la "
-                "sección A del playbook. La sección B (volcado RAM) NO APLICA — "
-                "no llames a plugins `windows.*` / `linux.*` de Volatility "
-                "sobre esta evidencia: la imagen no contiene un volcado de "
-                "memoria física.\n"
+        elif detected_kind in ("disk", "container_disk"):
+            contenedor = (
+                " Va dentro de un contenedor (VMDK/VDI/QCOW/VHD/E01); las "
+                "herramientas TSK lo abren correctamente."
+                if detected_kind == "container_disk"
+                else ""
             )
-        elif detected_kind == "container_disk":
             kind_routing = (
-                "\n## Ruta del playbook — DISK IMAGE EN CONTENEDOR\n"
-                "La evidencia es una imagen de disco dentro de un contenedor "
-                "(VMDK / VDI / QCOW / VHD / E01). Trátala como sección A del "
-                "playbook; las herramientas TSK la abren correctamente. No "
-                "intentes Volatility — no es un volcado de memoria.\n"
+                "\n## Soporte de la evidencia — IMAGEN DE DISCO\n"
+                f"El triage la clasificó como `kind={detected_kind}`.{contenedor} "
+                "Los plugins de memoria de `volatility3` NO aplican: no contiene un "
+                "volcado de memoria física. Los artefactos de tu objetivo viven en "
+                "el sistema de ficheros — localízalos con `tsk_fls` y extráelos con "
+                "`tsk_icat` antes de procesarlos.\n"
             )
 
         return (
@@ -989,6 +1148,7 @@ class ForensicAgent:
             "`status=no_timeline`, genera antes la super-timeline (`tsk_fls -m`). NO "
             "repitas `tsk_fls`/`tsk_mactime` para una consulta que esta tool ya "
             "resuelve sobre lo construido.\n"
+            f"{objetivos_block}\n"
             f"{memory_map}\n"
             f"{case_graph}\n"
             "## Postura por defecto: AGÉNTICA, NO CONVERSACIONAL\n"

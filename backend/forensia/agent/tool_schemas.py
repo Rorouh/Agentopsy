@@ -632,6 +632,83 @@ _INTERNAL_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "required": ["finding_id", "mitre_hints"],
         "additionalProperties": False,
     },
+    "declarar_pivote": {
+        "type": "object",
+        "properties": {
+            "via_cerrada": {
+                "type": "string",
+                "maxLength": 200,
+                "description": (
+                    "Qué vía das por cerrada, en concreto. P. ej. «tsk_fls sobre el "
+                    "disco para fechar los documentos»."
+                ),
+            },
+            "motivo": {
+                "type": "string",
+                "maxLength": 1000,
+                "description": (
+                    "Por qué está cerrada, CON el sostén: el exit code y el stderr, o "
+                    "el `run_id` que lo demuestra. No vale «no funcionó»."
+                ),
+            },
+            "via_alternativa": {
+                "type": "string",
+                "maxLength": 1000,
+                "description": (
+                    "Por dónde vas a seguir y qué esperas obtener. P. ej. «volcar los "
+                    "hives desde la RAM con volatility3 hivelist y pasarlos por "
+                    "regripper: da huso horario, cuentas y documentos recientes sin "
+                    "tocar el disco»."
+                ),
+            },
+        },
+        "required": ["via_cerrada", "motivo", "via_alternativa"],
+        "additionalProperties": False,
+    },
+    "leer_artefacto": {
+        "type": "object",
+        "properties": {
+            "run_id": {
+                "type": "string",
+                "description": (
+                    "UUID4 del run cuya salida quieres leer (el que devolvió la "
+                    "herramienta al ejecutarse)."
+                ),
+            },
+            "fichero": {
+                "type": "string",
+                "description": (
+                    "`stdout` (por defecto), `stderr`, o el `relpath` de un fichero "
+                    "de salida del run. Un binario no se sirve como texto."
+                ),
+            },
+            "buscar": {
+                "type": "string",
+                "description": (
+                    "SUBCADENA literal, sin distinguir mayúsculas. Devuelve solo las "
+                    "líneas que la contienen — como un `grep`. Omítela para leer "
+                    "secuencialmente."
+                ),
+            },
+            "desde": {
+                "type": "integer",
+                "minimum": 1,
+                "description": (
+                    "Línea por la que empezar, 1-based, contando SOLO las relevantes "
+                    "(las que casan con `buscar`). Para paginar usa el "
+                    "`siguiente_desde` que devuelve la llamada anterior."
+                ),
+            },
+            "lineas": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 400,
+                "description": "Cuántas líneas devolver (por defecto 200, máximo 400).",
+            },
+        },
+        "required": ["run_id"],
+        "additionalProperties": False,
+    },
     "anotar_conocimiento": {
         "type": "object",
         "properties": {
@@ -709,6 +786,32 @@ _INTERNAL_DESCRIPTIONS: dict[str, str] = {
         "the seed. Idempotent per finding: re-call with the FULL list (it replaces the "
         "previous one). This PERSISTS the correlation — prose in your answer does not "
         "reach the board on its own."
+    ),
+    "declarar_pivote": (
+        "DECLARA que una vía está cerrada y por dónde sigues. Úsala cuando una "
+        "herramienta o una cadena entera no puede darte lo que buscabas (formato no "
+        "soportado, plugin ausente, el disco no abre) y vas a atacar el mismo objetivo "
+        "por OTRO artefacto.\n"
+        "No es rendirse ni es cambiar de tema: es la jugada que resuelve casos reales "
+        "—«el disco no abre → vuelco los hives desde la RAM y respondo igual»—. Lo que "
+        "NO puedes hacer es cambiar de vía en silencio: el perito tiene que ver que "
+        "descartaste algo, con qué prueba y qué haces en su lugar. Queda registrado en "
+        "el log de custodia.\n"
+        "Cita SIEMPRE el sostén (exit code, stderr o `run_id`): un descarte sin prueba "
+        "no vale, y podría estar ocultando un fallo puntual en vez de una vía cerrada."
+    ),
+    "leer_artefacto": (
+        "LEE la salida COMPLETA de una herramienta que ya ejecutaste, filtrándola por "
+        "líneas — es tu `grep`/`head` sobre tus propios resultados. Lo que ves al "
+        "ejecutar una tool es solo una MUESTRA recortada: si la salida importa "
+        "(un árbol de `fls`, las cuentas de `regripper`, un CSV de `mftecmd`, las "
+        "conexiones de `netscan`), LÉELA con esta tool antes de concluir nada.\n"
+        "Úsala también en vez de re-ejecutar una herramienta «para volver a mirar»: "
+        "el run ya está en disco, releerlo es gratis y re-ejecutar no lo es.\n"
+        "`buscar` filtra por subcadena (una IP, un nombre de usuario, `Confidential`, "
+        "un EID). Si `hay_mas` es true, vuelve a llamar con el `siguiente_desde` que "
+        "te devuelve. Un fichero binario no se sirve aquí: usa `strings_head`/"
+        "`xxd_head` o el parser que corresponda."
     ),
     "anotar_conocimiento": (
         "ESCRIBE en el grafo de conocimiento de ESTE caso: lo que has averiguado, "

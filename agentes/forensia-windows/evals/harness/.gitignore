@@ -1,6 +1,0 @@
-# Prompt de agente generado por build_agent_prompt.py — regenerable y derivado del
-# paquete; no se versiona. Regenéralo cuando lo necesites.
-agente-win.txt
-*.prompt.txt
-# Caché local de Volatility creada al analizar (si el CLI la deja aquí).
-.vol_cache/

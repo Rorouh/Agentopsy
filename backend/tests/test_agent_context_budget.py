@@ -18,7 +18,7 @@ from forensia.agent.agent import (
     ForensicAgent,
     _bounded_json,
 )
-from forensia.agent.context import _stub_for, select_playbook_section, window_messages
+from forensia.agent.context import _stub_for, window_messages
 from forensia.models.base import ToolCall
 
 
@@ -177,137 +177,6 @@ Pasos de memoria: volatility3.
 
 Cruza fuentes.
 """
-
-
-class TestSelectPlaybookSection:
-    def test_memory_drops_disk_branch(self) -> None:
-        out = select_playbook_section(_SYNTH_PLAYBOOK, "memory")
-        assert "Volcado de memoria RAM" in out
-        assert "Imagen de disco" not in out
-        # common sections survive
-        assert "Routing por tipo de evidencia" in out
-        assert "Buenas prácticas siempre" in out
-        assert "Intro común" in out
-
-    def test_disk_drops_memory_branch(self) -> None:
-        out = select_playbook_section(_SYNTH_PLAYBOOK, "disk")
-        assert "Imagen de disco" in out
-        assert "Volcado de memoria RAM" not in out
-
-    def test_container_disk_behaves_like_disk(self) -> None:
-        out = select_playbook_section(_SYNTH_PLAYBOOK, "container_disk")
-        assert "Imagen de disco" in out
-        assert "Volcado de memoria RAM" not in out
-
-    def test_unknown_keeps_both_branches(self) -> None:
-        out = select_playbook_section(_SYNTH_PLAYBOOK, "unknown")
-        assert "Imagen de disco" in out
-        assert "Volcado de memoria RAM" in out
-
-    def test_unexpected_kind_keeps_everything(self) -> None:
-        out = select_playbook_section(_SYNTH_PLAYBOOK, "weird_value")
-        assert "Imagen de disco" in out
-        assert "Volcado de memoria RAM" in out
-
-    def test_empty_playbook_passthrough(self) -> None:
-        assert select_playbook_section("", "memory") == ""
-
-    def test_no_headers_passthrough(self) -> None:
-        text = "plain playbook with no level-2 headers"
-        assert select_playbook_section(text, "memory") == text
-
-    def test_real_windows_package_memory_is_smaller(self) -> None:
-        from pathlib import Path
-
-        pb = (
-            Path(__file__).resolve().parents[2]
-            / "agentes"
-            / "forensia-windows"
-            / "prompts"
-            / "playbook.md"
-        ).read_text(encoding="utf-8")
-        mem = select_playbook_section(pb, "memory")
-        disk = select_playbook_section(pb, "disk")
-        full = select_playbook_section(pb, "unknown")
-        assert len(mem) < len(full)
-        assert len(disk) < len(full)
-        # memory branch kept, disk branch dropped
-        assert "Volcado de memoria RAM Windows" in mem
-        assert "Imagen de disco Windows" not in mem
-
-
-_SYNTH_ANNEX_PLAYBOOK = """## 0. Routing
-Intro.
-
-## A. Imagen de disco Windows
-Disco.
-
-## B. Volcado de memoria RAM Windows
-Memoria.
-
-## Anexo — Playbook por herramienta
-Anexo intro (común, siempre).
-
-### Particiones / imagen
-tsk_mmls, tsk_fls.
-
-### EZ Tools (parsers KAPE — maletín windows)
-mftecmd, regripper.
-
-### Memoria volátil
-volatility3.
-
-### IOCs / firmas
-yara, strings.
-"""
-
-
-class TestAnnexSubsectionTrim:
-    """Bug 008 §2 Nivel 1: el Anexo por-herramienta (común) trocea sus ### de
-    disco/memoria por rama, y falla seguro (lo no clasificado se conserva)."""
-
-    def test_memory_drops_disk_tool_subsections_keeps_memory_and_common(self) -> None:
-        out = select_playbook_section(_SYNTH_ANNEX_PLAYBOOK, "memory")
-        assert "Anexo — Playbook por herramienta" in out  # el Anexo sigue
-        assert "Anexo intro" in out                        # intro del Anexo se queda
-        assert "Memoria volátil" in out                    # tool de memoria: sí
-        assert "IOCs / firmas" in out                      # común: sí
-        assert "Particiones / imagen" not in out           # tool de disco: fuera
-        assert "EZ Tools" not in out                       # tool de disco: fuera
-
-    def test_disk_drops_memory_tool_subsections(self) -> None:
-        out = select_playbook_section(_SYNTH_ANNEX_PLAYBOOK, "disk")
-        assert "Particiones / imagen" in out
-        assert "EZ Tools" in out
-        assert "IOCs / firmas" in out
-        assert "Memoria volátil" not in out
-
-    def test_unknown_keeps_the_whole_annex(self) -> None:
-        out = select_playbook_section(_SYNTH_ANNEX_PLAYBOOK, "unknown")
-        assert "Particiones / imagen" in out
-        assert "Memoria volátil" in out
-        assert "EZ Tools" in out
-        assert "IOCs / firmas" in out
-
-    def test_unclassified_subsection_is_kept(self) -> None:
-        pb = (
-            "## Anexo — herramientas\nintro\n\n"
-            "### Herramienta nueva sin rama clara\ncontenido\n"
-        )
-        assert "Herramienta nueva sin rama clara" in select_playbook_section(pb, "memory")
-
-    def test_real_windows_annex_is_trimmed_for_memory(self) -> None:
-        from pathlib import Path
-
-        pb = (
-            Path(__file__).resolve().parents[2]
-            / "agentes" / "forensia-windows" / "prompts" / "playbook.md"
-        ).read_text(encoding="utf-8")
-        mem = select_playbook_section(pb, "memory")
-        # el bloque de EZ Tools (disco) desaparece del Anexo en un memdump…
-        assert "EZ Tools" not in mem
-        # …pero la guía de memoria del Anexo se conserva.
-        assert "Memoria volátil" in mem
 
 
 class TestUntrustedToolResultSpotlighting:

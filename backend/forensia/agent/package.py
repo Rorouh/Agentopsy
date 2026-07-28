@@ -48,6 +48,35 @@ class KnowledgeDoc:
 
 
 @dataclass(frozen=True)
+class Objetivo:
+    """Una fila del índice **objetivo → artefacto → herramienta**: la ruta principal.
+
+    Sustituye al `playbook.md` (borrado el 2026-07-28), que entraba por TIPO DE
+    EVIDENCIA con una marcha numerada —«1. contenedor, 2. particiones, 3. timeline
+    completa…»— y que el agente seguía literalmente: para responder «¿se accedió a
+    este documento?» empezaba inventariando el disco entero.
+
+    El método que sí funciona, destilado a mano sobre casos reales, es el inverso:
+    *no se elige la herramienta, se elige el **artefacto** que responde la pregunta,
+    y el artefacto dice la herramienta*.
+
+    Es deliberadamente COMPACTO —una fila por objetivo— porque viaja SIEMPRE en el
+    system prompt, que se reenvía en cada iteración. El detalle (dónde vive cada
+    artefacto, qué lo rompe) va en ``knowledge``, consultado bajo demanda.
+    """
+
+    id: str
+    #: Qué pregunta del perito cubre, en su lenguaje.
+    pregunta: str
+    #: Los artefactos que la responden, en orden de utilidad.
+    artefactos: str
+    #: Herramientas del catálogo que los procesan (validadas al cargar).
+    herramientas: tuple[str, ...]
+    #: `doc_id` de `knowledge:` con el detalle. Opcional.
+    knowledge: str | None = None
+
+
+@dataclass(frozen=True)
 class CaseKnowledgeNode:
     """Un nodo del NÚCLEO del grafo de conocimiento del caso.
 
@@ -104,6 +133,10 @@ class AgentPackage:
     # Núcleo declarado del grafo de conocimiento POR CASO (opcional). No lleva
     # contenido: lo escribe el agente en runtime. Ver `CaseKnowledgeNode`.
     case_knowledge: tuple[CaseKnowledgeNode, ...] = ()
+    # Índice objetivo → artefacto → herramienta. La RUTA PRINCIPAL del agente
+    # desde que se borró el playbook. Vacío = el paquete no declara ruta y el
+    # agente decide solo (no hay default silencioso que lo lleve a ningún sitio).
+    objetivos: tuple[Objetivo, ...] = ()
 
     def summary(self) -> dict:
         """Vista JSON-friendly para ``/api/agents`` y ``/api/capabilities``. No
@@ -126,6 +159,16 @@ class AgentPackage:
             ],
             "case_knowledge": [
                 {"id": n.id, "description": n.description} for n in self.case_knowledge
+            ],
+            "objetivos": [
+                {
+                    "id": o.id,
+                    "pregunta": o.pregunta,
+                    "artefactos": o.artefactos,
+                    "herramientas": list(o.herramientas),
+                    "knowledge": o.knowledge,
+                }
+                for o in self.objetivos
             ],
             "path": str(self.path),
         }
