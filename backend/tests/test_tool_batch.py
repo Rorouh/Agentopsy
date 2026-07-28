@@ -22,7 +22,7 @@ from typing import Any
 import pytest
 
 from forensia.agent.agent import ForensicAgent
-from forensia.agent.loader import load_package
+from _agent_pkg import make_package
 from forensia.models.base import (
     ExecutorBackend,
     FinalAnswer,
@@ -144,7 +144,7 @@ def test_tres_herramientas_en_un_solo_turno_del_modelo(monkeypatch) -> None:
         }
 
     monkeypatch.setattr("forensia.toolkit.dispatcher.execute", fake_execute)
-    pkg = load_package(AGENTES_DIR / "forensia-unix")
+    pkg = make_package("unix")
     model = _OneBatchThenFinal(
         [_call("tsk_mmls"), _call("file_info"), _call("strings_head")]
     )
@@ -180,7 +180,7 @@ def test_un_fallo_en_medio_no_aborta_el_resto_del_lote(monkeypatch) -> None:
         }
 
     monkeypatch.setattr("forensia.toolkit.dispatcher.execute", fake_execute)
-    pkg = load_package(AGENTES_DIR / "forensia-unix")
+    pkg = make_package("unix")
     model = _OneBatchThenFinal(
         [_call("tsk_mmls"), _call("file_info"), _call("strings_head")]
     )
@@ -207,7 +207,7 @@ def test_una_tool_fuera_de_la_allowlist_dentro_del_lote_se_rechaza_sin_parar(
         }
 
     monkeypatch.setattr("forensia.toolkit.dispatcher.execute", fake_execute)
-    pkg = load_package(AGENTES_DIR / "forensia-unix")
+    pkg = make_package("unix")
     # `regripper` es del paquete windows: fuera de la allowlist unix.
     model = _OneBatchThenFinal([_call("tsk_mmls"), _call("regripper"), _call("jq")])
     result = ForensicAgent(pkg, model, _FakeEvidence()).run(

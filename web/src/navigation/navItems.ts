@@ -16,6 +16,7 @@ export type ViewId =
   | "document-viewer"
   | "timeline"
   | "investigation"
+  | "findings"
   | "mitre"
   | "settings";
 
@@ -27,22 +28,27 @@ export interface NavItem {
   section: NavSection;
 }
 
-// Las cinco fases del caso, en el orden del flujo pericial: registrar la
+// Las seis fases del caso, en el orden del flujo pericial: registrar la
 // evidencia → investigarla → correlacionar → reconstruir la cronología →
-// redactar el informe.
+// consultar los hallazgos (Documentos) → redactar el informe.
 export interface PhaseItem {
   id: ViewId;
   label: string;
-  // Alimenta el eyebrow de la cabecera contextual: «Fase N de 5».
+  // Alimenta el eyebrow de la cabecera contextual: «Fase N de 6».
   index: number;
 }
 
+// «Documentos» (galería de hallazgos con detalle) e «Informe pericial» (el
+// informe final firmable, con sus borradores) son fases SEPARADAS: la primera
+// es la lectura de los hallazgos que persiste el agente; la segunda, el
+// entregable definitivo.
 export const PHASES: PhaseItem[] = [
   { id: "repository", label: "Evidencia", index: 1 },
   { id: "investigation", label: "Investigación", index: 2 },
   { id: "mitre", label: "Correlación ATT&CK", index: 3 },
   { id: "timeline", label: "Timeline", index: 4 },
-  { id: "document-viewer", label: "Informe pericial", index: 5 },
+  { id: "findings", label: "Documentos", index: 5 },
+  { id: "document-viewer", label: "Informe pericial", index: 6 },
 ];
 
 export const UTILITIES: NavItem[] = [

@@ -52,9 +52,9 @@ class Finding:
     run_id: str | None
     created_at: str
     #: Técnicas ATT&CK que este hallazgo *sugiere* (``["T1547.001", …]``), tal y
-    #: como los prompts del paquete ya prescriben (`agentes/*/prompts/system.md`,
-    #: «Esquema de hallazgo»). Es una propuesta del agente, no un veredicto: sólo
-    #: el operador dictamina (ver forensia.mitre.coverage).
+    #: como `agentes/agent.md` (§8, correlación MITRE) prescribe al agente. Es una
+    #: propuesta del agente, no un veredicto: sólo el operador dictamina (ver
+    #: forensia.mitre.coverage).
     #:
     #: Lleva default para que los hallazgos escritos ANTES de que existiera el
     #: campo sigan construyendo: sin él, ``Finding(**data)`` en ``list()`` lanzaría

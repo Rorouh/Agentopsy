@@ -118,7 +118,7 @@ services:
       # Raíz de datos del backend: config.json y cases/ persisten en ./projects
       # del repo (ver docs/storage.md).
       FORENSIA_HOME: /cases
-      # Paquetes de agente entrenado (contrato en docs/agentes/contrato-paquetes.md).
+      # Comportamiento del agente: un único agentes/agent.md (ver agentes/README.md).
       FORENSIA_AGENTS_DIR: /opt/forensia/agentes
       # Ejecutor 100 % local: el api llega a Ollama por la red interna del
       # compose (el servicio no publica puerto al host). Es la clave que lee

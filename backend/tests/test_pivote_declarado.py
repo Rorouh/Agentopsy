@@ -28,7 +28,7 @@ from typing import Any
 import pytest
 
 from forensia.agent.agent import ForensicAgent
-from forensia.agent.loader import load_package
+from _agent_pkg import make_package
 from forensia.agent.tool_schemas import internal_tool_specs
 from forensia.audit import AuditLog
 from forensia.cases import CaseManager
@@ -73,7 +73,7 @@ def _pivote(**params: Any) -> ToolCall:
 def wired(tmp_path):
     cases = CaseManager(root=tmp_path / "cases")
     case = cases.create(name="Caso", examiner="ramos", os_profile="windows")
-    pkg = load_package(AGENTES_DIR / "forensia-windows")
+    pkg = make_package("windows")
 
     def build(actions):
         model = _Scripted(actions)

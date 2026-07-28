@@ -30,8 +30,9 @@ from typing import Any
 
 import pytest
 
+from _agent_pkg import make_package
+
 from forensia.agent.agent import ForensicAgent
-from forensia.agent.loader import load_package
 from forensia.agent.package import RedactionPattern
 from forensia.agent.redaction import apply_redaction, redact_messages
 from forensia.models.base import FinalAnswer, ModelBackend, ModelCapabilities, ToolCall
@@ -126,10 +127,10 @@ def test_un_patron_que_no_aplica_al_modo_no_se_ejecuta() -> None:
 
 
 def test_el_modo_por_defecto_conserva_el_comportamiento_historico() -> None:
-    """Todos los patrones de los paquetes reales declaran `strict`, así que el
-    default no cambia nada de lo que ya se redactaba."""
-    for pkg_id in ("forensia-unix", "forensia-windows"):
-        pkg = load_package(AGENTES_DIR / pkg_id)
+    """Los patrones de redacción por defecto declaran `strict`, así que el default
+    no cambia nada de lo que ya se redactaba en egress."""
+    for prof in ("unix", "windows"):
+        pkg = make_package(prof)
         assert pkg.policy.redaction_patterns
         assert all("strict" in p.apply_in for p in pkg.policy.redaction_patterns)
 
@@ -185,7 +186,7 @@ def test_el_agente_cloud_VE_el_run_id_real_de_la_herramienta(monkeypatch) -> Non
         }
 
     monkeypatch.setattr("forensia.toolkit.dispatcher.execute", fake_execute)
-    pkg = load_package(AGENTES_DIR / "forensia-windows")
+    pkg = make_package("windows", redaction_patterns=(GUID_PATTERN,))
     model = _Capturador([
         ToolCall(tool_id="tsk_mmls", params={}, call_id="x"),
     ])
@@ -204,7 +205,7 @@ def test_el_agente_cloud_VE_el_run_id_real_de_la_herramienta(monkeypatch) -> Non
 def test_el_case_id_y_el_evidence_id_tambien_sobreviven(monkeypatch) -> None:
     case_id = "6a1375d3-3005-442a-874a-18fc17f062ed"
     ev_id = "9bc48a90-0a8d-441e-bd1a-146d9170636a"
-    pkg = load_package(AGENTES_DIR / "forensia-windows")
+    pkg = make_package("windows", redaction_patterns=(GUID_PATTERN,))
     model = _Capturador([])
     ForensicAgent(pkg, model, _FakeEvidence()).run(
         "hola", case_id=case_id, evidence_id=ev_id
@@ -237,7 +238,7 @@ def test_un_backend_local_nunca_redacta(monkeypatch, es_local) -> None:
         }
 
     monkeypatch.setattr("forensia.toolkit.dispatcher.execute", fake_execute)
-    pkg = load_package(AGENTES_DIR / "forensia-windows")
+    pkg = make_package("windows", redaction_patterns=(GUID_PATTERN,))
     model = _M([ToolCall(tool_id="tsk_mmls", params={}, call_id="x")])
     ForensicAgent(pkg, model, _FakeEvidence()).run("x", case_id="c", evidence_id="e")
 

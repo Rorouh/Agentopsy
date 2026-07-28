@@ -473,6 +473,9 @@ export function ChatPage({
   // cancelarlo al desmontar / cambiar de caso sin tocar estado de un componente
   // que ya no está.
   const pollRef = useRef<{ cancelled: boolean } | null>(null);
+  // Id del job en curso, para que el botón «Parar» sepa cuál cancelar.
+  const jobIdRef = useRef<string | null>(null);
+  const [stopping, setStopping] = useState(false);
   useEffect(
     () => () => {
       if (pollRef.current) pollRef.current.cancelled = true;
@@ -503,6 +506,7 @@ export function ChatPage({
   const drivePoll = async (caseId: string, jobId: string) => {
     const token = { cancelled: false };
     pollRef.current = token;
+    jobIdRef.current = jobId;
     setBusy(true);
     let reply = "";
     let tools: unknown[] | null = null;
@@ -519,8 +523,10 @@ export function ChatPage({
         });
         cursor += job.events?.length ?? 0;
 
-        if (job.status === "done") {
-          reply = job.result?.reply ?? "";
+        if (job.status === "done" || job.status === "cancelled") {
+          reply =
+            job.result?.reply ??
+            (job.status === "cancelled" ? "Análisis detenido por el operador." : "");
           tools = (job.result?.tool_calls as unknown[]) ?? null;
           break;
         }
@@ -540,6 +546,8 @@ export function ChatPage({
     } catch (e) {
       reply = e instanceof ApiError ? e.detail : String(e instanceof Error ? e.message : e);
     }
+    jobIdRef.current = null;
+    setStopping(false);
     if (token.cancelled) return; // desmontado o caso cambiado: no toques estado
     patchLast({ content: reply, pending: false, streaming: false });
     setBusy(false);
@@ -667,6 +675,23 @@ export function ChatPage({
       patchLast({ content: friendly, pending: false, streaming: false });
       setBusy(false);
       if (onTurnComplete) onTurnComplete();
+    }
+  };
+
+  // Botón «Parar»: pide al backend detener el análisis en curso. La parada es
+  // COOPERATIVA — el loop del agente termina entre iteraciones conservando lo
+  // persistido en caliente (findings, grafo, artefactos). El sondeo verá el
+  // estado `cancelled` y cerrará el turno con el mensaje de parada.
+  const onStop = async () => {
+    const jobId = jobIdRef.current;
+    if (!jobId || stopping) return;
+    setStopping(true);
+    patchLast({ content: "Deteniendo el análisis…" });
+    try {
+      await api.cancelJob(jobId);
+    } catch {
+      // Si el job ya había terminado, el sondeo lo cerrará igualmente.
+      setStopping(false);
     }
   };
 
@@ -976,14 +1001,26 @@ export function ChatPage({
 
             <span className="composer-tip">Enter envía · Shift+Enter salta línea</span>
 
-            <button
-              type="button"
-              className="action-invert composer-send"
-              onClick={() => void send()}
-              disabled={sendDisabled}
-            >
-              {busy ? "Analizando…" : "Enviar"}
-            </button>
+            {busy ? (
+              <button
+                type="button"
+                className="action-stop composer-send"
+                onClick={() => void onStop()}
+                disabled={!jobIdRef.current || stopping}
+                title="Detener el análisis en curso (conserva lo ya registrado)"
+              >
+                {stopping ? "Deteniendo…" : "■"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="action-invert composer-send"
+                onClick={() => void send()}
+                disabled={sendDisabled}
+              >
+                Enviar
+              </button>
+            )}
           </div>
 
           <div className="quick-prompts">

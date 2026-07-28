@@ -28,8 +28,12 @@ from typing import Any, Callable
 _MAX_JOBS = 200      # cota del registro de jobs
 _MAX_EVENTS = 800    # cota de eventos por job
 
-# fn recibe un `emit(event)` para reportar progreso y devuelve el result final.
-JobFn = Callable[[Callable[[dict[str, Any]], None]], dict[str, Any]]
+# fn recibe `emit(event)` para reportar progreso y `should_cancel()` para consultar
+# si el operador pidió parar (se comprueba entre iteraciones del loop). Devuelve el
+# result final.
+JobFn = Callable[
+    [Callable[[dict[str, Any]], None], Callable[[], bool]], dict[str, Any]
+]
 
 
 def _utc_now_iso() -> str:
@@ -41,7 +45,7 @@ class Job:
     id: str
     case_id: str
     kind: str
-    status: str  # "running" | "done" | "error"
+    status: str  # "running" | "done" | "error" | "cancelled"
     created_at: str
     prompt_chars: int = 0
     events: list[dict[str, Any]] = field(default_factory=list)
@@ -49,6 +53,12 @@ class Job:
     error: str | None = None
     finished_at: str | None = None
     meta: dict[str, Any] = field(default_factory=dict)
+    # Señal de parada del operador. El loop del agente la consulta entre
+    # iteraciones (should_cancel) y termina limpio conservando lo persistido en
+    # caliente. No se serializa: es estado interno del hilo.
+    _cancel: threading.Event = field(
+        default_factory=threading.Event, repr=False, compare=False
+    )
 
     def public(self, since: int = 0, with_events: bool = True) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -95,9 +105,11 @@ class JobRegistry:
 
         def _run() -> None:
             try:
-                result = fn(emit)
+                result = fn(emit, job._cancel.is_set)
                 with self._lock:
-                    job.status = "done"
+                    # Si se pidió parar, el run terminó por la señal: se marca
+                    # 'cancelled' (no 'done'), conservando el result parcial.
+                    job.status = "cancelled" if job._cancel.is_set() else "done"
                     job.result = result
                     job.finished_at = _utc_now_iso()
             except Exception as exc:  # noqa: BLE001 — el job captura, nunca crashea el hilo
@@ -108,6 +120,18 @@ class JobRegistry:
 
         threading.Thread(target=_run, name=f"job-{job.id[:8]}", daemon=True).start()
         return job
+
+    def cancel(self, job_id: str) -> bool:
+        """Pide parar un job en curso. Devuelve True si se señalizó (estaba
+        corriendo), False si no existe o ya terminó. La parada es COOPERATIVA: el
+        loop del agente la nota entre iteraciones y termina limpio; una herramienta
+        ya en ejecución no se interrumpe a mitad, pero no se lanza la siguiente."""
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None or job.status != "running":
+                return False
+            job._cancel.set()
+            return True
 
     def snapshot(self, job_id: str, since: int = 0) -> dict[str, Any] | None:
         """Vista pública del job (estado + eventos desde `since`), bajo lock."""

@@ -22,7 +22,7 @@ from typing import Any
 import pytest
 
 from forensia.agent.agent import ForensicAgent
-from forensia.agent.loader import load_package
+from _agent_pkg import make_package
 from forensia.agent.tool_schemas import internal_tool_specs
 from forensia.audit import AuditLog
 from forensia.cases import CaseManager
@@ -86,7 +86,7 @@ def wired(tmp_path, monkeypatch):
     case = cases.create(name="Caso grafo", examiner="ramos", os_profile="windows")
     store = KnowledgeStore(cases)
     monkeypatch.setattr("forensia.agent.agent.knowledge_store", store)
-    pkg = load_package(AGENTES_DIR / "forensia-windows")
+    pkg = make_package("windows")
 
     def build(actions):
         model = _ScriptedModel(actions)
@@ -239,7 +239,9 @@ def test_id_desconocido_nombra_los_dos_ambitos(wired) -> None:
     result = agent.run("consulta", case_id=case_id, evidence_id="e")
 
     err = result["tool_calls"][0].get("error") or ""
-    assert "artefactos-windows" in err  # ámbito paquete
+    # El paquete ya no trae docs estáticos (contrato de archivo único): la
+    # referencia de paquete es vacía y solo hay nodos del CASO.
+    assert "Referencia del paquete" in err  # ámbito paquete (vacío)
     assert "cronologia" in err  # ámbito caso
     assert "anotar_conocimiento" in err  # y cómo crearlo
 
@@ -257,9 +259,22 @@ def test_anotar_esta_en_las_specs_internas_con_el_charset_cerrado() -> None:
     assert params["properties"]["doc_id"]["pattern"] == DOC_ID_PATTERN
 
 
-def test_ambas_tools_se_ofrecen_al_modelo(wired) -> None:
-    build, _store, case_id, _ = wired
+def test_anotar_se_ofrece_siempre_consultar_cuando_hay_algo(wired) -> None:
+    """El paquete ya no trae docs estáticos: `anotar_conocimiento` se ofrece
+    siempre (el grafo puede empezar vacío), pero `consultar_conocimiento` solo
+    cuando hay ALGO que servir — un nodo escrito en este caso (RULE 2: sin índice
+    no hay tool que prometa algo inexistente)."""
+    build, store, case_id, _ = wired
+
+    # Caso vacío: solo anotar.
     agent, model = build([])
     agent.run("hola", case_id=case_id, evidence_id="e")
     assert "anotar_conocimiento" in model.offered_tools
-    assert "consultar_conocimiento" in model.offered_tools
+    assert "consultar_conocimiento" not in model.offered_tools
+
+    # Tras escribir un nodo, consultar aparece.
+    store.append(case_id, "cronologia", "s", "c")
+    agent2, model2 = build([])
+    agent2.run("hola", case_id=case_id, evidence_id="e")
+    assert "anotar_conocimiento" in model2.offered_tools
+    assert "consultar_conocimiento" in model2.offered_tools

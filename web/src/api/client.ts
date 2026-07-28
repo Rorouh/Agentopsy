@@ -211,6 +211,13 @@ export const api = {
     post<{ job_id: string; status: string; case_id: string }>("/api/agent/analyze", req),
   getJob: (jobId: string, since = 0) =>
     request<AgentJob>(`/api/agent/jobs/${encodeURIComponent(jobId)}?since=${since}`),
+  // Botón «Parar»: pide detener un análisis en curso. Parada cooperativa — el
+  // loop del agente termina limpio conservando lo persistido en caliente.
+  cancelJob: (jobId: string) =>
+    post<{ job_id: string; cancel_requested: boolean; status: string }>(
+      `/api/agent/jobs/${encodeURIComponent(jobId)}/cancel`,
+      {},
+    ),
   listCaseJobs: (caseId: string) =>
     request<AgentJob[]>(`/api/cases/${encodeURIComponent(caseId)}/agent/jobs`),
 

@@ -12,6 +12,7 @@ import { RepositoryPage } from "./pages/RepositoryPage";
 import { DocumentsPage } from "./pages/DocumentsPage";
 import { TimelinePage } from "./pages/TimelinePage";
 import { InvestigationPage } from "./pages/InvestigationPage";
+import { FindingsPage } from "./pages/FindingsPage";
 import { MitreAttackPage } from "./pages/MitreAttackPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
@@ -79,6 +80,7 @@ export function App() {
         {activeView === "investigation" && (
           <InvestigationPage caps={caps} onNavigate={setActiveView} onCapsRefresh={refreshCaps} />
         )}
+        {activeView === "findings" && <FindingsPage onNavigate={setActiveView} />}
         {activeView === "mitre" && (
           <MitreAttackPage />
         )}

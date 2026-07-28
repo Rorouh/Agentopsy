@@ -248,7 +248,7 @@ def analyze(req: QueryRequest) -> dict:
     ocurre AQUÍ, síncrona, para fallar rápido antes de encolar."""
     agent, prompt, prior_messages, consent_ref, meta = _prepare_run(req)
 
-    def _work(emit) -> dict:  # noqa: ANN001 — emit: Callable[[dict], None]
+    def _work(emit, should_cancel) -> dict:  # noqa: ANN001 — emit/should_cancel: Callables
         result = agent.run(
             prompt=prompt,
             case_id=req.case_id,
@@ -256,6 +256,7 @@ def analyze(req: QueryRequest) -> dict:
             consent_ref=consent_ref,
             prior_messages=prior_messages,
             on_event=emit,  # los eventos (tool_call/tool_result/finding) → al job
+            should_cancel=should_cancel,  # botón «Parar»: corta entre iteraciones
         )
         # Al cerrar el análisis, deja/actualiza el borrador auto del informe si hay
         # hallazgos, y anúncialo en el chat (best-effort; no tumba el job).
@@ -283,6 +284,20 @@ def get_job(job_id: str, since: int = 0) -> dict:
     if snap is None:
         raise HTTPException(status_code=404, detail=f"job {job_id} not found")
     return snap
+
+
+@router.post("/api/agent/jobs/{job_id}/cancel", dependencies=[Depends(require_token)])
+def cancel_job(job_id: str) -> dict:
+    """Pide PARAR un análisis en curso (botón «Parar»). Parada COOPERATIVA: el loop
+    del agente la nota entre iteraciones y termina limpio, conservando lo persistido
+    en caliente (findings, grafo, artefactos). Una herramienta ya en ejecución no se
+    interrumpe a mitad, pero no se lanza la siguiente. Idempotente: si el job ya
+    terminó, devuelve `cancelled=false` sin error."""
+    signalled = job_registry.cancel(job_id)
+    snap = job_registry.snapshot(job_id, since=0)
+    if snap is None:
+        raise HTTPException(status_code=404, detail=f"job {job_id} not found")
+    return {"job_id": job_id, "cancel_requested": signalled, "status": snap["status"]}
 
 
 @router.get("/api/cases/{case_id}/agent/jobs", dependencies=[Depends(require_token)])

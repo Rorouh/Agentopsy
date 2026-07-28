@@ -1,0 +1,20 @@
+Volatility 3 Framework 2.28.0
+
+Offset	FileFullPath	File output
+
+0xf8a00000e010		registry.NONAME.0xf8a00000e010.hive
+0xf8a000024010	\REGISTRY\MACHINE\SYSTEM	registry.SYSTEM.0xf8a000024010.hive
+0xf8a000063010	\REGISTRY\MACHINE\HARDWARE	registry.HARDWARE.0xf8a000063010.hive
+0xf8a0005b7010	\SystemRoot\System32\Config\SOFTWARE	registry.SOFTWARE.0xf8a0005b7010.hive
+0xf8a001278010	\SystemRoot\System32\Config\DEFAULT	registry.DEFAULT.0xf8a001278010.hive
+0xf8a001947010	\??\C:\System Volume Information\Syscache.hve	registry.Syscachehve.0xf8a001947010.hive
+0xf8a001f1c010	\??\C:\Windows\AppCompat\Programs\Amcache.hve	registry.Amcachehve.0xf8a001f1c010.hive
+0xf8a0022e5010	\SystemRoot\System32\Config\SECURITY	registry.SECURITY.0xf8a0022e5010.hive
+0xf8a002386010	\SystemRoot\System32\Config\SAM	registry.SAM.0xf8a002386010.hive
+0xf8a00243c010	\??\C:\Windows\ServiceProfiles\NetworkService\NTUSER.DAT	registry.NTUSERDAT.0xf8a00243c010.hive
+0xf8a0024c4290	\??\C:\Windows\ServiceProfiles\LocalService\NTUSER.DAT	registry.NTUSERDAT.0xf8a0024c4290.hive
+0xf8a0025e5410	\??\C:\Users\IEUser\ntuser.dat	registry.ntuserdat.0xf8a0025e5410.hive
+0xf8a00260f010	\??\C:\Users\IEUser\AppData\Local\Microsoft\Windows\UsrClass.dat	registry.UsrClassdat.0xf8a00260f010.hive
+0xf8a002ccd010	\??\C:\Users\sshd_server\ntuser.dat	registry.ntuserdat.0xf8a002ccd010.hive
+0xf8a002d72010	\??\C:\Users\sshd_server\AppData\Local\Microsoft\Windows\UsrClass.dat	registry.UsrClassdat.0xf8a002d72010.hive
+0xf8a005067010	\Device\HarddiskVolume1\Boot\BCD	registry.BCD.0xf8a005067010.hive

@@ -1,22 +1,19 @@
-"""Discovery + indexing of agent packages dropped in ``agentes/`` at repo root.
+"""Descubrimiento del agente a partir de ``agentes/agent.md``.
 
-Resolución del directorio raíz (en orden, sin fallbacks silenciosos):
+Resolución del directorio ``agentes/`` (en orden, sin fallbacks silenciosos):
 
 1. ``FORENSIA_AGENTS_DIR`` (env). En el compose lo fija el servicio ``api``
    (``/opt/forensia/agentes``, con ``./agentes`` del repo montado read-only).
-2. Si no hay env, se busca un ``agentes/`` como hermano del directorio
-   ``backend/`` que contiene este paquete. Funciona automáticamente cuando se
-   corre ``python -m forensia.server`` desde el repo.
+2. Si no hay env, se busca un ``agentes/`` como hermano del directorio ``backend/``
+   que contiene este paquete. Funciona al correr ``python -m forensia.server`` desde
+   el repo.
 
-Si NINGUNA de las dos opciones existe, la registry se inicia vacía y cualquier
-``get_for_profile`` lanza ``KeyError``. La UI degrada explícitamente (sin
-agente fallback — CLAUDE.md RULE 2).
-
-Invariante adicional (también RULE 2): **dos paquetes válidos no pueden declarar
-el mismo ``os_profile``**. El ``os_profile`` se determina por contenido de la
-evidencia (triage) y el orquestador enruta al paquete de ese perfil; permitir
-dos cargas para el mismo perfil reintroduce un default silencioso. Si esto
-ocurre, la registry falla en seco al arranque.
+Desde 2026-07-28 no hay paquetes por directorio: un **único** ``agent.md`` configura el
+comportamiento, y Agentopsy construye un agente por perfil de SO (``unix``,
+``windows``) que comparte ese texto y difiere solo en la allowlist (catálogo filtrado
+por perfil). Si ``agent.md`` no existe, la registry arranca vacía y
+``get_for_profile`` lanza ``KeyError``; la UI degrada explícitamente (sin agente
+fallback — CLAUDE.md RULE 2).
 """
 
 from __future__ import annotations
@@ -25,15 +22,14 @@ import logging
 import os
 from pathlib import Path
 
-from forensia.agent.loader import AgentPackageError, load_package
+from forensia.agent.loader import AgentPackageError, load_packages
 from forensia.agent.package import AgentPackage
 
 logger = logging.getLogger(__name__)
 
 
 class AgentRegistryError(RuntimeError):
-    """Inconsistencia detectada al escanear ``agentes/`` (p.ej. dos agentes
-    declarando el mismo os_profile). Mensaje siempre accionable."""
+    """Inconsistencia al cargar el agente. Mensaje siempre accionable."""
 
 
 def _default_agents_dir() -> Path:
@@ -51,7 +47,7 @@ def _default_agents_dir() -> Path:
 
 
 class AgentRegistry:
-    """Escaneo único en construcción. Re-cargar requiere reinstanciar."""
+    """Carga única en construcción. Re-cargar requiere reinstanciar."""
 
     def __init__(self, root: Path | None = None) -> None:
         self.root: Path = Path(root).resolve() if root is not None else _default_agents_dir()
@@ -70,62 +66,43 @@ class AgentRegistry:
         except KeyError as exc:
             raise KeyError(f"unknown agent id: {agent_id!r}") from exc
 
+    def has_profile(self, os_profile: str) -> bool:
+        return os_profile in self._by_profile
+
     def get_for_profile(self, os_profile: str) -> AgentPackage:
         try:
             return self._by_profile[os_profile]
         except KeyError as exc:
             raise KeyError(
                 f"no agent loaded for os_profile={os_profile!r}. "
-                f"Drop a package under {self.root} (see agentes/README.md)."
+                f"Drop an '{'agent.md'}' under {self.root} (see agentes/README.md)."
             ) from exc
-
-    def has_profile(self, os_profile: str) -> bool:
-        return os_profile in self._by_profile
 
     # ---- internals ---------------------------------------------------------
 
     def _load(self) -> None:
         if not self.root.is_dir():
             logger.warning(
-                "[agents] agentes dir not found at %s; chat will degrade until a "
-                "package is dropped",
+                "agentes dir %s does not exist — no agent loaded; the UI will degrade "
+                "explicitly (no fallback agent, RULE 2).",
                 self.root,
             )
             return
-
-        for entry in sorted(self.root.iterdir()):
-            if not entry.is_dir() or entry.name.startswith((".", "_")):
-                continue
-            # README.md / hidden files at the top of agentes/ are ignored on purpose.
-            try:
-                pkg = load_package(entry)
-            except AgentPackageError as exc:
-                # A bad package never silently disables a good one — but we don't
-                # want a single typo to kill the whole api service. Log and skip.
-                logger.error("[agents] skipping %s: %s", entry, exc)
-                continue
-
-            if pkg.id in self._by_id:
-                raise AgentRegistryError(
-                    f"duplicate agent id {pkg.id!r}: already loaded from "
-                    f"{self._by_id[pkg.id].path}, refused at {entry}"
-                )
-            if pkg.os_profile in self._by_profile:
-                other = self._by_profile[pkg.os_profile]
-                raise AgentRegistryError(
-                    f"two agents declare os_profile={pkg.os_profile!r}: "
-                    f"{other.id} at {other.path} and {pkg.id} at {entry}. "
-                    "Only ONE agent per os_profile is allowed (see agentes/README.md)."
-                )
-
+        try:
+            packages = load_packages(self.root)
+        except AgentPackageError as exc:
+            # agent.md ausente o vacío: registry vacía, la UI degrada (sin fallback).
+            logger.warning("no agent loaded from %s: %s", self.root, exc)
+            return
+        for profile, pkg in packages.items():
+            self._by_profile[profile] = pkg
             self._by_id[pkg.id] = pkg
-            self._by_profile[pkg.os_profile] = pkg
-            logger.info(
-                "[agents] loaded %s v%s for os_profile=%s",
-                pkg.id, pkg.version, pkg.os_profile,
-            )
+        logger.info(
+            "loaded agent from %s for profiles: %s",
+            self.root,
+            ", ".join(sorted(self._by_profile)),
+        )
 
 
-# Module-level singleton. Surfaces (routers, capabilities) import this — never
-# construct their own — so the scan happens exactly once per process.
+# Singleton usado por los routers / capabilities. Reinstanciar para recargar.
 agent_registry = AgentRegistry()

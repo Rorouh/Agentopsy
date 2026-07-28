@@ -49,6 +49,8 @@ export function Sidebar({
         return facts.findings > 0 ? "next" : "pending";
       case "timeline":
         return "pending";
+      case "findings":
+        return facts.findings > 0 ? "done" : "pending";
       case "document-viewer":
         return facts.documents > 0 ? "done" : "pending";
       default:
@@ -67,6 +69,9 @@ export function Sidebar({
         return `${facts.findings} ${facts.findings === 1 ? "hallazgo" : "hallazgos"}`;
       case "mitre":
         return facts.findings > 0 ? "hallazgos por correlacionar" : "";
+      case "findings":
+        if (facts.findings === 0) return "sin hallazgos";
+        return `${facts.findings} ${facts.findings === 1 ? "hallazgo" : "hallazgos"}`;
       case "document-viewer":
         if (facts.documents === 0) return "sin documentos";
         return `${facts.documents} ${facts.documents === 1 ? "documento" : "documentos"}`;

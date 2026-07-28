@@ -1,11 +1,18 @@
 """One forensic agent, parametrized by OS profile (not two separate agents).
 
-The agent loop is configured at runtime by an ``AgentPackage`` loaded from
-``agentes/<id>/`` (see ``agentes/README.md`` and ``docs/agentes/contrato-paquetes.md``).
+The agent loop is configured at runtime by a single behavioral file
+``agentes/agent.md`` (see ``agentes/README.md``). Agentopsy builds one
+``AgentPackage`` per OS profile that shares that text and differs only in the
+tool allowlist (the catalog filtered by profile).
 """
 
 from forensia.agent.agent import ForensicAgent
-from forensia.agent.loader import AgentPackageError, load_package
+from forensia.agent.loader import (
+    AgentPackageError,
+    build_package,
+    load_packages,
+    read_instructions,
+)
 from forensia.agent.package import (
     AgentPackage,
     AgentPackageModel,
@@ -26,5 +33,7 @@ __all__ = [
     "AgentRegistry",
     "AgentRegistryError",
     "agent_registry",
-    "load_package",
+    "build_package",
+    "load_packages",
+    "read_instructions",
 ]

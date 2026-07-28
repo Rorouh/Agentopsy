@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 
 from forensia.agent.agent import ForensicAgent, _max_tool_attempts
-from forensia.agent.loader import load_package
+from _agent_pkg import make_package
 from forensia.models.base import ModelBackend, ModelCapabilities, ToolCall
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -83,7 +83,7 @@ def test_agent_rejects_model_chosen_evidence_path_before_dispatch(
         raise AssertionError("dispatcher must not be reached")
 
     monkeypatch.setattr("forensia.toolkit.dispatcher.execute", forbidden_execute)
-    pkg = load_package(AGENTES_DIR / "forensia-unix")
+    pkg = make_package("unix")
     agent = ForensicAgent(
         pkg,
         _AlwaysSameTool(
@@ -123,7 +123,7 @@ def test_failing_tool_blocked_after_max_attempts(monkeypatch: pytest.MonkeyPatch
 
     monkeypatch.setattr("forensia.toolkit.dispatcher.execute", fake_execute)
 
-    pkg = load_package(AGENTES_DIR / "forensia-unix")
+    pkg = make_package("unix")
     # `tsk_mmls` está en la allowlist del paquete unix y es una tool real del catálogo.
     agent = ForensicAgent(pkg, _AlwaysSameTool("tsk_mmls"), _FakeEvidence())
 
@@ -164,7 +164,7 @@ def test_successful_tool_is_not_capped(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr("forensia.toolkit.dispatcher.execute", fake_execute)
 
-    pkg = load_package(AGENTES_DIR / "forensia-unix")
+    pkg = make_package("unix")
     agent = ForensicAgent(pkg, _AlwaysSameTool("tsk_fls"), _FakeEvidence())
     result = agent.run("lista la raíz", case_id="c", evidence_id="e")
 
@@ -203,7 +203,7 @@ def test_records_nudge_injected_after_tools_without_finding(
                 seen.append(len(msgs))
             return super().next_action(state, tools)
 
-    pkg = load_package(AGENTES_DIR / "forensia-unix")
+    pkg = make_package("unix")
     agent = ForensicAgent(pkg, _Capturing("tsk_fls"), _FakeEvidence())
     agent.run("lista la raíz", case_id="c", evidence_id="e")
 

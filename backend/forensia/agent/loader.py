@@ -1,493 +1,169 @@
-"""Lectura + validación de un directorio ``agentes/<id>/``.
+"""Carga del agente desde el **único** archivo de comportamiento ``agentes/agent.md``.
 
-Defensivo por diseño:
-- Schema mínimo obligatorio (id, version, os_profile, model, prompts, policy).
-- Cualquier path declarado (prompts/*, policy/*) debe (a) ser relativo y (b)
-  resolverse DENTRO del directorio del agente — sin escapes con `..`/absolutos.
-- ``policy.tools.allowed`` referencia sólo ``tool_id``s del catálogo, **y** los
-  ids referenciados deben declarar el ``os_profile`` del agente. Cualquier id
-  fuera del catálogo o no aplicable al perfil hace fallar la carga (CLAUDE.md
-  RULE 2 — no defaults silenciosos).
+Desde 2026-07-28 el contrato de paquetes declarativo (``agent.yaml`` + ``prompts/`` +
+``policy/`` + ``objetivos`` + ``knowledge/``) fue retirado. El agente se configura con
+un solo documento —``agent.md``, común a todos los proveedores de IA— y todo lo que
+antes se declaraba por paquete se deriva ahora en código, sin defaults silenciosos
+(CLAUDE.md RULE 2):
 
-El loader nunca ejecuta nada del paquete: sólo lee texto y devuelve dataclasses.
+- **La allowlist de herramientas** = el catálogo (`forensia.toolkit.catalog`) **filtrado
+  por el ``os_profile``**. No hay una lista escrita a mano que pueda quedar desalineada
+  con el catálogo: un tool solo es invocable si el catálogo lo declara para ese perfil.
+- **Los patrones de redacción de egress** = un conjunto por defecto en código
+  (``DEFAULT_REDACTION_PATTERNS``): secretos que nunca son forensicamente útiles y
+  siempre peligrosos de filtrar (claves privadas, tokens). No se redacta nada que
+  pudiera cegar al agente (ids del plano de control, correos, nombres de fichero).
+- **El modelo/iteraciones** = constantes por defecto (el ejecutor real lo elige el
+  operador en runtime; ``name`` solo orienta a Ollama).
+
+El loader nunca ejecuta nada: lee texto y devuelve dataclasses inmutables.
 """
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
-from typing import Any
-
-import yaml
 
 from forensia.agent.package import (
     AgentPackage,
     AgentPackageModel,
     AgentPackagePolicy,
     AgentPackagePrompts,
-    CaseKnowledgeNode,
-    KnowledgeDoc,
-    Objetivo,
     RedactionPattern,
 )
-from forensia.knowledge import DOC_ID_PATTERN, MAX_NODES_PER_CASE
-from forensia.toolkit.catalog import BY_ID as TOOL_BY_ID
+from forensia.toolkit.catalog import for_profile as tools_for_profile
 
-_VALID_OS_PROFILES = frozenset({"unix", "windows"})
-# El núcleo declarado en el manifiesto se valida contra el MISMO charset que el
-# store impone en runtime: un id que el store rechazaría no debe poder declararse.
-_CASE_NODE_ID_RE = re.compile(DOC_ID_PATTERN)
+#: El único archivo que Agentopsy carga de ``agentes/``.
+AGENT_MD_FILENAME = "agent.md"
 
-# Un doc de knowledge se sirve ENTERO como resultado de la tool consultar_conocimiento,
-# que el loop acota a ~8000 chars (agent._MAX_TOOL_RESULT_CHARS). Un doc mayor se
-# descartaría en runtime dejando un puntero vacío/engañoso, así que se RECHAZA en carga
-# (fail-loud en la frontera correcta, RULE 2) con margen para el envoltorio JSON.
-_MAX_KNOWLEDGE_DOC_CHARS = 7000
-_ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")  # kebab-case
-_SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$")
+#: Perfiles de SO para los que Agentopsy construye un agente. El texto de ``agent.md``
+#: es común; lo que cambia por perfil es la allowlist de herramientas.
+VALID_OS_PROFILES = ("unix", "windows")
+
+# --- defaults derivados (antes venían del manifiesto del paquete) -----------
+
+#: Modelo recomendado para el ejecutor ``ollama`` (el 100% local). Los ejecutores CLI
+#: usan el modelo de la suscripción del operador; este ``name`` solo orienta a Ollama
+#: cuando el operador no ha elegido uno (sigue siendo explícito, no un default oculto).
+DEFAULT_MODEL_NAME = "llama3.1:8b"
+DEFAULT_TEMPERATURE = 0.2
+#: Tope de TURNOS DEL MODELO por corrida (safety anti-bucle). Cuenta turnos, no
+#: herramientas: un ``tool_batch`` lanza un lote entero en un turno.
+DEFAULT_MAX_ITERATIONS = 30
+
+#: Redacción de egress por defecto (solo se aplica cuando el ejecutor es de nube).
+#: Deliberadamente conservadora: tapa secretos que jamás sirven al análisis y siempre
+#: son peligrosos de filtrar, y NADA que pueda cegar al agente. Un GUID/credencial que
+#: venga DENTRO de la evidencia y sea forensicamente relevante se ve en el artefacto en
+#: disco; al modelo en la nube no hace falta mandárselo en claro.
+DEFAULT_REDACTION_PATTERNS: tuple[RedactionPattern, ...] = (
+    RedactionPattern(
+        name="private_key_block",
+        regex=r"-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----"
+        r"[\s\S]*?-----END (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----",
+        replacement="<CLAVE_PRIVADA_REDACTADA>",
+        apply_in=("strict",),
+    ),
+    RedactionPattern(
+        name="aws_secret_access_key",
+        regex=r"(?i)aws_secret_access_key\s*[=:]\s*\S+",
+        replacement="aws_secret_access_key=<REDACTADO>",
+        apply_in=("strict",),
+    ),
+    RedactionPattern(
+        name="bearer_token",
+        regex=r"(?i)bearer\s+[A-Za-z0-9._\-]{16,}",
+        replacement="Bearer <REDACTADO>",
+        apply_in=("strict",),
+    ),
+)
 
 
 class AgentPackageError(ValueError):
-    """Falla de validación al cargar un paquete. Mensaje siempre orientado al
-    entrenador (qué fichero, qué falta, qué se esperaba)."""
+    """Falla al leer ``agent.md``. Mensaje siempre orientado a quien lo edita
+    (qué fichero falta, qué se esperaba)."""
 
 
-def load_package(agent_dir: Path) -> AgentPackage:
-    """Carga + valida un único ``agentes/<id>/`` y devuelve el ``AgentPackage``.
+def default_allowed_tools(os_profile: str) -> tuple[str, ...]:
+    """Allowlist del perfil = catálogo filtrado por ``os_profile``.
 
-    Lanza ``AgentPackageError`` con mensaje accionable si algo falla. NO captura
-    excepciones del sistema de ficheros: las propaga (es responsabilidad del
-    llamador decidir si "este directorio se ignora" o "el arranque falla").
+    Es la fuente única: un tool es invocable por el agente si y solo si el catálogo lo
+    declara para ese perfil. Imposible que quede desalineada con una lista a mano.
     """
-    agent_dir = agent_dir.resolve()
-    if not agent_dir.is_dir():
-        raise AgentPackageError(f"agent path is not a directory: {agent_dir}")
-
-    manifest_path = agent_dir / "agent.yaml"
-    if not manifest_path.is_file():
+    if os_profile not in VALID_OS_PROFILES:
         raise AgentPackageError(
-            f"agent.yaml not found at {manifest_path}. "
-            "Every agent package must declare a manifest (see agentes/README.md)."
+            f"os_profile inválido: {os_profile!r}. Debe ser uno de {list(VALID_OS_PROFILES)}."
         )
+    return tuple(t.id for t in tools_for_profile(os_profile))
 
-    raw = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
-    if not isinstance(raw, dict):
+
+def read_instructions(agents_dir: Path) -> str:
+    """Lee el texto de ``agent.md`` bajo ``agents_dir``. Falla en seco si no existe o
+    está vacío — un agente sin instrucciones no es un estado válido (RULE 2)."""
+    agents_dir = Path(agents_dir).resolve()
+    md_path = agents_dir / AGENT_MD_FILENAME
+    if not md_path.is_file():
         raise AgentPackageError(
-            f"{manifest_path}: top-level YAML must be a mapping, got {type(raw).__name__}"
+            f"{md_path} no existe. El agente se configura con un único archivo "
+            f"'{AGENT_MD_FILENAME}' en {agents_dir} (ver agentes/README.md)."
         )
+    text = md_path.read_text(encoding="utf-8").strip()
+    if not text:
+        raise AgentPackageError(f"{md_path} está vacío: no hay instrucciones que cargar.")
+    return text
 
-    pkg_id = _require_str(raw, "id", manifest_path)
-    if not _ID_RE.match(pkg_id):
+
+def build_package(
+    os_profile: str,
+    instructions: str,
+    *,
+    model_name: str = DEFAULT_MODEL_NAME,
+    temperature: float = DEFAULT_TEMPERATURE,
+    max_iterations: int = DEFAULT_MAX_ITERATIONS,
+    redaction_patterns: tuple[RedactionPattern, ...] = DEFAULT_REDACTION_PATTERNS,
+    allowed_tools: tuple[str, ...] | None = None,
+    agents_dir: Path | None = None,
+) -> AgentPackage:
+    """Construye el ``AgentPackage`` de un perfil a partir del texto de ``agent.md``.
+
+    Las instrucciones viajan como ``prompts.system``; ``identity``/``playbook`` quedan
+    vacíos (todo el comportamiento vive en un solo documento). La allowlist se deriva
+    del catálogo por perfil (``allowed_tools`` la sobreescribe — útil en tests).
+    ``knowledge``/``case_knowledge``/``objetivos`` quedan vacíos: el grafo de
+    conocimiento POR CASO lo escribe el agente en runtime, no el paquete.
+    """
+    if not isinstance(instructions, str) or not instructions.strip():
+        raise AgentPackageError("las instrucciones (agent.md) no pueden estar vacías")
+    allowed = tuple(allowed_tools) if allowed_tools is not None else default_allowed_tools(os_profile)
+    if not allowed:
         raise AgentPackageError(
-            f"{manifest_path}: id={pkg_id!r} must be kebab-case ([a-z0-9-])"
+            f"el catálogo no declara ninguna herramienta para os_profile={os_profile!r}"
         )
-
-    name = _require_str(raw, "name", manifest_path)
-    version = _require_str(raw, "version", manifest_path)
-    if not _SEMVER_RE.match(version):
-        raise AgentPackageError(
-            f"{manifest_path}: version={version!r} is not semver (e.g. 0.1.0)"
-        )
-
-    os_profile = _require_str(raw, "os_profile", manifest_path)
-    if os_profile not in _VALID_OS_PROFILES:
-        raise AgentPackageError(
-            f"{manifest_path}: os_profile must be one of "
-            f"{sorted(_VALID_OS_PROFILES)}, got {os_profile!r}"
-        )
-
-    authors = _coerce_authors(raw.get("authors"), manifest_path)
-
-    model = _parse_model(raw.get("model"), manifest_path)
-    prompts = _parse_prompts(raw.get("prompts"), agent_dir, manifest_path)
-    policy = _parse_policy(raw.get("policy"), agent_dir, os_profile, manifest_path)
-    knowledge = _parse_knowledge(raw.get("knowledge"), agent_dir, manifest_path)
-    case_knowledge = _parse_case_knowledge(raw.get("case_knowledge"), manifest_path)
-    objetivos = _parse_objetivos(raw.get("objetivos"), manifest_path)
-
     return AgentPackage(
-        id=pkg_id,
-        name=name,
-        version=version,
+        id=f"forensia-{os_profile}",
+        name=f"Agentopsy — {os_profile}",
+        version="1.0.0",
         os_profile=os_profile,
-        authors=authors,
-        path=agent_dir,
-        model=model,
-        prompts=prompts,
-        policy=policy,
-        knowledge=knowledge,
-        case_knowledge=case_knowledge,
-        objetivos=objetivos,
+        authors=(),
+        path=Path(agents_dir).resolve() if agents_dir is not None else Path.cwd(),
+        model=AgentPackageModel(
+            name=model_name,
+            temperature=float(temperature),
+            max_iterations=int(max_iterations),
+        ),
+        prompts=AgentPackagePrompts(system=instructions.strip(), identity="", playbook=""),
+        policy=AgentPackagePolicy(
+            allowed_tools=allowed,
+            redaction_patterns=tuple(redaction_patterns),
+        ),
     )
 
 
-# ---- helpers ---------------------------------------------------------------
-
-
-def _require_str(data: dict, key: str, source: Path) -> str:
-    value = data.get(key)
-    if not isinstance(value, str) or not value.strip():
-        raise AgentPackageError(
-            f"{source}: required string field {key!r} is missing or empty"
-        )
-    return value.strip()
-
-
-def _coerce_authors(value: Any, source: Path) -> tuple[str, ...]:
-    if value is None:
-        return ()
-    if not isinstance(value, list) or not all(isinstance(a, str) for a in value):
-        raise AgentPackageError(
-            f"{source}: authors must be a list of strings, got {type(value).__name__}"
-        )
-    return tuple(a.strip() for a in value if a.strip())
-
-
-def _parse_model(value: Any, source: Path) -> AgentPackageModel:
-    if not isinstance(value, dict):
-        raise AgentPackageError(
-            f"{source}: 'model' must be a mapping with name/temperature/max_iterations"
-        )
-    if "backend" in value:
-        raise AgentPackageError(
-            f"{source}: 'model.backend' fue eliminado del contrato v1.2 — el "
-            "ejecutor (Claude Code / Codex CLI / Gemini CLI / Ollama) lo "
-            "selecciona el operador en runtime (RULE 2), el paquete no puede "
-            "fijarlo. Borra la clave del manifiesto."
-        )
-    name = _require_str(value, "name", source)
-    temperature = value.get("temperature", 0.0)
-    if not isinstance(temperature, (int, float)) or not 0.0 <= float(temperature) <= 2.0:
-        raise AgentPackageError(
-            f"{source}: model.temperature must be a number in [0.0, 2.0], got {temperature!r}"
-        )
-    max_iterations = value.get("max_iterations")
-    if not isinstance(max_iterations, int) or max_iterations < 1 or max_iterations > 100:
-        raise AgentPackageError(
-            f"{source}: model.max_iterations must be an int in [1, 100], got {max_iterations!r}"
-        )
-    return AgentPackageModel(
-        name=name,
-        temperature=float(temperature),
-        max_iterations=max_iterations,
-    )
-
-
-def _parse_prompts(value: Any, agent_dir: Path, source: Path) -> AgentPackagePrompts:
-    """``system`` e ``identity`` son obligatorios; ``playbook`` es OPCIONAL.
-
-    El playbook desapareció del contrato el 2026-07-28: era una marcha numerada por
-    TIPO DE EVIDENCIA («1. contenedor, 2. particiones, 3. timeline completa…») que el
-    agente seguía al pie de la letra, de modo que para responder «¿se accedió a este
-    documento?» empezaba inventariando el disco entero en vez de ir al artefacto que
-    responde la pregunta. La ruta ahora la marca ``objetivos:`` (pregunta → artefacto
-    → herramienta). Un paquete que aún declare ``playbook`` sigue cargando: su texto
-    viaja detrás del índice de objetivos, no delante."""
-    if not isinstance(value, dict):
-        raise AgentPackageError(
-            f"{source}: 'prompts' must be a mapping with system/identity"
-        )
-    system = _read_relative_file(value.get("system"), agent_dir, "prompts.system", source)
-    identity = _read_relative_file(value.get("identity"), agent_dir, "prompts.identity", source)
-    playbook = ""
-    if value.get("playbook") is not None:
-        playbook = _read_relative_file(
-            value.get("playbook"), agent_dir, "prompts.playbook", source
-        )
-    return AgentPackagePrompts(system=system, identity=identity, playbook=playbook)
-
-
-def _parse_objetivos(value: Any, source: Path) -> tuple[Objetivo, ...]:
-    """Parse the ``objetivos:`` list — la RUTA PRINCIPAL del agente.
-
-    Cada entrada es ``{id, pregunta, artefactos, herramientas, knowledge?}``. Es el
-    método destilado a mano: *no se elige la herramienta, se elige el ARTEFACTO que
-    responde la pregunta, y el artefacto dice la herramienta*. Viaja SIEMPRE en el
-    system prompt (es compacto: una fila por objetivo) y el detalle vive en
-    ``knowledge/``, consultado bajo demanda.
-
-    ``herramientas`` se valida contra el catálogo: un objetivo que apunte a una tool
-    inexistente falla al ARRANCAR el api, no en mitad de un análisis (RULE 2)."""
-    if value is None:
-        return ()
-    if not isinstance(value, list):
-        raise AgentPackageError(
-            f"{source}: 'objetivos' must be a list of mappings, got {type(value).__name__}"
-        )
-    out: list[Objetivo] = []
-    seen: set[str] = set()
-    for i, entry in enumerate(value):
-        if not isinstance(entry, dict):
-            raise AgentPackageError(
-                f"{source}: objetivos[{i}] must be a mapping, got {type(entry).__name__}"
-            )
-        obj_id = _require_str(entry, "id", source)
-        if not _ID_RE.match(obj_id):
-            raise AgentPackageError(
-                f"{source}: objetivos[{i}].id={obj_id!r} must be kebab-case"
-            )
-        if obj_id in seen:
-            raise AgentPackageError(
-                f"{source}: duplicate objetivo id {obj_id!r} — ids must be unique"
-            )
-        seen.add(obj_id)
-        pregunta = _require_str(entry, "pregunta", source)
-        artefactos = _require_str(entry, "artefactos", source)
-        raw_tools = entry.get("herramientas")
-        if not isinstance(raw_tools, list) or not raw_tools:
-            raise AgentPackageError(
-                f"{source}: objetivos[{obj_id}].herramientas must be a non-empty list"
-            )
-        tools: list[str] = []
-        for tool_id in raw_tools:
-            if not isinstance(tool_id, str) or tool_id not in TOOL_BY_ID:
-                raise AgentPackageError(
-                    f"{source}: objetivos[{obj_id}] apunta a la herramienta "
-                    f"{tool_id!r}, que no existe en el catálogo"
-                )
-            tools.append(tool_id)
-        knowledge_ref = entry.get("knowledge")
-        if knowledge_ref is not None and not isinstance(knowledge_ref, str):
-            raise AgentPackageError(
-                f"{source}: objetivos[{obj_id}].knowledge must be a string or absent"
-            )
-        out.append(
-            Objetivo(
-                id=obj_id,
-                pregunta=pregunta,
-                artefactos=artefactos,
-                herramientas=tuple(tools),
-                knowledge=knowledge_ref,
-            )
-        )
-    return tuple(out)
-
-
-def _parse_knowledge(
-    value: Any, agent_dir: Path, source: Path
-) -> tuple[KnowledgeDoc, ...]:
-    """Parse the optional ``knowledge:`` list (mapa de memoria híbrido).
-
-    Each entry is a mapping ``{id, title, description, path}``. ``path`` is read and
-    confined under the agent dir at load time (SECURITY INVARIANT 6), so the runtime
-    tool serves content from memory by id with no further I/O. Absent → no docs."""
-    if value is None:
-        return ()
-    if not isinstance(value, list):
-        raise AgentPackageError(
-            f"{source}: 'knowledge' must be a list of {{id, title, description, path}} "
-            f"mappings, got {type(value).__name__}"
-        )
-    docs: list[KnowledgeDoc] = []
-    seen: set[str] = set()
-    for i, entry in enumerate(value):
-        if not isinstance(entry, dict):
-            raise AgentPackageError(
-                f"{source}: knowledge[{i}] must be a mapping, got {type(entry).__name__}"
-            )
-        doc_id = _require_str(entry, "id", source)
-        if not _ID_RE.match(doc_id):
-            raise AgentPackageError(
-                f"{source}: knowledge[{i}].id={doc_id!r} must be kebab-case ([a-z0-9-])"
-            )
-        if doc_id in seen:
-            raise AgentPackageError(
-                f"{source}: duplicate knowledge id {doc_id!r} — ids must be unique"
-            )
-        seen.add(doc_id)
-        title = _require_str(entry, "title", source)
-        description = _require_str(entry, "description", source)
-        content = _read_relative_file(
-            entry.get("path"), agent_dir, f"knowledge[{doc_id}].path", source
-        )
-        if len(content) > _MAX_KNOWLEDGE_DOC_CHARS:
-            raise AgentPackageError(
-                f"{source}: knowledge[{doc_id}] tiene {len(content)} chars; el máximo es "
-                f"{_MAX_KNOWLEDGE_DOC_CHARS} para que quepa entero en un resultado de "
-                "tool (consultar_conocimiento no puede servir un doc que no cabe en "
-                "contexto). Divídelo en documentos más enfocados."
-            )
-        docs.append(
-            KnowledgeDoc(id=doc_id, title=title, description=description, content=content)
-        )
-    return tuple(docs)
-
-
-def _parse_case_knowledge(value: Any, source: Path) -> tuple[CaseKnowledgeNode, ...]:
-    """Parse the optional ``case_knowledge:`` list (núcleo del grafo POR CASO).
-
-    Entradas ``{id, description}``, SIN ``path``: estos nodos no traen contenido —
-    lo escribe el agente en runtime con ``anotar_conocimiento``. Los ids se validan
-    contra el MISMO charset cerrado que impone el store, para que un núcleo mal
-    declarado falle al ARRANCAR el api y no en mitad de un análisis (RULE 2).
-    Ausente → grafo enteramente libre dentro del tope del store."""
-    if value is None:
-        return ()
-    if not isinstance(value, list):
-        raise AgentPackageError(
-            f"{source}: 'case_knowledge' must be a list of {{id, description}} "
-            f"mappings, got {type(value).__name__}"
-        )
-    if len(value) > MAX_NODES_PER_CASE:
-        raise AgentPackageError(
-            f"{source}: 'case_knowledge' declara {len(value)} nodos; el store admite "
-            f"{MAX_NODES_PER_CASE} por caso y el núcleo no puede agotarlo entero."
-        )
-    nodes: list[CaseKnowledgeNode] = []
-    seen: set[str] = set()
-    for i, entry in enumerate(value):
-        if not isinstance(entry, dict):
-            raise AgentPackageError(
-                f"{source}: case_knowledge[{i}] must be a mapping, "
-                f"got {type(entry).__name__}"
-            )
-        node_id = _require_str(entry, "id", source)
-        if not _CASE_NODE_ID_RE.match(node_id):
-            raise AgentPackageError(
-                f"{source}: case_knowledge[{i}].id={node_id!r} no cumple "
-                f"{DOC_ID_PATTERN} — es el mismo charset cerrado que el store impone "
-                "en runtime (minúsculas, dígitos y guiones)."
-            )
-        if node_id in seen:
-            raise AgentPackageError(
-                f"{source}: duplicate case_knowledge id {node_id!r} — ids must be unique"
-            )
-        seen.add(node_id)
-        description = _require_str(entry, "description", source)
-        nodes.append(CaseKnowledgeNode(id=node_id, description=description))
-    return tuple(nodes)
-
-
-def _parse_policy(
-    value: Any, agent_dir: Path, os_profile: str, source: Path
-) -> AgentPackagePolicy:
-    if not isinstance(value, dict):
-        raise AgentPackageError(
-            f"{source}: 'policy' must be a mapping with tools/redaction"
-        )
-    tools_path = _resolve_relative_path(
-        value.get("tools"), agent_dir, "policy.tools", source
-    )
-    redaction_path = _resolve_relative_path(
-        value.get("redaction"), agent_dir, "policy.redaction", source
-    )
-
-    tools_raw = yaml.safe_load(tools_path.read_text(encoding="utf-8"))
-    if not isinstance(tools_raw, dict) or not isinstance(tools_raw.get("allowed"), list):
-        raise AgentPackageError(
-            f"{tools_path}: must be a mapping with an 'allowed' list of tool ids"
-        )
-    allowed_tools = tuple(
-        _validate_tool_id(t, os_profile, tools_path) for t in tools_raw["allowed"]
-    )
-    if not allowed_tools:
-        raise AgentPackageError(
-            f"{tools_path}: 'allowed' is empty. An agent with zero tools cannot operate."
-        )
-    if len(set(allowed_tools)) != len(allowed_tools):
-        raise AgentPackageError(f"{tools_path}: 'allowed' contains duplicate tool ids")
-
-    red_raw = yaml.safe_load(redaction_path.read_text(encoding="utf-8"))
-    if red_raw is None:
-        red_patterns: tuple[RedactionPattern, ...] = ()
-    elif isinstance(red_raw, dict) and isinstance(red_raw.get("patterns"), list):
-        red_patterns = tuple(
-            _parse_redaction_pattern(p, redaction_path) for p in red_raw["patterns"]
-        )
-    else:
-        raise AgentPackageError(
-            f"{redaction_path}: must be a mapping with a 'patterns' list (or empty)"
-        )
-
-    return AgentPackagePolicy(
-        allowed_tools=allowed_tools,
-        redaction_patterns=red_patterns,
-    )
-
-
-def _read_relative_file(value: Any, agent_dir: Path, field: str, source: Path) -> str:
-    path = _resolve_relative_path(value, agent_dir, field, source)
-    return path.read_text(encoding="utf-8")
-
-
-def _resolve_relative_path(value: Any, agent_dir: Path, field: str, source: Path) -> Path:
-    if not isinstance(value, str) or not value.strip():
-        raise AgentPackageError(f"{source}: {field!r} must be a non-empty path string")
-    relative = Path(value)
-    if relative.is_absolute():
-        raise AgentPackageError(
-            f"{source}: {field}={value!r} must be a path RELATIVE to the agent directory"
-        )
-    target = (agent_dir / relative).resolve()
-    # Defense against `..` escapes — the resolved path must stay inside agent_dir.
-    if agent_dir != target and agent_dir not in target.parents:
-        raise AgentPackageError(
-            f"{source}: {field}={value!r} resolves outside the agent directory"
-        )
-    if not target.is_file():
-        raise AgentPackageError(
-            f"{source}: {field}={value!r} does not exist at {target}"
-        )
-    return target
-
-
-def _validate_tool_id(tool_id: Any, os_profile: str, source: Path) -> str:
-    if not isinstance(tool_id, str):
-        raise AgentPackageError(
-            f"{source}: tool ids must be strings, got {type(tool_id).__name__}: {tool_id!r}"
-        )
-    tool = TOOL_BY_ID.get(tool_id)
-    if tool is None:
-        raise AgentPackageError(
-            f"{source}: tool id {tool_id!r} is not in forensia.toolkit.catalog. "
-            "Allowed ids must reference the curated maletín."
-        )
-    if os_profile not in tool.os_profiles:
-        raise AgentPackageError(
-            f"{source}: tool {tool_id!r} does not declare os_profile={os_profile!r} "
-            f"(catalog declares {list(tool.os_profiles)})"
-        )
-    return tool_id
-
-
-_VALID_REDACTION_MODES = frozenset({"strict", "relaxed"})
-
-
-def _parse_redaction_pattern(value: Any, source: Path) -> RedactionPattern:
-    if not isinstance(value, dict):
-        raise AgentPackageError(
-            f"{source}: each redaction pattern must be a mapping with name/regex/replacement"
-        )
-    name = _require_str(value, "name", source)
-    regex = _require_str(value, "regex", source)
-    try:
-        re.compile(regex)
-    except re.error as exc:
-        raise AgentPackageError(
-            f"{source}: redaction pattern {name!r} has invalid regex: {exc}"
-        ) from exc
-    replacement = value.get("replacement")
-    if not isinstance(replacement, str):
-        raise AgentPackageError(
-            f"{source}: redaction pattern {name!r} replacement must be a string"
-        )
-    apply_in_raw = value.get("apply_in", ["strict"])
-    if not isinstance(apply_in_raw, list) or not all(isinstance(m, str) for m in apply_in_raw):
-        raise AgentPackageError(
-            f"{source}: redaction pattern {name!r} apply_in must be a list of strings"
-        )
-    apply_in = tuple(m.strip().lower() for m in apply_in_raw if m.strip())
-    unknown = set(apply_in) - _VALID_REDACTION_MODES
-    if unknown:
-        raise AgentPackageError(
-            f"{source}: redaction pattern {name!r} declares unknown apply_in modes "
-            f"{sorted(unknown)}; expected subset of {sorted(_VALID_REDACTION_MODES)}"
-        )
-    if not apply_in:
-        raise AgentPackageError(
-            f"{source}: redaction pattern {name!r} has empty apply_in — at least "
-            f"'strict' is required (use 'apply_in: [strict]' as a sensible default)"
-        )
-    return RedactionPattern(
-        name=name, regex=regex, replacement=replacement, apply_in=apply_in
-    )
+def load_packages(agents_dir: Path) -> dict[str, AgentPackage]:
+    """Lee ``agent.md`` una vez y construye el agente de CADA perfil que comparte ese
+    texto. Devuelve ``{os_profile: AgentPackage}``. Propaga ``AgentPackageError`` si
+    falta el archivo (el llamador decide si degrada o falla)."""
+    instructions = read_instructions(agents_dir)
+    return {
+        profile: build_package(profile, instructions, agents_dir=agents_dir)
+        for profile in VALID_OS_PROFILES
+    }

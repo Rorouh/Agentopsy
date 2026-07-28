@@ -1,0 +1,40 @@
+Volatility 3 Framework 2.28.0
+
+PID	Process	Offset	HandleValue	Type	GrantedAccess	Name
+
+3856	key.exe	0xf8a00a5be8e0	0x4	Key	0x9	MACHINE\SOFTWARE\MICROSOFT\WINDOWS NT\CURRENTVERSION\IMAGE FILE EXECUTION OPTIONS
+3856	key.exe	0xf8a000d1b900	0x8	Directory	0x3	KnownDlls
+3856	key.exe	0xfa80051c64f0	0xc	File	0x100020	\Device\HarddiskVolume1\Users\IEUser\Desktop
+3856	key.exe	0xf8a0005543a0	0x10	Key	0x20019	MACHINE\SYSTEM\CONTROLSET001\CONTROL\NLS\SORTING\VERSIONS
+3856	key.exe	0xf8a00977f210	0x14	Key	0x1	MACHINE\SYSTEM\CONTROLSET001\CONTROL\SESSION MANAGER
+3856	key.exe	0xfa800423fd10	0x18	ALPC Port	0x1f0001	-
+3856	key.exe	0xfa80041cd140	0x1c	EtwRegistration	0x804	-
+3856	key.exe	0xfa80041fe5c0	0x20	Event	0x21f0003	-
+3856	key.exe	0xfa800616dcc0	0x24	WindowStation	0xf037f	WinSta0
+3856	key.exe	0xfa80061686f0	0x28	Desktop	0xf01ff	Default
+3856	key.exe	0xfa800616dcc0	0x2c	WindowStation	0xf037f	WinSta0
+3856	key.exe	0xf8a00a6afa80	0x30	Key	0xf003f	MACHINE
+3856	key.exe	0xfa8005b871b0	0x34	Mutant	0x1f0001	-
+3856	key.exe	0xfa8003f3e8e0	0x38	Mutant	0x1f0001	-
+3856	key.exe	0xfa8006ca9f30	0x3c	Event	0x1f0003	-
+3856	key.exe	0xfa800460ac60	0x40	Event	0x1f0003	-
+3856	key.exe	0xfa8003f51130	0x44	Event	0x1f0003	-
+3856	key.exe	0xfa8006a23b60	0x48	Event	0x1f0003	-
+3856	key.exe	0xfa8005c08610	0x4c	EtwRegistration	0x804	-
+3856	key.exe	0xfa80060ae200	0x50	EtwRegistration	0x804	-
+3856	key.exe	0xfa800439c660	0x54	Event	0x1f0003	-
+3856	key.exe	0xfa8006101b50	0x58	Thread	0x1fffff	Tid 1480 Pid 3856
+3856	key.exe	0xfa80043821c0	0x60	IoCompletion	0x1f0003	-
+3856	key.exe	0xfa80042dd690	0x64	TpWorkerFactory	0xf00ff	-
+3856	key.exe	0xf8a0103ed530	0x68	KeyedEvent	0xf0003	-
+3856	key.exe	0xfa80044bb1d0	0x6c	Timer	0x100002	-
+3856	key.exe	0xfa800512f850	0x70	Timer	0x1f0003	-
+3856	key.exe	0xfa8006b796a0	0x74	Thread	0x1fffff	Tid 2680 Pid 3856
+3856	key.exe	0xfa8006b796a0	0x78	Thread	0x1fffff	Tid 2680 Pid 3856
+3856	key.exe	0xfa80041c06c0	0x7c	IoCompletion	0x1f0003	-
+3856	key.exe	0xfa8006971100	0x80	TpWorkerFactory	0xf00ff	-
+3856	key.exe	0xfa8004d9b9e0	0x84	Timer	0x100002	-
+3856	key.exe	0xfa8006bc3b50	0x88	Thread	0x1fffff	Tid 2204 Pid 3184
+3856	key.exe	0xfa8004d6bb00	0x8c	Process	0x1fffff	key.exe Pid 3184
+3856	key.exe	0xf8a00a5fb060	0x98	Key	0x8	USER\S-1-5-21-2213123778-2569645789-4120232176-1000\SOFTWARE\MICROSOFT\WINDOWS NT\CURRENTVERSION
+3856	key.exe	0xf8a00a829810	0x9c	Key	0x8	MACHINE\SOFTWARE\MICROSOFT\WINDOWS NT\CURRENTVERSION\APPCOMPATFLAGS

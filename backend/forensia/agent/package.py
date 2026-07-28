@@ -1,9 +1,14 @@
-"""Tipos del paquete de agente entrenado (los que vienen de ``agentes/<id>/``).
+"""Tipos del agente en memoria.
 
-Un ``AgentPackage`` es un manifiesto VALIDADO en memoria. Los entrenadores entregan
-una carpeta declarativa (ver ``agentes/README.md``); el loader la convierte en estas
-dataclasses inmutables y la registry las indexa por ``os_profile`` (uno por perfil,
-RULE 2: nada de defaults silenciosos).
+Un ``AgentPackage`` es la configuración VALIDADA de un perfil de SO. Desde
+2026-07-28 no viene de una carpeta declarativa: el loader lo construye a partir del
+único ``agentes/agent.md`` (comportamiento común) + la allowlist derivada del
+catálogo por perfil (ver ``forensia.agent.loader``). La registry indexa uno por
+``os_profile`` (RULE 2: nada de defaults silenciosos).
+
+Los campos ``knowledge``/``case_knowledge``/``objetivos`` sobreviven como tuplas
+vacías por compatibilidad del loop y de ``summary()``: el conocimiento POR CASO lo
+escribe el agente en runtime (``forensia.knowledge``), no el paquete.
 
 Estos tipos NO ejecutan herramientas ni hablan con el modelo: son sólo datos. El
 loop (``ForensicAgent``) los consume.

@@ -1,8 +1,8 @@
 """The forensic agent loop.
 
-ONE agent parametrized by an ``AgentPackage`` loaded from ``agentes/<id>/``: the
-reasoning loop is identical; what changes per profile is the package (prompts,
-allowlist of tools, redaction policy). The executor that answers each
+ONE agent configured by the single ``agentes/agent.md``: the reasoning loop is
+identical; what changes per profile is only the tool allowlist (the catalog
+filtered by ``os_profile``). The behavioral instructions are shared. The executor that answers each
 ``next_action`` is the one the OPERATOR selected for the request (Claude Code,
 Codex CLI, Gemini CLI or Ollama — adapted by ``forensia.models.ExecutorBackend``);
 the loop neither knows nor cares which one it is (diseño Fase 2 §5).
@@ -256,6 +256,7 @@ class ForensicAgent:
         consent_ref: str | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
         on_event: Callable[[dict[str, Any]], None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> AgentLoopResult:
         # Local import to avoid a circular dep that only matters at call time.
         from forensia.toolkit.dispatcher import ToolExecutionError, execute as dispatch_tool
@@ -288,30 +289,51 @@ class ForensicAgent:
         model_name = getattr(self.model, "model_name", self.model.name)
 
         handle = self.evidence.get(case_id, evidence_id)
-        evidence_path = str(handle.original_path)
         evidence_filename = handle.original_path.name
         detected_os = handle.detected_os
         detected_kind = handle.detected_kind
-        # Verified evidence context threaded to EVERY tool run so the dispatcher can
-        # bind each action to this evidence (id + baseline hash) in the audit log
-        # (FORENSIC INVARIANT 4). Built from the handle EvidenceManager returned — never
-        # from an LLM/path value.
-        evidence_context = EvidenceContext.from_handle(handle)
+
+        # MULTI-EVIDENCIA: un caso real trae varias evidencias (RAM + disco) y la
+        # investigación las CORRELACIONA — los TTP/credenciales viven en la memoria,
+        # el «cuándo» fino y los borrados en el disco. El agente ve TODAS y puede
+        # apuntar cada herramienta a la que toque con el param `evidence_id`; si lo
+        # omite, se usa la primaria (`evidence_id` del request, el ancla de auditoría).
+        # Los paths y el EvidenceContext (que ata cada run a su evidencia por hash en
+        # el audit, FORENSIC INVARIANT 4) los sigue inyectando Agentopsy por handle
+        # verificado — el modelo solo elige un id de un enum cerrado, nunca una ruta
+        # (SECURITY INVARIANT 5-6). `.list()` puede no existir en un doble de test
+        # mínimo (solo `.get()`): en ese caso el caso tiene una sola evidencia.
+        try:
+            all_handles = self.evidence.list(case_id)
+        except (AttributeError, KeyError, ValueError, OSError):
+            all_handles = [handle]
+        handles_by_id: dict[str, Any] = {h.evidence_id: h for h in all_handles}
+        handles_by_id.setdefault(evidence_id, handle)
+        evidence_paths = {eid: str(h.original_path) for eid, h in handles_by_id.items()}
+        evidence_contexts = {
+            eid: EvidenceContext.from_handle(h) for eid, h in handles_by_id.items()
+        }
+        # Etiqueta legible por evidencia para el selector y el prompt: «fichero · kind».
+        evidence_choices = [
+            (eid, f"{h.original_path.name} · {h.detected_kind}")
+            for eid, h in handles_by_id.items()
+        ]
 
         allowed = self.available_tool_ids()
         if not allowed:
             return AgentLoopResult(
                 reply=(
-                    f"El paquete `{self.package.id}` no tiene tools válidos en su "
-                    "allowlist (cruzado contra `catalog.py`). Revisa "
-                    "`policy/tools.yaml`."
+                    f"El agente `{self.package.id}` no tiene tools válidos para su "
+                    "perfil en el catálogo (`catalog.py`). Revisa que el catálogo "
+                    "declare herramientas para este os_profile."
                 ),
                 iterations=0,
                 tool_calls=[],
             )
 
         system_text = self._system_prompt(
-            case_id, evidence_filename, allowed, detected_os, detected_kind
+            case_id, evidence_filename, allowed, detected_os, detected_kind,
+            evidence_choices=evidence_choices,
         )
 
         messages: list[dict[str, Any]] = [
@@ -323,7 +345,7 @@ class ForensicAgent:
             "messages": messages,
             "temperature": float(self.package.model.temperature or 0.2),
         }
-        specs = tool_specs(list(allowed)) + internal_tool_specs()
+        specs = tool_specs(list(allowed), evidence_choices) + internal_tool_specs()
         # RULE 2: don't offer consultar_conocimiento when there is NOTHING it could
         # serve. Ahora tiene dos ámbitos, así que hay algo que servir si el paquete
         # trae docs estáticos, si declara un núcleo de nodos por caso, o si el caso
@@ -369,6 +391,19 @@ class ForensicAgent:
         protected_ids: set[str] = {i for i in (case_id, evidence_id) if i}
 
         for iteration in range(max_iter):
+            # Parada cooperativa del operador (botón «Parar»). Se comprueba al
+            # inicio de cada iteración: no se lanza otra vuelta del modelo ni otra
+            # herramienta. Lo persistido en caliente (findings, grafo, artefactos)
+            # se conserva — la parada no borra nada.
+            if should_cancel is not None and should_cancel():
+                stopped = (
+                    "Análisis detenido por el operador. Los hallazgos y artefactos "
+                    "registrados hasta aquí se conservan."
+                )
+                emit({"type": "final", "iteration": iteration, "text": stopped, "cancelled": True})
+                return AgentLoopResult(
+                    reply=stopped, iterations=iteration, tool_calls=tool_calls_log
+                )
             # Bug 008 — provider-agnostic context management. Agentopsy owns the
             # conversation; the executor is stateless and re-charges the whole
             # transcript each iteration. Project the canonical `messages` to a
@@ -809,13 +844,28 @@ class ForensicAgent:
                         continue
 
                     try:
+                        # MULTI-EVIDENCIA: el modelo puede haber elegido a qué
+                        # evidencia apunta esta herramienta (enum cerrado). Se saca
+                        # de los params (NO va al argv), se valida contra las
+                        # evidencias del caso y se resuelven SU path y SU contexto de
+                        # auditoría; si no la especificó, la primaria.
+                        raw_params = dict(call.params)
+                        target_eid = raw_params.pop("evidence_id", None) or evidence_id
+                        if target_eid not in handles_by_id:
+                            raise ToolExecutionError(
+                                f"evidence_id {target_eid!r} no es una evidencia de este "
+                                f"caso. Elige una de: {list(handles_by_id)}."
+                            )
+                        target_path = evidence_paths[target_eid]
+                        target_context = evidence_contexts[target_eid]
                         params = self._inject_runtime_paths(
-                            call.tool_id, dict(call.params), evidence_path
+                            call.tool_id, raw_params, target_path
                         )
                         emit({
                             "type": "tool_call",
                             "iteration": iteration + 1,
                             "tool_id": call.tool_id,
+                            "evidence_id": target_eid,
                             "params": _preview_params(params),
                         })
                         result = dispatch_tool(
@@ -823,7 +873,7 @@ class ForensicAgent:
                             params,
                             case_id=case_id,
                             os_profile=self.os_profile,
-                            evidence_context=evidence_context,
+                            evidence_context=target_context,
                         )
                     except ToolExecutionError as exc:
                         tool_failures[call.tool_id] = tool_failures.get(call.tool_id, 0) + 1
@@ -994,6 +1044,7 @@ class ForensicAgent:
         allowed: tuple[str, ...],
         detected_os: str,
         detected_kind: str,
+        evidence_choices: list[tuple[str, str]] | None = None,
     ) -> str:
         # Bug 008 — only the playbook branch that matches the evidence kind travels
         # in the system prompt (re-sent every stateless iteration). RULE 2: for an
@@ -1090,8 +1141,12 @@ class ForensicAgent:
         # obedecía: para responder «¿se accedió a este documento?» arrancaba
         # inventariando el disco entero. La ruta la marca ahora el objetivo; esto
         # solo evita que gaste llamadas en herramientas incompatibles con el soporte.
+        # Con VARIAS evidencias, este bloque (que habla SOLO de la primaria) se
+        # calla: diría «volatility no aplica» si la primaria es disco, contradiciendo
+        # que el caso SÍ tiene una memoria. La guía correcta la da multi_evidence_block.
+        multi = bool(evidence_choices and len(evidence_choices) > 1)
         kind_routing = ""
-        if detected_kind == "memory":
+        if not multi and detected_kind == "memory":
             kind_routing = (
                 "\n## Soporte de la evidencia — VOLCADO DE MEMORIA\n"
                 "El triage la clasificó como `kind=memory`. Las herramientas de "
@@ -1101,7 +1156,7 @@ class ForensicAgent:
                 "`volatility3` — incluidos los hives del registro, que se pueden "
                 "volcar desde la RAM.\n"
             )
-        elif detected_kind in ("disk", "container_disk"):
+        elif not multi and detected_kind in ("disk", "container_disk"):
             contenedor = (
                 " Va dentro de un contenedor (VMDK/VDI/QCOW/VHD/E01); las "
                 "herramientas TSK lo abren correctamente."
@@ -1117,13 +1172,37 @@ class ForensicAgent:
                 "`tsk_icat` antes de procesarlos.\n"
             )
 
+        # MULTI-EVIDENCIA: si el caso trae varias evidencias, el agente tiene que
+        # saber que las TIENE TODAS y correlacionarlas — es lo que separa un análisis
+        # de verdad de uno encajonado en un solo soporte. La memoria responde
+        # procesos/red/credenciales/TTP; el disco, el «cuándo» fino, borrados y
+        # contenido. Con una sola evidencia esta sección desaparece.
+        multi_evidence_block = ""
+        if evidence_choices and len(evidence_choices) > 1:
+            filas = "\n".join(f"- `{eid}` — {label}" for eid, label in evidence_choices)
+            multi_evidence_block = (
+                "\n## Evidencias del caso — TIENES VARIAS, úsalas TODAS\n"
+                "Este caso tiene más de una evidencia y el análisis las CORRELACIONA. "
+                "No te quedes en una sola: la **memoria** (`kind=memory`) responde "
+                "procesos, red, credenciales y TTP con `volatility3` (incl. volcar los "
+                "hives del registro desde la RAM); el **disco** (`kind=disk`/"
+                "`container_disk`) responde el «cuándo» fino, los borrados y el "
+                "contenido con `tsk_*`/`regripper`/`mftecmd`. Para APUNTAR una "
+                "herramienta a una evidencia concreta, pasa `evidence_id` en la tool "
+                "call (enum cerrado); si lo omites, se usa la primaria. Ve al artefacto "
+                "que responde la pregunta y elige la evidencia donde vive ese artefacto "
+                "— no recorras un soporte entero por inercia.\n"
+                f"{filas}\n"
+            )
+
         return (
             f"{identity_block}\n\n"
             f"## Caso activo\n"
             f"- Caso: `{case_id}`\n"
             f"- Perfil del sistema operativo: `{self.os_profile}`\n"
-            f"- Evidencia: `{evidence_filename}` — Agentopsy te inyecta su path "
-            "absoluto en cada tool call; NUNCA incluyas un path absoluto tú.\n\n"
+            f"- Evidencia primaria: `{evidence_filename}` — Agentopsy te inyecta su "
+            "path absoluto en cada tool call; NUNCA incluyas un path absoluto tú.\n"
+            f"{multi_evidence_block}\n"
             f"## Contexto de evidencia (triage de Agentopsy)\n"
             f"- detected_os: `{detected_os}`\n"
             f"- detected_kind: `{detected_kind}`\n"

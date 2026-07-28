@@ -26,7 +26,7 @@ from typing import Any
 import pytest
 
 from forensia.agent.agent import ForensicAgent
-from forensia.agent.loader import load_package
+from _agent_pkg import make_package
 from forensia.agent.tool_schemas import internal_tool_specs
 from forensia.artifacts.store import ArtifactStore
 from forensia.cases.manager import CaseManager
@@ -243,7 +243,7 @@ def test_el_agente_lee_su_salida_y_le_vuelve_marcada_no_confiable(
 ) -> None:
     store, _cases, case_id, run_id = store_run
     monkeypatch.setattr("forensia.agent.agent.artifact_store", store)
-    pkg = load_package(AGENTES_DIR / "forensia-windows")
+    pkg = make_package("windows")
     model = _Scripted([
         ToolCall(
             tool_id="leer_artefacto",
@@ -270,7 +270,7 @@ def test_el_agente_lee_su_salida_y_le_vuelve_marcada_no_confiable(
 def test_un_run_id_inventado_no_tumba_el_run(store_run, monkeypatch) -> None:
     store, _cases, case_id, _run_id = store_run
     monkeypatch.setattr("forensia.agent.agent.artifact_store", store)
-    pkg = load_package(AGENTES_DIR / "forensia-windows")
+    pkg = make_package("windows")
     model = _Scripted([
         ToolCall(
             tool_id="leer_artefacto",

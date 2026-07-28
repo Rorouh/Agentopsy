@@ -391,7 +391,7 @@ def test_context_recorded_on_runner_error_close(wired, monkeypatch, cases, ancho
 # --------------------------------------------------------------------------- #
 def test_agent_threads_context_built_from_handle(monkeypatch, tmp_path):
     from forensia.agent.agent import ForensicAgent
-    from forensia.agent.loader import load_package
+    from _agent_pkg import make_package
     from forensia.models.base import (
         FinalAnswer,
         ModelBackend,
@@ -449,8 +449,7 @@ def test_agent_threads_context_built_from_handle(monkeypatch, tmp_path):
                 sha256="c" * 64,
             )
 
-    repo_root = Path(__file__).resolve().parents[2]
-    pkg = load_package(repo_root / "agentes" / "forensia-unix")
+    pkg = make_package("unix")
     agent = ForensicAgent(pkg, _OneCall(), _FakeEvidence())
     agent.run("lista la raíz", case_id="c", evidence_id="e-abc")
 

@@ -9,7 +9,7 @@ export interface AgentJob {
   job_id: string;
   case_id: string;
   kind: string;
-  status: "running" | "done" | "error";
+  status: "running" | "done" | "error" | "cancelled";
   created_at: string;
   finished_at: string | null;
   result: { reply: string; iterations: number; tool_calls: unknown[] } | null;
@@ -339,6 +339,17 @@ export interface AgentFinding {
   // Técnicas ATT&CK que el hallazgo sostiene. Enum cerrada: el backend sólo
   // acepta ids de la semilla del orquestador (ver forensia/mitre/catalog.py).
   mitre_hints: string[];
+  // El backend serializa el Finding entero (asdict): estos campos llegan siempre
+  // aunque el rail corto no los use. Los pinta la vista Documentos (detalle).
+  // Confianza calibrada del agente (0..1); null si no la declaró.
+  confidence?: number | null;
+  // Cuándo OCURRIÓ el hecho en la evidencia (distinto de created_at, cuándo se
+  // registró el hallazgo). ISO-8601 libre; null si no aplica.
+  observed_at?: string | null;
+  // SHA-256 del output del run que lo sostiene (custodia del derivado).
+  artifact_sha256?: string | null;
+  // "afirmacion" (afirma algo de la evidencia, exige run_id) | "descarte".
+  finding_kind?: string;
 }
 
 // ── MITRE ATT&CK ────────────────────────────────────────────────────────────
@@ -639,7 +650,7 @@ export interface FsTimelineJob {
   job_id: string;
   case_id: string;
   kind: string;
-  status: "running" | "done" | "error";
+  status: "running" | "done" | "error" | "cancelled";
   created_at: string;
   finished_at: string | null;
   result: FsTimelineResult | null;

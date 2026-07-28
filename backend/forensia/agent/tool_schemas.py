@@ -844,24 +844,56 @@ def internal_tool_specs() -> list[dict[str, Any]]:
     return specs
 
 
-def tool_spec(tool_id: str) -> dict[str, Any] | None:
+def _with_evidence_selector(
+    schema: dict[str, Any], evidence_choices: list[tuple[str, str]]
+) -> dict[str, Any]:
+    """Inyecta un ``evidence_id`` OPCIONAL en el schema cuando el caso tiene MÁS DE
+    UNA evidencia, para que el agente pueda apuntar cada herramienta a la evidencia
+    adecuada (memoria → volatility3; disco → tsk_*). Con una sola evidencia no se
+    añade nada (Agentopsy inyecta esa por defecto). Devuelve una COPIA — nunca muta
+    el schema del módulo."""
+    if len(evidence_choices) <= 1:
+        return schema
+    catalogo = "; ".join(f"{eid} = {label}" for eid, label in evidence_choices)
+    props = dict(schema.get("properties", {}))
+    props["evidence_id"] = {
+        "type": "string",
+        "enum": [eid for eid, _ in evidence_choices],
+        "description": (
+            "Sobre qué evidencia del caso corre esta herramienta. Elígela por su "
+            f"tipo: {catalogo}. Omítelo para usar la evidencia primaria. La memoria "
+            "se analiza con volatility3; el disco con tsk_*/regripper."
+        ),
+    }
+    return {**schema, "properties": props}
+
+
+def tool_spec(
+    tool_id: str, evidence_choices: list[tuple[str, str]] | None = None
+) -> dict[str, Any] | None:
     """Return the function-calling spec for ``tool_id``, or None if unsupported."""
     if tool_id not in TOOL_PARAM_SCHEMAS:
         return None
+    schema = TOOL_PARAM_SCHEMAS[tool_id]
+    if evidence_choices:
+        schema = _with_evidence_selector(schema, evidence_choices)
     return {
         "type": "function",
         "function": {
             "name": tool_id,
             "description": TOOL_DESCRIPTIONS.get(tool_id, ""),
-            "parameters": TOOL_PARAM_SCHEMAS[tool_id],
+            "parameters": schema,
         },
     }
 
 
-def tool_specs(tool_ids: list[str] | tuple[str, ...]) -> list[dict[str, Any]]:
+def tool_specs(
+    tool_ids: list[str] | tuple[str, ...],
+    evidence_choices: list[tuple[str, str]] | None = None,
+) -> list[dict[str, Any]]:
     specs = []
     for tid in tool_ids:
-        spec = tool_spec(tid)
+        spec = tool_spec(tid, evidence_choices)
         if spec is not None:
             specs.append(spec)
     return specs

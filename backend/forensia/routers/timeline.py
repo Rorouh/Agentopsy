@@ -165,7 +165,9 @@ def start_filesystem_timeline(
 
     evidence_context = EvidenceContext.from_handle(handle)
 
-    def _work(emit) -> dict:  # noqa: ANN001 — emit: Callable[[dict], None]
+    # La super-timeline es un paso único (fls -m), no un loop iterativo: acepta la
+    # firma nueva del job (emit, should_cancel) pero no hay punto de corte cooperativo.
+    def _work(emit, _should_cancel) -> dict:  # noqa: ANN001 — Callables del job
         return run_filesystem_timeline(
             case_id, handle, evidence_context, os_profile, emit=emit
         )

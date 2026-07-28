@@ -44,7 +44,7 @@ web    (React frontend)           served by its own container — the UI in the 
    │                              http://127.0.0.1:5173, identical on Windows / macOS / Linux
    ▼  HTTP on the compose-internal network — published ports bind 127.0.0.1 ONLY
 api    (backend/, FastAPI)        forensia/ = ALL the logic. routers/ are thin adapters over it.
-   │                              agentes/ mounted into the container (trained-agent packages)
+   │                              agentes/ mounted into the container (agent.md — single behavioral file)
    ├─▶ EXECUTION LAYER            operator-selected per RULE 2 — never a default:
    │     claude -p | codex exec | gemini -p    CLIs installed in the api image; sessions live
    │                                           in the forensia-cli-auth volume — seeded once
@@ -54,7 +54,7 @@ api    (backend/, FastAPI)        forensia/ = ALL the logic. routers/ are thin a
    ▼
 toolkit-windows / toolkit-unix    the forensic toolkits ("maletines") — images built by the
                                   compose; evidence mounted read-only
-agentes/<id>/                     trained-agent packages (drop-in; see docs/agentes/contrato-paquetes.md)
+agentes/agent.md                  the ONE behavioral file the agent reads (see docs/agentes/contrato-paquetes.md)
 ```
 
 Five compose services (`web`, `api`, `ollama`, `toolkit-windows`, `toolkit-unix`), all Linux
@@ -78,16 +78,21 @@ profile** — never a silent pick (RULE 2); the determination (`family`,
 `confidence`, `signals`) is recorded in the audit log. With no evidence selected
 there is nothing to route.
 
-The sub-agents are **declarative**: each ships as a folder under `agentes/<id>/`
-with `agent.yaml`, `prompts/`, and `policy/`. The training team produces this
-folder; Agentopsy discovers it at startup, validates it
-(`forensia.agent.loader`), and indexes it by `os_profile`
-(`forensia.agent.registry`). **One package per `os_profile`** — two packages
-declaring the same profile fails the `api` service at startup (RULE 2). When no
-package is loaded for the requested profile, `/api/agent/query` returns 503 and
-the UI degrades explicitly — there is never a fallback agent. See
-`docs/agentes/contrato-paquetes.md` for the full contract and `agentes/README.md` for the
-sample-shaped reference.
+The agent is configured by a **single behavioral file** (as of 2026-07-28): the
+whole of `agentes/agent.md` is the ONE file the agent reads — provider-neutral
+(hence `agent.md`, not `CLAUDE.md`). Agentopsy reads it at startup
+(`forensia.agent.loader.load_packages`) and builds **one `AgentPackage` per
+`os_profile`** (`unix`, `windows`) that share that text and differ only in the
+tool allowlist — the **catalog filtered by profile** (`catalog.for_profile`),
+not a hand-written list. The registry (`forensia.agent.registry`) indexes them
+by profile. The old per-directory contract (`agent.yaml` + `prompts/` +
+`policy/` + `objetivos` + `knowledge/`) was **retired**. When `agent.md` is
+missing/empty, the registry is empty and `/api/agent/query` returns 503 — never
+a fallback agent. The per-case "spiderweb" (FICHA/REGISTRO, hallazgos, salidas
+crudas, entregables) maps onto the case stores (`forensia.knowledge` graph,
+`findings.jsonl` + audit, artifacts, `documents/`) written by the agent's
+in-process tools. See `docs/agentes/contrato-paquetes.md` for the full contract
+and `agentes/README.md`.
 
 ## RULE 0 — No AI authorship or attribution
 
