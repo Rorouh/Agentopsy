@@ -34,6 +34,11 @@ graphify-out/
 #     e.g. pagefile.sys and FTK Imager logs.
 evidence-corpus/
 
+# --- Notas internas de trabajo: NO se publican ---
+# Borradores de revisión/objeciones que no son documentación del producto. Se
+# quedan en la máquina del equipo; el prefijo INTERNO- las marca a simple vista.
+/docs/**/INTERNO-*.md
+
 # --- Secrets / config ---
 .env
 .env.*

@@ -387,6 +387,18 @@ nativa, sin coste. Documentado en `README.md` y `docker/README.md`.
 | **Estimación** | 4-6 h. |
 | **Diseño** | `diseno-fase2.md` §4 (orquestador) + `_orchestrator/timeline.md`. |
 
+### `forensia.evidence` — la verificación tras registrar debe hacerla la herramienta, no el perito
+
+| | |
+|---|---|
+| **Qué** | Al terminar un `register` con éxito, **persistir el `VerificationRecord`** derivado del re-hash que el propio registro YA ejecutó. Hoy `verification.json` solo lo escribe el `verify()` bajo demanda (`evidence.py:786`), así que una evidencia recién registrada aparece con `last_verification: null` hasta que el perito pulsa «RE-VERIFICAR» a mano. |
+| **Por qué** | **Decisión del perito (2026-07-28): esto lo debe hacer la herramienta sola; obligar a un paso manual es una pérdida de tiempo.** Y hay un coste real encadenado: el playbook manda *«antes de cualquier herramienta, confirma que la evidencia está verificada (`verified=true`); si no, pídelo y espera»*, así que una evidencia sin registro de verificación puede hacer que el agente **gaste un turno entero pidiendo la verificación en vez de analizar** — tokens quemados en un turno que no produce nada. |
+| **Por qué es sound (no es asumir nada)** | El hash gate **ya re-hashea la copia y aborta si no cuadra** (`evidence.py:552-566`: sha256 del origen → copia → `copy_sha` de la copia → mismatch ⇒ `OSError` y se descarta el staging). Esa comparación **es exactamente la que hace `verify()`**. Persistirla no es declarar verificado por decreto: es **registrar una comparación que realmente se ejecutó**, con su marca de tiempo. Coste: **cero** E/S adicional — los bytes ya se leyeron. FORENSIC INVARIANT 2 intacto (mismo orden, mismo baseline); la re-verificación al cierre de sesión sigue siendo otra cosa y sigue haciendo falta. |
+| **Dónde toca** | `backend/forensia/evidence.py` — `register()`: construir el `VerificationRecord` con el `copy_sha` ya calculado y llamar a `_write_verification` **dentro del staging**, antes del `os.rename` atómico (así se publica junto al resto o no se publica nada). Emitir además el evento `evidence_verify` en el audit para que la cadena refleje la comprobación. Revisar que la UI muestre «verificada en el registro» y no lo confunda con una re-verificación manual. |
+| **Ojo** | El registro EWF multi-segmento verifica **cada** segmento (`segments[]`); el record debe ser el AND sobre el conjunto, igual que hace `verify()` hoy (`evidence.py:749-780`). |
+| **Estimación** | 2-3 h con test de regresión (registrar → `last_verification` presente y `verified=true` sin intervención; mismatch simulado → sigue abortando y no publica nada). |
+| **Observado en** | Caso «Prueba 188k tokens», 2026-07-28: `a35686e4` (RAM dump) con `verified: true` solo porque se pulsó el botón; `cf54714e` (el `.vmdk` de 20 GB) con `last_verification: null` pese a haber pasado el mismo gate. Ver `docs/estado-actual/05-notas-perito.md` §N4. |
+
 ### Calidad del playbook windows — siete mejoras observadas en sesión real
 
 Tras arreglar memoria conversacional + triage tipado + routing por `kind`, una

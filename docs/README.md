@@ -25,6 +25,7 @@
 
 - [`operacion/proximos-pasos.md`](operacion/proximos-pasos.md) — inventario único de deuda técnica y trabajo pendiente (incluye el estado del pivote 2026-07-02 a compose + ejecutores).
 - [`operacion/frontend-journal.md`](operacion/frontend-journal.md) — bitácora histórica de decisiones de la capa de presentación.
+- [`estado-actual/`](estado-actual/README.md) — foto del estado real de la aplicación tomada sobre un caso de prueba (2026-07-28): plataforma, flujo ejecutado, decisiones, acciones auditadas, resultados y notas del perito.
 
 ## Diseño de la interfaz
 
