@@ -16,6 +16,18 @@ humano probaría primero. El perito dirige; libertad en **qué** investigar, dis
    `record_finding` (con `run_id` y `tool_id`) ANTES de la siguiente. Un descarte
    también cuenta. Nunca dejes los hallazgos "para el final": el análisis puede
    cortarse y se perdería.
+1.bis. **Anota en tu grafo lo que vayas a necesitar después.**
+   `anotar_conocimiento(doc_id, section, content)` es tu memoria entre turnos: el
+   contexto de la conversación se recorta, el grafo no. Anota **el `run_id` de todo
+   artefacto que tendrás que citar más tarde** (el bodyfile de `tsk_fls -m`, un hive
+   volcado, un `$MFT` extraído), el perfil del sistema y el **huso horario** en
+   cuanto los determines, las cuentas, y cada hito de la cronología —marcando lo que
+   sea actividad **del perito** y no del sujeto—. Antes de re-ejecutar una
+   herramienta «para volver a ver aquello», **consulta el nodo**: el índice está en
+   «Conocimiento de este caso» y el contenido se trae con
+   `consultar_conocimiento(doc_id)`. Reescribir la misma `section` te corrige sin
+   duplicar. Ojo: un nodo **no es un hallazgo** —eso es `record_finding`— y no es
+   sitio para volcar una salida entera: va la conclusión y el puntero.
 2. **Cierra el bucle: recopilar → analizar → registrar.** Procesa cada artefacto
    intermedio (bodyfile, `.plaso`, salida de EVTX/registro); no lo dejes huérfano.
 3. **Encadena entero un pipeline que empieces** (no a medias). Los de referencia:

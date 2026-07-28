@@ -58,6 +58,7 @@ from forensia.audit import AuditLog
 from forensia.evidence import EvidenceManager
 from forensia.evidence_context import EvidenceContext
 from forensia.findings.store import finding_store
+from forensia.knowledge import knowledge_store
 from forensia.mitre.coverage import coverage_store
 from forensia.timeline import query_filesystem_timeline
 from forensia.models.base import FinalAnswer, ModelBackend, ToolCall
@@ -322,9 +323,16 @@ class ForensicAgent:
             "temperature": float(self.package.model.temperature or 0.2),
         }
         specs = tool_specs(list(allowed)) + internal_tool_specs()
-        # RULE 2: don't offer consultar_conocimiento to a package with no knowledge
-        # docs — there would be nothing to serve.
-        if not self.package.knowledge:
+        # RULE 2: don't offer consultar_conocimiento when there is NOTHING it could
+        # serve. Ahora tiene dos ámbitos, así que hay algo que servir si el paquete
+        # trae docs estáticos, si declara un núcleo de nodos por caso, o si el caso
+        # ya tiene nodos escritos. `anotar_conocimiento` sí se ofrece siempre: el
+        # grafo puede estar vacío y eso es un estado válido (decisión D4).
+        try:
+            case_nodes = knowledge_store.index(case_id)
+        except (KeyError, ValueError, OSError):
+            case_nodes = []
+        if not (self.package.knowledge or self.package.case_knowledge or case_nodes):
             specs = [
                 s for s in specs if s["function"]["name"] != "consultar_conocimiento"
             ]
@@ -477,33 +485,111 @@ class ForensicAgent:
                     })
                     continue
 
+                if action.tool_id == "anotar_conocimiento":
+                    # Lado de ESCRITURA del grafo por caso. Nunca toca la evidencia ni
+                    # los artefactos: escribe bajo `cases/<id>/knowledge/`, append-only
+                    # con vista consolidada. El modelo emite un ID de charset cerrado,
+                    # jamás una ruta (SECURITY INVARIANT 5-6).
+                    doc_id = ""
+                    try:
+                        params = dict(action.params)
+                        doc_id = str(params.get("doc_id") or "").strip()
+                        block = knowledge_store.append(
+                            case_id,
+                            doc_id,
+                            str(params.get("section") or ""),
+                            str(params.get("content") or ""),
+                            iteration=iteration + 1,
+                        )
+                        body = {
+                            "doc_id": block.doc_id,
+                            "section": block.section,
+                            "stored": True,
+                        }
+                        # F3 — metadatos y hash en la cadena, nunca el contenido.
+                        self._audit_event(
+                            "knowledge_written",
+                            case_id=case_id,
+                            evidence_id=evidence_id,
+                            doc_id=block.doc_id,
+                            section=block.section,
+                            content_sha256=block.sha256,
+                            content_chars=len(block.content),
+                            iteration=iteration + 1,
+                        )
+                    except (KeyError, ValueError, OSError) as exc:
+                        body = {"error": f"anotar_conocimiento rejected: {exc}"}
+                    messages.append(self._tool_result_msg(action, body))
+                    tool_calls_log.append({
+                        "tool_id": "anotar_conocimiento",
+                        "doc_id": doc_id,
+                        "error": body.get("error"),
+                    })
+                    emit({
+                        "type": "tool_result",
+                        "iteration": iteration + 1,
+                        "tool_id": "anotar_conocimiento",
+                        "status": "ok" if not body.get("error") else "error",
+                        "summary": (
+                            f"{body.get('doc_id')} · {body.get('section')}"
+                            if not body.get("error")
+                            else str(body.get("error"))
+                        )[:120],
+                    })
+                    continue
+
                 if action.tool_id == "consultar_conocimiento":
-                    # Mapa de memoria: sirve un doc de referencia por id desde el
-                    # paquete (cargado y path-confinado al arrancar). Contenido de
-                    # CONFIANZA (autoría nuestra), no evidencia — sin spotlighting.
+                    # Mapa de memoria. Resuelve en DOS ámbitos, en este orden:
+                    #   1. Nodo del grafo de ESTE caso (lo escribió el agente) →
+                    #      vuelve marcado NO CONFIABLE: sus notas citan cadenas
+                    #      derivadas de la evidencia, y releerlas como contexto de
+                    #      confianza sería un canal de blanqueo de prompt-injection.
+                    #   2. Doc estático del paquete → contenido de CONFIANZA (autoría
+                    #      nuestra, cargado y path-confinado al arrancar), sin
+                    #      spotlighting.
                     doc = None
+                    node = None
                     try:
                         # str(): el modelo podría emitir doc_id no-string (Ollama texto);
                         # coerciona sin crashear el run (simetría con los otros handlers).
                         doc_id = str(dict(action.params).get("doc_id") or "").strip()
-                        doc = next(
-                            (d for d in self.package.knowledge if d.id == doc_id), None
-                        )
-                        if doc is None:
-                            valid = [d.id for d in self.package.knowledge]
+                        try:
+                            node = knowledge_store.read(case_id, doc_id)
+                        except (KeyError, ValueError):
+                            node = None  # id no válido como nodo → puede ser doc estático
+                        if node is not None:
                             body = {
-                                "error": (
-                                    f"doc_id {doc_id!r} no existe en el mapa de memoria. "
-                                    f"Ids válidos: {valid}"
-                                )
+                                "doc_id": node.doc_id,
+                                "scope": "caso",
+                                "sections": list(node.sections),
+                                "content": node.markdown,
                             }
                         else:
-                            body = {
-                                "doc_id": doc.id, "title": doc.title, "content": doc.content
-                            }
+                            doc = next(
+                                (d for d in self.package.knowledge if d.id == doc_id), None
+                            )
+                            if doc is None:
+                                valid = [d.id for d in self.package.knowledge]
+                                nodes = [n.doc_id for n in knowledge_store.index(case_id)]
+                                body = {
+                                    "error": (
+                                        f"doc_id {doc_id!r} no existe. Referencia del "
+                                        f"paquete: {valid}. Nodos de este caso: {nodes} "
+                                        "(créalo con anotar_conocimiento)."
+                                    )
+                                }
+                            else:
+                                body = {
+                                    "doc_id": doc.id,
+                                    "scope": "paquete",
+                                    "title": doc.title,
+                                    "content": doc.content,
+                                }
                     except (KeyError, ValueError, TypeError, AttributeError) as exc:
                         body = {"error": f"consultar_conocimiento rejected: {exc}"}
-                    messages.append(self._tool_result_msg(action, body))
+                    messages.append(
+                        self._tool_result_msg(action, body, untrusted=node is not None)
+                    )
                     tool_calls_log.append({
                         "tool_id": "consultar_conocimiento",
                         "doc_id": doc_id,
@@ -514,7 +600,10 @@ class ForensicAgent:
                         "iteration": iteration + 1,
                         "tool_id": "consultar_conocimiento",
                         "status": "ok" if not body.get("error") else "error",
-                        "summary": (doc.title if doc else body.get("error", ""))[:120],
+                        "summary": (
+                            node.doc_id if node else doc.title if doc
+                            else body.get("error", "")
+                        )[:120],
                     })
                     continue
 
@@ -728,6 +817,50 @@ class ForensicAgent:
         except Exception as exc:  # noqa: BLE001 — audit must never break the loop
             logger.warning("audit append failed for event %s: %s", event, exc)
 
+    def _case_graph_block(self, case_id: str) -> str:
+        """Índice del grafo del caso: una línea por nodo, sin contenido.
+
+        Lleva los NOMBRES DE SECCIÓN, no un resumen redactado: es la granularidad
+        con la que el agente decide «¿necesito cargar este nodo?», y no obliga a
+        nadie a inventar prosa. El núcleo declarado por el paquete se lista aunque
+        esté vacío, para que el agente sepa dónde escribir cada cosa.
+
+        Un caso puede empezar sin ningún nodo y sin encargo declarado: es un estado
+        válido (decisión D4). Sin núcleo declarado y sin nodos escritos, la sección
+        entera desaparece del prompt en vez de prometer algo que no existe.
+        """
+        try:
+            nodes = knowledge_store.index(case_id)
+        except (KeyError, ValueError, OSError):
+            nodes = []
+        written = {n.doc_id: n for n in nodes}
+        core = {n.id: n.description for n in self.package.case_knowledge}
+        if not written and not core:
+            return ""
+
+        lines: list[str] = []
+        for doc_id in [*core, *(d for d in written if d not in core)]:
+            node = written.get(doc_id)
+            if node is not None:
+                secciones = ", ".join(f"`{s}`" for s in node.sections)
+                lines.append(f"- `{doc_id}` — secciones: {secciones}")
+            else:
+                lines.append(f"- `{doc_id}` — (vacío) {core[doc_id]}")
+
+        listado = "\n".join(lines)
+        return (
+            "\n## Conocimiento de este caso (tu memoria entre turnos)\n"
+            "Aquí ves SOLO el índice. El contenido de un nodo se trae con "
+            "`consultar_conocimiento(doc_id)` cuando lo necesites, y se escribe con "
+            "`anotar_conocimiento(doc_id, section, content)`.\n"
+            "**Anota en caliente** lo que vayas a necesitar después —el perfil y el "
+            "huso, las cuentas, un hito de la cronología y sobre todo el `run_id` de "
+            "un artefacto que tendrás que citar más tarde—: el contexto de esta "
+            "conversación se recorta, esto no. Reescribir la misma `section` te "
+            "corrige sin duplicar.\n"
+            f"{listado}\n"
+        )
+
     def _system_prompt(
         self,
         case_id: str,
@@ -789,6 +922,14 @@ class ForensicAgent:
                 f"{docs}\n"
             )
 
+        # Grafo de conocimiento DE ESTE CASO. Igual que el mapa de memoria, aquí
+        # viaja SOLO el índice (id + secciones): el contenido se trae con
+        # `consultar_conocimiento(doc_id)`. Es lo que evita que el estado del
+        # análisis tenga que vivir en la conversación —que se reenvía entera cada
+        # iteración y se recorta con el windowing— y con él, que el agente pierda
+        # un `run_id` a los pocos turnos.
+        case_graph = self._case_graph_block(case_id)
+
         kind_routing = ""
         if detected_kind == "memory":
             kind_routing = (
@@ -849,6 +990,7 @@ class ForensicAgent:
             "repitas `tsk_fls`/`tsk_mactime` para una consulta que esta tool ya "
             "resuelve sobre lo construido.\n"
             f"{memory_map}\n"
+            f"{case_graph}\n"
             "## Postura por defecto: AGÉNTICA, NO CONVERSACIONAL\n"
             "El caso y la evidencia YA están anclados al request — no preguntes "
             "\"¿es esta la evidencia?\" ni pidas confirmación. Si el prompt es "

@@ -78,6 +78,10 @@ es estricto:
 | `knowledge[].id` | string | kebab-case, único dentro del paquete |
 | `knowledge[].title` / `description` | string | no vacíos; `description` es la línea del índice del system prompt |
 | `knowledge[].path` | string | path RELATIVO a un `.md`; su contenido **debe medir < 7000 chars** (cabe entero en un resultado de tool) |
+| `case_knowledge` | list | opcional; núcleo del grafo POR CASO. Cada entrada `{id, description}` — **sin `path`**: no traen contenido, lo escribe el agente (ver §3.ter) |
+| `case_knowledge[].id` | string | mismo charset CERRADO que impone el store en runtime: `^[a-z0-9][a-z0-9-]{0,63}$`, único |
+| `case_knowledge[].description` | string | no vacía; explica para qué sirve el nodo (se muestra mientras esté vacío) |
+| `case_knowledge` (tamaño) | list | no puede agotar el tope de nodos por caso del store (32) |
 
 Cualquier desviación falla **en seco** con un mensaje que apunta al fichero y
 campo concretos (CLAUDE.md RULE 2 — sin fallbacks).
@@ -105,6 +109,59 @@ y las dos del rediseño de memoria:
   `tsk_fls`**. Responde «¿qué actividad hubo entre X e Y?», «¿hubo algo el
   \<fecha\>?», «artefactos web». Si la timeline no existe aún, devuelve
   `status=no_timeline` (nunca un vacío que se lea como «no pasó nada», RULE 2).
+
+## 3.ter Grafo de conocimiento POR CASO — el lado de escritura (2026-07-28)
+
+Las tools de §3.bis son de **solo lectura sobre material estático**. Ésta es la
+otra mitad: lo que el agente **averigua en ESTE caso**, escrito por él mientras
+trabaja. La analogía que fija la frontera: `knowledge:` es el **FLUJO** (la
+receta, sirve para cualquier caso) y esto es la **FICHA** (los datos concretos,
+no valen para otro caso).
+
+- **`anotar_conocimiento(doc_id, section, content)`** — escribe un bloque en el
+  nodo `doc_id` del grafo del caso. Nunca toca la evidencia ni los artefactos:
+  vive en `cases/<id>/knowledge/`, aparte de todo lo demás.
+- **`consultar_conocimiento(doc_id)`** se extiende: resuelve **primero** un nodo
+  del caso y, si no existe, un doc estático del paquete.
+
+**Núcleo declarado (`case_knowledge:` en `agent.yaml`).** Decisión D2 — híbrido:
+el paquete fija un núcleo estable (`perfil-sistema`, `cuentas`, `cronologia`,
+`artefactos`, `preguntas-abiertas`, `leads`) para que el índice del prompt tenga
+forma conocida, y el agente puede crear nodos adicionales dentro del charset
+hasta el tope del store. Entradas `{id, description}`, **sin `path`**: no traen
+contenido. Los ids se validan al **cargar el paquete** contra el mismo charset
+que impone el store, para que un núcleo mal declarado reviente al arrancar el
+`api` y no en mitad de un análisis.
+
+**Garantías** (diseño completo en `docs/estado-actual/09-grafo-de-caso.md`):
+
+| Control | Qué garantiza |
+|---|---|
+| **Append-only con vista consolidada** | Cada escritura añade al registro `.historial/<doc_id>.jsonl` y re-renderiza atómicamente la vista `<doc_id>.md` con la ÚLTIMA versión de cada `section`. Nada se borra jamás; reescribir una sección corrige sin duplicar. Releer cuesta lo que ocupan los TEMAS, no el histórico entero |
+| **Id, nunca ruta** | `doc_id` con charset cerrado `[a-z0-9][a-z0-9-]{0,63}`: el traversal no se rechaza, es que no es expresable. El backend deriva la ruta (SEC INV 5-6) |
+| **Confinamiento** | Verificado bajo el `knowledge/` del caso tras resolver |
+| **⚠️ Untrusted al releer** | Un nodo del **caso** vuelve envuelto en `<<EVIDENCIA_NO_CONFIABLE>>`; un doc del **paquete**, no. El agente cita en sus notas cadenas derivadas de evidencia hostil: releerlas como contexto de confianza sería un **canal de blanqueo** de prompt-injection |
+| **Auditado** | Evento `knowledge_written` con `doc_id`, `section`, `content_sha256`, tamaño e iteración. Metadatos y hash, **nunca el contenido** |
+| **Topes** | Bloque 4000 chars, 64 secciones por nodo, 32 nodos por caso. Pasarse es error accionable, jamás truncado silencioso (RULE 2) |
+| **Un nodo NO es un hallazgo** | El grafo es para navegar y no recargar. Los hallazgos siguen en `findings.jsonl` con su procedencia |
+
+**En el system prompt viaja SOLO el índice** («## Conocimiento de este caso»):
+una línea por nodo con sus **nombres de sección**, nunca el contenido. Es el gate
+económico del diseño — el gasto es `contexto × turnos`, así que persistir a disco
+no ahorra nada si el contenido sigue viajando cada iteración; lo que viaja es el
+**puntero**.
+
+**El grafo puede estar vacío y es un estado válido** (decisión D4). No hay
+formulario de apertura: no siempre existe un encargo formulado —a veces la
+petición es puntual («consulta X», «haz un volcado de la RAM»)— y el agente tiene
+regla explícita de **no exigir contexto que no se le ha dado**.
+`preguntas-abiertas` se llena **petición a petición**, según llegan.
+
+**Superficie HTTP: solo lectura.** `GET /api/cases/{id}/knowledge` (índice),
+`…/knowledge/{doc_id}` (vista) y `…/knowledge/{doc_id}/historial` (registro
+íntegro). No hay verbo de escritura a propósito: el grafo lo escribe el agente
+dentro del loop, donde cada bloque queda anclado en la cadena de audit; una
+segunda vía HTTP rompería esa trazabilidad.
 
 ## 4. Cómo lo descubre Agentopsy
 

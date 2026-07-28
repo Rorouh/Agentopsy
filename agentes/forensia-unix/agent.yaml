@@ -34,3 +34,22 @@ knowledge:
     title: "Artefactos UNIX/Linux/macOS — dónde mirar y con qué"
     description: "Catálogo de artefactos forenses (persistencia, cuentas, sesiones, ejecución, red, temporales, macOS) y la ruta/herramienta para cada uno."
     path: knowledge/artefactos-unix.md
+
+# Grafo de conocimiento POR CASO — el NÚCLEO. `knowledge:` (arriba) es general y
+# vale para cualquier caso; esto declara qué nodos tiene el grafo de CADA caso.
+# No llevan contenido: lo escribe el agente con `anotar_conocimiento` mientras
+# trabaja, y lo relee con `consultar_conocimiento` sin recargarlo todo. El agente
+# puede crear nodos fuera de este núcleo (charset [a-z0-9-], tope del store).
+case_knowledge:
+  - id: perfil-sistema
+    description: "SO, distribución/kernel, arquitectura, hora del volcado y ZONA HORARIA. Sin esto, ninguna cronología es interpretable."
+  - id: cuentas
+    description: "Usuarios del sistema, UIDs, últimos accesos y cuál es el sujeto del encargo. Nunca se asume que hay un solo usuario."
+  - id: cronologia
+    description: "Hitos fechados y su fuente. Anotar SIEMPRE en UTC y declarar el huso aparte."
+  - id: artefactos
+    description: "Qué se ha extraído, de dónde y con qué run_id — el puntero para no re-ejecutar la herramienta."
+  - id: preguntas-abiertas
+    description: "Lo que ha pedido el perito y lo que queda sin responder. Se llena PETICIÓN A PETICIÓN según llegan; el caso puede empezar sin ninguna."
+  - id: leads
+    description: "Pistas por confirmar, con lo que falta para cerrarlas. Un lead NO es un hallazgo: los hallazgos van a record_finding."

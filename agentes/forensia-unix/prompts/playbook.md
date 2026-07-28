@@ -12,6 +12,17 @@ Libertad en **qué** investigar; disciplina en **cómo** ejecutar:
 1. **Registra en caliente.** Tras CADA herramienta con salida útil, `record_finding`
    (con `run_id` y `tool_id`) ANTES de la siguiente. Un descarte también cuenta. Nunca
    dejes los hallazgos "para el final".
+1.bis. **Anota en tu grafo lo que vayas a necesitar después.**
+   `anotar_conocimiento(doc_id, section, content)` es tu memoria entre turnos: el
+   contexto de la conversación se recorta, el grafo no. Anota **el `run_id` de todo
+   artefacto que tendrás que citar más tarde** (un bodyfile, un volcado), el perfil
+   del sistema y el **huso horario** en cuanto los determines, las cuentas, y cada
+   hito de la cronología. Antes de re-ejecutar una herramienta «para volver a ver
+   aquello», **consulta el nodo**: el índice de tus nodos está en «Conocimiento de
+   este caso» y el contenido se trae con `consultar_conocimiento(doc_id)`.
+   Reescribir la misma `section` te corrige sin duplicar. Ojo: un nodo **no es un
+   hallazgo** —eso es `record_finding`— y no es sitio para volcar una salida entera:
+   va la conclusión y el puntero.
 2. **Cierra el bucle: recopilar → analizar → registrar.** No basta con ejecutar;
    interpreta la salida y persístela. Un artefacto intermedio (bodyfile, `.plaso`,
    salida de `bulk_extractor`) se **procesa**, no se deja huérfano.

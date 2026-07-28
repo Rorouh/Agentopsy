@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import Any
 
 from forensia.artifact_ref import artifact_ref_json_schema
+from forensia.knowledge import DOC_ID_PATTERN, MAX_BLOCK_CHARS, MAX_SECTION_CHARS
 
 # Descripción común del input-de-artefacto derivado de las EZ Tools: como el
 # `hive_path` de regripper, aceptan la ArtifactRef {run_id, relpath} que produjo un
@@ -631,6 +632,42 @@ _INTERNAL_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "required": ["finding_id", "mitre_hints"],
         "additionalProperties": False,
     },
+    "anotar_conocimiento": {
+        "type": "object",
+        "properties": {
+            "doc_id": {
+                "type": "string",
+                "pattern": DOC_ID_PATTERN,
+                "description": (
+                    "Id del nodo del grafo de ESTE caso. Usa uno del núcleo listado "
+                    "en «Conocimiento de este caso» (system prompt) cuando encaje; "
+                    "si no, crea uno nuevo en minúsculas-con-guiones. Es un ID, "
+                    "NUNCA una ruta: Agentopsy decide dónde se guarda."
+                ),
+            },
+            "section": {
+                "type": "string",
+                "maxLength": MAX_SECTION_CHARS,
+                "description": (
+                    "Tema dentro del nodo, p. ej. `zona-horaria`. Es la CLAVE: "
+                    "escribir otra vez la misma sección SUSTITUYE su contenido en la "
+                    "vista (la versión anterior se conserva en el registro). Úsalo "
+                    "para corregirte sin duplicar."
+                ),
+            },
+            "content": {
+                "type": "string",
+                "maxLength": MAX_BLOCK_CHARS,
+                "description": (
+                    "La CONCLUSIÓN y el puntero que la sostiene (`run_id`, ruta del "
+                    "artefacto, hash). NUNCA el volcado entero de una herramienta: "
+                    "si no cabe, resume y cita el run_id."
+                ),
+            },
+        },
+        "required": ["doc_id", "section", "content"],
+        "additionalProperties": False,
+    },
 }
 
 _INTERNAL_DESCRIPTIONS: dict[str, str] = {
@@ -672,6 +709,20 @@ _INTERNAL_DESCRIPTIONS: dict[str, str] = {
         "the seed. Idempotent per finding: re-call with the FULL list (it replaces the "
         "previous one). This PERSISTS the correlation — prose in your answer does not "
         "reach the board on its own."
+    ),
+    "anotar_conocimiento": (
+        "ESCRIBE en el grafo de conocimiento de ESTE caso: lo que has averiguado, "
+        "dónde está y qué queda abierto. Es tu memoria entre turnos — el contexto se "
+        "recorta, esto no. Anota EN CALIENTE, en cuanto una herramienta te da algo "
+        "que vas a necesitar después: el perfil del sistema y el huso horario, las "
+        "cuentas, un hito de la cronología, y sobre todo el `run_id` de un artefacto "
+        "que tendrás que citar más tarde (así no dependes de recordarlo ni "
+        "re-ejecutas la herramienta). Reescribir la misma `section` te CORRIGE sin "
+        "duplicar. Los nodos y sus secciones aparecen en «Conocimiento de este caso» "
+        "y se releen con `consultar_conocimiento(doc_id)`.\n"
+        "NO es un hallazgo pericial: un hallazgo va a `record_finding` con su "
+        "procedencia. Aquí van notas de trabajo. Y NO vuelques salidas enteras: la "
+        "conclusión y el puntero."
     ),
 }
 

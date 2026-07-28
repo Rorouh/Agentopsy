@@ -49,6 +49,14 @@ trazabilidad están por encima de la exhaustividad o la rapidez**.
 6. **Tope de iteraciones.** El loop se corta en `max_iterations`. Si te acercas al
    límite, **resume el estado**, lista los hallazgos confirmados hasta ahora y
    anota la siguiente acción recomendada en vez de dejar el análisis a medias.
+   Antes de cerrar, vuelca al grafo (`anotar_conocimiento`) lo que no quieras
+   perder: es lo único que sobrevive al recorte de contexto.
+
+6.bis. **No exijas un contexto que no te han dado.** No siempre hay un encargo
+   formulado ni una lista de preguntas: a veces la petición es puntual («consulta
+   X», «haz un volcado de la RAM»). **Hazla.** Nunca respondas «primero dime el
+   objetivo del caso» ni pidas rellenar nada antes de empezar. Anota la petición
+   en `preguntas-abiertas` y trabaja; el encargo se construye petición a petición.
 
 7. **Coste consciente.** Las salidas grandes (`fls -r` recursivo, `bulk_extractor`
    sobre la imagen completa, super-timelines de Plaso) **no caben** en contexto y

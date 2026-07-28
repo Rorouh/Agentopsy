@@ -48,6 +48,24 @@ class KnowledgeDoc:
 
 
 @dataclass(frozen=True)
+class CaseKnowledgeNode:
+    """Un nodo del NÚCLEO del grafo de conocimiento del caso.
+
+    Frontera con ``KnowledgeDoc``: aquel es conocimiento GENERAL que viaja en el
+    paquete y sirve para cualquier caso (el «FLUJO»); esto declara qué nodos debe
+    tener el grafo de CADA caso (la «FICHA»), sin contenido — el contenido lo
+    escribe el agente en runtime con ``anotar_conocimiento``.
+
+    Decisión D2 (2026-07-28): híbrido. El paquete fija un núcleo estable para que
+    el índice del prompt tenga forma conocida, y el agente puede crear nodos
+    adicionales dentro del charset hasta el tope del store. Absente → el grafo es
+    enteramente libre (dentro del tope)."""
+
+    id: str
+    description: str
+
+
+@dataclass(frozen=True)
 class RedactionPattern:
     name: str
     regex: str
@@ -83,6 +101,9 @@ class AgentPackage:
     # sin `knowledge:` en su manifiesto los tiene vacíos y el agente no ofrece
     # `consultar_conocimiento` (RULE 2: sin índice no hay tool que prometa nada).
     knowledge: tuple[KnowledgeDoc, ...] = ()
+    # Núcleo declarado del grafo de conocimiento POR CASO (opcional). No lleva
+    # contenido: lo escribe el agente en runtime. Ver `CaseKnowledgeNode`.
+    case_knowledge: tuple[CaseKnowledgeNode, ...] = ()
 
     def summary(self) -> dict:
         """Vista JSON-friendly para ``/api/agents`` y ``/api/capabilities``. No
@@ -102,6 +123,9 @@ class AgentPackage:
             "knowledge": [
                 {"id": d.id, "title": d.title, "description": d.description}
                 for d in self.knowledge
+            ],
+            "case_knowledge": [
+                {"id": n.id, "description": n.description} for n in self.case_knowledge
             ],
             "path": str(self.path),
         }

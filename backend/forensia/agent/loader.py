@@ -25,12 +25,17 @@ from forensia.agent.package import (
     AgentPackageModel,
     AgentPackagePolicy,
     AgentPackagePrompts,
+    CaseKnowledgeNode,
     KnowledgeDoc,
     RedactionPattern,
 )
+from forensia.knowledge import DOC_ID_PATTERN, MAX_NODES_PER_CASE
 from forensia.toolkit.catalog import BY_ID as TOOL_BY_ID
 
 _VALID_OS_PROFILES = frozenset({"unix", "windows"})
+# El núcleo declarado en el manifiesto se valida contra el MISMO charset que el
+# store impone en runtime: un id que el store rechazaría no debe poder declararse.
+_CASE_NODE_ID_RE = re.compile(DOC_ID_PATTERN)
 
 # Un doc de knowledge se sirve ENTERO como resultado de la tool consultar_conocimiento,
 # que el loop acota a ~8000 chars (agent._MAX_TOOL_RESULT_CHARS). Un doc mayor se
@@ -96,6 +101,7 @@ def load_package(agent_dir: Path) -> AgentPackage:
     prompts = _parse_prompts(raw.get("prompts"), agent_dir, manifest_path)
     policy = _parse_policy(raw.get("policy"), agent_dir, os_profile, manifest_path)
     knowledge = _parse_knowledge(raw.get("knowledge"), agent_dir, manifest_path)
+    case_knowledge = _parse_case_knowledge(raw.get("case_knowledge"), manifest_path)
 
     return AgentPackage(
         id=pkg_id,
@@ -108,6 +114,7 @@ def load_package(agent_dir: Path) -> AgentPackage:
         prompts=prompts,
         policy=policy,
         knowledge=knowledge,
+        case_knowledge=case_knowledge,
     )
 
 
@@ -222,6 +229,51 @@ def _parse_knowledge(
             KnowledgeDoc(id=doc_id, title=title, description=description, content=content)
         )
     return tuple(docs)
+
+
+def _parse_case_knowledge(value: Any, source: Path) -> tuple[CaseKnowledgeNode, ...]:
+    """Parse the optional ``case_knowledge:`` list (núcleo del grafo POR CASO).
+
+    Entradas ``{id, description}``, SIN ``path``: estos nodos no traen contenido —
+    lo escribe el agente en runtime con ``anotar_conocimiento``. Los ids se validan
+    contra el MISMO charset cerrado que impone el store, para que un núcleo mal
+    declarado falle al ARRANCAR el api y no en mitad de un análisis (RULE 2).
+    Ausente → grafo enteramente libre dentro del tope del store."""
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise AgentPackageError(
+            f"{source}: 'case_knowledge' must be a list of {{id, description}} "
+            f"mappings, got {type(value).__name__}"
+        )
+    if len(value) > MAX_NODES_PER_CASE:
+        raise AgentPackageError(
+            f"{source}: 'case_knowledge' declara {len(value)} nodos; el store admite "
+            f"{MAX_NODES_PER_CASE} por caso y el núcleo no puede agotarlo entero."
+        )
+    nodes: list[CaseKnowledgeNode] = []
+    seen: set[str] = set()
+    for i, entry in enumerate(value):
+        if not isinstance(entry, dict):
+            raise AgentPackageError(
+                f"{source}: case_knowledge[{i}] must be a mapping, "
+                f"got {type(entry).__name__}"
+            )
+        node_id = _require_str(entry, "id", source)
+        if not _CASE_NODE_ID_RE.match(node_id):
+            raise AgentPackageError(
+                f"{source}: case_knowledge[{i}].id={node_id!r} no cumple "
+                f"{DOC_ID_PATTERN} — es el mismo charset cerrado que el store impone "
+                "en runtime (minúsculas, dígitos y guiones)."
+            )
+        if node_id in seen:
+            raise AgentPackageError(
+                f"{source}: duplicate case_knowledge id {node_id!r} — ids must be unique"
+            )
+        seen.add(node_id)
+        description = _require_str(entry, "description", source)
+        nodes.append(CaseKnowledgeNode(id=node_id, description=description))
+    return tuple(nodes)
 
 
 def _parse_policy(
