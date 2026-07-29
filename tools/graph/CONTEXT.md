@@ -7,10 +7,15 @@
 > determinista, **sin LLM ni API key**). No sustituye a `CLAUDE.md` (invariantes)
 > ni a los docs de `docs/`; los complementa.
 >
-> **Anclado a:** commit `410fd11` · **Grafo:** 1741 nodos · 3029 aristas · 143
-> comunidades (backend) + 249 · 556 · 10 (web). Regenera el grafo interactivo con
-> `tools/graph/graph-build.ps1` (o `.sh`) y **actualiza este fichero** cuando la
-> arquitectura cambie de forma relevante.
+> **Anclado a:** commit `6545504` · **Grafo:** 3268 nodos · 6005 aristas · 212
+> comunidades (backend) + 290 · 649 · 10 (web); fusionado 3558 · 6654.
+>
+> El grafo de `out/` se refresca **solo**: el hook `SessionStart` de
+> `.claude/settings.json` corre `tools/graph/graph-refresh.py` al arrancar cada
+> sesión y reconstruye si el código cambió (ver `tools/graph/README.md` §3). Lo que
+> NO se genera solo es este fichero — es el mapa curado por el equipo, y hay que
+> actualizarlo a mano cuando la arquitectura se mueva. `out/GRAPH_STATUS.md` avisa
+> cuando el commit de arriba se ha quedado atrás.
 
 ---
 
@@ -48,11 +53,19 @@ sistema:
 **Evidencia y custodia** — `EvidenceManager`, `EvidenceHandle` (ingesta, puerta de
 hash, handle RO); `forensia.evidence_context.EvidenceContext` (contexto verificado
 inmutable `evidence_id` + `baseline_sha256`, construido **solo** desde un
-`EvidenceHandle` y hilado hasta cada tool run — INVARIANT 4); **triage**
+`EvidenceHandle` y hilado hasta cada tool run — INVARIANT 4); **triage superficial**
 `fingerprint_evidence()` / `fingerprint_os()` → `DetectedEvidence` /
-`routable_profile()`; **resolución de perfil** `resolve_os_profile()` /
+`routable_profile()` (Python puro sobre los bytes del fichero registrado);
+**triage profundo** `forensia.triage_deep.deepen()` / `probe_image()` (cuando el
+superficial no puede enrutar y la evidencia es de disco, abre la imagen por el
+maletín —`ewfmount` / FUSE de qemu, RO a nivel de bloque, sin montar el FS de la
+evidencia— y determina la familia leyendo la raíz de cada sistema de ficheros con
+`mmls` + `fls`; venue DECLARADO `DEEP_TRIAGE_VENUE`, sin fallback entre maletines,
+cada argv al audit log); **resolución de perfil** `resolve_os_profile()` /
 `OsProfileUnresolved` (el único punto que decide el `os_profile`, o falla fuerte —
-RULE 2); **registro asíncrono** `forensia.evidence_jobs` (`RegisterJobRegistry` /
+RULE 2); **re-determinación bajo demanda** `EvidenceManager.redetect_os()`
+(`POST …/evidence/{id}/redetect-os`, para cuando el maletín estaba caído al
+registrar); **registro asíncrono** `forensia.evidence_jobs` (`RegisterJobRegistry` /
 `RegisterJob`: corre `register()` en un hilo y expone fase + bytes; el registro es
 atómico —staging oculto + `rename`— y el progreso, observacional).
 
@@ -160,9 +173,20 @@ seeding del volumen `forensia-cli-auth` (`docker/api` entrypoint); api FastAPI
 
 SPA React/TypeScript (33 `.tsx` + 8 `.ts`) servida por nginx, que habla con la api
 por `web/src/api/client.ts` (token desde `GET /api/session`, en memoria). Grafo
-propio: 249 nodos / 556 aristas / 10 comunidades. Lleva el selector de ejecutor, el
+propio: 290 nodos / 649 aristas / 10 comunidades. Lleva el selector de ejecutor, el
 aviso de egreso cloud (el consentimiento por caso se eliminó el 2026-07-16) y el
 registro de evidencia desde la bandeja.
+
+**El chat NO pregunta el sistema operativo** (2026-07-29). La determinación es
+automática (triage superficial + profundo); el bloque de anclaje salió de
+`ChatPage` y vive en `RepositoryPage` → sección «Sistema operativo», junto a la
+huella de cada evidencia, con reintento automático de la determinación al entrar y
+el anclaje manual solo como último recurso (RULE 2). El compositor del chat crece
+con el texto hasta 10 líneas y luego scrollea (`COMPOSER_MAX_ROWS`); la
+transcripción está PEGADA al final solo mientras el perito esté al final, así que
+se puede releer hacia arriba con el agente trabajando; y el cronómetro del análisis
+se ancla al `created_at` del job en el servidor, de modo que cambiar de sección o
+recargar no lo reinicia.
 
 ---
 

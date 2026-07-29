@@ -207,10 +207,19 @@ export interface EvidenceHandle {
   size: number;
   registered_at: string;
   last_verification: VerificationRecord | null;
-  // Huella de triage (forensia.triage). La UI la compara con el os_profile del
-  // caso y pinta el banner de desajuste; NUNCA cambia el caso sola (RULE 2).
+  // Huella de triage (forensia.triage + forensia.triage_deep). La UI la compara
+  // con el os_profile del caso y pinta el banner de desajuste; NUNCA cambia el
+  // caso sola (RULE 2). En una imagen contenedor (.E01/.vmdk/.qcow2/.vhd) el
+  // valor lo determina el pase PROFUNDO, que abre la imagen por el maletín.
   detected_os: "unix" | "windows" | "unknown";
   detected_kind: "disk" | "memory" | "container_disk" | "unknown";
+}
+
+// Respuesta de POST …/evidence/{id}/redetect-os: la evidencia con su huella
+// recalculada y el caso tal como queda después de re-aplicar el enrutado.
+export interface RedetectOsResult {
+  evidence: EvidenceHandle;
+  case: Case;
 }
 
 // Registro de evidencia en SEGUNDO PLANO (POST …/evidence/async). El hash-gate

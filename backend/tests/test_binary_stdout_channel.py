@@ -177,7 +177,11 @@ def test_fls_body_mode_materialises_referenceable_bodyfile(
         # The conditional stdout-artifact capture MUST have triggered for body mode.
         assert stdout_path is not None, "fls -m must receive a stdout_path (Bug 1)"
         seen["stdout_path"] = stdout_path
-        Path(stdout_path).write_text(_BODYFILE, encoding="utf-8")
+        # newline="": the exec-agent writes the child's stdout CRUDO, byte for byte.
+        # Without this the stub's `\n` becomes `\r\n` on Windows and the SHA-256 the
+        # test asserts (over `_BODYFILE` as written here) can never match what landed
+        # on disk — a harness artefact, not a dispatcher bug.
+        Path(stdout_path).write_text(_BODYFILE, encoding="utf-8", newline="")
         return 0, "", ""
 
     monkeypatch.setattr(wired_dispatcher.maletin, "run_argv_in_maletin", fake_maletin)

@@ -22,6 +22,13 @@ function evidenceFileName(ev: EvidenceHandle): string {
   return ev.original_path.split("/").pop() ?? ev.original_path;
 }
 
+const KIND_LABEL: Record<EvidenceHandle["detected_kind"], string> = {
+  disk: "imagen de disco",
+  container_disk: "imagen contenedor",
+  memory: "volcado de memoria",
+  unknown: "formato no identificado",
+};
+
 interface RepositoryPageProps {
   onNavigate?: (view: ViewId) => void;
 }
@@ -368,6 +375,91 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
     [activeCase],
   );
 
+  // ── Determinación del sistema operativo ───────────────────────────────────
+  // El SO NO se le pregunta al perito: lo determina `forensia.triage` del
+  // CONTENIDO de la evidencia y, si es una imagen contenedor, el pase profundo
+  // que la abre por el maletín (solo lectura, a nivel de bloque). Aquí vive
+  // todo lo que puede hacer falta cuando esa determinación no llegó a cerrar:
+  // reintentarla (el maletín pudo estar arrancando al registrar) y, como último
+  // recurso ante una imagen genuinamente ambigua, anclarla a mano (RULE 2 —
+  // nadie elige un perfil en silencio).
+  const [redetecting, setRedetecting] = useState<string | null>(null);
+  const [anchoring, setAnchoring] = useState<"unix" | "windows" | null>(null);
+  const [osError, setOsError] = useState<string | null>(null);
+  // Evidencias cuya re-determinación automática ya se intentó en esta sesión,
+  // para no repetirla en bucle a cada render cuando sigue sin poder cerrarse.
+  const autoRedetected = useRef<Set<string>>(new Set());
+
+  const redetectOs = useCallback(
+    async (evidenceId: string) => {
+      const caseId = activeCaseIdRef.current;
+      if (!caseId || redetecting) return;
+      setRedetecting(evidenceId);
+      setOsError(null);
+      try {
+        const res = await api.cases.redetectEvidenceOs(caseId, evidenceId);
+        if (activeCaseIdRef.current !== caseId) return;
+        setEvidence((prev) =>
+          prev.map((ev) => (ev.evidence_id === evidenceId ? res.evidence : ev)),
+        );
+        upsertCase(res.case);
+      } catch (err) {
+        setOsError(
+          err instanceof ApiError ? err.detail : String(err instanceof Error ? err.message : err),
+        );
+      } finally {
+        setRedetecting(null);
+      }
+    },
+    [redetecting, upsertCase],
+  );
+
+  // Reintento AUTOMÁTICO, una vez por evidencia y sesión: si el caso no tiene
+  // perfil y hay una evidencia con SO sin determinar, el sistema vuelve a
+  // intentarlo por su cuenta antes de mostrarle nada al perito. Es lo que
+  // convierte «el maletín aún no estaba listo» en un no-evento.
+  useEffect(() => {
+    if (!activeCaseId || !activeCase || activeCase.os_profile !== null) return;
+    // De una en una: `redetectOs` abre la imagen dentro del maletín y eso no se
+    // paraleliza gratis. Sin esta guarda, el re-render que provoca `setRedetecting`
+    // volvería a entrar aquí, marcaría la SEGUNDA evidencia como ya intentada y
+    // se toparía con la salida temprana de `redetectOs` — quedándose sin
+    // reintentar de verdad. Al terminar la primera, el efecto vuelve por la
+    // siguiente.
+    if (redetecting !== null) return;
+    const pending = evidence.find(
+      (ev) => ev.detected_os === "unknown" && !autoRedetected.current.has(ev.evidence_id),
+    );
+    if (!pending) return;
+    autoRedetected.current.add(pending.evidence_id);
+    void redetectOs(pending.evidence_id);
+  }, [activeCaseId, activeCase, evidence, redetecting, redetectOs]);
+
+  // Cambiar de caso limpia el registro de intentos: otro caso, otras evidencias.
+  useEffect(() => {
+    autoRedetected.current = new Set();
+    setOsError(null);
+  }, [activeCaseId]);
+
+  const anchorProfile = useCallback(
+    async (profile: "unix" | "windows") => {
+      const caseId = activeCaseIdRef.current;
+      if (!caseId || anchoring) return;
+      setAnchoring(profile);
+      setOsError(null);
+      try {
+        upsertCase(await api.cases.anchorProfile(caseId, profile));
+      } catch (err) {
+        setOsError(
+          err instanceof ApiError ? err.detail : String(err instanceof Error ? err.message : err),
+        );
+      } finally {
+        setAnchoring(null);
+      }
+    },
+    [anchoring, upsertCase],
+  );
+
   const openActa = useCallback(
     async (ev: EvidenceHandle) => {
       const caseId = activeCase?.id;
@@ -551,6 +643,86 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
             verifyError={evidenceError?.kind === "verify" ? evidenceError.message : null}
           />
         </div>
+
+        {/* 3.bis · Sistema operativo determinado */}
+        {evidence.length > 0 && (
+          <div className="section-stack">
+            <div className="rule-label">
+              <span className="eyebrow eyebrow--section">Sistema operativo</span>
+              <span className="rule" />
+              <span className="rule-count">
+                {activeCase.os_profile ?? "sin determinar"}
+              </span>
+            </div>
+            <div className="prose">
+              Agentopsy lo determina del CONTENIDO de la evidencia, nunca de la máquina en la
+              que corre: cabeceras, sectores de arranque y, en una imagen contenedor, el
+              directorio raíz de sus sistemas de ficheros leído a través del maletín (solo
+              lectura, a nivel de bloque — la imagen no se monta). El orquestador enruta con
+              ese perfil al sub-agente que corresponde.
+            </div>
+
+            <div className="os-rows">
+              {evidence.map((ev) => (
+                <div className="os-row" key={ev.evidence_id}>
+                  <span className="os-name">{evidenceFileName(ev)}</span>
+                  <span className="os-meta">{KIND_LABEL[ev.detected_kind]}</span>
+                  <span
+                    className={`os-verdict${ev.detected_os === "unknown" ? " is-open" : ""}`}
+                  >
+                    {ev.detected_os === "unknown" ? "SO sin determinar" : ev.detected_os}
+                  </span>
+                  {ev.detected_os === "unknown" && (
+                    <button
+                      type="button"
+                      className="link-action os-action"
+                      disabled={redetecting !== null}
+                      title="Volver a abrir la imagen y determinar su sistema operativo"
+                      onClick={() => void redetectOs(ev.evidence_id)}
+                    >
+                      {redetecting === ev.evidence_id ? "Determinando…" : "Reintentar"}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Último recurso, y sólo cuando la determinación automática no ha
+                podido cerrar: una imagen dual-boot, señales en conflicto o un
+                contenedor que el maletín no pudo abrir. RULE 2 prohíbe elegir
+                un perfil en silencio, así que aquí lo ancla el operador — con
+                la huella delante, no en mitad del chat. */}
+            {activeCase.os_profile === null && redetecting === null && (
+              <div className="note-rail">
+                La determinación automática no ha podido cerrar el sistema operativo de este
+                caso — o la imagen contiene señales de más de un SO, o el maletín que la abre
+                no está disponible. El agente no se enruta hasta que haya un perfil, así que
+                puedes anclarlo tú:
+                <div className="anchor-actions">
+                  <button
+                    type="button"
+                    className="chip-option"
+                    disabled={anchoring !== null}
+                    onClick={() => void anchorProfile("unix")}
+                  >
+                    {anchoring === "unix" ? "Anclando…" : "unix"}
+                  </button>
+                  <button
+                    type="button"
+                    className="chip-option"
+                    disabled={anchoring !== null}
+                    onClick={() => void anchorProfile("windows")}
+                  >
+                    {anchoring === "windows" ? "Anclando…" : "windows"}
+                  </button>
+                </div>
+                El anclaje es final y queda en el log de auditoría del caso.
+              </div>
+            )}
+
+            {osError && <ErrorState message={osError} />}
+          </div>
+        )}
 
         {/* 4 · Cadena de custodia */}
         {evidence.length > 0 && (

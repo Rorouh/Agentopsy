@@ -272,3 +272,28 @@ def verify_evidence(case_id: str, evidence_id: str) -> dict[str, Any]:
     payload = _evidence_dict(handle)
     payload["verified"] = bool(verified)
     return payload
+
+
+@router.post(
+    "/api/cases/{case_id}/evidence/{evidence_id}/redetect-os",
+    dependencies=[Depends(require_token)],
+)
+def redetect_evidence_os(case_id: str, evidence_id: str) -> dict[str, Any]:
+    """Re-run the OS determination over an already-registered evidence.
+
+    The determination at registration can land on ``unknown`` for reasons that are
+    not about the evidence — the maletín still starting, an old image without
+    ``ewfmount``, the compose down. This re-runs the fingerprint AND the deep pass
+    (which opens a container image read-only through the maletín) and re-applies
+    routing, so the case gets its ``os_profile`` without anyone being asked for it.
+    Returns the refreshed handle plus the case as it stands afterwards; an
+    inconclusive re-run leaves both untouched (RULE 2 — never a guessed profile).
+    """
+    try:
+        handle = evidence_manager.redetect_os(case_id, evidence_id)
+        case = case_manager.load(case_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"evidence": _evidence_dict(handle), "case": _case_dict(case)}

@@ -33,7 +33,7 @@ const SEVERITY_LABEL: Record<AgentFinding["severity"], string> = {
 // coste por ejecutor. El panel se refresca tras cada turno (ChatPage llama a
 // onTurnComplete en su finally).
 export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: InvestigationPageProps) {
-  const { activeCase, phase: casesPhase, error: casesError, upsertCase } = useActiveCase();
+  const { activeCase, phase: casesPhase, error: casesError } = useActiveCase();
   const [activeEvidence, setActiveEvidence] = useState<EvidenceHandle | null>(null);
   const [findings, setFindings] = useState<AgentFinding[]>([]);
   const [toolUsage, setToolUsage] = useState<ToolUsage[]>([]);
@@ -185,11 +185,12 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
           <strong>
             Desajuste de perfil — el agente activo no es el adecuado para esta evidencia.
           </strong>{" "}
-          El caso declara <code>perfil = {activeCase.os_profile}</code> pero el triage identificó
-          la evidencia como <code>{profileMismatch}</code>. El agente del caso (
-          <code>forensia-{activeCase.os_profile}</code>) se negará a invocar herramientas hasta
-          que cierres este caso y lo reabras con <code>perfil = {profileMismatch}</code>.
-          Agentopsy no cambia el perfil por ti (RULE 2 — la decisión es del operador).
+          El caso declara <code>perfil = {activeCase.os_profile}</code> pero la determinación
+          sobre el contenido de la evidencia dice <code>{profileMismatch}</code>. El agente del
+          caso (<code>forensia-{activeCase.os_profile}</code>) se negará a invocar herramientas
+          mientras siga el desacuerdo. Resuélvelo en <strong>Evidencia → Sistema operativo</strong>:
+          al anclar el perfil, Agentopsy re-enruta solo al sub-agente que corresponde. No lo
+          cambia por ti (RULE 2 — un desacuerdo lo decide el operador, no el programa).
         </div>
       )}
 
@@ -200,7 +201,6 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
           activeEvidence={activeEvidence}
           onTurnComplete={onTurnComplete}
           onCapsRefresh={onCapsRefresh}
-          onCaseUpdated={upsertCase}
         />
 
         <aside className="inv-aside">

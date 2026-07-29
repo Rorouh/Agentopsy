@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { ApiError, api } from "../api/client";
 import type {
@@ -211,6 +211,12 @@ interface ChatMessage {
   // Progreso en vivo del agente (streaming): eventos acumulados + si sigue en curso.
   activity?: StreamEvent[];
   streaming?: boolean;
+  // `created_at` del JOB en el servidor (ISO). Es el ancla del cronómetro: el
+  // tiempo transcurrido se mide contra el arranque REAL del análisis, no contra
+  // el momento en que este cliente empezó a sondear. Por eso el contador
+  // sobrevive a cambiar de sección, recargar la pestaña o reengancharse a un
+  // análisis que ya venía corriendo.
+  jobStartedAt?: string;
 }
 
 function clockOf(at: string | undefined): string {
@@ -218,6 +224,33 @@ function clockOf(at: string | undefined): string {
   const d = new Date(at);
   if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleTimeString("es-ES", { hour12: false });
+}
+
+function formatElapsed(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  if (m < 60) return `${m}m ${String(s).padStart(2, "0")}s`;
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
+}
+
+// Cronómetro del análisis en curso. Cuenta desde `since` (el `created_at` del
+// job en el servidor), así que dar un rodeo por ATT&CK y volver no lo reinicia:
+// el ancla vive en el backend, no en el montaje de este componente.
+function ElapsedSince({ since }: { since: string }) {
+  const startedAt = Date.parse(since);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  // Sin ancla parseable no inventamos un cero que parecería «acaba de empezar»
+  // (RULE 2: nada de valores fabricados) — simplemente no se pinta el contador.
+  if (Number.isNaN(startedAt)) return null;
+  const seconds = Math.max(0, Math.round((now - startedAt) / 1000));
+  return <span className="turn-elapsed">{formatElapsed(seconds)}</span>;
 }
 
 // Bloque «Cadena de ejecución»: lo que el agente EJECUTÓ, con el argv literal.
@@ -282,6 +315,18 @@ function ToolChain({ activity, streaming }: { activity: StreamEvent[]; streaming
 // se introducen cuando el flujo lo pida explícitamente.
 const CHAT_SESSION_ID = "main";
 
+// Alto máximo del compositor, en LÍNEAS. Un prompt forense real es largo (una
+// lista de artefactos a correlacionar, un fragmento de log pegado): la caja
+// crece con el texto hasta aquí y a partir de ahí scrollea por dentro, para no
+// comerse la transcripción. Espejo de `max-height` en `.composer-input`.
+const COMPOSER_MAX_ROWS = 10;
+
+// Margen (px) por debajo del final de la transcripción dentro del cual se
+// considera que el perito «está al final» y el scroll sigue pegado. Más que
+// un par de píxeles porque el navegador redondea y porque un turno recién
+// pintado puede desplazar el fondo un poco.
+const STICK_TO_BOTTOM_PX = 72;
+
 // Config key que persiste el modelo elegido POR proveedor (espejo de
 // backend/forensia/executors/__init__.py MODEL_CONFIG_KEY).
 const MODEL_CONFIG_KEY: Record<ExecutorId, string> = {
@@ -300,8 +345,6 @@ interface ChatPageProps {
   onTurnComplete?: () => void;
   // Refresca capabilities en App tras conectar un ejecutor CLI desde el selector.
   onCapsRefresh?: () => Promise<void> | void;
-  // Propaga el caso actualizado tras anclar su os_profile manualmente.
-  onCaseUpdated?: (updated: Case) => void;
 }
 
 export function ChatPage({
@@ -310,7 +353,6 @@ export function ChatPage({
   activeEvidence,
   onTurnComplete,
   onCapsRefresh,
-  onCaseUpdated,
 }: ChatPageProps) {
   const [msgs, setMsgs] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -321,11 +363,6 @@ export function ChatPage({
   // (agencia del operador — RULE 2); nunca se inventa uno. El vacío inicial es
   // deliberado: no es un hueco que haya que "arreglar" con un ?? "ollama".
   const [executor, setExecutor] = useState<ExecutorId | "">("");
-
-  // Anclaje MANUAL del os_profile del caso (RULE 2: acción explícita del
-  // operador) cuando el triage no lo determinó.
-  const [anchoring, setAnchoring] = useState<"unix" | "windows" | null>(null);
-  const [anchorError, setAnchorError] = useState<string | null>(null);
 
   const [openMenu, setOpenMenu] = useState<null | "provider" | "model">(null);
   const [loginExecutor, setLoginExecutor] = useState<ExecutorId | null>(null);
@@ -448,26 +485,69 @@ export function ChatPage({
   const executorStatus: ExecutorStatus | null =
     executor && caps ? caps.executors[executor] ?? null : null;
 
-  const anchorProfile = async (profile: "unix" | "windows") => {
-    if (!activeCase || anchoring) return;
-    setAnchoring(profile);
-    setAnchorError(null);
-    try {
-      const updated = await api.cases.anchorProfile(activeCase.id, profile);
-      if (onCaseUpdated) onCaseUpdated(updated);
-      if (onCapsRefresh) await onCapsRefresh();
-    } catch (err) {
-      setAnchorError(
-        err instanceof ApiError ? err.detail : String(err instanceof Error ? err.message : err),
-      );
-    } finally {
-      setAnchoring(null);
-    }
-  };
+  // ── Compositor autoexpandible ─────────────────────────────────────────────
+  // El alto se recalcula en cada cambio del texto: primero `auto`, para que
+  // `scrollHeight` mida el contenido REAL (sin eso la caja nunca decrece al
+  // borrar), y luego se topa en COMPOSER_MAX_ROWS líneas. El tope se mide con
+  // la línea de texto EFECTIVA del elemento, no con un px fijo: así sigue
+  // siendo 10 líneas si cambia la tipografía o el tema.
+  useLayoutEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const cs = window.getComputedStyle(el);
+    const lineHeight = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.6;
+    const padding = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+    const border = parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+    // `scrollHeight` de una caja border-box incluye el padding pero no el
+    // borde; el alto que fijamos sí incluye ambos.
+    const maxScroll = lineHeight * COMPOSER_MAX_ROWS + padding;
+    const overflows = el.scrollHeight > Math.ceil(maxScroll);
+    el.style.height = `${Math.min(el.scrollHeight, maxScroll) + border}px`;
+    el.style.overflowY = overflows ? "auto" : "hidden";
+  }, [input]);
 
-  useEffect(() => {
-    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  // ── Scroll de la transcripción ────────────────────────────────────────────
+  // El auto-scroll está PEGADO al final sólo mientras el perito esté al final.
+  // En cuanto sube a releer (típico: releer el argv de un `fls` mientras el
+  // agente sigue trabajando) se despega y NADA lo vuelve a bajar hasta que él
+  // vuelva al final o pulse «bajar al final». Antes se forzaba el fondo en cada
+  // repintado de `msgs`, y como el turno en curso se repinta cada 2.5s era
+  // imposible leer hacia arriba durante una ejecución.
+  const stickToBottomRef = useRef(true);
+  const [atBottom, setAtBottom] = useState(true);
+
+  const isNearBottom = (el: HTMLDivElement) =>
+    el.scrollHeight - el.scrollTop - el.clientHeight <= STICK_TO_BOTTOM_PX;
+
+  const onTranscriptScroll = useCallback(() => {
+    const el = logRef.current;
+    if (!el) return;
+    const near = isNearBottom(el);
+    stickToBottomRef.current = near;
+    setAtBottom(near);
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    const el = logRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    stickToBottomRef.current = true;
+    setAtBottom(true);
+  }, []);
+
+  useLayoutEffect(() => {
+    const el = logRef.current;
+    if (!el || !stickToBottomRef.current) return;
+    el.scrollTop = el.scrollHeight;
   }, [msgs]);
+
+  // Al cambiar de caso la conversación es otra: se vuelve a empezar por el
+  // final, que es donde el perito lo dejó.
+  useEffect(() => {
+    stickToBottomRef.current = true;
+    setAtBottom(true);
+  }, [activeCase?.id]);
 
   // Sondeo del análisis en segundo plano. `pollRef` marca el sondeo activo para
   // cancelarlo al desmontar / cambiar de caso sin tocar estado de un componente
@@ -512,11 +592,24 @@ export function ChatPage({
     let tools: unknown[] | null = null;
     let cursor = 0; // eventos de progreso ya pintados en el chat
     const collected: StreamEvent[] = []; // para persistir la traza con el mensaje
-    const startedAt = Date.now();
+    let anchored = false; // ¿ya se fijó el ancla del cronómetro?
     patchLast({ streaming: true });
     try {
       while (!token.cancelled) {
         const job = await api.getJob(jobId, cursor);
+        // El cronómetro se ancla al `created_at` DEL JOB (hora del servidor),
+        // no al momento en que este cliente empezó a sondear: cambiar de
+        // sección desmonta el chat y al volver se reengancha, y con el ancla
+        // local el contador volvía a cero mientras el análisis seguía.
+        if (!anchored) {
+          anchored = true;
+          patchLast({
+            jobStartedAt: job.created_at,
+            content:
+              "Analizando en segundo plano · puedes cambiar de sección o cerrar la " +
+              "pestaña: el análisis no se detiene y los hallazgos se guardan en caliente.",
+          });
+        }
         (job.events ?? []).forEach((ev) => {
           pushActivity(ev);
           collected.push(ev);
@@ -534,12 +627,6 @@ export function ChatPage({
           reply = job.error ?? "El análisis en segundo plano falló.";
           break;
         }
-        const s = Math.round((Date.now() - startedAt) / 1000);
-        patchLast({
-          content:
-            `Analizando en segundo plano · ${s}s · puedes cerrar la pestaña y ` +
-            "volver: el análisis no se detiene y los hallazgos se guardan en caliente.",
-        });
         if (onCapsRefresh) await onCapsRefresh();
         await new Promise((r) => setTimeout(r, 2500));
       }
@@ -549,7 +636,7 @@ export function ChatPage({
     jobIdRef.current = null;
     setStopping(false);
     if (token.cancelled) return; // desmontado o caso cambiado: no toques estado
-    patchLast({ content: reply, pending: false, streaming: false });
+    patchLast({ content: reply, pending: false, streaming: false, jobStartedAt: undefined });
     setBusy(false);
     pollRef.current = null;
     if (reply) {
@@ -606,10 +693,14 @@ export function ChatPage({
               {
                 role: "assistant",
                 content: "Reanudando análisis en curso…",
-                at: new Date().toISOString(),
+                // El turno se sella con la hora a la que ARRANCÓ el análisis,
+                // no con la de este reenganche: al volver de otra sección la
+                // transcripción sigue siendo un acta cronológica.
+                at: running.created_at,
                 pending: true,
                 streaming: false,
                 activity: [],
+                jobStartedAt: running.created_at,
               },
             ]);
             void drivePoll(caseId, running.job_id);
@@ -717,7 +808,7 @@ export function ChatPage({
 
   return (
     <div className="chat-column">
-      <div className="transcript" ref={logRef}>
+      <div className="transcript" ref={logRef} onScroll={onTranscriptScroll}>
         <div className="transcript-inner">
           {msgs.length === 0 && (
             <div className="turn">
@@ -735,42 +826,13 @@ export function ChatPage({
             </div>
           )}
 
-          {/* Anclaje de perfil: NO es decoración. Sin os_profile el orquestador
-              no puede rutar a ningún sub-agente y la RULE 2 prohíbe elegir uno
-              en silencio: el operador tiene que anclarlo. Este es el único
-              punto de la UI desde el que puede. */}
-          {activeProfile === null && (
-            <div className="turn">
-              <div className="turn-time" />
-              <div className="turn-body">
-                <div className="note-rail">
-                  El sistema operativo de este caso aún no está determinado — regístrale una
-                  evidencia para que el orquestador lo derive, o ánclalo manualmente:
-                  <div className="anchor-actions">
-                    <button
-                      type="button"
-                      className="chip-option"
-                      disabled={!!anchoring}
-                      onClick={() => void anchorProfile("unix")}
-                    >
-                      {anchoring === "unix" ? "Anclando…" : "unix"}
-                    </button>
-                    <button
-                      type="button"
-                      className="chip-option"
-                      disabled={!!anchoring}
-                      onClick={() => void anchorProfile("windows")}
-                    >
-                      {anchoring === "windows" ? "Anclando…" : "windows"}
-                    </button>
-                  </div>
-                  {anchorError && (
-                    <div className="anchor-error">No se pudo anclar: {anchorError}</div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
+          {/* El chat NO pregunta el sistema operativo. La determinación es
+              forense y automática: `forensia.triage` la deriva del CONTENIDO de
+              la evidencia (cabeceras, sectores de arranque y, en imágenes
+              contenedor, el disco des-encapsulado dentro del maletín). El caso
+              ambiguo que el triage no puede cerrar se resuelve en Evidencia,
+              junto a la huella que lo justifica — no interrumpiendo la
+              investigación con una pregunta que el sistema debe saber responder. */}
 
           {msgs.map((msg, i) =>
             msg.role === "user" ? (
@@ -798,6 +860,7 @@ export function ChatPage({
                         if (last?.type === "finding") return "registrando hallazgo";
                         return "trabajando";
                       })()}
+                      {msg.jobStartedAt && <ElapsedSince since={msg.jobStartedAt} />}
                     </div>
                   )}
 
@@ -830,6 +893,20 @@ export function ChatPage({
             ),
           )}
         </div>
+
+        {/* Sólo aparece cuando el perito se ha despegado del final. Es la
+            contrapartida honesta de no arrastrarlo hacia abajo: puede leer
+            hacia arriba con el agente trabajando y volver cuando quiera. */}
+        {!atBottom && (
+          <button
+            type="button"
+            className="transcript-jump"
+            onClick={scrollToBottom}
+            title="Volver al final de la conversación"
+          >
+            ↓ Ir al final{busy ? " · análisis en curso" : ""}
+          </button>
+        )}
       </div>
 
       <div className="composer-bar">

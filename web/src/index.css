@@ -839,6 +839,31 @@ html, body, #root {
 .custody-meta--danger { color: var(--danger); }
 .custody-action { margin-left: auto; }
 
+/* Determinación de SO: misma forma de fila que la custodia — es el mismo tipo
+   de dato (un hecho por evidencia), no una tarjeta aparte. El veredicto es la
+   columna que importa, así que va al final y en acento cuando queda abierto. */
+.os-rows { display: flex; flex-direction: column; }
+.os-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 15px 0;
+  border-bottom: 1px solid var(--hair-2);
+  flex-wrap: wrap;
+}
+.os-name { font-family: var(--font-mono); font-size: 15px; font-weight: 500; color: var(--ink); overflow-wrap: anywhere; }
+.os-meta { font-family: var(--font-mono); font-size: 13px; color: var(--ink-3); }
+.os-verdict {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--ok);
+}
+.os-verdict.is-open { color: var(--accent); }
+/* Con el veredicto ya empujado a la derecha por `margin-left: auto`, la acción
+   se pega a él en vez de saltar de línea. */
+.os-action { margin-left: 0; }
+
 /* Acta de adquisición */
 .acta-modal { max-width: 620px; }
 .acta-rows { display: flex; flex-direction: column; }
@@ -895,6 +920,26 @@ html, body, #root {
    mock; al subirla un 15% la línea se quedó corta y el aire sobraba a la
    derecha. Escalado en la misma proporción y centrado en la columna. */
 .transcript-inner { max-width: 1010px; margin: 0 auto; display: flex; flex-direction: column; gap: 34px; }
+/* «Ir al final»: sólo se pinta cuando el perito se ha despegado del fondo. Va
+   `sticky` DENTRO del scroller, así que flota sobre la conversación sin sacar
+   al composer de su sitio ni depender de su alto (que crece con el prompt). */
+.transcript-jump {
+  position: sticky;
+  bottom: 6px;
+  z-index: 2;
+  display: block;
+  width: fit-content;
+  margin: 12px auto 0;
+  padding: 8px 16px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--ink-2);
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.08);
+}
+.transcript-jump:hover { color: var(--accent); border-color: var(--accent-soft); }
 
 /* Un turno = hora + cuerpo. La hora en columna propia deja el cuerpo alineado
    como un acta, no como burbujas de chat. */
@@ -969,6 +1014,14 @@ html, body, #root {
 }
 .turn-running-dot { width: 6px; height: 6px; background: var(--accent); animation: fx-pulse 1.1s ease-in-out infinite; }
 @keyframes fx-pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+/* Cronómetro del análisis. `tabular-nums` para que no baile de ancho al pasar
+   de 9s a 10s: el ojo del perito no debería seguir un número que se mueve. */
+.turn-elapsed {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+  color: var(--ink-4);
+}
 
 /* Cadena de ejecución: el argv LITERAL que corrió, no la intención declarada. */
 .toolchain {
@@ -1031,7 +1084,12 @@ html, body, #root {
   line-height: 1.6;
   color: var(--ink);
   min-height: 26px;
-  max-height: 180px;
+  /* 10 líneas (COMPOSER_MAX_ROWS en ChatPage.tsx). El alto REAL lo fija el
+     autoexpandido en JS midiendo la línea efectiva; este tope es la red de
+     seguridad si el script no llegara a correr, y el que impide que un prompt
+     largo se coma la transcripción. Pasado el tope, la caja scrollea. */
+  max-height: calc(18px * 1.6 * 10);
+  overflow-y: auto;
 }
 .composer-input::placeholder { color: var(--ink-5); }
 .composer-row { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }

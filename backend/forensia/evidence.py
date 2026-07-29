@@ -62,7 +62,13 @@ from typing import BinaryIO
 
 from forensia.audit.log import AuditLog
 from forensia.cases import CaseManager, case_manager
-from forensia.triage import DetectedKind, DetectedOS, fingerprint_evidence
+from forensia.triage import (
+    DetectedEvidence,
+    DetectedKind,
+    DetectedOS,
+    fingerprint_evidence,
+)
+from forensia.triage_deep import deepen as deepen_triage
 
 logger = logging.getLogger(__name__)
 
@@ -637,6 +643,18 @@ class EvidenceManager:
             register_event["segments"] = segment_records
         AuditLog(case_dir / "audit.jsonl").append(register_event)
 
+        # 8.bis Triage PROFUNDO. The shallow fingerprint reads the registered file's
+        #    bytes, which for a CONTAINER (EWF ``.E01``, ``.vmdk``, ``.qcow2``,
+        #    ``.vhd(x)``, ``.vdi``) are chunked and compressed — the OS markers are
+        #    simply not there in the clear, so ``family`` came back ``unknown`` and the
+        #    examiner had to be ASKED which OS it was. This pass opens the image
+        #    through the maletín (``ewfmount`` / qemu FUSE export, read-only at BLOCK
+        #    level — the evidence filesystem is never mounted, INVARIANT 3) and reads
+        #    the root directory of each filesystem: that IS the determination.
+        #    Runs only when the shallow pass could not route; leaves the record
+        #    untouched when the channel is unusable — never a guessed profile (RULE 2).
+        triage = self._deepen_triage(case_dir, evidence_id, dest, triage)
+
         # 9. Auto-detección de SO: derive the case's os_profile from THIS
         #    evidence's content-based triage (never the host platform). The
         #    CaseManager owns case.json and the transition rules (auto-set /
@@ -739,6 +757,45 @@ class EvidenceManager:
                 logger.warning("skipping unreadable evidence at %s: %s", entry, exc)
         handles.sort(key=lambda h: h.registered_at, reverse=True)
         return handles
+
+    def redetect_os(self, case_id: str, evidence_id: str) -> EvidenceHandle:
+        """Re-run the OS determination on an ALREADY-registered evidence.
+
+        The determination at registration time can come back ``unknown`` for a
+        reason that is not about the evidence at all — the maletín was still
+        starting, ``ewfmount`` was missing from an old image, the compose was down.
+        This re-runs it (shallow fingerprint + the deep pass over the container) and
+        re-applies routing, so the examiner never has to answer a question the tool
+        can answer for itself. It is idempotent and read-only over the evidence
+        bytes: the immutable copy is opened ``O_RDONLY`` and the baseline hash is
+        untouched.
+
+        Raises ``KeyError`` / ``ValueError`` for an unknown or malformed id, like
+        every other accessor.
+        """
+        evidence_dir = self._evidence_dir(case_id, evidence_id)
+        case_dir = self._cases.case_dir(case_id)
+        baseline = self._read_baseline(evidence_dir)
+        original = evidence_dir / baseline["original_basename"]
+        if not original.is_file():
+            raise KeyError(
+                f"evidence original missing for evidence_id={evidence_id}: {original}"
+            )
+
+        shallow = fingerprint_evidence(original.resolve())
+        record = self._deepen_triage(case_dir, evidence_id, original, shallow)
+
+        baseline["detected_os"] = record.family
+        baseline["detected_kind"] = record.kind
+        baseline["triage_confidence"] = record.confidence
+        baseline["triage_signals"] = list(record.signals)
+        self._write_baseline(evidence_dir, baseline)
+
+        # Same routing rules as at registration: auto-set when confident, conflict
+        # when a second OS shows up, no-op when the operator already anchored. An
+        # inconclusive re-run changes nothing (RULE 2).
+        self._cases.apply_detected_evidence(case_id, record, evidence_id)
+        return self.get(case_id, evidence_id)
 
     def verify(self, case_id: str, evidence_id: str) -> bool:
         handle = self.get(case_id, evidence_id)
@@ -852,6 +909,79 @@ class EvidenceManager:
         }
 
     # ---- internals ----------------------------------------------------------
+
+    def _deepen_triage(
+        self,
+        case_dir: Path,
+        evidence_id: str,
+        image_path: Path,
+        shallow: DetectedEvidence,
+    ) -> DetectedEvidence:
+        """Run the deep OS determination and persist whatever it establishes.
+
+        Returns the record routing should use — the deepened one when the probe
+        determined a family, the shallow one otherwise. NEVER raises: a maletín
+        that is down, a missing ``ewfmount`` or an image TSK cannot open leaves the
+        evidence fully registered and routing unresolved (the operator anchors) —
+        exactly the behaviour before this pass existed (RULE 2).
+
+        Every command the probe ran reaches the case's append-only, hash-chained
+        audit log with its literal argv and exit code, plus the venue and the root
+        entries that justified the verdict (FORENSIC INVARIANT 4). ``baseline.json``
+        is rewritten only when the record actually changed, so the determination is
+        not re-derived on every read.
+        """
+        try:
+            deep_record, detail, reason = deepen_triage(shallow, image_path)
+        except Exception:  # noqa: BLE001 — triage must never break a registration
+            logger.exception("deep triage crashed for evidence %s", evidence_id)
+            return shallow
+
+        if detail is None:
+            # Not needed (already routable / not disk-shaped) or not runnable. Only
+            # the second case is worth a line in the audit: it explains why the
+            # profile stayed unresolved.
+            if reason is not None:
+                AuditLog(case_dir / "audit.jsonl").append({
+                    "action": "triage_deep",
+                    "case_id": case_dir.name,
+                    "evidence_id": evidence_id,
+                    "outcome": "unavailable",
+                    "reason": reason,
+                })
+            return shallow
+
+        AuditLog(case_dir / "audit.jsonl").append({
+            "action": "triage_deep",
+            "case_id": case_dir.name,
+            "evidence_id": evidence_id,
+            "outcome": "determined" if deep_record.family != shallow.family else "inconclusive",
+            "venue": detail.venue,
+            "family": deep_record.family,
+            "signals": list(deep_record.signals),
+            # The literal commands executed inside the maletín (INVARIANT 4): not the
+            # intent, the argv.
+            "runs": [r.to_dict() for r in detail.runs],
+        })
+
+        if deep_record == shallow:
+            return shallow
+        try:
+            evidence_dir = case_dir / "evidence" / evidence_id
+            baseline = self._read_baseline(evidence_dir)
+            baseline["detected_os"] = deep_record.family
+            baseline["detected_kind"] = deep_record.kind
+            baseline["triage_confidence"] = deep_record.confidence
+            baseline["triage_signals"] = list(deep_record.signals)
+            self._write_baseline(evidence_dir, baseline)
+        except (OSError, KeyError, ValueError) as exc:
+            # The in-memory record still routes this registration; only the cached
+            # copy is stale, and ``get()`` re-reads it as-is.
+            logger.warning(
+                "deep triage: could not persist the deepened record for %s: %s",
+                evidence_id, exc,
+            )
+        return deep_record
 
     def _evidence_dir(self, case_id: str, evidence_id: str) -> Path:
         case_dir = self._cases.case_dir(case_id)

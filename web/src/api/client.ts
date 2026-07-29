@@ -39,6 +39,7 @@ import type {
   StreamEvent,
   QueryRequest,
   QueryResponse,
+  RedetectOsResult,
   ToolUsage,
   UpdateCaseRequest,
   VerifyResult,
@@ -298,6 +299,17 @@ export const api = {
     // el caso actualizado; queda registrado en el audit log del caso.
     anchorProfile: (caseId: string, os_profile: "unix" | "windows") =>
       post<Case>(`/api/cases/${encodeURIComponent(caseId)}/os-profile`, { os_profile }),
+    // Re-determinación AUTOMÁTICA del SO de una evidencia ya registrada: repite
+    // la huella y, si la imagen es un contenedor (.E01/.vmdk/.qcow2/.vhd), la
+    // abre por el maletín (solo lectura, a nivel de bloque) para leer la raíz de
+    // sus sistemas de ficheros. Existe porque al registrar el maletín pudo estar
+    // aún arrancando. Devuelve la evidencia y el caso ya re-enrutado; si sigue
+    // sin poder determinarse, ninguno cambia (RULE 2).
+    redetectEvidenceOs: (caseId: string, evidenceId: string) =>
+      post<RedetectOsResult>(
+        `/api/cases/${encodeURIComponent(caseId)}/evidence/${encodeURIComponent(evidenceId)}/redetect-os`,
+        {},
+      ),
     // Registro SÍNCRONO: espera al hash-gate completo dentro de la petición.
     // La UI NO lo usa — una imagen grande tarda minutos y nginx la corta con
     // 504. Para registrar desde el navegador, `evidence.registerAsync`.

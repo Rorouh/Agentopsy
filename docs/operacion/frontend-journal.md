@@ -6,6 +6,85 @@ No reemplaza ni contradice `arquitectura.md` ni `modelo-amenazas.md`; los comple
 
 ---
 
+## Entrada 2026-07-29 — El chat deja de estorbar (composer, scroll, cronómetro) y deja de preguntar el SO
+
+Cuatro arreglos de la vista Investigación. Los tres primeros son de ergonomía del
+chat; el cuarto retira una pregunta que el sistema debería saber responder solo.
+
+**1 · El compositor no crecía.** El `<textarea>` iba con `rows={1}` y sin
+autoexpandido: un prompt forense de verdad (una lista de artefactos a correlacionar,
+un fragmento de log pegado) se escribía a ciegas por una rendija de una línea. El CSS
+tenía un `max-height: 180px` que ni siquiera llegaba a aplicarse, porque nada
+cambiaba el alto.
+
+Ahora un `useLayoutEffect` recalcula el alto en cada cambio del texto: `height:auto`
+primero —si no, la caja nunca decrece al borrar— y luego el `scrollHeight` topado en
+`COMPOSER_MAX_ROWS = 10` líneas. El tope se mide con la **línea de texto efectiva**
+del elemento (`getComputedStyle`), no con un px mágico, así que sigue siendo 10
+líneas si cambia la tipografía o el tema. Pasado el tope, `overflow-y: auto`: la caja
+scrollea por dentro en vez de comerse la transcripción. El `max-height` del CSS se
+recalibra a `calc(18px * 1.6 * 10)` y se queda como red de seguridad por si el JS no
+corriera.
+
+**2 · La transcripción arrastraba al perito hacia abajo.** El auto-scroll era
+incondicional (`useEffect` sobre `msgs` → `scrollTop = scrollHeight`). Como el turno
+en curso se repinta con cada sondeo (~2.5 s), releer hacia arriba **durante** una
+ejecución era imposible: el chat te devolvía al final antes de que terminaras la
+línea. Justo cuando más falta hace mirar atrás — comparar el `argv` de un `fls` con
+lo que devolvió el `mmls` anterior.
+
+Ahora el pegado al final es condicional: un `onScroll` marca si el perito está a
+menos de `STICK_TO_BOTTOM_PX` (72 px) del fondo, y solo entonces el efecto baja. En
+cuanto sube, nada lo mueve. La contrapartida honesta es un botón **«↓ Ir al final»**
+que solo aparece cuando se ha despegado; va `position: sticky` DENTRO del scroller,
+así que flota sobre la conversación sin depender del alto del compositor (que ahora
+crece).
+
+**3 · El cronómetro se reiniciaba al cambiar de sección.** `drivePoll` medía el
+tiempo contra un `Date.now()` capturado al empezar a sondear. Al navegar a otra vista
+el chat se desmonta, el sondeo se cancela y, al volver, se reengancha al job vivo con
+un ancla NUEVA: el contador volvía a cero mientras el análisis llevaba diez minutos
+corriendo. El número era, literalmente, «cuánto llevo yo mirando», no «cuánto lleva
+el análisis».
+
+El ancla pasa a ser el `created_at` **del job en el servidor**, que ya venía en el
+payload (`AgentJob.created_at`, y también en `listCaseJobs`, que es de donde sale el
+reenganche). Se guarda en el mensaje (`ChatMessage.jobStartedAt`) y lo pinta un
+`<ElapsedSince>` que tictaquea cada segundo. Con el ancla en el backend, el contador
+sobrevive a cambiar de sección, a recargar la pestaña y a reengancharse a un análisis
+que ya venía corriendo de antes. De paso, el turno reanudado se sella con la hora a
+la que ARRANCÓ el análisis, no con la del reenganche: la transcripción sigue siendo
+un acta cronológica. El texto del turno deja de llevar los segundos incrustados (se
+repintaba entero cada 2.5 s para actualizar un número).
+
+**4 · El chat ya no pregunta el sistema operativo.** `ChatPage` pintaba un bloque de
+anclaje unix/windows cuando `activeCase.os_profile === null`. Era correcto según
+RULE 2 (nadie elige un perfil en silencio) pero estaba en el peor sitio posible:
+interrumpiendo la investigación, con una pregunta que la herramienta debería
+responder sola — y que en la práctica saltaba casi siempre por una razón concreta,
+no por ambigüedad real: **las imágenes contenedor**. En un `.E01`/`.vmdk`/`.qcow2`
+el disco va comprimido, el escaneo de marcadores del pase superficial no ve
+`\Windows\System32` ni `/etc/passwd`, y la familia salía `unknown`.
+
+- El bloque sale de `ChatPage` (con `anchorProfile`, `anchoring`, `anchorError` y la
+  prop `onCaseUpdated`, que ya no hacía falta).
+- El backend gana el pase profundo (`forensia.triage_deep`, ver
+  `docs/agentes/plan-ruta-autodeteccion-so.md` §Fase 3b): abre el contenedor por el
+  maletín y lee la raíz de sus sistemas de ficheros.
+- La determinación se ve donde vive el dato: `RepositoryPage` → sección **«Sistema
+  operativo»**, con `detected_kind` + `detected_os` por evidencia. Al entrar con el
+  caso sin perfil, la vista **reintenta sola** (`POST …/evidence/{id}/redetect-os`,
+  una vez por evidencia y sesión) — así «el maletín aún no estaba levantado cuando
+  registré» deja de ser una pregunta y pasa a ser un no-evento.
+- El anclaje manual sigue existiendo, pero como **último recurso** y solo cuando la
+  determinación automática no ha podido cerrar (dual-boot, señales en conflicto,
+  contenedor que el maletín no abre). Con la huella delante, no en mitad del chat.
+- El banner de desajuste de `InvestigationPage` dejaba un consejo obsoleto («cierra
+  el caso y reábrelo con el otro perfil»); ahora manda a Evidencia y explica que al
+  anclar se re-enruta automáticamente.
+
+---
+
 ## Entrada 2026-07-27 — Rediseño aplicado a las siete vistas
 
 Se termina la migración de la SPA al mock destino

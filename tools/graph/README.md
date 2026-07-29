@@ -19,9 +19,13 @@ opcional solo para docs/imágenes, que **aquí no usamos**).
 > - `graph-build.ps1` / `graph-build.sh` — runners (Windows / Linux-macOS) que lanzan
 >   la corrida **code-only** (determinista, sin API key) sobre `backend/` y `web/`,
 >   con las exclusiones obligatorias, y dejan la salida en `out/`.
+> - `graph-refresh.py` — el **enganche automático** (§3): corre al arrancar cada
+>   sesión, decide si el grafo se ha quedado atrás y, si es así, lanza el runner de
+>   la plataforma. Escribe `out/GRAPH_STATUS.md`, la tarjeta de frescura.
 > - `out/` — salida generada (graph.json, GRAPH_REPORT.md, graph.html, merge).
 >   **Versionada** como snapshot de arquitectura (para el arranque de cada chat); se
->   sobrescribe al re-ejecutar. Solo se excluye `out/**/cache/` (cache SHA256 local).
+>   sobrescribe al re-ejecutar. Se excluyen `out/**/cache/` (cache SHA256 local),
+>   `out/.graph-stamp.json` y `out/GRAPH_STATUS.md` (estado de ESTA máquina).
 
 ---
 
@@ -154,21 +158,45 @@ vs qué se dedujo.
 - **Comprobar si hace falta re-extraer:** `graphify check-update <ruta>` (apto para
   cron/CI; no bloquea).
 
-### Enganche al despliegue (propuesta — pendiente de infra)
+### Enganche automático al arrancar sesión (implementado)
 
-La idea de "que se compruebe/actualice al desplegar Docker" se implementa **sin**
-meter graphify en el compose del producto. Patrón recomendado:
+El grafo solo sirve si describe el código de AHORA: uno de hace veinte commits es
+**peor** que no tener grafo, porque se lee con la misma confianza y manda a ficheros
+que ya no existen. Por eso el refresco no depende de que alguien se acuerde.
 
-1. Fijar la versión: `graphifyy==0.9.12` en un `requirements-dev.txt` (o extra
-   `[graph]`), para que todo el equipo use la misma.
-2. Un paso de dev (Makefile / target / hook git, o un **perfil `dev`** de compose
-   separado del `up` del producto) que:
-   - verifica que `graphify --version` casa con el pin (si no, avisa y no sigue), y
-   - corre `graphify update` (o el `graph-build.ps1`) para refrescar el grafo.
+`.claude/settings.json` declara un hook `SessionStart` que corre
+`tools/graph/graph-refresh.py` **antes de que la sesión lea nada del proyecto**. El
+script:
 
-Esto toca `docker-compose`/infra → **lo aprueba y cablea el rol de infra**, no se
-añade aquí unilateralmente. Este README documenta el diseño; la conexión al compose
-queda como tarea de ese rol.
+1. Toma la huella del árbol de código (`backend/`, `web/`): commit de HEAD +
+   (tamaño, mtime) de cada `.py`/`.ts`/`.tsx`/`.js`/`.jsx` indexable.
+2. La compara con `out/.graph-stamp.json`, la huella de la última corrida.
+   **Iguales → termina en ~1 s** y no reconstruye nada. Es el caso normal.
+3. **Distintas → lanza el runner de la plataforma** (`graph-build.ps1` en Windows,
+   `graph-build.sh` en el resto) — el MISMO que se corre a mano, para que no haya
+   dos pipelines que puedan divergir. Cuesta ~15-40 s, una vez por cambio de código.
+4. Escribe `out/GRAPH_STATUS.md`: a qué commit corresponde el grafo, cuántos nodos y
+   aristas trae, y **si `CONTEXT.md` se ha quedado anclado a un commit anterior** —
+   el aviso que impide leer sus cifras como si fueran las de hoy.
+
+**Nunca tumba la sesión.** graphify es una herramienta de dev opcional: si no está
+instalado, si el runner falla o si no hay git, el script lo dice en `GRAPH_STATUS.md`
+y sale con 0. El trabajo del perito no depende de que el grafo esté fresco.
+
+```bash
+python tools/graph/graph-refresh.py            # lo que corre el hook
+python tools/graph/graph-refresh.py --force    # reconstruye aunque nada haya cambiado
+python tools/graph/graph-refresh.py --check    # solo informa; no reconstruye
+FORENSIA_GRAPH_REFRESH=0 …                     # desactiva el enganche por completo
+```
+
+Lo que el enganche **no** hace, a propósito: reescribir `CONTEXT.md`. Ese fichero es
+el mapa **curado por el equipo** (god-nodes, capas, criterio), no un volcado del
+grafo; generarlo automáticamente lo convertiría en ruido. Lo que el enganche sí hace
+es avisar cuando se ha quedado atrás, para que se actualice a mano (RULE 4).
+
+**Fuera del compose (RULE 1).** Esto es un hook de la herramienta de desarrollo, no
+un servicio del producto: `docker compose up --build` no lo ejecuta ni lo necesita.
 
 ---
 
@@ -219,8 +247,11 @@ desde cualquier clon. Los dos se refrescan tras cambios grandes: corre el runner
 ### En el `.gitignore` del repo (ya añadido)
 
 ```
-# grafo de conocimiento: se versiona el snapshot; solo se excluye la cache local
+# grafo de conocimiento: se versiona el snapshot; se excluyen la cache local y el
+# estado por-máquina del refresco de sesión
 tools/graph/out/**/cache/
+tools/graph/out/.graph-stamp.json
+tools/graph/out/GRAPH_STATUS.md
 ```
 
 ---
@@ -228,9 +259,10 @@ tools/graph/out/**/cache/
 ## 6. Estado
 
 - graphify 0.9.12 instalado y verificado en dev; runners Windows + Linux/macOS.
-- Corrida `--code-only` sobre `backend/` (122 `.py` → 1741 nodos) y `web/`
-  (43 `.ts/.tsx` → 249 nodos); salida en `out/` (gitignored).
+- Corrida `--code-only` sobre `backend/` (3268 nodos / 6005 aristas) y `web/`
+  (290 / 649); fusionado 3558 / 6654. Salida en `out/` (versionada como snapshot).
 - `CONTEXT.md` versionado y enganchado en `CLAUDE.md` (lo lee cada sesión nueva);
-  `out/` versionado como snapshot (salvo `cache/`).
-- Enganche al despliegue: **diseñado, pendiente de que infra lo cablee** (§3).
+  `out/` versionado como snapshot (salvo `cache/` y el estado por-máquina).
+- Enganche automático al arrancar sesión: **implementado** (§3, hook `SessionStart`
+  en `.claude/settings.json` → `graph-refresh.py`).
 - Grafo de evidencia (Caso 2): **descartado con graphify**; diseño propio pendiente.

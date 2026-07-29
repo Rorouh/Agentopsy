@@ -1,6 +1,6 @@
 # Plan de ruta — Auto-detección de SO y enrutado por el orquestador
 
-**Rama:** `tools` · **Estado:** Fases 0–2 y 4 ✅ · pendientes 2b (multi-SO), 3 (UI) y 5
+**Rama:** `tools` · **Estado:** Fases 0–2, 3, 3b y 4 ✅ · pendientes 2b (multi-SO) y 5
 (validación) · **Toca varias lanes** (backend/triage/registry, frontend, orquestador KB,
 docs, gobernanza).
 
@@ -152,10 +152,52 @@ declarativo (orquestador KB / docs, lane del auditor) · **[gov]** decisión equ
   caso multi-SO. Requiere que el perfil deje de ser propiedad del **caso** y pase a resolverse
   **por evidencia** en el punto de análisis. Fuera del blast-radius de la Fase 2.
 
-### Fase 3 — UI sin selector de SO — **[fe]**  ⬜
-- Quitar el picker de SO al crear el caso. Mostrar `family/kind/confidence/signals`
-  detectados. Cuando hay ambigüedad, pedir el anclaje manual (único caso que lo requiere).
-- **Criterio:** `npm run typecheck && build` verdes; el flujo degrada explícito en ambigüedad.
+### Fase 3 — UI sin selector de SO — **[fe]**  ✅ (hecha, 2026-07-29)
+- El picker de SO al crear el caso ya no existía (`NewCaseModal` lo dice explícitamente).
+  Lo que quedaba pidiendo el SO era el **chat**: `ChatPage` pintaba un bloque de anclaje
+  cuando `activeCase.os_profile === null`, justo donde más molesta — en mitad de la
+  investigación, por algo que el sistema debe saber responder solo.
+- **Hecho:** ese bloque sale de `ChatPage` (y con él `anchorProfile`, `anchoring`,
+  `anchorError` y la prop `onCaseUpdated`). El chat **no pregunta el SO en ningún caso**.
+- La determinación pasa a verse donde vive el dato: `RepositoryPage` → sección
+  **«Sistema operativo»**, con `detected_kind` + `detected_os` por evidencia y el
+  `os_profile` del caso en la cabecera de la sección.
+- **Reintento automático:** al entrar en Evidencia con el caso sin perfil y alguna
+  evidencia en `unknown`, la vista llama sola a `POST …/evidence/{id}/redetect-os`
+  (una vez por evidencia y sesión). Es lo que convierte «el maletín aún no estaba
+  levantado al registrar» en un no-evento en vez de en una pregunta al perito.
+- **Anclaje manual = último recurso**, y solo cuando la determinación automática no
+  ha podido cerrar (dual-boot, señales en conflicto, contenedor que el maletín no
+  abre). Sigue siendo del operador (RULE 2), pero con la huella delante.
+- El banner de desajuste de `InvestigationPage` ya no manda «cierra y reabre el caso»
+  (consejo obsoleto): manda a Evidencia → Sistema operativo, y explica que al anclar
+  se re-enruta automáticamente.
+- **Criterio:** `npm run typecheck && npm run build` verdes.
+
+### Fase 3b — Triage PROFUNDO de contenedores — **[be]**  ✅ (hecha, 2026-07-29)
+- **El hueco real:** el pase superficial lee los BYTES del fichero registrado. En un
+  contenedor (`.E01`, `.vmdk`, `.qcow2`, `.vhd(x)`, `.vdi`) el disco va troceado y
+  comprimido, así que los marcadores del SO no están en claro → `family=unknown` →
+  el caso se quedaba sin `os_profile` → había que preguntar. Estaba escrito como
+  limitación aceptada en `evidence.py` («el operador ancla el perfil»).
+- **Hecho:** `backend/forensia/triage_deep.py`. Cuando el pase superficial no puede
+  enrutar y la evidencia es de disco, abre la imagen por el **exec-agent del maletín**
+  (`ewfmount` para EWF / FUSE de `qemu-storage-daemon` para el resto — solo lectura a
+  nivel de BLOQUE, sin montar el FS de la evidencia, INVARIANT 3) y determina la
+  familia leyendo el **directorio raíz de cada sistema de ficheros** con `mmls` + `fls`.
+- Mismo criterio de decisión que el superficial (piso de aciertos + dominancia), así
+  que un dual-boot sigue quedando `unknown` y **escala** (RULE 2).
+- **Venue DECLARADO** (`DEEP_TRIAGE_VENUE`), no elegido: el perfil por el que se
+  rutaría es justo lo que se está determinando. Sin fallback al otro maletín.
+- Canal inutilizable (maletín caído, `ewfmount` ausente, imagen que TSK no abre) →
+  el registro NO falla, el perfil queda sin resolver y el motivo accionable va al
+  audit log (`triage_deep`, `outcome: unavailable`).
+- **Auditoría:** cada comando ejecutado va al log encadenado con su **argv literal**
+  y su exit code, más el venue y las entradas raíz que sostienen el veredicto.
+- **Re-determinación bajo demanda:** `EvidenceManager.redetect_os()` →
+  `POST /api/cases/{cid}/evidence/{eid}/redetect-os`, idempotente y sin tocar la
+  custodia (re-abre en `O_RDONLY`, el baseline no cambia).
+- **Cobertura:** `backend/tests/test_triage_deep.py` (12 casos, sin Docker).
 
 ### Fase 4 — Orquestador (KB/prompts) + docs — **[decl]**  ✅ (hecha, este commit)
 - `agentes/_orchestrator/` (README/reporter/mitre/timeline) revisado: el orquestador es
@@ -182,7 +224,8 @@ declarativo (orquestador KB / docs, lane del auditor) · **[gov]** decisión equ
 | 1 Auditoría | ✅ hecha | (este commit) | inventario en §Fase 1 |
 | 2 Enrutado [be] | ✅ hecha (pend. validación motor) | (este commit) | triage.routable_profile + case.os_profile derivado + audit; sin default silencioso |
 | 2b Multi-SO [be] | ⬜ | — | perfil por-evidencia; hoy mezcla = conflicto/escala |
-| 3 UI [fe] | ⬜ | — | quitar selector SO |
+| 3 UI [fe] | ✅ hecha (2026-07-29) | — | el chat ya no pregunta el SO; la determinación y el anclaje viven en Evidencia |
+| 3b Triage profundo [be] | ✅ hecha (2026-07-29) | — | `triage_deep`: contenedores (.E01/.vmdk/.qcow2/.vhd) abiertos por el maletín; venue declarado, sin fallback, argv auditado |
 | 4 Orquestador/docs [decl] | ✅ hecha | (este commit) | docs sincronizadas; _orchestrator agnóstico del SO (sin cambios) |
 | 4b Prompts sub-agente [decl] | ✅ hecha | (este commit) | `system.md`/`playbook.md` (unix+windows): el guard rail de mismatch pide **anclar el perfil** (re-enrutado automático), ya no "reabrir el caso"; verificado que no altera los 12 evals (el escenario del harness inyecta siempre `detected_os` del propio SO) |
 | 5 Validación | ⬜ | — | incluye caso multi-SO y caso ambiguo |
