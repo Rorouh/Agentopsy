@@ -1,112 +1,112 @@
-# Graph Report - C:\Users\super\Desktop\TFM - Forensia\Forensia-AI\tools\graph\out\web  (2026-07-11)
+# Graph Report - C:\Users\super\Desktop\TFM - Forensia\Forensia-AI\tools\graph\out\web  (2026-07-29)
 
 ## Corpus Check
 - cluster-only mode — file stats not available
 
 ## Summary
-- 249 nodes · 556 edges · 10 communities
-- Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 1 edges (avg confidence: 0.5)
+- 290 nodes · 649 edges · 10 communities
+- Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 4 edges (avg confidence: 0.5)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `410fd11f`
+- Built from commit: `a323b718`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
-- Community 0
-- Community 1
-- Community 2
-- Community 3
-- Community 4
-- Community 5
-- Community 6
+- App.tsx
+- types.ts
+- RepositoryPage.tsx
+- activeCase.tsx
+- package.json
+- ChatPage.tsx
+- DocumentsPage.tsx
 - Community 7
-- Community 8
+- TimelinePage.tsx
 
 ## God Nodes (most connected - your core abstractions)
-1. `ViewId` - 18 edges
-2. `Button()` - 13 edges
-3. `formatDate()` - 11 edges
-4. `Capabilities` - 10 edges
-5. `CaseSummary` - 10 edges
-6. `EvidenceFile` - 10 edges
-7. `Badge()` - 10 edges
-8. `compilerOptions` - 10 edges
-9. `Case` - 8 edges
-10. `EvidenceHandle` - 8 edges
+1. `useActiveCase()` - 21 edges
+2. `usePublishShellHeader()` - 18 edges
+3. `ViewId` - 16 edges
+4. `api` - 15 edges
+5. `Case` - 11 edges
+6. `RepositoryPage()` - 10 edges
+7. `compilerOptions` - 10 edges
+8. `EvidenceHandle` - 9 edges
+9. `Capabilities` - 8 edges
+10. `EvidenceInbox()` - 8 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `SystemStatusPageProps` --references--> `Capabilities`  [EXTRACTED]
-  src/pages/SystemStatusPage.tsx → src/api/types.ts
-- `ActiveCaseHeaderProps` --references--> `Case`  [EXTRACTED]
-  src/components/ActiveCaseHeader.tsx → src/api/types.ts
-- `EvidenceTableProps` --references--> `EvidenceHandle`  [EXTRACTED]
-  src/components/EvidenceTable.tsx → src/api/types.ts
-- `CaseRow()` --calls--> `formatDate()`  [EXTRACTED]
-  src/components/CaseSearchModal.tsx → src/utils/format.ts
-- `RepositoryPageProps` --references--> `ViewId`  [EXTRACTED]
-  src/pages/RepositoryPage.tsx → src/navigation/navItems.ts
+- `Sidebar()` --calls--> `useTheme()`  [EXTRACTED]
+  src/layout/Sidebar.tsx → src/ThemeProvider.tsx
+- `ExecutorLoginModalProps` --references--> `ExecutorId`  [EXTRACTED]
+  src/components/ExecutorLoginModal.tsx → src/api/types.ts
+- `CaseSearchModalProps` --references--> `Case`  [EXTRACTED]
+  src/components/CaseSearchModal.tsx → src/api/types.ts
+- `NewCaseModalProps` --references--> `Case`  [EXTRACTED]
+  src/components/NewCaseModal.tsx → src/api/types.ts
+- `ActiveCaseContextValue` --references--> `Case`  [EXTRACTED]
+  src/state/activeCase.tsx → src/api/types.ts
 
 ## Import Cycles
 - None detected.
 
 ## Communities (10 total, 0 thin omitted)
 
-### Community 0 - "Community 0"
-Cohesion: 0.09
-Nodes (39): api, ApiError, getToken(), post(), readDetail(), request(), AgentFinding, AgentSummary (+31 more)
+### Community 0 - "App.tsx"
+Cohesion: 0.06
+Nodes (54): AgentFinding, Capabilities, ExecutorCost, ToolUsage, App(), initialView(), AppShell(), AppShellProps (+46 more)
 
-### Community 1 - "Community 1"
-Cohesion: 0.12
-Nodes (31): DocumentViewerPage(), DocumentViewerPageProps, MitreAttackPage(), MitreAttackPageProps, SEVERITY_FILTERS, SEVERITY_LABEL, TimelinePageProps, CaseStatus (+23 more)
+### Community 1 - "types.ts"
+Cohesion: 0.06
+Nodes (57): download(), getToken(), post(), readDetail(), request(), upload(), AdjudicateRequest, AgentJob (+49 more)
 
-### Community 2 - "Community 2"
-Cohesion: 0.09
-Nodes (23): EditableKey, KEY_HINTS, KEY_LABELS, SettingsPage(), SettingsPageProps, TabId, TABS, SystemStatusPage() (+15 more)
-
-### Community 3 - "Community 3"
+### Community 2 - "RepositoryPage.tsx"
 Cohesion: 0.14
-Nodes (22): EvidenceSource, ActiveCaseHeader(), ActiveCaseHeaderProps, EvidenceInbox(), EvidenceInboxProps, FORMATS_HINT, evidenceFileName(), EvidenceTable() (+14 more)
+Nodes (31): EvidenceHandle, EvidenceRegisterJob, EvidenceSource, EvidenceInbox(), EvidenceInboxProps, FILE_INPUT_ACCEPT, FORMATS_HINT, PHASE_LABEL (+23 more)
 
-### Community 4 - "Community 4"
-Cohesion: 0.13
-Nodes (22): App(), AppShell(), AppShellProps, ICON_PROPS, NAV_ICONS, Sidebar(), SidebarProps, guideSteps (+14 more)
+### Community 3 - "activeCase.tsx"
+Cohesion: 0.09
+Nodes (25): api, Case, CaseFilter, CaseSearchModal(), CaseSearchModalProps, CaseSort, FILTER_LABEL, Pane (+17 more)
 
-### Community 5 - "Community 5"
+### Community 4 - "package.json"
 Cohesion: 0.07
 Nodes (26): dependencies, react, react-dom, description, devDependencies, @types/react, @types/react-dom, typescript (+18 more)
 
-### Community 6 - "Community 6"
-Cohesion: 0.12
-Nodes (19): CaseFilter, CaseRow(), CaseSearchModal(), CaseSearchModalProps, CaseSort, FILTER_LABEL, EMPTY_FORM, FormState (+11 more)
+### Community 5 - "ChatPage.tsx"
+Cohesion: 0.15
+Nodes (18): AgentSummary, StreamEvent, alignOf(), CellAlign, ChatMessage, ChatPage(), ChatPageProps, clockOf() (+10 more)
+
+### Community 6 - "DocumentsPage.tsx"
+Cohesion: 0.16
+Nodes (13): ApiError, DocumentBlock, DocumentFull, DocumentMeta, DocumentVerifyResult, GenerateReportRequest, DocumentsPage(), fmtDate() (+5 more)
 
 ### Community 7 - "Community 7"
 Cohesion: 0.12
 Nodes (15): compilerOptions, jsx, lib, module, moduleResolution, noEmit, skipLibCheck, strict (+7 more)
 
-### Community 8 - "Community 8"
-Cohesion: 0.40
-Nodes (3): MetricCardProps, MetricVariant, VARIANT_COLOR
+### Community 8 - "TimelinePage.tsx"
+Cohesion: 0.20
+Nodes (12): FsRelevantEvent, FsTimelineEvent, FsTimelineJob, FsTimelineResult, TimelineEvent, CATEGORY_LABEL, evidenceName(), fmtUtc() (+4 more)
 
 ## Knowledge Gaps
-- **86 isolated node(s):** `name`, `version`, `private`, `description`, `type` (+81 more)
+- **102 isolated node(s):** `name`, `version`, `private`, `description`, `type` (+97 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `ViewId` connect `Community 4` to `Community 0`, `Community 1`, `Community 2`, `Community 6`?**
-  _High betweenness centrality (0.044) - this node is a cross-community bridge._
-- **Why does `Button()` connect `Community 3` to `Community 0`, `Community 1`, `Community 2`, `Community 4`, `Community 6`?**
-  _High betweenness centrality (0.025) - this node is a cross-community bridge._
-- **Why does `Capabilities` connect `Community 0` to `Community 2`, `Community 4`?**
-  _High betweenness centrality (0.011) - this node is a cross-community bridge._
+- **Why does `api` connect `activeCase.tsx` to `App.tsx`, `types.ts`, `RepositoryPage.tsx`, `ChatPage.tsx`, `DocumentsPage.tsx`, `TimelinePage.tsx`?**
+  _High betweenness centrality (0.023) - this node is a cross-community bridge._
+- **Why does `useActiveCase()` connect `App.tsx` to `types.ts`, `RepositoryPage.tsx`, `activeCase.tsx`, `DocumentsPage.tsx`, `TimelinePage.tsx`?**
+  _High betweenness centrality (0.022) - this node is a cross-community bridge._
+- **Why does `ViewId` connect `App.tsx` to `types.ts`, `RepositoryPage.tsx`?**
+  _High betweenness centrality (0.020) - this node is a cross-community bridge._
 - **What connects `name`, `version`, `private` to the rest of the system?**
-  _86 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Should `Community 0` be split into smaller, more focused modules?**
-  _Cohesion score 0.08792270531400966 - nodes in this community are weakly interconnected._
-- **Should `Community 1` be split into smaller, more focused modules?**
-  _Cohesion score 0.11740890688259109 - nodes in this community are weakly interconnected._
-- **Should `Community 2` be split into smaller, more focused modules?**
-  _Cohesion score 0.08870967741935484 - nodes in this community are weakly interconnected._
+  _102 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Should `App.tsx` be split into smaller, more focused modules?**
+  _Cohesion score 0.06490384615384616 - nodes in this community are weakly interconnected._
+- **Should `types.ts` be split into smaller, more focused modules?**
+  _Cohesion score 0.05658381808566896 - nodes in this community are weakly interconnected._
+- **Should `RepositoryPage.tsx` be split into smaller, more focused modules?**
+  _Cohesion score 0.13513513513513514 - nodes in this community are weakly interconnected._

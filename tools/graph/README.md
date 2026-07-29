@@ -259,8 +259,8 @@ tools/graph/out/GRAPH_STATUS.md
 ## 6. Estado
 
 - graphify 0.9.12 instalado y verificado en dev; runners Windows + Linux/macOS.
-- Corrida `--code-only` sobre `backend/` (3268 nodos / 6005 aristas) y `web/`
-  (290 / 649); fusionado 3558 / 6654. Salida en `out/` (versionada como snapshot).
+- Corrida `--code-only` sobre `backend/` (3355 nodos / 6176 aristas) y `web/`
+  (290 / 649); fusionado 3645 / 6825. Salida en `out/` (versionada como snapshot).
 - `CONTEXT.md` versionado y enganchado en `CLAUDE.md` (lo lee cada sesión nueva);
   `out/` versionado como snapshot (salvo `cache/` y el estado por-máquina).
 - Enganche automático al arrancar sesión: **implementado** (§3, hook `SessionStart`

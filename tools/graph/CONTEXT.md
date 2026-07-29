@@ -7,8 +7,8 @@
 > determinista, **sin LLM ni API key**). No sustituye a `CLAUDE.md` (invariantes)
 > ni a los docs de `docs/`; los complementa.
 >
-> **Anclado a:** commit `6545504` · **Grafo:** 3268 nodos · 6005 aristas · 212
-> comunidades (backend) + 290 · 649 · 10 (web); fusionado 3558 · 6654.
+> **Anclado a:** commit `a323b71` · **Grafo:** 3355 nodos · 6176 aristas · 216
+> comunidades (backend) + 290 · 649 · 10 (web); fusionado 3645 · 6825.
 >
 > El grafo de `out/` se refresca **solo**: el hook `SessionStart` de
 > `.claude/settings.json` corre `tools/graph/graph-refresh.py` al arrancar cada
