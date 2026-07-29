@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError, api } from "../api/client";
 import type {
+  Capabilities,
   DocumentBlock,
   DocumentFull,
   DocumentMeta,
   DocumentVerifyResult,
+  ExecutorId,
+  ExecutorStatus,
   GenerateReportRequest,
 } from "../api/types";
 import { usePublishShellHeader } from "../layout/shellHeader";
@@ -46,6 +49,26 @@ export function DocumentsPage() {
   const [verify, setVerify] = useState<DocumentVerifyResult | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [perito, setPerito] = useState<GenerateReportRequest>({});
+  // Redacción del informe: "" = narrativa determinista (sin llamada a ningún
+  // modelo); un ExecutorId = prosa de resumen/conclusiones humanizada por ese
+  // ejecutor y VALIDADA por el backend. Selección explícita, nunca un default.
+  const [redactor, setRedactor] = useState<ExecutorId | "">("");
+  const [caps, setCaps] = useState<Capabilities | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .capabilities()
+      .then((c) => {
+        if (!cancelled) setCaps(c);
+      })
+      .catch(() => {
+        if (!cancelled) setCaps(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const showNotice = useCallback((t: string) => {
     setNotice(t);
@@ -196,10 +219,15 @@ export function DocumentsPage() {
         const v = perito[k]?.trim();
         if (v) payload[k] = v;
       });
+      if (redactor) payload.executor = redactor;
       const doc = await api.cases.generateReport(activeCase.id, payload);
       await refreshDocs(activeCase.id);
       setSelectedId(doc.id);
-      showNotice("Informe pericial generado como borrador.");
+      showNotice(
+        redactor
+          ? "Informe generado con redacción humanizada validada."
+          : "Informe pericial generado como borrador.",
+      );
     });
 
   const drafts = documents.filter((d) => d.status === "draft").length;
@@ -333,8 +361,8 @@ export function DocumentsPage() {
             <div className="dashed-panel-title">Generar borrador</div>
             <div className="dashed-panel-body">
               Se redacta desde los hallazgos, la cadena de custodia y la correlación MITRE
-              reales del caso. Los datos del perito son opcionales; sin ellos figura el
-              examinador.
+              reales del caso, con el relato de la investigación como hilo conductor. Los
+              datos del perito son opcionales; sin ellos figura el examinador.
             </div>
           </div>
           <div className="report-gen-fields">
@@ -352,6 +380,34 @@ export function DocumentsPage() {
                 />
               </div>
             ))}
+            <div className="field">
+              <label className="eyebrow" htmlFor="report-redactor">
+                Redacción
+              </label>
+              {/* Selección EXPLÍCITA del operador: la opción por defecto es la
+                  narrativa determinista (cero llamadas a modelos). Un ejecutor
+                  no disponible se lista deshabilitado con su nombre — nunca se
+                  sustituye por otro (RULE 2). */}
+              <select
+                id="report-redactor"
+                className="field-input field-input--sm"
+                value={redactor}
+                onChange={(e) => setRedactor(e.target.value as ExecutorId | "")}
+              >
+                <option value="">Determinista (sin ejecutor)</option>
+                {caps
+                  ? (Object.entries(caps.executors) as [ExecutorId, ExecutorStatus][]).map(
+                      ([id, st]) => (
+                        <option key={id} value={id} disabled={!st.available}>
+                          {st.available
+                            ? `Humanizada · ${st.name}`
+                            : `${st.name} (no disponible)`}
+                        </option>
+                      ),
+                    )
+                  : null}
+              </select>
+            </div>
           </div>
           <button
             type="button"

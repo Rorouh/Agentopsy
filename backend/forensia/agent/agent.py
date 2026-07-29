@@ -47,7 +47,11 @@ import os
 from collections.abc import Callable
 from typing import Any
 
-from forensia.agent.context import window_messages
+from forensia.agent.context import (
+    session_context_budget_chars,
+    transcript_chars,
+    window_messages,
+)
 from forensia.agent.package import AgentPackage
 from forensia.agent.redaction import redact_messages
 from forensia.agent.tool_schemas import (
@@ -404,16 +408,43 @@ class ForensicAgent:
                 return AgentLoopResult(
                     reply=stopped, iterations=iteration, tool_calls=tool_calls_log
                 )
-            # Bug 008 — provider-agnostic context management. Agentopsy owns the
-            # conversation; the executor is stateless and re-charges the whole
-            # transcript each iteration. Project the canonical `messages` to a
-            # windowed OUTBOUND copy (older tool results collapsed to stubs) so a
-            # single run doesn't grow O(N^2). The canonical list stays raw.
-            windowed = window_messages(messages)
-            # F1 — SINGLE egress point. For a cloud backend, redact the windowed
+            # Bug 008 / Fase 3 — provider-agnostic context management. Agentopsy
+            # owns the conversation. For a STATELESS executor the whole transcript
+            # is re-charged every iteration, so older tool results collapse to
+            # stubs (window_messages) to keep a run from growing O(N^2). Under
+            # SESSION transport the economics invert: each message crosses the
+            # wire once and is then read at cache rate, while a stub planted in
+            # the session makes the model burn whole turns re-reading what the
+            # stub elided (medido: 12 de 21 turnos, ~42 % de la entrada —
+            # docs/diseno/tokens-2026-07/fase-turnos.md §3). Con backend de
+            # sesión el tránscrito viaja ÍNTEGRO, salvo que supere el presupuesto
+            # de seguridad — y ese recorte se AUDITA, nunca en silencio (RULE 2).
+            session_capable = bool(
+                getattr(self.model, "supports_session_transport", False)
+            )
+            trimmed_over_budget = False
+            if session_capable:
+                if transcript_chars(messages) > session_context_budget_chars():
+                    wire_messages = window_messages(messages)
+                    trimmed_over_budget = True
+                else:
+                    wire_messages = [dict(m) for m in messages]
+            else:
+                wire_messages = window_messages(messages)
+            if trimmed_over_budget:
+                self._audit_event(
+                    "context_window_trimmed",
+                    case_id=case_id,
+                    evidence_id=evidence_id,
+                    iteration=iteration + 1,
+                    message_count=len(messages),
+                    transcript_chars=transcript_chars(messages),
+                    budget_chars=session_context_budget_chars(),
+                )
+            # F1 — SINGLE egress point. For a cloud backend, redact the outbound
             # copy with the package's patterns; the canonical `messages` stays
             # raw. F3 — audit each egress with the SHA-256 of the exact payload
-            # sent (windowed + redacted), never the bytes.
+            # sent (redacted), never the bytes.
             # `protected_ids`: los identificadores que Agentopsy GENERÓ en esta
             # corrida. Sin ellos, el patrón `guid` del paquete —pensado para tapar
             # el MachineGuid que venga DENTRO de la evidencia— convertía cada
@@ -422,12 +453,12 @@ class ForensicAgent:
             # hallazgo. No son datos de la evidencia y no hay nada que minimizar.
             outbound = (
                 redact_messages(
-                    windowed,
+                    wire_messages,
                     self.package.policy.redaction_patterns,
                     protected=protected_ids,
                 )
                 if is_cloud
-                else windowed
+                else wire_messages
             )
             if is_cloud:
                 payload = json.dumps(
@@ -445,23 +476,13 @@ class ForensicAgent:
                     iteration=iteration,
                 )
             # An executor that can CONTINUE its own conversation is sent only the
-            # delta (plan.md Fase 1). That path needs the canonical, append-only
-            # list — a windowed stub would contradict the verbatim message the
-            # session already holds — but it must cross the SAME single egress
-            # point, so it is redacted with the same patterns (F1). The backend
-            # decides which of the two it actually sends, and only after
+            # delta (plan.md Fase 1). That path needs the append-only list — with
+            # session transport `wire_messages` IS that list (uncut, save the
+            # audited over-budget trim), already through the single egress point
+            # and the exact payload the cloud-egress audit hashed (F1/F3). The
+            # backend decides between delta and full context, and only after
             # `session_guard` can account for the session.
-            outbound_full = None
-            if getattr(self.model, "supports_session_transport", False):
-                outbound_full = (
-                    redact_messages(
-                        messages,
-                        self.package.policy.redaction_patterns,
-                        protected=protected_ids,
-                    )
-                    if is_cloud
-                    else list(messages)
-                )
+            outbound_full = outbound if session_capable else None
             egress_state = {**state, "messages": outbound, "messages_full": outbound_full}
             try:
                 action = self.model.next_action(egress_state, specs)

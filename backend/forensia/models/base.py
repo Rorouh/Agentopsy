@@ -151,6 +151,9 @@ class ExecutorBackend(ModelBackend):
         #: Actionable notices for the caller to log and audit (never raised: a
         #: cache regression must not abort an analysis that is producing findings).
         self.notices: list[str] = []
+        #: One-shot latch for the "resume-capable CLI stopped reporting a
+        #: session id" notice, so a broken CLI warns once instead of every turn.
+        self._warned_no_session = False
 
     @property
     def supports_session_transport(self) -> bool:  # type: ignore[override]
@@ -209,9 +212,18 @@ class ExecutorBackend(ModelBackend):
         other outcome — including "cannot verify" — sends full context and
         carries the reason into the audit. Sending MORE than needed is the only
         direction this fallback is ever allowed to take (RULE 2).
+
+        Every FULL-context send renders from the CANONICAL list when one is
+        available: that prompt SEEDS (or re-seeds) the executor's session, and
+        ``_absorb`` will account the canonical messages as delivered. Rendering
+        the windowed ``messages`` here would plant STUBS in the session forever —
+        the model then burns whole turns re-reading the artifacts its own stubs
+        elided (measured: 12 of 21 turns, ~42 % of the run's input —
+        ``docs/diseno/tokens-2026-07/fase-turnos.md`` §3).
         """
+        base = canonical if canonical else messages
         if not (self.executor.supports_session_resume and self._session_id and canonical):
-            return self._render_prompt(messages, tools), False, None
+            return self._render_prompt(base, tools), False, None
 
         verdict = verify_session(
             self._session_id,
@@ -220,7 +232,7 @@ class ExecutorBackend(ModelBackend):
         )
         if not verdict.can_send_delta:
             self._reset_session()
-            return self._render_prompt(messages, tools), False, verdict.reason
+            return self._render_prompt(base, tools), False, verdict.reason
 
         pending = canonical[self._delivered:]
         if not pending:
@@ -228,7 +240,7 @@ class ExecutorBackend(ModelBackend):
             # to reason about than inventing a filler turn, and it cannot happen
             # in the normal loop (every iteration appends at least one message).
             self._reset_session()
-            return self._render_prompt(messages, tools), False, (
+            return self._render_prompt(base, tools), False, (
                 "No hay mensajes nuevos que enviar como delta; se reenvía el "
                 "contexto completo."
             )
@@ -248,6 +260,14 @@ class ExecutorBackend(ModelBackend):
                 self._prompts_sent = 1
             self._delivered = delivered
         else:
+            if self.executor.supports_session_resume and not self._warned_no_session:
+                self._warned_no_session = True
+                self.notices.append(
+                    f"{self.executor.name} declara reanudación de sesión pero no "
+                    "devolvió session_id en su envelope: cada iteración reenviará "
+                    "el contexto completo a coste íntegro. Revisa la versión del "
+                    "CLI — el ahorro por sesión está desactivado en esta corrida."
+                )
             self._reset_session()
 
         warning = self.cache_monitor.observe(

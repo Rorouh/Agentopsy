@@ -8,6 +8,13 @@ informe pericial en formato "Murciélago" a partir de lo que YA existe en el cas
 - Cadena de custodia por evidencia (``forensia.custody.build_custody_act``:
   sha256 baseline, tamaño, nivel de solo-lectura, verificación de la cadena hash).
 - Metodología y herramientas empleadas (``forensia.toolkit.usage.tool_usage``).
+- **Relato de la investigación** (``forensia.reports.narrative``): la
+  reconstrucción narrativa de los hechos — cronología por ``observed_at``, lo
+  establecido sin fecha, las vías descartadas y lo que queda abierto — con el
+  detalle técnico íntegro de cada hallazgo. El resumen ejecutivo y las
+  conclusiones se sintetizan del MISMO hilo (2026-07-30: el informe dejó de
+  enumerar y pasó a narrar; la narrativa elige orden y tejido conectivo, nunca
+  contenido — RULE 2).
 - Hallazgos estructurados agrupados por severidad
   (``forensia.findings.store.finding_store``), cada uno como bloque ``finding``.
 - Correlación MITRE ATT&CK (``forensia.mitre.coverage``): técnica ↔ hallazgos que
@@ -39,6 +46,7 @@ from forensia.evidence import EvidenceManager, evidence_manager
 from forensia.findings.store import FindingStore, finding_store
 from forensia.mitre import catalog
 from forensia.mitre.coverage import CoverageStore, coverage_store
+from forensia.reports import narrative
 from forensia.reports.store import Document, DocumentStore, document_store
 from forensia.toolkit.usage import tool_usage
 
@@ -122,12 +130,17 @@ def build_pericial_report(
         _datos_informe(case, perito, perito_name, version, generated_at),
         _cadena_custodia(case_id, evidence_handles, cases=cases, evidence=evidence),
         _metodologia(usage),
+        narrative.story_section(
+            case, finding_list, evidence_handles, coverage_entries, usage
+        ),
         _hallazgos(finding_list),
         _correlacion_mitre(coverage_entries, finding_list),
         _conclusiones(case, finding_list, coverage_entries),
     ]
 
-    summary = _summary_line(case, finding_list, evidence_handles, coverage_entries)
+    summary = narrative.summary_line(
+        case, finding_list, evidence_handles, coverage_entries
+    )
 
     return {
         "title": f"Informe pericial forense — {case.name}",
@@ -202,79 +215,22 @@ def generate_draft_report(
 # ── secciones ─────────────────────────────────────────────────────────────────
 
 
-def _sev_counts(finding_list: list[Any]) -> dict[str, int]:
-    counts = {sev: 0 for sev in _SEV_ORDER}
-    for f in finding_list:
-        if f.severity in counts:
-            counts[f.severity] += 1
-    return counts
-
-
-def _summary_line(
-    case: Any, finding_list: list[Any], evidence_handles: list[Any],
-    coverage_entries: list[dict[str, Any]],
-) -> str:
-    n = len(finding_list)
-    hallazgos = (
-        "sin hallazgos registrados"
-        if n == 0
-        else f"{n} hallazgo{'s' if n != 1 else ''} estructurado{'s' if n != 1 else ''}"
-    )
-    return (
-        f"Informe pericial del caso «{case.name}» "
-        f"({len(evidence_handles)} evidencia{'s' if len(evidence_handles) != 1 else ''}, "
-        f"{hallazgos}, {len(coverage_entries)} técnica"
-        f"{'s' if len(coverage_entries) != 1 else ''} ATT&CK correlacionada"
-        f"{'s' if len(coverage_entries) != 1 else ''})."
-    )
-
-
 def _resumen_ejecutivo(
     case: Any, finding_list: list[Any], evidence_handles: list[Any],
     coverage_entries: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    counts = _sev_counts(finding_list)
-    adjudicated = sum(1 for e in coverage_entries if e.get("status"))
-    blocks: list[dict[str, Any]] = []
-
-    perfil = case.os_profile or "sin determinar"
-    blocks.append({
-        "t": "p",
-        "text": (
-            f"El presente informe recoge el análisis forense post-mortem del caso "
-            f"«{case.name}», con perfil de sistema operativo {perfil}, sobre "
-            f"{len(evidence_handles)} evidencia(s) registrada(s) bajo cadena de "
-            f"custodia verificada. El análisis fue conducido por {case.examiner}."
+    """El resumen ejecutivo NARRA (2026-07-30): encuadre del encargo, la
+    secuencia de hechos que la evidencia sostiene, el estado del dictamen con su
+    desglose técnico, y el mapa del informe — el mismo hilo que §5 y §8
+    desarrollan. La prosa la sintetiza ``forensia.reports.narrative`` desde los
+    datos persistidos, nunca desde conjeturas (RULE 2)."""
+    return {
+        "num": narrative.SEC_RESUMEN,
+        "title": "Resumen ejecutivo",
+        "blocks": narrative.executive_blocks(
+            case, finding_list, evidence_handles, coverage_entries
         ),
-    })
-
-    if finding_list:
-        desglose = ", ".join(
-            f"{counts[sev]} {_SEV_LABEL[sev].lower()}"
-            for sev in _SEV_ORDER
-            if counts[sev]
-        )
-        blocks.append({
-            "t": "p",
-            "text": (
-                f"Se documentan {len(finding_list)} hallazgo(s) estructurado(s) "
-                f"({desglose}). De las {len(coverage_entries)} técnica(s) MITRE "
-                f"ATT&CK correlacionadas, {adjudicated} cuenta(n) con dictamen "
-                f"pericial explícito."
-            ),
-        })
-    else:
-        blocks.append({
-            "t": "p",
-            "text": (
-                "En el estado actual del caso NO se han registrado hallazgos "
-                "estructurados. Este informe deja constancia honesta de ese hecho: "
-                "no se afirma ningún resultado que la evidencia analizada no "
-                "sostenga (RULE 2)."
-            ),
-        })
-
-    return {"num": "1", "title": "Resumen ejecutivo", "blocks": blocks}
+    }
 
 
 def _datos_informe(
@@ -292,6 +248,7 @@ def _datos_informe(
     if email:
         pairs.append({"k": "Contacto", "v": email})
     pairs.extend([
+        {"k": "Redacción narrativa", "v": "determinista (sintetizada de los datos del caso)"},
         {"k": "Identificador del caso", "v": case.id},
         {"k": "Nombre del caso", "v": case.name},
         {"k": "Examinador", "v": case.examiner},
@@ -304,7 +261,7 @@ def _datos_informe(
         {"k": "Herramienta", "v": f"Agentopsy {__version__}"},
     ])
     return {
-        "num": "2",
+        "num": narrative.SEC_DATOS,
         "title": "Datos del informe y del perito",
         "blocks": [{"t": "kv", "pairs": pairs}],
     }
@@ -314,7 +271,11 @@ def _cadena_custodia(
     case_id: str, evidence_handles: list[Any], *,
     cases: CaseManager, evidence: EvidenceManager,
 ) -> dict[str, Any]:
-    blocks: list[dict[str, Any]] = [{
+    blocks: list[dict[str, Any]] = [narrative.transition(
+        "El relato que este informe desarrolla vale lo que valga su base: esta "
+        "sección fija QUÉ evidencia se examinó y con qué garantías de "
+        "integridad, antes de narrar hecho alguno."
+    ), {
         "t": "p",
         "text": (
             "Cada evidencia se ingirió a través de EvidenceManager, único dueño de "
@@ -333,7 +294,11 @@ def _cadena_custodia(
                 "bajo custodia no hay nada que peritar: el informe lo hace constar."
             ),
         })
-        return {"num": "3", "title": "Cadena de custodia", "blocks": blocks}
+        return {
+            "num": narrative.SEC_CUSTODIA,
+            "title": "Cadena de custodia",
+            "blocks": blocks,
+        }
 
     for handle in evidence_handles:
         act = build_custody_act(
@@ -362,11 +327,19 @@ def _cadena_custodia(
             ],
         })
 
-    return {"num": "3", "title": "Cadena de custodia", "blocks": blocks}
+    return {
+        "num": narrative.SEC_CUSTODIA,
+        "title": "Cadena de custodia",
+        "blocks": blocks,
+    }
 
 
 def _metodologia(usage: list[dict[str, Any]]) -> dict[str, Any]:
-    blocks: list[dict[str, Any]] = [{
+    blocks: list[dict[str, Any]] = [narrative.transition(
+        "Establecida la custodia, esta sección deja constancia de CÓMO se "
+        "interrogó la evidencia: cada corrida que el relato "
+        f"(§{narrative.SEC_RELATO}) cita procede de este registro."
+    ), {
         "t": "p",
         "text": (
             "El análisis es post-mortem: las herramientas forenses leen la imagen a "
@@ -397,13 +370,17 @@ def _metodologia(usage: list[dict[str, Any]]) -> dict[str, Any]:
             ),
         })
 
-    return {"num": "4", "title": "Metodología y herramientas empleadas", "blocks": blocks}
+    return {
+        "num": narrative.SEC_METODOLOGIA,
+        "title": "Metodología y herramientas empleadas",
+        "blocks": blocks,
+    }
 
 
 def _hallazgos(finding_list: list[Any]) -> dict[str, Any]:
     if not finding_list:
         return {
-            "num": "5",
+            "num": narrative.SEC_HALLAZGOS,
             "title": "Hallazgos",
             "blocks": [{
                 "t": "p",
@@ -416,7 +393,12 @@ def _hallazgos(finding_list: list[Any]) -> dict[str, Any]:
             }],
         }
 
-    blocks: list[dict[str, Any]] = []
+    blocks: list[dict[str, Any]] = [narrative.transition(
+        f"Los hechos narrados en §{narrative.SEC_RELATO} se descomponen aquí en "
+        "hallazgos estructurados, agrupados por severidad, cada uno con su "
+        "procedencia (herramienta, corrida y hash del artefacto) verificable "
+        "contra el log de auditoría."
+    )]
     for sev in _SEV_ORDER:
         group = [f for f in finding_list if f.severity == sev]
         if not group:
@@ -439,7 +421,7 @@ def _hallazgos(finding_list: list[Any]) -> dict[str, Any]:
                 block["meta"] = meta
             blocks.append(block)
 
-    return {"num": "5", "title": "Hallazgos", "blocks": blocks}
+    return {"num": narrative.SEC_HALLAZGOS, "title": "Hallazgos", "blocks": blocks}
 
 
 def _finding_provenance(f: Any) -> str:
@@ -493,7 +475,8 @@ def _correlacion_mitre(
     blocks: list[dict[str, Any]] = [{
         "t": "p",
         "text": (
-            "Correlación con MITRE ATT&CK. Dos ejes que no se funden: la técnica "
+            "El relato y los hallazgos anteriores se encuadran aquí en el marco "
+            "táctico MITRE ATT&CK. Dos ejes que no se funden: la técnica "
             "PROPUESTA por el análisis (derivada de los hallazgos) y el VEREDICTO "
             "del perito (confirmada / sospechosa / descartada). Una técnica "
             "propuesta y no dictaminada no cuenta como confirmada."
@@ -508,7 +491,11 @@ def _correlacion_mitre(
                 "este caso."
             ),
         })
-        return {"num": "6", "title": "Correlación MITRE ATT&CK", "blocks": blocks}
+        return {
+            "num": narrative.SEC_MITRE,
+            "title": "Correlación MITRE ATT&CK",
+            "blocks": blocks,
+        }
 
     tactic_names = _tactic_names()
     titles = {f.id: f.title for f in finding_list}
@@ -539,39 +526,23 @@ def _correlacion_mitre(
         "headers": ["Técnica", "Nombre", "Táctica", "Hallazgos que la sostienen", "Veredicto"],
         "rows": rows,
     })
-    return {"num": "6", "title": "Correlación MITRE ATT&CK", "blocks": blocks}
+    return {
+        "num": narrative.SEC_MITRE,
+        "title": "Correlación MITRE ATT&CK",
+        "blocks": blocks,
+    }
 
 
 def _conclusiones(
     case: Any, finding_list: list[Any], coverage_entries: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    confirmed = sum(1 for e in coverage_entries if e.get("status") == "confirmada")
-    if finding_list:
-        text = (
-            f"El análisis del caso «{case.name}» ha permitido documentar "
-            f"{len(finding_list)} hallazgo(s), con {confirmed} técnica(s) ATT&CK "
-            "confirmada(s) por dictamen pericial. Las conclusiones se sostienen "
-            "exclusivamente sobre la evidencia analizada bajo cadena de custodia "
-            "verificada y son reproducibles a partir del log de auditoría."
-        )
-    else:
-        text = (
-            f"En el estado actual, el caso «{case.name}» no arroja hallazgos "
-            "estructurados que sostener. Este informe deja constancia del alcance "
-            "examinado sin afirmar conclusiones que la evidencia no respalde."
-        )
+    """Las conclusiones CIERRAN el hilo (2026-07-30): qué lectura de los hechos
+    sostiene la evidencia, qué arco táctico confirma el dictamen y por qué todo
+    ello es reproducible — prosa de ``forensia.reports.narrative``, sintetizada
+    de los mismos datos que el relato (RULE 2: nada que la evidencia no
+    sostenga)."""
     return {
-        "num": "7",
+        "num": narrative.SEC_CONCLUSIONES,
         "title": "Conclusiones",
-        "blocks": [
-            {"t": "p", "text": text},
-            {
-                "t": "p",
-                "text": (
-                    "Documento generado en estado BORRADOR. Adquiere validez pericial "
-                    "al firmarse (paso a versión final), acto que queda registrado en "
-                    "el log de auditoría hash-encadenado."
-                ),
-            },
-        ],
+        "blocks": narrative.conclusion_blocks(case, finding_list, coverage_entries),
     }

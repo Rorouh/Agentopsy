@@ -37,14 +37,26 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
 
-from forensia.config import config
+from forensia.config import CONFIG_DIR, config
 
-# Designed parameter default (allowed by RULE 2): one prompt round-trip on a
-# healthy executor answers in seconds; a hung CLI must not block the operator
-# for minutes (the 2026-07-02 E2E saw Gemini hang the old 600 s default).
-# Override per request (``context['timeout']``) or per deployment with
-# FORENSIA_EXECUTOR_TIMEOUT (env or Settings) — see ``resolve_timeout``.
-DEFAULT_TIMEOUT_S = 120
+# Designed parameter default (allowed by RULE 2). 300 s, recalibrated against a
+# MEASURED run (docs/diseno/tokens-2026-07/fase-turnos.md §5): with the old
+# 120 s, 11 of 21 productive turns ran over 85 s, one real turn took 162 s, and
+# the run's very first turn DIED at the limit — losing the whole ~35 K-token
+# prefix with no cost trace. A `tool_batch` of 6-8 herramientas legitimately
+# needs minutes; a hung CLI is still bounded (the 2026-07-02 E2E saw Gemini hang
+# the old 600 s default, which is why this is not higher). Override per request
+# (``context['timeout']``) or per deployment with FORENSIA_EXECUTOR_TIMEOUT
+# (env or Settings) — see ``resolve_timeout``.
+DEFAULT_TIMEOUT_S = 300
+
+# Chars-per-token divisor for the ESTIMATED cost of a turn that died before the
+# executor could report usage (timeout / unlaunchable binary). Explicitly an
+# estimate, labeled as such in the audit event (``estimate_basis``) — never mixed
+# with reported token fields (RULE 2: a real number and a guess are not the same
+# field). Without it a lost turn records zero cost and the run's bill cannot be
+# reconstructed from the audit (fase-turnos.md §5).
+_ESTIMATE_CHARS_PER_TOKEN = 4
 
 # Budget for the NON-INTERACTIVE auth-status probes in ``is_available()``
 # (`claude auth status` / `codex login status` spawn a CLI process).
@@ -277,6 +289,24 @@ def _find_key(obj: Any, key: str, _depth: int = 0) -> Any:
     return None
 
 
+def neutral_cwd() -> str:
+    """Working directory for CLI executor subprocesses: a dedicated EMPTY dir.
+
+    ``subprocess.run`` inherits Agentopsy's own cwd, and the three CLIs load
+    project-context files from wherever they run (``CLAUDE.md`` / ``AGENTS.md`` /
+    ``GEMINI.md``, walking up the tree). Measured: launching the backend from the
+    repo injected Agentopsy's own ``CLAUDE.md`` into EVERY executor call — 8.870
+    tokens/turn the analysis never asked for — and contradicted the contract that
+    ``agentes/agent.md`` is the ONE behavioural file the agent reads
+    (``docs/diseno/tokens-2026-07/implementacion-fases-0-2.md``, hallazgo no
+    planificado 2). Running under ``CONFIG_DIR`` keeps the parents
+    (``~/.forensia``, ``$HOME``) free of such files too. Created on demand and
+    kept empty by construction; the literal cwd is audited with the argv."""
+    cwd = CONFIG_DIR / "executor-cwd"
+    cwd.mkdir(parents=True, exist_ok=True)
+    return str(cwd)
+
+
 def resolve_timeout(context: dict[str, Any]) -> int:
     """Timeout in seconds for one executor run.
 
@@ -458,6 +488,7 @@ class CliPromptExecutor(PromptExecutor):
 
         argv = self._build_argv(prompt, model, session_id)
         timeout = resolve_timeout(ctx)
+        cwd = neutral_cwd()
         audit = ctx.get("audit")
         case_id = ctx.get("case_id")
 
@@ -473,6 +504,11 @@ class CliPromptExecutor(PromptExecutor):
                 "argv": argv,
                 "prompt_sha256": sha256_text(prompt),
                 "prompt_chars": len(prompt),
+                # The literal working directory of the subprocess — a neutral
+                # empty dir, so no host CLAUDE.md/AGENTS.md/GEMINI.md can leak
+                # into the model's context (agentes/agent.md is the ONE
+                # behavioural file). Audited so the isolation is verifiable.
+                "cwd": cwd,
                 # Whether this turn continued a session (prompt = delta) or opened
                 # one (prompt = full context). Without it the audited argv alone
                 # could not tell a short prompt that is a delta from a short prompt
@@ -497,10 +533,18 @@ class CliPromptExecutor(PromptExecutor):
                 text=True,
                 timeout=timeout,
                 stdin=subprocess.DEVNULL,
+                cwd=cwd,
             )
         except subprocess.TimeoutExpired as exc:
-            self._audit_finish(audit, case_id, exit_code=None, duration_ms=_ms(started),
-                               error=f"timeout tras {timeout}s")
+            # A lost turn still COSTS the whole prompt: without an estimate the
+            # audit records it as zero and the run's bill cannot be reconstructed
+            # (fase-turnos.md §5). Labeled as an estimate, never as reported usage.
+            self._audit_finish(
+                audit, case_id, exit_code=None, duration_ms=_ms(started),
+                error=f"timeout tras {timeout}s",
+                prompt_chars=len(prompt),
+                estimated_input_tokens=len(prompt) // _ESTIMATE_CHARS_PER_TOKEN,
+            )
             raise ExecutorError(
                 f"{self.name} superó el timeout de {timeout}s sin responder"
             ) from exc
@@ -579,6 +623,8 @@ class CliPromptExecutor(PromptExecutor):
         session_id: str | None = None,
         num_turns: int | None = None,
         error: str | None = None,
+        prompt_chars: int | None = None,
+        estimated_input_tokens: int | None = None,
     ) -> None:
         if audit is None:
             return
@@ -589,6 +635,13 @@ class CliPromptExecutor(PromptExecutor):
             "exit_code": exit_code,
             "duration_ms": duration_ms,
         }
+        if estimated_input_tokens is not None:
+            # A turn that died before the executor reported usage. The estimate
+            # lives in its OWN clearly-labeled fields — never in the reported
+            # token fields (RULE 2: a measurement and a guess don't share a key).
+            event["prompt_chars"] = prompt_chars
+            event["estimated_input_tokens"] = estimated_input_tokens
+            event["estimate_basis"] = f"prompt_chars/{_ESTIMATE_CHARS_PER_TOKEN}"
         if response_sha256 is not None:
             event["response_sha256"] = response_sha256
             event["response_chars"] = response_chars

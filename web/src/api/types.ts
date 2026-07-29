@@ -438,12 +438,17 @@ export interface DocumentVerifyResult {
 
 // Datos opcionales del perito para la síntesis del informe pericial. Todos
 // opcionales: sin ellos el backend usa el examinador del caso como perito.
+// `executor`: redacción humanizada opcional — la prosa del resumen ejecutivo y
+// de las conclusiones se reescribe a través de ese ejecutor y se valida contra
+// los datos del caso. Sin valor NO hay llamada a ningún modelo (la narrativa
+// determinista es el producto, no un fallback — RULE 2).
 export interface GenerateReportRequest {
   name?: string;
   colegiado?: string;
   organization?: string;
   email?: string;
   version?: string;
+  executor?: string;
 }
 
 export interface MitreCatalog {

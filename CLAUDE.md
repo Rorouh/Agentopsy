@@ -470,11 +470,10 @@ only; a final can't be deleted — chain of custody) / **real PDF** (`fpdf2`,
 pure-python) rendered in the pericial-report format (cover + metadata + TOC +
 numbered H2/H3 sections + tables / findings / quotes / lists + per-page
 header-footer). The `DocumentsPage` (light theme, from the Claude Design import)
-lists and renders them and drives the actions; the store ships ready but **empty**
-until something creates a document (`POST …/documents`) — the orchestrator's report
-SYNTHESIS from findings is still not implemented, so `MitreTechniqueMatch[]` with
-`confidence` is not produced by anyone yet — see
-`docs/agentes/contrato-paquetes.md` §5.bis. The old delivery model is fully
+lists and renders them and drives the actions. The report SYNTHESIS from the
+case's real data IS implemented (`forensia.reports.generator`:
+`build_pericial_report` + the auto-draft at analysis close), and since
+2026-07-30 it narrates — see **Informe pericial con narrativa** below. The old delivery model is fully
 dismantled: `desktop/`, `docker/agent/`, `vendor/`, the PyInstaller spec and the
 release workflow are gone (2026-07-02) — nothing ships outside the compose.
 
@@ -516,17 +515,63 @@ real code: **0,5491 → 0,1150 USD, −79,1 %**, `cache_read` growing 38.133 →
 48.500, `cache_creation` collapsed to ~1.500. Counter-intuitive but important:
 input TOKENS rise 13,5 % while cost falls 79 % (the session keeps the full
 history, but reads it at 0,1× instead of rewriting at 2×) — **counting tokens no
-longer measures cost**. Fases 3-4 and the turn-count phase are **measured and NOT
-implemented** by decision: `fase-turnos.md` shows windowing does not merely break
+longer measures cost**. `fase-turnos.md` shows windowing does not merely break
 the cache but **manufactures turns** (32 of 71 calls were `leer_artefacto` and
 all 32 targeted a result the window had elided; one artifact was re-read 16
 times; 12 of 21 productive turns did nothing else ≈ 42 % of the run's input), and
-that the run never emitted a `final`. Two unplanned findings, both documented and
-NOT acted on: the CLI's own harness is 13.716 tokens (`--disallowed-tools` 7.114
-+ `--system-prompt` 6.602), and **Agentopsy injects its own `CLAUDE.md` into
-every executor call** (8.870 tokens/turn) because `subprocess.run` inherits the
-working directory — which also contradicts the contract that `agentes/agent.md`
+that the run never emitted a `final`. Two unplanned findings appeared on the way:
+the CLI's own harness is 13.716 tokens (`--disallowed-tools` 7.114 +
+`--system-prompt` 6.602 — still NOT acted on: quality impact unmeasured, Fase 4
+stays out of scope), and **Agentopsy injected its own `CLAUDE.md` into every
+executor call** (8.870 tokens/turn) because `subprocess.run` inherited the
+working directory — which also contradicted the contract that `agentes/agent.md`
 is the ONE behavioural file the agent reads.
+
+**Fase 3 + fase de turnos, implementadas (2026-07-30)**: with a session-capable
+backend the transcript now travels UNCUT — `window_messages` only applies to
+stateless executors, closing the re-read loop that manufactured 12 of 21 turns —
+and every FULL-context send of `ExecutorBackend` (session open or reopen)
+renders from the CANONICAL list, so a stub can never seed a session (the
+delivered-messages accounting now matches what the session truly holds). A
+safety ceiling remains (`FORENSIA_SESSION_CONTEXT_MAX_CHARS`, default 400.000
+chars ≈ 4× the measured turn-22 transcript): crossing it re-enables windowing
+AND audits it (`context_window_trimmed`) — never a silent cut (RULE 2). The CLI
+subprocesses now run in a **neutral empty cwd** (`CONFIG_DIR/executor-cwd`,
+audited per run), so no host `CLAUDE.md`/`AGENTS.md`/`GEMINI.md` leaks into the
+model's context (−8.870 tokens/turn; `agent.md` is again the only behavioural
+file). `DEFAULT_TIMEOUT_S` rose 120 → 300 s (measured: mean 89 s, max 162 s;
+the old limit killed a real turn and lost its whole prefix), a timeout now
+audits the lost turn's cost in EXPLICITLY-labeled estimate fields
+(`estimated_input_tokens`, `estimate_basis` — never mixed with reported usage),
+and a resume-capable CLI that stops returning `session_id` warns once per run
+(cost visibility, never fatal). Pinned by `tests/test_session_windowing.py` and
+the new executor tests.
+
+**Informe pericial con narrativa (2026-07-30, `forensia.reports.narrative` +
+`humanize`)**: the report stopped enumerating and started NARRATING, without
+losing a byte of technical detail. `build_pericial_report` now assembles **8
+sections**: the executive summary tells the story (the assignment, the dated
+sequence of facts with real titles/dates, the adjudication state with the
+severity breakdown intact, and a map of the report), §5 is the new **«Relato de
+la investigación»** — dated findings narrated chronologically with their full
+`summary`, provenance (tool, run, calibrated confidence) and ATT&CK framing;
+undated findings in their own lane (said as such, never disguised as incident
+chronology); descartes narrated as explored-and-closed avenues; open verdicts
+stated — and the conclusions close the thread with the kill-chain-ordered
+tactical arc of confirmed techniques. The narrative layer chooses ORDER and
+CONNECTIVE TISSUE, never content (RULE 2): every sentence is assembled from
+persisted case data, an empty case produces an honest no-story report, and
+section numbering lives in ONE place (`narrative.SEC_*`) so prose
+cross-references (§5, §8…) cannot drift. On top, **optional humanized
+redaction**: `POST …/documents/generate` accepts `executor` (operator-selected,
+never a default — the UI's «Redacción» picker on the Informe page); the prose of
+§1/§8 is rewritten by that executor and **validated against closed referents**
+(any `Txxxx`, UUID or hex token in the output must already exist in the
+deterministic report; one unknown referent rejects the whole pass with an
+actionable error — prosa sin validar never persists), the BORRADOR notice is
+re-appended unconditionally, §2 declares the provenance («Redacción narrativa:
+asistida por …») and the pass lands in the audit (`report_humanized`, plus the
+executor run's literal argv — FORENSIC INVARIANT 4).
 
 **Agent analysis hardening (2026-07-15)**: the loop now forces the agent to
 `record_finding` HOT (a strict prompt rule + a **structural nudge** in

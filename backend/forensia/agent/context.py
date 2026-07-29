@@ -38,6 +38,40 @@ from typing import Any
 # never hide guidance we're unsure about).
 
 
+def session_context_budget_chars() -> int:
+    """Safety ceiling (chars) for sending the transcript UNCUT under session
+    transport (Fase 3). With a resumable session each message crosses the wire
+    exactly once and is then read at cache rate, so windowing stops saving and
+    starts costing: the measured run spent 12 of 21 turns re-reading artifacts
+    its own stubs had elided (``docs/diseno/tokens-2026-07/fase-turnos.md`` §3).
+    The ceiling only exists so a pathological run cannot overflow the model's
+    context window: the measured turn-22 transcript was ~111 K chars, so the
+    default 400 000 gives ~4× headroom while staying inside a 200 K-token
+    window. Crossing it re-enables ``window_messages`` AND is audited
+    (``context_window_trimmed``) — never a silent cut (RULE 2). Override with
+    ``FORENSIA_SESSION_CONTEXT_MAX_CHARS``; an invalid value fails loud."""
+    raw = os.environ.get("FORENSIA_SESSION_CONTEXT_MAX_CHARS")
+    if raw is None:
+        return 400_000
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 0
+    if value <= 0:
+        raise RuntimeError(
+            f"FORENSIA_SESSION_CONTEXT_MAX_CHARS={raw!r} no es válido: debe ser "
+            "un entero de caracteres > 0 — Agentopsy no lo sustituye por el "
+            "default (RULE 2)."
+        )
+    return value
+
+
+def transcript_chars(messages: Sequence[dict[str, Any]]) -> int:
+    """Total content chars of a message list — the datum the session budget and
+    its audit event are measured in."""
+    return sum(len(str(m.get("content") or "")) for m in messages)
+
+
 def keep_last_tool_results_default() -> int:
     """How many of the most recent tool-result messages stay verbatim on the wire.
 
@@ -135,4 +169,6 @@ def window_messages(
 __all__ = [
     "window_messages",
     "keep_last_tool_results_default",
+    "session_context_budget_chars",
+    "transcript_chars",
 ]

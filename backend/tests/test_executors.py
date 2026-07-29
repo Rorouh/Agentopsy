@@ -371,7 +371,9 @@ def test_ollama_run_demands_model(clean_config: None, monkeypatch: pytest.Monkey
 
 def test_resolve_timeout_designed_default(clean_config: None) -> None:
     assert resolve_timeout({}) == DEFAULT_TIMEOUT_S
-    assert DEFAULT_TIMEOUT_S == 120
+    # 300 s, recalibrado contra la corrida medida (fase-turnos.md §5): con 120 s
+    # el primer turno real murió en el límite y 11 de 21 rozaron los 85-162 s.
+    assert DEFAULT_TIMEOUT_S == 300
 
 
 def test_resolve_timeout_from_env(clean_config: None, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -394,6 +396,78 @@ def test_resolve_timeout_invalid_env_fails_loud(
     with pytest.raises(ExecutorError) as exc:
         resolve_timeout({})
     assert "FORENSIA_EXECUTOR_TIMEOUT" in str(exc.value)
+
+
+# ---- cwd neutro + coste del turno perdido (2026-07-30) -------------------------
+
+
+class _ListAudit(list):
+    def append(self, event: dict) -> None:  # type: ignore[override]
+        super().append(dict(event))
+
+
+def test_run_uses_neutral_cwd_and_audits_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """El subproceso del CLI corre en un directorio neutro VACÍO — ningún
+    CLAUDE.md/AGENTS.md/GEMINI.md del host puede colarse en el contexto del
+    modelo (medido: 8.870 tokens/turno del propio CLAUDE.md de Agentopsy;
+    agentes/agent.md es el ÚNICO fichero de comportamiento) — y el cwd literal
+    queda en el audit del run."""
+    monkeypatch.setattr(executors_base, "CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(
+        ClaudeCodeExecutor,
+        "is_available",
+        lambda self: ExecutorAvailability(available=True),
+    )
+    seen: dict = {}
+    envelope = json.dumps({"result": "ok", "session_id": "s1", "num_turns": 1})
+
+    def fake_run(argv, **kwargs):  # noqa: ANN001, ANN003
+        seen["cwd"] = kwargs.get("cwd")
+        return subprocess.CompletedProcess(argv, 0, stdout=envelope, stderr="")
+
+    monkeypatch.setattr(executors_base.subprocess, "run", fake_run)
+    audit = _ListAudit()
+
+    ClaudeCodeExecutor().run("analiza", {"audit": audit, "case_id": "c1"})
+
+    expected = str(tmp_path / "executor-cwd")
+    assert seen["cwd"] == expected
+    assert Path(expected).is_dir()
+    assert not any(Path(expected).iterdir())  # neutro = VACÍO por construcción
+    start = next(e for e in audit if e["action"] == "executor_run_start")
+    assert start["cwd"] == expected
+
+
+def test_timeout_audits_estimated_cost(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Un turno perdido por timeout cuesta el prompt entero: el audit registra
+    el gasto ESTIMADO en campos propios y etiquetados — nunca mezclado con los
+    tokens reportados (fase-turnos.md §5; RULE 2)."""
+    monkeypatch.setattr(executors_base, "CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(
+        ClaudeCodeExecutor,
+        "is_available",
+        lambda self: ExecutorAvailability(available=True),
+    )
+
+    def hang(argv, **kwargs):  # noqa: ANN001, ANN003
+        raise subprocess.TimeoutExpired(argv, kwargs.get("timeout", 0))
+
+    monkeypatch.setattr(executors_base.subprocess, "run", hang)
+    audit = _ListAudit()
+
+    with pytest.raises(ExecutorError, match="timeout"):
+        ClaudeCodeExecutor().run("x" * 400, {"audit": audit, "case_id": "c1"})
+
+    finish = next(e for e in audit if e["action"] == "executor_run_finish")
+    assert finish["error"].startswith("timeout")
+    assert finish["prompt_chars"] == 400
+    assert finish["estimated_input_tokens"] == 100
+    assert finish["estimate_basis"] == "prompt_chars/4"
+    assert "input_tokens" not in finish  # el estimado nunca usurpa lo reportado
 
 
 def test_resolve_timeout_nonpositive_context_fails_loud(clean_config: None) -> None:

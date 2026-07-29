@@ -215,6 +215,16 @@ fueran instrucciones suyas. Eso **contradice el contrato documentado** de que
 sesiones**, que es justo lo que el guardia de divergencia inspecciona. Las dos
 cosas hay que medirlas juntas, no encadenarlas a ciegas.
 
+> **ACTUALIZACIÓN (2026-07-30, rama Rama-Enrique): arreglado.** Los CLI corren
+> ahora en un **cwd neutro y vacío** (`CONFIG_DIR/executor-cwd`, fijado en
+> `CliPromptExecutor.run` y auditado en cada `executor_run_start`). La objeción
+> del guardia estaba resuelta por diseño: `session_guard.find_transcript`
+> localiza la transcripción por **glob del `session_id`** en todos los
+> directorios de proyecto — deliberadamente NO recalcula el slug por-cwd — así
+> que mover el cwd no lo ciega; y al ser un directorio FIJO, todas las sesiones
+> de Agentopsy quedan bajo un único proyecto estable. Gate:
+> `tests/test_executors.py::test_run_uses_neutral_cwd_and_audits_it`.
+
 ## 8. Lo que esta validación NO demuestra
 
 - **El criterio 4 (calidad equivalente) no está verificado.** La A/B usó una

@@ -108,7 +108,15 @@ disco == lo que Agentopsy escribió—; lo no verificable se trata como divergid
 CONTENIDO: avisa (log + audit `executor_cache_regression`) cuando `cache_read`
 deja de crecer ≥3 turnos con sesión activa. `_render_prompt` ordena
 `SISTEMA │ ESQUEMAS │ tránscrito │ contrato` (prefijo estable delante; el contrato
-sigue al final porque sostiene `_parse_action`).
+sigue al final porque sostiene `_parse_action`). **Fase 3 (2026-07-30):** con
+backend capaz de sesión el tránscrito viaja ÍNTEGRO (`window_messages` queda
+solo para ejecutores stateless — el stub fabricaba turnos de relectura), todo
+envío de contexto completo se renderiza desde la lista CANÓNICA (un stub jamás
+siembra una sesión) y el recorte por umbral
+(`FORENSIA_SESSION_CONTEXT_MAX_CHARS`) se audita (`context_window_trimmed`).
+Los CLI corren en un **cwd neutro vacío** (`neutral_cwd()`, auditado) para que
+ningún `CLAUDE.md`/`AGENTS.md` del host entre al contexto; `DEFAULT_TIMEOUT_S`
+es 300 s y un timeout audita su coste ESTIMADO en campos etiquetados.
 
 **Toolkit** — `catalog` (`by_tier` / `for_profile`, `Tool` de enum cerrada y contrato
 central `PathParameter`); `forensia.path_policy` (roles `EVIDENCE_INPUT`, `CASE_INPUT`,
@@ -158,6 +166,18 @@ de evidencia, token de sesión, chats, findings, uso de tools, artefactos,
 `capabilities` / config. **Endurecimiento de transporte:** `create_app`,
 `allowed_hosts`, `HostHeaderMiddleware` (anti DNS-rebinding), `require_token`; gates
 de seguridad. (SECURITY INVARIANTS 1-3)
+
+**Informes** (`forensia.reports`) — `DocumentStore` (integridad SHA-256, firmar
+/ verificar / borrar auditados); `generator.build_pericial_report` (8 secciones
+desde los datos reales del caso) + `generate_draft_report` (borrador auto al
+cerrar un análisis); **`narrative`** (2026-07-30: el hilo conductor — resumen
+ejecutivo narrativo, §5 «Relato de la investigación» con cronología por
+`observed_at` / carril no fechado / descartes, conclusiones con arco táctico en
+orden kill-chain; numeración única `SEC_*`; elige orden y tejido conectivo,
+nunca contenido — RULE 2); **`humanize`** (redacción opcional de §1/§8 vía el
+ejecutor seleccionado, validada contra referentes cerrados del informe
+determinista — un `Txxxx`/UUID/hex desconocido rechaza la pasada entera);
+`pdf.render_pdf` (fpdf2, pure-python).
 
 **Redacción / GDPR** — policy de redacción del paquete (`apply_redaction`,
 `RedactionPattern`); redacción de egress antes de cruzar a un modelo cloud; modo de

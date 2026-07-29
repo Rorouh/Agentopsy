@@ -12,6 +12,20 @@
 > decisión explícita, y la [fase de turnos](fase-turnos.md) se entrega
 > **diagnosticada y sin implementar**. Las secciones que siguen conservan la
 > propuesta original; donde una medición posterior la corrige, hay una nota.
+>
+> **ACTUALIZACIÓN (2026-07-30, rama Rama-Enrique).** La **Fase 3 está
+> implementada**: con backend capaz de sesión el tránscrito viaja íntegro
+> (`window_messages` queda solo para ejecutores stateless), todo envío de
+> contexto completo se renderiza desde la lista canónica (un stub jamás siembra
+> una sesión) y el recorte por umbral (`FORENSIA_SESSION_CONTEXT_MAX_CHARS`,
+> default 400.000) se audita (`context_window_trimmed`). De la fase de turnos se
+> implementaron los puntos 1-3 de su §6: cierre del bucle de relectura, timeout
+> por defecto 120 → 300 s, y auditoría del turno perdido con coste ESTIMADO en
+> campos etiquetados. Además se corrigió el tercer hallazgo de la Fase 4 que no
+> era de esa fase: los CLI corren ahora en un **cwd neutro vacío** (auditado),
+> así que el `CLAUDE.md` de Agentopsy ya no entra en ninguna llamada (−8.870
+> tokens/turno). La **Fase 4 sigue fuera de alcance** (impacto en calidad sin
+> medir). Gates: `tests/test_session_windowing.py` + tests de ejecutores.
 
 ---
 

@@ -5,6 +5,15 @@
 > [`diagnostico.md`](diagnostico.md).
 >
 > **Fecha:** 2026-07-29 · **Rama:** `tools`
+>
+> **ACTUALIZACIÓN (2026-07-30, rama Rama-Enrique).** Los puntos **1-3** de la
+> propuesta (§6) están implementados: el windowing se retira con sesión activa
+> (y el envío de apertura/reapertura se renderiza del canónico — el bug que este
+> diagnóstico no vio: un stub sembrado en la sesión perpetuaba el bucle),
+> `DEFAULT_TIMEOUT_S` sube a 300 s, y el turno perdido por timeout audita su
+> coste estimado en campos etiquetados (`estimated_input_tokens`,
+> `estimate_basis`). El punto 4 (¿por qué ningún `final`?) queda pendiente de
+> re-medir con el bucle de relectura cerrado.
 
 ---
 

@@ -101,13 +101,39 @@ def test_full_report_is_well_formed_and_persists(wiring) -> None:
         ],
     )
 
-    # Forma: 7 secciones numeradas 1..7, título y autor del perito.
+    # Forma: 8 secciones numeradas 1..8 (con el relato de la investigación como
+    # §5 — 2026-07-30), título y autor del perito.
     assert data["type"] == "pericial"
     assert data["author"] == "Daniel Ramos"
-    assert [s["num"] for s in data["sections"]] == ["1", "2", "3", "4", "5", "6", "7"]
+    assert [s["num"] for s in data["sections"]] == [
+        "1", "2", "3", "4", "5", "6", "7", "8",
+    ]
+
+    # El resumen ejecutivo NARRA (no enumera): anticipa la secuencia de hechos
+    # con el hallazgo fechado y remite al relato (§5) que la desarrolla.
+    resumen = next(s for s in data["sections"] if s["num"] == "1")
+    resumen_texto = " ".join(b.get("text", "") for b in resumen["blocks"])
+    assert "secuencia de hechos" in resumen_texto
+    assert "Volcado de credenciales LSASS" in resumen_texto
+    assert "2026-07-15" in resumen_texto
+    assert "§5" in resumen_texto
+
+    # El relato de la investigación (§5) es la reconstrucción narrativa: la
+    # cronología arranca en el hecho fechado (con su detalle técnico íntegro y
+    # su procedencia) y lo no fechado se narra aparte, sin disfrazarse de
+    # cronología del incidente.
+    relato = next(s for s in data["sections"] if s["num"] == "5")
+    assert relato["title"] == "Relato de la investigación"
+    relato_texto = " ".join(b.get("text", "") for b in relato["blocks"])
+    assert "arranca el 2026-07-15" in relato_texto
+    assert "compatible con dumping" in relato_texto      # el summary viaja íntegro
+    assert "11111111" in relato_texto                    # …con su run de procedencia
+    assert "T1003" in relato_texto                       # …y su encuadre ATT&CK
+    assert "fecha directa en la evidencia" in relato_texto  # carril no fechado
+    assert "Exfiltración por canal C2" in relato_texto
 
     # La sección de hallazgos lleva bloques finding con severidad válida.
-    hallazgos = next(s for s in data["sections"] if s["num"] == "5")
+    hallazgos = next(s for s in data["sections"] if s["num"] == "6")
     findings_blocks = [b for b in hallazgos["blocks"] if b["t"] == "finding"]
     assert len(findings_blocks) == 2
     assert {b["sev"] for b in findings_blocks} == {"critical", "high"}
@@ -122,7 +148,7 @@ def test_full_report_is_well_formed_and_persists(wiring) -> None:
     assert "SHA-256 artefacto: aaaaaaaaaaaa" in lsass["meta"]
 
     # La correlación MITRE lleva una tabla con la técnica dictaminada.
-    mitre = next(s for s in data["sections"] if s["num"] == "6")
+    mitre = next(s for s in data["sections"] if s["num"] == "7")
     table = next(b for b in mitre["blocks"] if b["t"] == "table")
     assert "Hallazgos que la sostienen" in table["headers"]
     flat = [cell for row in table["rows"] for cell in row]
@@ -133,6 +159,14 @@ def test_full_report_is_well_formed_and_persists(wiring) -> None:
     supporting = "\n".join(flat)
     assert f1.id[:8] in supporting
     assert "Volcado de credenciales LSASS" in supporting
+
+    # Las conclusiones CIERRAN el hilo: lo más severo restatado con su soporte y
+    # el dictamen confirmado citando la técnica.
+    conclusiones = next(s for s in data["sections"] if s["num"] == "8")
+    concl_texto = " ".join(b.get("text", "") for b in conclusiones["blocks"])
+    assert "Volcado de credenciales LSASS" in concl_texto
+    assert "T1003" in concl_texto
+    assert "BORRADOR" in concl_texto
 
     # Custodia: aparece el SHA-256 baseline de la evidencia registrada.
     custodia = next(s for s in data["sections"] if s["num"] == "3")
@@ -154,9 +188,11 @@ def test_empty_case_report_is_honest_not_fake(wiring) -> None:
 
     data = _generate(w, case.id)
 
-    # Sigue teniendo las 7 secciones y pasa la validación del store.
-    assert [s["num"] for s in data["sections"]] == ["1", "2", "3", "4", "5", "6", "7"]
-    hallazgos = next(s for s in data["sections"] if s["num"] == "5")
+    # Sigue teniendo las 8 secciones y pasa la validación del store.
+    assert [s["num"] for s in data["sections"]] == [
+        "1", "2", "3", "4", "5", "6", "7", "8",
+    ]
+    hallazgos = next(s for s in data["sections"] if s["num"] == "6")
     # NO fabrica hallazgos: sin bloques finding, y lo dice en prosa.
     assert not any(b["t"] == "finding" for b in hallazgos["blocks"])
     text = " ".join(b.get("text", "") for b in hallazgos["blocks"])
