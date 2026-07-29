@@ -157,6 +157,111 @@ class TskFlsParams(_StrictModel):
     long_format: bool = Field(default=False, description="Long output format.")
 
 
+class TskIcatParams(_StrictModel):
+    """``icat`` — extract a file's raw bytes by TSK metadata address (inode).
+
+    The image is the injected evidence; the extracted bytes land in the run's
+    output as a hashed artifact that a downstream parser can consume.
+    """
+
+    inode: str = Field(
+        max_length=64,
+        pattern=r"^\d+(?:-\d+){0,2}$",
+        description="TSK metadata address from `tsk_fls`, e.g. `13552` or `12-128-4`.",
+    )
+    partition_offset: Optional[int] = Field(
+        default=None, ge=0, description="Partition start offset in sectors (from tsk_mmls)."
+    )
+    filesystem: Optional[
+        Literal[
+            "ntfs", "fat", "fat12", "fat16", "fat32", "ext2", "ext3",
+            "ext4", "hfs", "iso9660", "ufs", "yaffs2",
+        ]
+    ] = Field(default=None, description="Filesystem type if auto-detect fails.")
+    image_format: Optional[Literal["raw", "ewf", "aff", "vmdk", "vhd"]] = Field(
+        default=None, description="Container format of the image."
+    )
+    recover: bool = Field(
+        default=False, description="Best-effort recovery of deleted content (-r)."
+    )
+    slack: bool = Field(default=False, description="Include slack space (-s).")
+
+
+class HashdeepParams(_StrictModel):
+    """``hashdeep`` — multi-algorithm hashing of the evidence or an extracted tree."""
+
+    algorithms: Optional[
+        list[Literal["md5", "sha1", "sha256", "sha512", "tiger", "whirlpool"]]
+    ] = Field(
+        default=None,
+        max_length=6,
+        description="Algorithms to compute. Default ['md5','sha256'].",
+    )
+    recursive: bool = Field(
+        default=False, description="Recurse into directories (-r)."
+    )
+
+
+class ForemostParams(_StrictModel):
+    """``foremost`` — carve files by header/footer signature (evidence injected)."""
+
+    types: Optional[
+        list[
+            Literal[
+                "all", "jpg", "gif", "png", "bmp", "tif", "avi", "exe", "mpg", "wav",
+                "riff", "wmv", "mov", "pdf", "ole", "doc", "zip", "rar", "htm", "cpp",
+            ]
+        ]
+    ] = Field(
+        default=None,
+        max_length=20,
+        description="File types to carve. Default: all.",
+    )
+    quick: bool = Field(
+        default=False, description="Quick mode (-q): scan block boundaries only."
+    )
+
+
+class PlasoLog2TimelineParams(_StrictModel):
+    """``log2timeline.py`` — build a super-timeline (.plaso) from the evidence.
+
+    HEAVY: on a full disk with every parser this runs for hours. Narrow it with
+    ``parsers`` and ``partitions``.
+    """
+
+    partitions: str = Field(
+        default="all",
+        max_length=64,
+        pattern=r"^(all|[0-9p,]+)$",
+        description="Partition selector: 'all' or e.g. '1', '1,3'.",
+    )
+    parsers: Optional[str] = Field(
+        default=None,
+        max_length=256,
+        pattern=r"^[A-Za-z0-9_,!*-]+$",
+        description="Plaso parser/preset filter, e.g. 'win7' or 'winevtx,winreg,prefetch'.",
+    )
+    timezone: Optional[str] = Field(
+        default=None, max_length=64, description="Time zone of the source system."
+    )
+
+
+class PlasoPsortParams(_StrictModel):
+    """``psort.py`` — turn a .plaso storage into a readable timeline.
+
+    ``plaso_path`` is the artifact a previous ``plaso_log2timeline`` run produced,
+    not the evidence — same contract as ``tsk_mactime`` with its body file.
+    """
+
+    plaso_path: ArtifactRef
+    output_format: Literal[
+        "l2tcsv", "dynamic", "json", "json_line", "l2ttln", "tln", "kml", "xlsx", "null"
+    ] = Field(default="l2tcsv", description="Timeline output format.")
+    timezone: Optional[str] = Field(
+        default=None, max_length=64, description="Output time zone."
+    )
+
+
 class TskMactimeParams(_StrictModel):
     """``mactime`` — turn a body file (from `tsk_fls -m`) into a timeline."""
 
@@ -614,6 +719,15 @@ SCHEMA_BY_TOOL: dict[str, type[BaseModel]] = {
     # Conversión de imágenes / volúmenes AFF4 (2026-07-17, extended tier)
     "ftkimager": FtkImagerParams,
     "aff4imager": Aff4ImagerParams,
+    # Extended tier que estaba en el maletín y en la allowlist pero SIN schema, así
+    # que el agente no podía pedirlas (barrido 2026-07-17). `qemu_nbd` queda fuera
+    # DELIBERADAMENTE: es side_effecting (conecta dispositivos de bloque) y no se
+    # expone al agente; se opera a mano desde el maletín.
+    "tsk_icat": TskIcatParams,
+    "hashdeep": HashdeepParams,
+    "foremost": ForemostParams,
+    "plaso_log2timeline": PlasoLog2TimelineParams,
+    "plaso_psort": PlasoPsortParams,
     # EZ Tools absorbidas el 2026-07-07 (extended tier)
     "lecmd": LECmdParams,
     "jlecmd": JLECmdParams,
@@ -639,6 +753,11 @@ __all__ = [
     "MFTECmdParams",
     "FtkImagerParams",
     "Aff4ImagerParams",
+    "TskIcatParams",
+    "HashdeepParams",
+    "ForemostParams",
+    "PlasoLog2TimelineParams",
+    "PlasoPsortParams",
     "LECmdParams",
     "JLECmdParams",
     "RECmdParams",

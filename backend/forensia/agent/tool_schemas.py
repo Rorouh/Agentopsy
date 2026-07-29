@@ -250,6 +250,99 @@ TOOL_PARAM_SCHEMAS: dict[str, dict[str, Any]] = {
         "required": ["plugin"],
         "additionalProperties": False,
     },
+    "plaso_log2timeline": {
+        "type": "object",
+        "properties": {
+            "partitions": {
+                "type": "string",
+                "pattern": "^(all|[0-9p,]+)$",
+                "default": "all",
+                "description": "Partition selector: 'all' (default) or e.g. '1', '1,3'.",
+            },
+            "parsers": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_,!*-]+$",
+                "description": (
+                    "Plaso parser/preset filter (e.g. 'win7', 'linux', "
+                    "'winevtx,winreg,prefetch'). STRONGLY recommended: a full disk with "
+                    "every parser takes hours."
+                ),
+            },
+            "timezone": {
+                "type": "string",
+                "description": "Time zone of the source system, e.g. 'Europe/Madrid'.",
+            },
+        },
+        "additionalProperties": False,
+    },
+    "plaso_psort": {
+        "type": "object",
+        "properties": {
+            "plaso_path": {
+                **artifact_ref_json_schema(),
+                "description": (
+                    "{run_id, relpath} reference to the timeline.plaso produced by a "
+                    "previous plaso_log2timeline run."
+                ),
+            },
+            "output_format": {
+                "type": "string",
+                "enum": [
+                    "l2tcsv", "dynamic", "json", "json_line",
+                    "l2ttln", "tln", "kml", "xlsx", "null",
+                ],
+                "default": "l2tcsv",
+                "description": "Timeline output format (default l2tcsv).",
+            },
+            "timezone": {
+                "type": "string",
+                "description": "Output time zone, e.g. 'Europe/Madrid'.",
+            },
+        },
+        "additionalProperties": False,
+    },
+    "hashdeep": {
+        "type": "object",
+        "properties": {
+            "algorithms": {
+                "type": "array",
+                "items": {
+                    "type": "string",
+                    "enum": ["md5", "sha1", "sha256", "sha512", "tiger", "whirlpool"],
+                },
+                "description": "Hash algorithms to compute (default ['md5','sha256']).",
+            },
+            "recursive": {
+                "type": "boolean",
+                "default": False,
+                "description": "Recurse into directories (-r). Needed for extracted trees.",
+            },
+        },
+        "additionalProperties": False,
+    },
+    "foremost": {
+        "type": "object",
+        "properties": {
+            "types": {
+                "type": "array",
+                "items": {
+                    "type": "string",
+                    "enum": [
+                        "all", "jpg", "gif", "png", "bmp", "tif", "avi", "exe", "mpg",
+                        "wav", "riff", "wmv", "mov", "pdf", "ole", "doc", "zip", "rar",
+                        "htm", "cpp",
+                    ],
+                },
+                "description": "File types to carve (default: all). Narrow it to go faster.",
+            },
+            "quick": {
+                "type": "boolean",
+                "default": False,
+                "description": "Quick mode (-q): scan block boundaries only. Faster, less thorough.",
+            },
+        },
+        "additionalProperties": False,
+    },
     "aff4imager": {
         "type": "object",
         "properties": {
@@ -491,6 +584,10 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "wxtcmd": "Parse a pre-extracted Windows Timeline ActivitiesCache.db (Win10 1803+) into CSV — app/document activity history.",
     "rbcmd": "Parse Recycle Bin $I metadata (directory or single file) into CSV — original path, size and deletion time of recycled files.",
     "ftkimager": "Convert the disk-image evidence between formats — raw (dd) ↔ E01/SMART — with MD5/SHA1 verification and an acquisition report. E.g. produce a TSK-friendly raw copy from an E01, or a compressed E01 from a raw image.",
+    "plaso_log2timeline": "Build a SUPER-TIMELINE (.plaso storage) from the disk evidence — fuses filesystem, EVTX, registry, browser and more into one chronological store. HEAVY: always narrow it with `parsers` (e.g. 'win7', 'winevtx,winreg,prefetch') and `partitions`. Feed the resulting timeline.plaso to plaso_psort.",
+    "plaso_psort": "Post-process a .plaso storage (from plaso_log2timeline) into a readable timeline — CSV by default. Pass the producing run as {run_id, relpath} in plaso_path.",
+    "hashdeep": "Hash a file or a whole extracted tree with several algorithms at once (MD5/SHA-256/…). Use it to cross-check an image against its baseline, or to produce the hash set of extracted artifacts for the report.",
+    "foremost": "Carve files by header/footer signature from unallocated space — recovers deleted files whose metadata is gone. Writes carved files grouped by type plus an audit.txt into the run output.",
     "aff4imager": "List or extract streams from an AFF4 volume (e.g. a WinPmem 3.x RAM acquisition). Call WITHOUT params to list the stream URNs; call again with `stream`=<that URN> to export it into the run output — then feed the exported raw to volatility3 as {run_id, relpath}.",
     "jq": "Filter JSON output from other tools.",
 }

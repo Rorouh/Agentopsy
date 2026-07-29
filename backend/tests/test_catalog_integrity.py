@@ -167,6 +167,48 @@ def test_tool_types_are_consistent() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Alcance real del agente: catálogo → allowlist → schema
+# --------------------------------------------------------------------------- #
+#: Tools del catálogo que a propósito NO se exponen al agente. `qemu_nbd` es
+#: `side_effecting` (conecta dispositivos de bloque): se opera a mano desde el
+#: maletín. Sacar algo de aquí exige darle schema; meterlo, justificarlo.
+_NOT_EXPOSED_TO_AGENT = frozenset({"qemu_nbd"})
+
+
+def test_every_allowed_tool_is_visible_to_the_llm() -> None:
+    """Una tool permitida SIN schema es invisible: `tool_specs` la salta en silencio.
+
+    Ese hueco tenía a plaso, hashdeep y foremost fuera del alcance del agente pese a
+    estar en el maletín y en la allowlist (barrido 2026-07-17). Sin este tripwire, la
+    allowlist derivada del catálogo hace creer que una tool está disponible cuando el
+    LLM ni siquiera la ve.
+    """
+    from forensia.agent.loader import default_allowed_tools
+    from forensia.agent.tool_schemas import tool_specs
+
+    for profile in ("windows", "unix"):
+        allowed = [t for t in default_allowed_tools(profile) if t not in _NOT_EXPOSED_TO_AGENT]
+        visible = {spec["function"]["name"] for spec in tool_specs(allowed)}
+        invisible = sorted(set(allowed) - visible)
+        assert not invisible, (
+            f"[{profile}] permitidas pero SIN schema (el LLM no puede pedirlas): {invisible}"
+        )
+
+
+def test_exposed_tools_have_both_schemas_and_a_description() -> None:
+    """Las dos superficies (agente y MCP) publican el mismo conjunto de tools."""
+    from forensia.agent.tool_schemas import TOOL_DESCRIPTIONS, TOOL_PARAM_SCHEMAS
+    from forensia.mcp.schemas import SCHEMA_BY_TOOL
+
+    for tool in CATALOG:
+        if tool.id in _NOT_EXPOSED_TO_AGENT:
+            continue
+        assert tool.id in TOOL_PARAM_SCHEMAS, f"{tool.id}: sin schema de params (agente)"
+        assert tool.id in TOOL_DESCRIPTIONS, f"{tool.id}: sin descripción para el LLM"
+        assert tool.id in SCHEMA_BY_TOOL, f"{tool.id}: sin schema Pydantic (MCP)"
+
+
+# --------------------------------------------------------------------------- #
 # Volatility3 plugin policy (MCP enum)
 # --------------------------------------------------------------------------- #
 def test_credential_plugins_stay_exposed_to_the_agent() -> None:

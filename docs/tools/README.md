@@ -82,6 +82,15 @@ individual pendiente. 🎯
 
 ---
 
+**Alcance del agente (verificado 2026-07-17).** «Instalada en el maletín» y «el agente
+puede pedirla» son cosas distintas: una tool solo llega al LLM si además tiene **schema**
+(`agent/tool_schemas.py` + `mcp/schemas.py`). Hoy, de las 32 del catálogo, el agente ve
+**30/30 en `windows` y 18/19 en `unix`**; la única excluida es **`qemu_nbd`, y a
+propósito** — es `side_effecting` (conecta dispositivos de bloque), se opera a mano desde
+el maletín. Dos tripwires en `backend/tests/test_catalog_integrity.py` impiden que vuelva
+a colarse una tool permitida pero invisible (le pasaba a plaso, `hashdeep` y `foremost`
+hasta el barrido del 2026-07-17).
+
 **Catálogo completo:** las 32 tools del catálogo están instaladas y operativas (22 con
 ficha individual; las 8 EZ Tools de 2026-07-07 y `ftkimager`/`aff4imager` de 2026-07-17
 validadas en el smoke test del maletín, ficha pendiente). `bstrings` viaja en el maletín
