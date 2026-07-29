@@ -65,7 +65,16 @@ class CodexExecutor(CliPromptExecutor):
     def __init__(self) -> None:
         self._last_message_path: str | None = None
 
-    def _build_argv(self, prompt: str, model: str | None) -> list[str]:
+    def _build_argv(
+        self, prompt: str, model: str | None, session_id: str | None = None
+    ) -> list[str]:
+        # `session_id` is always None here: this executor leaves
+        # `supports_session_resume` at False, so `CliPromptExecutor.run` refuses a
+        # session id before it ever reaches this method. Codex does document a
+        # `codex exec resume`, but its behaviour (id stability, whether the CLI
+        # appends turns of its own, whether it compacts) has NOT been verified
+        # against the real binary, and Agentopsy does not send deltas into a
+        # session it cannot account for — see plan.md Fase 5.
         # self._last_message_path is set per-run in run() below.
         # `--json` and `--output-last-message` are ORTHOGONAL: the final text still
         # goes to the file (text extraction unchanged); `--json` only turns stdout
@@ -144,6 +153,13 @@ class CodexExecutor(CliPromptExecutor):
                 output_tok = _as_int(found_out) if _as_int(found_out) is not None else output_tok
         if input_tok is None and output_tok is None:
             return None
+        # No cache fields ON PURPOSE (2026-07-29). Codex reports a prompt total in
+        # `input_tokens`, with any cached portion a SUBSET of it — unlike Anthropic's
+        # API, where `input_tokens` is only the uncached remainder and the cached
+        # bytes are separate addends. Feeding a cached count into `Usage.cache_*`
+        # here would make `total_input_tokens` double-count the prompt. Leaving them
+        # None keeps `total_input_tokens == input_tokens`, which is the CORRECT total
+        # for this executor. See `Usage.total_input_tokens`.
         return Usage(input_tokens=input_tok, output_tokens=output_tok, source="codex.json")
 
     def run(self, prompt: str, context: dict[str, Any] | None = None) -> ExecutorResult:

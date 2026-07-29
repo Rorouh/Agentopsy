@@ -1,9 +1,17 @@
 # Plan de corrección del consumo de tokens
 
 > **Entrega 2 de 2.** Depende del [`diagnostico.md`](diagnostico.md), que aporta
-> las mediciones. **Aquí no se ha implementado nada**: es la propuesta a aprobar.
+> las mediciones.
 >
 > **Fecha:** 2026-07-29 · **Rama:** `tools`
+
+> **ESTADO (2026-07-29).** Las **Fases 0-2 están aprobadas e implementadas**;
+> lo ejecutado, las mediciones y los dos hallazgos que aparecieron por el camino
+> están en [`implementacion-fases-0-2.md`](implementacion-fases-0-2.md)
+> (validación A/B: **−79,1 %**). Las **Fases 3 y 4 NO se han implementado** por
+> decisión explícita, y la [fase de turnos](fase-turnos.md) se entrega
+> **diagnosticada y sin implementar**. Las secciones que siguen conservan la
+> propuesta original; donde una medición posterior la corrige, hay una nota.
 
 ---
 
@@ -171,6 +179,15 @@ contrato se repite al final o se ancla en SISTEMA.
 
 ## Fase 3 — Retirar el windowing cuando hay sesión
 
+> **NOTA (2026-07-29, tras medir).** Esta fase estaba infravalorada. El
+> diagnóstico de [`fase-turnos.md`](fase-turnos.md) demuestra que el windowing no
+> solo rompe la caché: **fabrica turnos**. 32 de las 71 llamadas de la corrida
+> fueron `leer_artefacto` y **las 32 apuntaban a un resultado que la ventana
+> había elidido** (uno se releyó 16 veces). 12 de 21 turnos productivos no
+> hicieron otra cosa que releer: ≈ 414.000 tokens, el 42 % de la entrada. El
+> ahorro estimado abajo (5-10 %) es, por tanto, **muy bajo**. Sigue sin
+> implementar a la espera de decisión.
+
 Con la Fase 1 dentro, `window_messages()` deja de tener sentido: reescribe el
 historial en cada turno, que es precisamente lo que rompe el prefijo
 (diagnóstico §4/H2). Con sesión reanudada, cada resultado cruza el cable **una
@@ -200,6 +217,14 @@ que lo descarto.**
 ---
 
 ## Fase 4 — Recortar el andamiaje del ejecutor (hipótesis, sin medir)
+
+> **NOTA (2026-07-29, tras medir el coste aislado).** El andamiaje es MAYOR de lo
+> que decía esta sección: `--disallowed-tools` quita **7.114** tokens y
+> `--system-prompt` otros **6.602** (13.716, el 50,6 % de un arranque en frío),
+> no 6.733. Además apareció un tercer componente que no es de esta fase: **8.870
+> tokens por llamada del propio `CLAUDE.md` de Agentopsy**, heredados por el
+> directorio de trabajo del subproceso. Sigue **sin implementar**: el criterio
+> que el encargo puso por delante —¿analiza igual de bien?— no está medido.
 
 Cada `claude -p` arrastra **6.733 tokens** de system prompt y esquemas de
 herramienta **propios de Claude Code** (Read, Bash, Grep, Task…), que Agentopsy

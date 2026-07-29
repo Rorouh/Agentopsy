@@ -22,6 +22,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from forensia.executors.base import PromptExecutor
+from forensia.executors.cache_health import CacheHealthMonitor
+from forensia.executors.session_guard import verify_session
 
 
 @dataclass(frozen=True)
@@ -76,6 +78,12 @@ Action = ToolCall | ToolBatch | FinalAnswer
 class ModelBackend(ABC):
     name: str
 
+    #: Whether this backend can continue a conversation instead of re-sending it,
+    #: and therefore wants the canonical append-only message list alongside the
+    #: windowed one. False by default: a backend says so explicitly or the loop
+    #: keeps the pre-2026-07-29 behaviour (RULE 2 — no capability is assumed).
+    supports_session_transport: bool = False
+
     @abstractmethod
     def capabilities(self) -> ModelCapabilities: ...
 
@@ -125,6 +133,28 @@ class ExecutorBackend(ModelBackend):
         self.name = executor.id
         self.model_name = executor.name
         self.run_context = dict(run_context or {})
+        # ---- session transport state (plan.md Fase 1) ------------------------
+        #: The executor's conversation id once one exists. None → every turn
+        #: sends full context, which is the pre-2026-07-29 behaviour.
+        self._session_id: str | None = None
+        #: Prompts Agentopsy has itself put into that session. Checked against the
+        #: session transcript before any delta is sent (``session_guard``).
+        self._prompts_sent = 0
+        #: How many canonical messages the session already holds.
+        self._delivered = 0
+        #: ``num_turns`` the last envelope reported — the CLI-added-turns check.
+        self._last_num_turns: int | None = None
+        self._turn = 0
+        #: Cost-side watchdog. Separate from the guard above on purpose: a cold
+        #: cache is a billing problem, a diverged session is a forensic one.
+        self.cache_monitor = CacheHealthMonitor()
+        #: Actionable notices for the caller to log and audit (never raised: a
+        #: cache regression must not abort an analysis that is producing findings).
+        self.notices: list[str] = []
+
+    @property
+    def supports_session_transport(self) -> bool:  # type: ignore[override]
+        return bool(self.executor.supports_session_resume)
 
     def capabilities(self) -> ModelCapabilities:
         return ModelCapabilities(
@@ -145,42 +175,166 @@ class ExecutorBackend(ModelBackend):
         if "temperature" not in context and state.get("temperature") is not None:
             context["temperature"] = state["temperature"]
 
-        prompt = self._render_prompt(messages, tools)
+        self._turn += 1
+        # The canonical (append-only) conversation, already through the loop's
+        # single egress point. Only present when the executor can continue a
+        # session; the delta path needs an append-only list, because re-sending a
+        # windowed STUB of a message the session already holds verbatim would
+        # contradict what the model has.
+        canonical = state.get("messages_full")
+        canonical = canonical if isinstance(canonical, list) and canonical else None
+
+        prompt, resumed, reopen_reason = self._plan_transport(messages, tools, canonical)
+        if resumed:
+            context["session_id"] = self._session_id
+        elif reopen_reason:
+            context["reopen_reason"] = reopen_reason
+
         result = self.executor.run(prompt, context)
+        self._absorb(result, resumed=resumed, delivered=len(canonical) if canonical else 0)
         return self._parse_action(result.text)
+
+    # ---- session transport --------------------------------------------------
+
+    def _plan_transport(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        canonical: list[dict[str, Any]] | None,
+    ) -> tuple[str, bool, str | None]:
+        """Choose between a delta into the live session and full context.
+
+        Returns ``(prompt, resumed, reopen_reason)``. The delta is chosen ONLY
+        when ``session_guard`` can positively account for the session; every
+        other outcome — including "cannot verify" — sends full context and
+        carries the reason into the audit. Sending MORE than needed is the only
+        direction this fallback is ever allowed to take (RULE 2).
+        """
+        if not (self.executor.supports_session_resume and self._session_id and canonical):
+            return self._render_prompt(messages, tools), False, None
+
+        verdict = verify_session(
+            self._session_id,
+            expected_prompts=self._prompts_sent,
+            num_turns=self._last_num_turns,
+        )
+        if not verdict.can_send_delta:
+            self._reset_session()
+            return self._render_prompt(messages, tools), False, verdict.reason
+
+        pending = canonical[self._delivered:]
+        if not pending:
+            # Nothing new to say. Re-opening with full context would be cheaper
+            # to reason about than inventing a filler turn, and it cannot happen
+            # in the normal loop (every iteration appends at least one message).
+            self._reset_session()
+            return self._render_prompt(messages, tools), False, (
+                "No hay mensajes nuevos que enviar como delta; se reenvía el "
+                "contexto completo."
+            )
+        return self._render_delta(pending), True, None
+
+    def _absorb(self, result: Any, *, resumed: bool, delivered: int) -> None:
+        """Fold one executor result into the session state and cache watchdog."""
+        self._last_num_turns = getattr(result, "num_turns", None)
+        session_id = getattr(result, "session_id", None)
+        if session_id:
+            if resumed and session_id == self._session_id:
+                self._prompts_sent += 1
+            else:
+                # A fresh session (turn 1, or a reopen). Its history is exactly
+                # the one prompt we just sent.
+                self._session_id = session_id
+                self._prompts_sent = 1
+            self._delivered = delivered
+        else:
+            self._reset_session()
+
+        warning = self.cache_monitor.observe(
+            getattr(result, "usage", None), session_active=resumed, turn=self._turn
+        )
+        if warning:
+            self.notices.append(warning)
+
+    def _reset_session(self) -> None:
+        self._session_id = None
+        self._prompts_sent = 0
+        self._delivered = 0
 
     # ---- degraded path internals -------------------------------------------
 
     @staticmethod
+    def _render_message(msg: dict[str, Any]) -> str:
+        role = msg.get("role")
+        content = msg.get("content")
+        if role == "system":
+            return f"## SISTEMA\n{content}"
+        if role == "user":
+            return f"## USUARIO\n{content}"
+        if role == "assistant":
+            rendered = content if isinstance(content, str) and content else json.dumps(
+                {"tool_calls": msg.get("tool_calls")}, ensure_ascii=False
+            )
+            return f"## ASISTENTE (tu turno previo)\n{rendered}"
+        if role == "tool":
+            call_id = msg.get("tool_call_id", "")
+            return f"## RESULTADO DE TOOL (call {call_id})\n{content}"
+        raise ValueError(f"unsupported message role in state: {role!r}")
+
+    @staticmethod
     def _render_prompt(messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> str:
-        blocks: list[str] = []
+        """Full context: everything the model needs, ordered for prefix caching.
+
+        Block order is deliberate (plan.md Fase 2). A prompt cache matches on a
+        PREFIX, so anything placed after a block that changes between turns can
+        never be reused. The tool schemas are ~39,5 K characters that are
+        byte-identical every turn, and they used to sit AFTER the growing
+        transcript — which meant they were re-charged in full on every iteration
+        and could never enter a reusable prefix
+        (``docs/diseno/tokens-2026-07/diagnostico.md`` §4/H2).
+
+            before:  SISTEMA │ transcript (variable) │ ESQUEMAS │ contrato
+            now:     SISTEMA │ ESQUEMAS │ transcript (variable) │ contrato
+
+        The response contract stays LAST on purpose: it is what holds
+        ``_parse_action``'s strict JSON envelope together, and a parse failure
+        costs a whole retry turn — far more than the ~1 K characters of keeping
+        it at the end. Only the stable blocks moved up.
+        """
+        system_blocks: list[str] = []
+        conversation: list[str] = []
         for msg in messages:
-            role = msg.get("role")
-            content = msg.get("content")
-            if role == "system":
-                blocks.append(f"## SISTEMA\n{content}")
-            elif role == "user":
-                blocks.append(f"## USUARIO\n{content}")
-            elif role == "assistant":
-                rendered = content if isinstance(content, str) and content else json.dumps(
-                    {"tool_calls": msg.get("tool_calls")}, ensure_ascii=False
-                )
-                blocks.append(f"## ASISTENTE (tu turno previo)\n{rendered}")
-            elif role == "tool":
-                call_id = msg.get("tool_call_id", "")
-                blocks.append(f"## RESULTADO DE TOOL (call {call_id})\n{content}")
-            else:
-                raise ValueError(f"unsupported message role in state: {role!r}")
+            rendered = ExecutorBackend._render_message(msg)
+            (system_blocks if msg.get("role") == "system" else conversation).append(rendered)
 
         # Compact separators, not indent=2: the tool specs are re-serialized and
-        # re-sent on EVERY iteration (the executor is stateless — Bug 008). The
+        # re-sent on EVERY iteration when there is no session to continue. The
         # pretty-print whitespace is ~4.7 KB (~1.2 K tokens) of pure indentation
         # the model does not need. Lossless: identical JSON, fewer bytes on the
         # wire, provider-agnostic.
         specs = json.dumps(tools, ensure_ascii=False, separators=(",", ":"))
-        blocks.append(
-            "## HERRAMIENTAS DISPONIBLES (especificación function-calling)\n" + specs
-        )
+        blocks = [
+            *system_blocks,
+            "## HERRAMIENTAS DISPONIBLES (especificación function-calling)\n" + specs,
+            *conversation,
+            _RESPONSE_CONTRACT,
+        ]
+        return "\n\n".join(blocks)
+
+    @staticmethod
+    def _render_delta(pending: list[dict[str, Any]]) -> str:
+        """Only what the session does not have yet, plus the response contract.
+
+        The system prompt and the tool schemas are deliberately absent: they are
+        already in the session the executor is resuming, and re-sending them
+        would be the very cost this transport exists to remove. The contract is
+        repeated because it governs THIS reply's format and is cheap.
+
+        This prompt is what the audit records literally, with ``resume: true``
+        and the session id beside it, so the run stays reconstructible turn by
+        turn: opening prompt + deltas (FORENSIC INVARIANT 4).
+        """
+        blocks = [ExecutorBackend._render_message(msg) for msg in pending]
         blocks.append(_RESPONSE_CONTRACT)
         return "\n\n".join(blocks)
 

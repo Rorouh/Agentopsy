@@ -444,7 +444,25 @@ class ForensicAgent:
                     message_count=len(outbound),
                     iteration=iteration,
                 )
-            egress_state = {**state, "messages": outbound}
+            # An executor that can CONTINUE its own conversation is sent only the
+            # delta (plan.md Fase 1). That path needs the canonical, append-only
+            # list — a windowed stub would contradict the verbatim message the
+            # session already holds — but it must cross the SAME single egress
+            # point, so it is redacted with the same patterns (F1). The backend
+            # decides which of the two it actually sends, and only after
+            # `session_guard` can account for the session.
+            outbound_full = None
+            if getattr(self.model, "supports_session_transport", False):
+                outbound_full = (
+                    redact_messages(
+                        messages,
+                        self.package.policy.redaction_patterns,
+                        protected=protected_ids,
+                    )
+                    if is_cloud
+                    else list(messages)
+                )
+            egress_state = {**state, "messages": outbound, "messages_full": outbound_full}
             try:
                 action = self.model.next_action(egress_state, specs)
             except Exception as exc:  # noqa: BLE001 — surface as friendly reply
@@ -458,6 +476,27 @@ class ForensicAgent:
                     iterations=iteration,
                     tool_calls=tool_calls_log,
                 )
+
+            # The prompt-cache watchdog (plan.md Fase 0). The whole saving of the
+            # session transport depends on where the CLI puts its cache
+            # breakpoints — an internal detail a version bump can move silently,
+            # whose only symptom is a 3-4× bill. Surfacing it in the log AND the
+            # hash-chained audit is how the system notices its own regression
+            # instead of us finding it on the invoice. Never fatal: a cold cache
+            # costs money, it does not corrupt the analysis.
+            for notice in getattr(self.model, "notices", []) or []:
+                logger.warning("cache regression: %s", notice)
+                self._audit_event(
+                    "executor_cache_regression",
+                    case_id=case_id,
+                    evidence_id=evidence_id,
+                    backend=self.model.name,
+                    model_name=model_name,
+                    iteration=iteration + 1,
+                    detail=notice,
+                )
+            if getattr(self.model, "notices", None):
+                self.model.notices.clear()
 
             if isinstance(action, FinalAnswer):
                 emit({"type": "final", "iteration": iteration + 1, "text": action.text})

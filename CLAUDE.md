@@ -432,6 +432,56 @@ SYNTHESIS from findings is still not implemented, so `MitreTechniqueMatch[]` wit
 dismantled: `desktop/`, `docker/agent/`, `vendor/`, the PyInstaller spec and the
 release workflow are gone (2026-07-02) — nothing ships outside the compose.
 
+**Token cost — session transport and cache accounting (2026-07-29,
+`docs/diseno/tokens-2026-07/`)**: a 22-turn run cost **12,97 USD** because every
+iteration cold-started `claude -p` with the whole transcript: 60.513 characters
+byte-identical each turn, `cache_read` pinned while ~28.000 tokens were rewritten
+**at the 1-hour-TTL write rate (2×)** — Agentopsy paid a 100 % premium on a cache
+it never read. Fixed in three approved phases (`diagnostico.md` → `plan.md` →
+`implementacion-fases-0-2.md`). **Fase 0**: `Usage` gains
+`cache_creation_input_tokens` / `cache_read_input_tokens` / `total_input_tokens`
+(`input_tokens` alone is only the UNCACHED remainder — reading it as the prompt
+understated the real input ~15× and was the bug behind `estimate.py`'s
+pre-flight figure, now recalibrated `HEUR_TOKENS_PER_ITER` 5.000 → 50.000 against
+the measured run); `executor_cost` builds `total_tokens` on the real total while
+pre-2026-07-29 events keep their meaning; a permanent watchdog
+(`forensia.executors.cache_health`) warns in the log AND the audit
+(`executor_cache_regression`) when `cache_read` stops growing for ≥3 turns on a
+reused session — the CLI's cache breakpoints are an internal detail a version
+bump can move silently. **Fase 1**: `ClaudeCodeExecutor` declares
+`supports_session_resume` (verified against the real CLI: `--resume` keeps the
+SAME session id, does not re-send the system prompt, and satisfies
+`cache_read(N+1) = cache_read(N) + cache_creation(N)` exactly); `ExecutorBackend`
+then sends only the DELTA — but **only when `forensia.executors.session_guard`
+can ACCOUNT for the session**: `num_turns == 1` (measured: one call with a tool
+enabled reported 3 and left `tool_use`/`tool_result` rows Agentopsy never wrote),
+no `compact_boundary` in the on-disk transcript (compaction replaces history with
+a model-generated summary that can drop a `run_id` or a SHA-256 and break a
+Finding's provenance), and a transcript holding exactly what Agentopsy wrote.
+Unverifiable is treated like diverged — full context, `reopen_reason` in the
+audit; there is no "assume it went well" branch (RULE 2: the only fallback is of
+CONTENT, sending more, never less). The audit ADDS `resume`, `resumed_session_id`,
+`session_id` and `num_turns` (FORENSIC INVARIANT 4 untouched — the literal argv
+stays). **Fase 2**: `_render_prompt` moves the stable blocks ahead of the growing
+transcript (`SISTEMA │ ESQUEMAS │ tránscrito │ contrato`) so the ~39,5 K
+characters of schemas can enter a cacheable prefix, with the response contract
+still LAST (it is what holds `_parse_action` strict). Measured A/B through the
+real code: **0,5491 → 0,1150 USD, −79,1 %**, `cache_read` growing 38.133 →
+48.500, `cache_creation` collapsed to ~1.500. Counter-intuitive but important:
+input TOKENS rise 13,5 % while cost falls 79 % (the session keeps the full
+history, but reads it at 0,1× instead of rewriting at 2×) — **counting tokens no
+longer measures cost**. Fases 3-4 and the turn-count phase are **measured and NOT
+implemented** by decision: `fase-turnos.md` shows windowing does not merely break
+the cache but **manufactures turns** (32 of 71 calls were `leer_artefacto` and
+all 32 targeted a result the window had elided; one artifact was re-read 16
+times; 12 of 21 productive turns did nothing else ≈ 42 % of the run's input), and
+that the run never emitted a `final`. Two unplanned findings, both documented and
+NOT acted on: the CLI's own harness is 13.716 tokens (`--disallowed-tools` 7.114
++ `--system-prompt` 6.602), and **Agentopsy injects its own `CLAUDE.md` into
+every executor call** (8.870 tokens/turn) because `subprocess.run` inherits the
+working directory — which also contradicts the contract that `agentes/agent.md`
+is the ONE behavioural file the agent reads.
+
 **Agent analysis hardening (2026-07-15)**: the loop now forces the agent to
 `record_finding` HOT (a strict prompt rule + a **structural nudge** in
 `agent.py`: after ≥3 catalog tools with no finding, a reminder is injected) so a

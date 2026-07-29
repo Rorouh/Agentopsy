@@ -103,9 +103,15 @@ def test_negative_or_bool_token_values_are_rejected() -> None:
 
 
 def test_as_audit_fields_only_emits_present_data() -> None:
+    # `total_input_tokens` joined the event on 2026-07-29: on a cache-aware
+    # executor `input_tokens` is only the UNCACHED remainder, so the real prompt
+    # size has to be audited explicitly. With no cache datum reported it equals
+    # `input_tokens`, which is the correct total for that executor.
     assert Usage(input_tokens=10, source="s").as_audit_fields() == {
-        "input_tokens": 10, "usage_source": "s",
+        "input_tokens": 10, "total_input_tokens": 10, "usage_source": "s",
     }
+    # Nothing reported → nothing emitted: a real zero stays distinguishable from
+    # "the executor did not report it" (RULE 2).
     assert Usage().as_audit_fields() == {}
 
 

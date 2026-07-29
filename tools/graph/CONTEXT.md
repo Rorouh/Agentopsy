@@ -82,6 +82,21 @@ replay de chat `build_replay_messages()`.
 `executor_models`. **Selección explícita del operador, sin default** (RULE 2); sin
 API keys en el repo (RULE 7).
 
+**Transporte por sesión y contabilidad de caché** (2026-07-29,
+`docs/diseno/tokens-2026-07/`) — `Usage` lleva el desglose de caché y
+`total_input_tokens` (**`input_tokens` es SOLO el resto no cacheado**, no el
+prompt); `supports_session_resume` es opt-in por ejecutor (hoy solo Claude Code,
+verificado contra el binario real) y habilita el envío por DELTA en
+`ExecutorBackend` (`_render_delta`), que **solo sale si `session_guard` puede dar
+cuenta de la sesión** —`num_turns == 1`, sin `compact_boundary`, transcripción en
+disco == lo que Agentopsy escribió—; lo no verificable se trata como divergido
+(contexto completo + `reopen_reason` auditado, RULE 2). `cache_health`
+(`CacheHealthMonitor`) es el vigía de COSTE, separado a propósito del guardia de
+CONTENIDO: avisa (log + audit `executor_cache_regression`) cuando `cache_read`
+deja de crecer ≥3 turnos con sesión activa. `_render_prompt` ordena
+`SISTEMA │ ESQUEMAS │ tránscrito │ contrato` (prefijo estable delante; el contrato
+sigue al final porque sostiene `_parse_action`).
+
 **Toolkit** — `catalog` (`by_tier` / `for_profile`, `Tool` de enum cerrada y contrato
 central `PathParameter`); `forensia.path_policy` (roles `EVIDENCE_INPUT`, `CASE_INPUT`,
 `DERIVED_INPUT`, `RUN_OUTPUT`, `BUNDLED_RULESET`, `RUNTIME_DEVICE`, canonicalización y

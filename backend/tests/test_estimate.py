@@ -157,3 +157,61 @@ def test_evidence_size_is_included_when_evidence_given(tmp_path, monkeypatch) ->
     assert est["evidence_id"] == "ev1"
     assert est["evidence_size_bytes"] == 2_147_483_648
     assert est["evidence_size_human"]
+
+
+# ── corrección del anclaje en tokens (2026-07-29) ────────────────────────────
+
+
+def test_estimate_anchors_on_the_real_prompt_not_the_uncached_remainder(
+    tmp_path, monkeypatch
+) -> None:
+    """El bug que este test fija.
+
+    En un ejecutor con caché de prompt, `input_tokens` es SOLO el resto no
+    cacheado: el prompt real es `input_tokens + cache_creation + cache_read`.
+    Anclar la estimación en `input_tokens` la dejaba ~15× por debajo de lo que
+    el perito iba a pagar de verdad (docs/diseno/tokens-2026-07/diagnostico.md
+    §1.1). Con una entrada real de 34.500 tokens de los que solo 10 quedan sin
+    cachear, la estimación tiene que hablar de 34.500, no de 10.
+    """
+    cases = _patch_cases(monkeypatch, tmp_path)
+    case = cases.create(name="c", examiner="e", os_profile="windows")
+    audit = AuditLog(cases.case_dir(case.id) / "audit.jsonl")
+    audit.append(
+        _finish(
+            "claude-code",
+            input_tokens=10,
+            cache_creation_input_tokens=28_000,
+            cache_read_input_tokens=6_490,
+            total_input_tokens=34_500,
+            output_tokens=1_500,
+        )
+    )
+
+    est = estimate_analysis(case_id=case.id, executor_id="claude-code")
+
+    assert est["tokens"]["basis"] == "history"
+    assert est["tokens"]["per_iteration"] == 36_000  # 34.500 entrada + 1.500 salida
+    assert est["tokens"]["min"] == ITER_MIN * 36_000
+
+
+def test_legacy_audit_events_keep_their_meaning(tmp_path, monkeypatch) -> None:
+    """El log es append-only: los eventos escritos antes del 2026-07-29 no traen
+    campos de caché y deben seguir contando exactamente lo que contaban."""
+    cases = _patch_cases(monkeypatch, tmp_path)
+    case = cases.create(name="c", examiner="e", os_profile="windows")
+    audit = AuditLog(cases.case_dir(case.id) / "audit.jsonl")
+    audit.append(_finish("claude-code", input_tokens=800, output_tokens=200))
+
+    est = estimate_analysis(case_id=case.id, executor_id="claude-code")
+
+    assert est["tokens"]["basis"] == "history"
+    assert est["tokens"]["per_iteration"] == 1_000
+
+
+def test_heuristic_is_calibrated_against_a_measured_run() -> None:
+    """La heurística anterior (5.000) era un supuesto sin medir, un orden de
+    magnitud por debajo de la corrida real de 22 iteraciones que la recalibró.
+    Este test fija que no vuelva a bajar a la escala equivocada."""
+    assert HEUR_TOKENS_PER_ITER == 50_000
+    assert estimate_mod.INPUT_FRACTION_DEFAULT == 0.89

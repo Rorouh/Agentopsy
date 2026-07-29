@@ -222,6 +222,10 @@ class OllamaExecutor(PromptExecutor):
         # /api/generate with stream:false returns prompt_eval_count (input) and
         # eval_count (output) — stable, documented fields. Ollama is local so
         # there is no cost_usd. Missing → None (Bug 008 Nivel 0).
+        # No cache fields: Ollama bills nothing and has no prompt-cache tier, so
+        # prompt_eval_count IS the whole prompt and `total_input_tokens` resolves
+        # to it correctly. Here the prefix-reuse work of
+        # docs/diseno/tokens-2026-07/ buys context window and latency, not money.
         if not isinstance(envelope, dict):
             return None
         u = Usage(

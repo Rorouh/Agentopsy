@@ -94,7 +94,15 @@ class GeminiExecutor(CliPromptExecutor):
             ),
         )
 
-    def _build_argv(self, prompt: str, model: str | None) -> list[str]:
+    def _build_argv(
+        self, prompt: str, model: str | None, session_id: str | None = None
+    ) -> list[str]:
+        # `session_id` is always None here: this executor leaves
+        # `supports_session_resume` at False, so `CliPromptExecutor.run` refuses a
+        # session id before it ever reaches this method. Gemini CLI's
+        # checkpointing has not been verified against the real binary, and
+        # Agentopsy does not send deltas into a session it cannot account for —
+        # see plan.md Fase 5.
         argv = ["gemini", "-p", prompt]
         if model:
             # `-m/--model` — verified in `gemini --help`. Uses the OAuth session,
@@ -142,6 +150,13 @@ class GeminiExecutor(CliPromptExecutor):
         candidates = _find_key(scope, "candidatesTokenCount")
         if prompt is None and candidates is None:
             return None
+        # No cache fields ON PURPOSE (2026-07-29). In the GenAI usageMetadata
+        # contract `promptTokenCount` is the FULL prompt and `cachedContentTokenCount`
+        # is a subset of it — the opposite convention to Anthropic's, where
+        # `input_tokens` excludes the cached bytes and they are separate addends.
+        # Mapping the cached count onto `Usage.cache_*` would therefore make
+        # `total_input_tokens` double-count. Left None so `total_input_tokens`
+        # resolves to `promptTokenCount`, the correct total here.
         u = Usage(
             input_tokens=_as_int(prompt),
             output_tokens=_as_int(candidates),

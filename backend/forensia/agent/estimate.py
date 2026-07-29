@@ -51,9 +51,24 @@ ITER_MIN = 4
 ITER_MAX = 10
 
 #: Tokens (input + output combined) the executor bills PER loop iteration when we
-#: have no history to anchor on. ~4k of prompt/context replayed each turn + ~1k
-#: of model output is the working assumption.
-HEUR_TOKENS_PER_ITER = 5000
+#: have no history to anchor on.
+#:
+#: CALIBRATED 2026-07-29 against a real 22-iteration run (case fe00dad1, executor
+#: claude-code, model opus): 992.152 input + 121.594 output = 1.113.746 tokens,
+#: i.e. **50.625 per iteration**. The previous value (5.000, an unmeasured working
+#: assumption) was an order of magnitude low, because it was reasoning about
+#: ``input_tokens`` — which on a cache-aware executor is only the uncached
+#: remainder, not the prompt. Full derivation and the per-turn table:
+#: ``docs/diseno/tokens-2026-07/diagnostico.md`` §1-§2.
+#:
+#: This figure describes the FULL-CONTEXT regime: every turn resends the whole
+#: prompt. That is still the regime for the turn-1 call, for the recovery path when
+#: a session cannot be verified, and for the three executors that do not yet reuse
+#: a session (Fase 5). A run that sustains session reuse measures materially lower,
+#: so this constant is deliberately the CONSERVATIVE end — and it only ever applies
+#: when the case has no history for the executor, which supersedes it as soon as
+#: one real run exists.
+HEUR_TOKENS_PER_ITER = 50_000
 
 #: Wall-clock seconds PER iteration when we have no history. Dominated by the
 #: forensic tool runtime inside the maletín, NOT the model latency — a full disk
@@ -64,7 +79,11 @@ HEUR_SECONDS_PER_ITER = 25.0
 #: When we must split a combined token count into input/output for costing and
 #: history didn't report the split, assume this fraction is input (context replay
 #: dominates, so most tokens are input).
-INPUT_FRACTION_DEFAULT = 0.8
+#:
+#: CALIBRATED 2026-07-29 on the same run: 992.152 of 1.113.746 tokens were input
+#: = 0,891. The previous 0,8 was a guess in the right direction but understated how
+#: input-heavy the loop is.
+INPUT_FRACTION_DEFAULT = 0.89
 
 
 @dataclass(frozen=True)
@@ -181,7 +200,13 @@ def _estimate_tokens(history: dict[str, Any] | None) -> dict[str, Any]:
     Anchored on the case's real average tokens-per-run for this executor when the
     history reported any (``runs_with_tokens`` > 0); otherwise the documented
     heuristic. The range is driven purely by the iteration uncertainty — we do
-    NOT invent a second spread factor on top (that would fake precision)."""
+    NOT invent a second spread factor on top (that would fake precision).
+
+    ``history['total_tokens']`` is the REAL billed total: since 2026-07-29
+    ``executor_cost`` builds it on ``total_input_tokens`` (uncached remainder +
+    cache writes + cache reads) instead of on ``input_tokens`` alone. Anchoring on
+    the latter is what made this estimate understate the cost by ~15× on a
+    cache-aware executor (``docs/diseno/tokens-2026-07/diagnostico.md`` §1.1)."""
     if history and history.get("runs_with_tokens", 0) > 0:
         per_iter = round(history["total_tokens"] / history["runs_with_tokens"])
         basis = "history"

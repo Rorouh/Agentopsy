@@ -98,6 +98,17 @@ class Usage:
     Every field is optional: an executor whose envelope does not carry a datum
     reports ``None`` for it — never a fabricated or estimated value (RULE 2). The
     audit event only persists the fields that are actually present.
+
+    **``input_tokens`` is NOT the size of the prompt.** On a cache-aware API it
+    is only the UNCACHED REMAINDER; the bytes served from cache are billed
+    separately under ``cache_read_input_tokens`` (0.1× base) and the bytes
+    written into the cache under ``cache_creation_input_tokens`` (1.25× at the
+    5-minute TTL, **2× at the 1-hour TTL** — the one Claude Code uses, verified
+    2026-07-29: the envelope reports ``cache_creation.ephemeral_1h_input_tokens``).
+    The real prompt is ``total_input_tokens``. Reading ``input_tokens`` as "what
+    the prompt cost" understated Agentopsy's real input by ~15× and was the bug
+    behind ``estimate.py``'s wrong pre-flight figure
+    (``docs/diseno/tokens-2026-07/diagnostico.md`` §1.1).
     """
     input_tokens: int | None = None
     output_tokens: int | None = None
@@ -105,14 +116,50 @@ class Usage:
     #: How the numbers were obtained (e.g. "claude_code.usage", "ollama.eval_count").
     #: Lets a reviewer tell a real 0 from "the executor didn't report it".
     source: str | None = None
+    #: Prompt bytes WRITTEN into the prompt cache this turn (billed above base rate).
+    cache_creation_input_tokens: int | None = None
+    #: Prompt bytes SERVED from the prompt cache this turn (billed at ~0.1× base).
+    #: A value that does not grow turn after turn on a reused session means the
+    #: cache is not being hit — see ``forensia.executors.cache_health``.
+    cache_read_input_tokens: int | None = None
+
+    @property
+    def total_input_tokens(self) -> int | None:
+        """The REAL prompt size: uncached remainder + cache writes + cache reads.
+
+        ``None`` when the executor reported no input-side datum at all, so a
+        caller can still tell "not reported" from a real zero (RULE 2). An
+        executor that reports only ``input_tokens`` (no cache accounting) yields
+        exactly ``input_tokens`` — the pre-cache behaviour, unchanged.
+        """
+        parts = [
+            self.input_tokens,
+            self.cache_creation_input_tokens,
+            self.cache_read_input_tokens,
+        ]
+        if all(p is None for p in parts):
+            return None
+        return sum(p for p in parts if p is not None)
 
     def as_audit_fields(self) -> dict[str, Any]:
-        """The subset actually present — flat keys for the audit event."""
+        """The subset actually present — flat keys for the audit event.
+
+        Purely ADDITIVE with respect to the pre-2026-07-29 event shape: the
+        existing keys keep their meaning and position, the cache keys join them
+        (FORENSIC INVARIANT 4 — this change never removes what is audited).
+        """
         out: dict[str, Any] = {}
         if self.input_tokens is not None:
             out["input_tokens"] = self.input_tokens
         if self.output_tokens is not None:
             out["output_tokens"] = self.output_tokens
+        if self.cache_creation_input_tokens is not None:
+            out["cache_creation_input_tokens"] = self.cache_creation_input_tokens
+        if self.cache_read_input_tokens is not None:
+            out["cache_read_input_tokens"] = self.cache_read_input_tokens
+        total = self.total_input_tokens
+        if total is not None:
+            out["total_input_tokens"] = total
         if self.cost_usd is not None:
             out["cost_usd"] = self.cost_usd
         if out and self.source:
@@ -129,6 +176,13 @@ class ExecutorResult:
     duration_ms: int
     raw: str                       # raw stdout / HTTP body the text was extracted from
     usage: Usage | None = None     # token/cost accounting when the envelope carries it
+    #: The executor's own conversation id, when it keeps one and reports it.
+    #: ``None`` means "no session to reuse" and the caller must send full context.
+    session_id: str | None = None
+    #: Turns the executor put into its session for THIS call. Agentopsy authors
+    #: exactly one; anything else means the session holds turns Agentopsy did not
+    #: write (see ``forensia.executors.session_guard``).
+    num_turns: int | None = None
 
 
 class PromptExecutor(ABC):
@@ -138,6 +192,15 @@ class PromptExecutor(ABC):
     id: str            # closed-enum id the API accepts
     name: str          # human-readable label for the UI
     is_local: bool     # True only for Ollama — the 100% local option
+
+    #: Whether this executor can CONTINUE a previous conversation instead of
+    #: re-sending the whole transcript. Opt-in per executor and verified against
+    #: the real CLI before being set — never assumed from the presence of a flag
+    #: in ``--help``. An executor that leaves this False always runs full-context,
+    #: which is correct but costlier; ``/api/capabilities`` surfaces the
+    #: difference with an actionable reason instead of letting the operator
+    #: discover it in the bill (RULE 2: no silent degradation).
+    supports_session_resume: bool = False
 
     @abstractmethod
     def is_available(self) -> ExecutorAvailability: ...
@@ -299,14 +362,20 @@ class CliPromptExecutor(PromptExecutor):
         reason on failure names the CONCRETE login command."""
 
     @abstractmethod
-    def _build_argv(self, prompt: str, model: str | None) -> list[str]:
+    def _build_argv(
+        self, prompt: str, model: str | None, session_id: str | None = None
+    ) -> list[str]:
         """Literal argv for one non-interactive run (verified against the
         official CLI docs — see each subclass).
 
         ``model`` is the operator-selected model id (already validated by
         ``run``): when set, the subclass appends the CLI's model flag; when
         ``None`` it appends nothing, so the CLI uses its own configured model —
-        Agentopsy never invents one (RULE 2)."""
+        Agentopsy never invents one (RULE 2).
+
+        ``session_id`` is only ever non-None for an executor that declares
+        ``supports_session_resume``; it asks the CLI to CONTINUE that
+        conversation so the prompt can carry just the delta."""
 
     def suggested_models(self) -> list[str]:
         """Model-id shortcuts the composer's picker offers for this CLI.
@@ -321,6 +390,17 @@ class CliPromptExecutor(PromptExecutor):
     @abstractmethod
     def _extract_text(self, stdout: str) -> str:
         """Pull the assistant's final text out of the CLI's stdout envelope."""
+
+    def _extract_session_id(self, stdout: str) -> str | None:
+        """Hook: the CLI's own conversation id, when its envelope reports one.
+        Default: none — the executor is treated as stateless and every run sends
+        full context."""
+        return None
+
+    def _extract_turn_count(self, stdout: str) -> int | None:
+        """Hook: how many turns the CLI recorded for this ONE call. Default: not
+        reported, which ``session_guard`` treats as unverifiable (→ full context)."""
+        return None
 
     def _extract_error(self, stdout: str, stderr: str) -> str | None:
         """Hook: pull a MORE ACTIONABLE failure reason than raw stderr from the CLI's
@@ -354,7 +434,29 @@ class CliPromptExecutor(PromptExecutor):
         if model is not None:
             validate_model_id(model)
 
-        argv = self._build_argv(prompt, model)
+        # Session continuation (optional). Only honoured by an executor that
+        # declares it: passing a session id to a CLI whose resume behaviour we
+        # have not verified would be exactly the kind of guess RULE 2 forbids.
+        session_id = ctx.get("session_id")
+        if isinstance(session_id, str):
+            session_id = session_id.strip() or None
+        elif session_id is not None:
+            raise ExecutorError(
+                f"'session_id' del contexto debe ser str o None, no {type(session_id).__name__}"
+            )
+        if session_id is not None and not self.supports_session_resume:
+            raise ExecutorError(
+                f"{self.name} no soporta reanudación de sesión, así que Agentopsy "
+                "no puede enviarle solo el delta de la conversación. Envía el "
+                "contexto completo (RULE 2: no se degrada en silencio)."
+            )
+        if session_id is not None:
+            # The id reaches the CLI as its own argv element, so it can never spawn
+            # a subshell — but a value starting with `-` would be read as a FLAG.
+            # Same gate as the model id (SECURITY INVARIANT 5).
+            validate_model_id(session_id)
+
+        argv = self._build_argv(prompt, model, session_id)
         timeout = resolve_timeout(ctx)
         audit = ctx.get("audit")
         case_id = ctx.get("case_id")
@@ -363,17 +465,28 @@ class CliPromptExecutor(PromptExecutor):
             # FORENSIC INVARIANT 4: the LITERAL argv (prompt included — it is
             # case-derived content and the audit log lives inside the case dir),
             # never the LLM's or the caller's paraphrase.
-            audit.append(
-                {
-                    "action": "executor_run_start",
-                    "executor": self.id,
-                    "local": self.is_local,
-                    "case_id": case_id,
-                    "argv": argv,
-                    "prompt_sha256": sha256_text(prompt),
-                    "prompt_chars": len(prompt),
-                }
-            )
+            event: dict[str, Any] = {
+                "action": "executor_run_start",
+                "executor": self.id,
+                "local": self.is_local,
+                "case_id": case_id,
+                "argv": argv,
+                "prompt_sha256": sha256_text(prompt),
+                "prompt_chars": len(prompt),
+                # Whether this turn continued a session (prompt = delta) or opened
+                # one (prompt = full context). Without it the audited argv alone
+                # could not tell a short prompt that is a delta from a short prompt
+                # that is the whole conversation — this ADDS traceability.
+                "resume": session_id is not None,
+            }
+            if session_id is not None:
+                event["resumed_session_id"] = session_id
+            # Why full context was sent when a session existed (divergence,
+            # compaction, unverifiable transcript). Set by the caller.
+            reopen_reason = ctx.get("reopen_reason")
+            if isinstance(reopen_reason, str) and reopen_reason.strip():
+                event["reopen_reason"] = reopen_reason.strip()[:2000]
+            audit.append(event)
 
         started = time.monotonic()
         try:
@@ -427,10 +540,19 @@ class CliPromptExecutor(PromptExecutor):
             usage = self._extract_usage(proc.stdout or "")
         except Exception:  # noqa: BLE001 — telemetry must not break the run
             usage = None
+        try:
+            returned_session = self._extract_session_id(proc.stdout or "")
+        except Exception:  # noqa: BLE001 — same rule: never sink a good run
+            returned_session = None
+        try:
+            num_turns = self._extract_turn_count(proc.stdout or "")
+        except Exception:  # noqa: BLE001
+            num_turns = None
 
         self._audit_finish(
             audit, case_id, exit_code=proc.returncode, duration_ms=duration_ms,
             response_sha256=sha256_text(text), response_chars=len(text), usage=usage,
+            session_id=returned_session, num_turns=num_turns,
         )
         return ExecutorResult(
             executor=self.id,
@@ -440,6 +562,8 @@ class CliPromptExecutor(PromptExecutor):
             duration_ms=duration_ms,
             raw=proc.stdout or "",
             usage=usage,
+            session_id=returned_session,
+            num_turns=num_turns,
         )
 
     def _audit_finish(
@@ -452,6 +576,8 @@ class CliPromptExecutor(PromptExecutor):
         response_sha256: str | None = None,
         response_chars: int | None = None,
         usage: Usage | None = None,
+        session_id: str | None = None,
+        num_turns: int | None = None,
         error: str | None = None,
     ) -> None:
         if audit is None:
@@ -468,6 +594,10 @@ class CliPromptExecutor(PromptExecutor):
             event["response_chars"] = response_chars
         if usage is not None:
             event.update(usage.as_audit_fields())
+        if session_id is not None:
+            event["session_id"] = session_id
+        if num_turns is not None:
+            event["num_turns"] = num_turns
         if error is not None:
             event["error"] = error
         audit.append(event)
