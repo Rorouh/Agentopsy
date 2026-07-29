@@ -221,9 +221,17 @@ TOOL_PARAM_SCHEMAS: dict[str, dict[str, Any]] = {
             "plugin": {
                 "type": "string",
                 "description": (
-                    "Volatility 3 plugin id (dotted), e.g. windows.pslist.PsList, "
-                    "linux.pslist.PsList, windows.netscan.NetScan, "
-                    "windows.malfind.Malfind."
+                    "Volatility 3 plugin id — ALWAYS module + class, e.g. "
+                    "windows.pslist.PsList, linux.pslist.PsList, "
+                    "windows.netscan.NetScan, windows.malfind.Malfind. "
+                    "An 'invalid choice' error means the NAME is malformed (class "
+                    "missing), NEVER that the plugin is absent from the build. "
+                    "Credentials (verified present): "
+                    "windows.registry.hashdump.Hashdump / .lsadump.Lsadump / "
+                    ".cachedump.Cachedump. Known REAL limit: "
+                    "windows.consoles.Consoles and windows.cmdscan.CmdScan raise "
+                    "NotImplementedError on Windows 7 (NT 6.1) — cmdscan shares "
+                    "the consoles code, so it is not an alternative."
                 ),
             },
             "plugin_args": {

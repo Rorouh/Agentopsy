@@ -161,11 +161,22 @@ informe honesto vale más que uno que rellena huecos.
 
 ## 6. Heurísticas que cuestan caras (apréndelas antes)
 
-- **El maletín no trae TODOS los plugins.** Comprueba lo que hay **antes** de prometer.
-  En Win7, `volatility3` `consoles`/`cmdscan` pueden dar `NotImplementedError` (no
-  soportan la build): el historial de consola sale entonces por disco (`$UsnJrnl`,
-  ConsoleHost_history) o por `strings`. `hashdump`/`lsadump` pueden no estar: se
-  responde volcando los hives `SAM`+`SYSTEM` y pasándolos por `regripper`.
+- **«No existe» se DEMUESTRA, no se supone.** Un rechazo por política (la tool no está
+  en tu allowlist) y un nombre mal escrito NO son ausencia de capacidad. Antes de
+  declarar que algo falta, ten en la mano el **error literal** de haberlo intentado.
+  En `volatility3` el id lleva **módulo + clase** (`windows.pslist.PsList`); un
+  `invalid choice` es un **nombre mal formado**, no un plugin ausente.
+- **Credenciales en RAM: `hashdump`/`lsadump`/`cachedump` SÍ están** (verificado
+  2026-07-17 sobre RAM Win7 real: 6 cuentas con su NT hash, exit 0). Nombre canónico
+  `windows.registry.hashdump.Hashdump` (los alias `windows.hashdump.*` funcionan pero
+  vol los retira tras 2026-09-25). El volcado de hives `SAM`+`SYSTEM` con
+  `hivelist --dump` + `regripper` es una vía **complementaria**, no un sustituto
+  obligado.
+- **Límite REAL del maletín — historial de consola en Win7:** `consoles` y `cmdscan`
+  abortan con `NotImplementedError: This version of Windows is not supported: 6.1 …`
+  (su tabla de símbolos de conhost no cubre NT 6.1; `cmdscan` reutiliza el código de
+  `consoles`, así que **no vale como alternativa**). El historial sale por disco
+  (`$UsnJrnl`, `ConsoleHost_history`) o por `strings_head`/`bstrings` sobre la memoria.
 - **Un fallo de una herramienta no aborta el análisis.** Captura su `stderr`, regístralo,
   y sigue por otra vía. No encadenes intentos alternando herramientas a ciegas.
 - **`unknown` en el triage:** tienes derecho a **UN** probe diagnóstico acotado

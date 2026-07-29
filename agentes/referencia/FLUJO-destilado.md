@@ -43,7 +43,8 @@ forense** sobre memoria y/o imagen de disco, apoyado en el maletín de tools.
 | El **hash de la evidencia no cuadra** con el oficial | **PARAR**, no analizar como verificada; escalar (re-descarga / errata del hash). ↳ [a7](REGISTRO-DECISIONES.md#a7-hash-vmdk) |
 | **No se puede abrir un `.vmdk`** (TSK exit 1 / nbd falla / libguestfs no arranca) | Es el host: amd64 emulado sin KVM/`nbd`. Analizar el disco en **Linux/KVM** o **convertir a raw** con espacio. ↳ [a8](REGISTRO-DECISIONES.md#a8-acceso-disco) |
 | Un **plugin de vol tumba todo el lote** al fallar | No usar `set -e` en el lote: un plugin no soportado no debe abortar los demás. ↳ [a4](REGISTRO-DECISIONES.md#a4-arranque-ram) |
-| `windows.consoles` da `NotImplementedError … 6.1 15.7601` | Es que **no soporta Win7** en esta versión de vol. Usar `windows.cmdscan` para el historial de consola. |
+| `windows.consoles` da `NotImplementedError … 6.1 15.7601` | **No soporta Win7** en esta versión de vol. ⚠️ `windows.cmdscan` **NO vale de alternativa**: reutiliza el mismo código de `consoles` y cae igual (corregido 2026-07-17). El historial sale por disco (`$UsnJrnl`, `ConsoleHost_history`) o por `strings`/`bstrings`. |
+| `vol` responde `invalid choice: windows.<algo>` | **Nombre incompleto**, no plugin ausente: el id es **módulo + clase** (`windows.registry.hashdump.Hashdump`). Confírmalo con `vol -h`. |
 | Cada `vol` vuelve a **descargar/reconstruir la caché de símbolos** | Montar un **volumen persistente** para `~/.cache` (`-v forensia-vol-cache:/root/.cache`) y agrupar plugins en un solo contenedor. |
 
 ---
@@ -69,7 +70,8 @@ Un hive volcado se analiza con el maletín *windows* (regripper): cruzar maletin
 2. **Contexto + preguntas de memoria en UN contenedor** (cache caliente, **sin `set -e`** ↳ h5):
    `windows.pslist`, `netscan`(P4), `cmdline`, `malfind/dlllist/handles`(P2 sobre el PID raro),
    `filescan`+`dumpfiles`(P1 — recupera documentos cacheados). (02–13, 20–21)
-   ⚠️ `consoles`/`cmdscan` fallan en Win7; `hashdump` no está en el build ↳ h1.
+   ⚠️ `consoles`/`cmdscan` fallan en Win7 (límite real). `hashdump` **sí está** —
+   usar `windows.registry.hashdump.Hashdump` ↳ h1.
 3. **Hives desde RAM (la palanca ↳ h3):** `windows.registry.hivelist --dump` vuelca todos los
    hives a `output/`; con `regripper` → `timezone` (**fija la TZ**), `samparse` (cuentas),
    `usbstor`/`mountdev` (P3), `userassist`/`recentdocs`/`comdlg32` (P1). Responde P1/P3/cuentas
@@ -197,23 +199,32 @@ rellena huecos.
 
 ## Heurísticas aprendidas (lo más valioso)
 
-### 1. ⚠️ El maletín no tiene TODOS los plugins de vol — comprobar antes de prometer
+### 1. ⚠️ Un plugin que "no está" casi siempre es un NOMBRE mal formado
 
-En este caso (Win7 SP1 x64) el build de `volatility3 2.28.0` del maletín tiene **dos huecos**
-que afectan directo a las preguntas:
-- **`consoles` y `cmdscan` no soportan Win7** (`NotImplementedError: … 6.1 15.7601`). El
-  historial de consola **no sale de la RAM** por esta vía → E2 se ataca por disco
-  (`$UsnJrnl`, `ConsoleHost_history`) o por `strings`/`bstrings` sobre la memoria.
-- **`hashdump`/`lsadump`/`cachedump` NO están** en la lista de plugins de este build. E1 no
-  se resuelve volcando hashes directamente → hay que **volcar los hives `SAM`+`SYSTEM`** de
-  memoria (`windows.registry.hivelist` + dump) y pasarlos por `regripper`/`samdump2`, o usar
-  el `SAM` del disco.
+> **CORRECCIÓN 2026-07-17 (re-verificado contra el maletín).** Este apartado afirmaba que el
+> build no traía los plugins de credenciales. **Es falso y costó un E1.** Comprobado
+> ejecutando sobre RAM Win7 real: `windows.registry.hashdump.Hashdump` devuelve **6 cuentas
+> con su NT hash, exit 0**; `lsadump` y `cachedump` también están (`vol -h` los lista). El
+> `invalid choice: windows.hashdump` del caso murciélago era un **nombre incompleto**: en
+> vol3 el id es **módulo + clase**. Los alias cortos siguen valiendo pero vol los retira
+> tras 2026-09-25 → usa `windows.registry.hashdump.Hashdump`.
 
-**Método que queda:** antes de diseñar la cadena de una pregunta, listar los plugins reales
-(`vol -h` / mensaje de "invalid choice") y **no dar por hecho** que un plugin famoso está.
+De los "dos huecos" que este caso creyó encontrar, **solo uno era real**:
+- ✅ **REAL — `consoles` y `cmdscan` no soportan Win7** (`NotImplementedError: … 6.1
+  15.7601`): su tabla de símbolos de conhost no cubre NT 6.1, y **`cmdscan` reutiliza el
+  código de `consoles`**, así que no sirve de alternativa (el apartado de fallos decía lo
+  contrario — también corregido). El historial de consola sale por disco (`$UsnJrnl`,
+  `ConsoleHost_history`) o por `strings`/`bstrings` sobre la memoria.
+- ❌ **FALSO — "`hashdump`/`lsadump`/`cachedump` no están"**: sí están. El volcado de hives
+  `SAM`+`SYSTEM` (`hivelist --dump` + `regripper`) es una vía **complementaria** —
+  excelente cuando además quieres SOFTWARE/Amcache/NTUSER— no un sustituto obligado.
+
+**Método que queda:** un `invalid choice` es un nombre mal escrito; un rechazo por allowlist
+es política nuestra. **Ninguno de los dos demuestra ausencia de capacidad.** Antes de declarar
+que falta algo, ten el **error literal** del intento y contrástalo con `vol -h`.
 ↳ [a4](REGISTRO-DECISIONES.md#a4-arranque-ram)
 
-### 3. ⭐ Sin `hashdump`/con disco inaccesible → volcar hives de RAM y usar regripper
+### 3. ⭐ Con disco inaccesible → volcar hives de RAM y usar regripper
 
 La palanca que rescató este caso. `windows.registry.hivelist --dump` saca **todos los hives a
 disco desde la memoria** (SAM, SYSTEM, SOFTWARE, Amcache, NTUSER de cada usuario…). Con ellos y

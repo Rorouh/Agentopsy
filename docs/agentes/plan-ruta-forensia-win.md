@@ -464,7 +464,28 @@ LoneWolf y de **iteración de prompts guiada por corridas reales**.
    el agente usó nombres Vol2 y la enumeración activa de procesos salía vacía).
 2. Anti-invención de namespace + regla "ante `invalid choice`, toma el id literal de
    `choose from`/`vol -h`, no adivines; si no está registrado, decláralo laguna"
-   (nace de que codex inventó `windows.registry.hashdump.Hashdump`).
+   (nace de que codex propuso `windows.registry.hashdump.Hashdump`). ⚠️ Ver la
+   rectificación de abajo: **ese id no era una invención, es el canónico**.
+
+> **RECTIFICADO 2026-07-17 — re-verificado contra el maletín actual.** El "hallazgo"
+> de abajo era **falso** y se propagó a `agent.md` y al FLUJO destilado, donde costó
+> un E1: el agente declaró laguna sin poder hacerlo. Medido en `toolkit-windows`
+> (vol **2.28.0**) sobre RAM Win7 real:
+> - `windows.registry.hashdump.Hashdump` → **exit 0, 6 cuentas con NT hash**, sin
+>   warnings. Es el **id canónico** y el que declara el enum de `mcp/schemas.py`.
+> - `windows.hashdump.Hashdump` → funciona como **alias deprecado** (`FutureWarning`:
+>   volatility lo retira tras **2026-09-25**).
+> - `lsadump` y `cachedump` idem, en ambas formas (`vol -h` lista las seis).
+>
+> La regla operativa correcta: un `invalid choice` señala un **nombre mal formado**
+> (falta la clase: `windows.hashdump` en vez de `…​.Hashdump`), **no** un plugin
+> ausente. Y una laguna solo se declara con el **error literal** en la mano.
+>
+> **Límite REAL confirmado** (ese sí): `windows.consoles.Consoles` y
+> `windows.cmdscan.CmdScan` abortan con `NotImplementedError … 6.1` en Win7 —
+> `cmdscan` reutiliza el código de `consoles`, así que **no es alternativa**.
+
+<details><summary>Texto original del hallazgo (conservado, NO usar como referencia)</summary>
 
 **Hallazgo técnico del entorno:** en el build **Volatility 3 2.28.0** de la máquina
 de pruebas, los plugins de credenciales existen como módulos (`windows.hashdump` y
@@ -472,6 +493,8 @@ de pruebas, los plugins de credenciales existen como módulos (`windows.hashdump
 colisión de nombres que rompe el registro. ⇒ credenciales en memoria = **laguna del
 entorno** en esta máquina. El playbook ahora hace que el agente lo declare, no lo
 invente.
+
+</details>
 
 **Ground-truth cualitativo LoneWolf-memoria** (transcripción en
 `evidence-corpus/lonewolf-2018/investigacion-codex-memoria-v2.md`, fuera de git):

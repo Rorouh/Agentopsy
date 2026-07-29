@@ -1,4 +1,9 @@
-# volatility3 windows.lsadump · murcielago · ejecución 08 — ⚠️ PLUGIN AUSENTE
+# volatility3 windows.lsadump · murcielago · ejecución 08 — ⚠️ CONCLUSIÓN RECTIFICADA
+
+> **RECTIFICACIÓN 2026-07-17.** Acta conservada; conclusión no sostenida. `lsadump` **sí
+> está** en el maletín actual — id canónico `windows.registry.lsadump.Lsadump` (`vol -h`).
+> El `invalid choice` corresponde al nombre invocado sin la clase. Ver
+> [`FLUJO-destilado.md`](../../FLUJO-destilado.md) § heurística 1.
 - **Tool:** volatility3 2.28.0 · `windows.lsadump` · `forensia/toolkit-unix:1.0`
 - **Comando:** `vol -f /in/ram.raw windows.lsadump`
 - **Exit:** 2 · bytes 0 · **Fecha:** 2026-07-28

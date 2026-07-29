@@ -421,6 +421,19 @@ _VOLATILITY_WINDOWS_PLUGINS = (
     "windows.registry.hivelist.HiveList",
     "windows.registry.printkey.PrintKey",
     "windows.registry.userassist.UserAssist",
+    # Credenciales (E1): SÍ están en el build (vol 2.28.0) — verificado 2026-07-17
+    # ejecutando hashdump sobre una RAM Win7 real (6 cuentas, exit 0). Se declaran
+    # con el nombre CANÓNICO `windows.registry.*`; los alias `windows.hashdump.*`
+    # siguen funcionando pero vol los retira tras 2026-09-25.
+    "windows.registry.hashdump.Hashdump",
+    "windows.registry.lsadump.Lsadump",
+    "windows.registry.cachedump.Cachedump",
+    # Historial de consola: existen, pero en Win7 (NT 6.1) ambos abortan con
+    # NotImplementedError — su tabla de símbolos de conhost no cubre esa versión
+    # (cmdscan reutiliza el mismo código que consoles). Se exponen igualmente para
+    # que el agente lo COMPRUEBE y registre el error real en vez de asumirlo.
+    "windows.consoles.Consoles",
+    "windows.cmdscan.CmdScan",
     "windows.filescan.FileScan",
     "windows.dumpfiles.DumpFiles",
     "windows.envars.Envars",
@@ -460,7 +473,12 @@ class Volatility3Params(_StrictModel):
     """
 
     plugin: Literal[_VOLATILITY_PLUGINS] = Field(  # type: ignore[valid-type]
-        description="Volatility3 plugin name. Curated subset; see schemas.py.",
+        description=(
+            "Volatility3 plugin name (module + class). This enum is FORENSIA's "
+            "CURATED POLICY, not the capability of the maletín: a name rejected "
+            "here may well exist in the build — widen the list in schemas.py. "
+            "Never report a rejection as 'the plugin does not exist'."
+        ),
     )
     dump_path: Optional[ArtifactRef] = Field(
         default=None,

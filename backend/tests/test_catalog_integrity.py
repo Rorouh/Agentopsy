@@ -7,6 +7,7 @@ before the agent tries to dispatch it.
 
 from __future__ import annotations
 
+from forensia.mcp.schemas import _VOLATILITY_WINDOWS_PLUGINS
 from forensia.toolkit.catalog import BY_ID, CATALOG, by_tier, for_profile
 from forensia.toolkit.maletin import MALETINES, TOOLKIT_UNIX, TOOLKIT_WINDOWS
 from forensia.toolkit.tool import _not_built
@@ -163,6 +164,43 @@ def test_tool_types_are_consistent() -> None:
         assert tool.returns in {"inline", "artifact"}, f"{tool.id}: bad returns"
         assert tool.tier in {"core", "extended"}, f"{tool.id}: bad tier"
         assert isinstance(tool.side_effecting, bool)
+
+
+# --------------------------------------------------------------------------- #
+# Volatility3 plugin policy (MCP enum)
+# --------------------------------------------------------------------------- #
+def test_credential_plugins_stay_exposed_to_the_agent() -> None:
+    """Regresión de un fallo que costó un E1 (2026-07-17).
+
+    El agente concluyó que `hashdump`/`lsadump`/`cachedump` "no existían en este
+    build" cuando SÍ están (verificado sobre RAM Win7 real: 6 cuentas, exit 0);
+    lo que faltaba era exponerlos aquí. Si alguien los quita del enum, el agente
+    vuelve a leer una restricción de POLÍTICA como una ausencia de CAPACIDAD.
+    Los ids son los canónicos `windows.registry.*` (los alias `windows.hashdump.*`
+    los retira volatility tras 2026-09-25).
+    """
+    for plugin in (
+        "windows.registry.hashdump.Hashdump",
+        "windows.registry.lsadump.Lsadump",
+        "windows.registry.cachedump.Cachedump",
+    ):
+        assert plugin in _VOLATILITY_WINDOWS_PLUGINS, (
+            f"{plugin} salió del enum: el agente no podrá volcar credenciales de RAM"
+        )
+
+
+def test_volatility_plugin_ids_carry_module_and_class() -> None:
+    """Todo id del enum termina en la CLASE del plugin (`…​.Clase`, CamelCase).
+
+    Un id sin clase (`windows.hashdump`) es lo que provoca el `invalid choice`
+    que en su día se malinterpretó como "el plugin no está". Los plugins de nivel
+    superior (`timeliner.Timeliner`) tienen 2 segmentos; los de un SO, 3 o más.
+    """
+    for plugin in _VOLATILITY_WINDOWS_PLUGINS:
+        segments = plugin.split(".")
+        assert len(segments) >= 2, f"{plugin}: falta la clase (modulo.Clase)"
+        assert segments[-1][:1].isupper(), f"{plugin}: el último segmento no es la clase"
+        assert segments[-2][:1].islower(), f"{plugin}: el penúltimo segmento no es un módulo"
 
 
 def test_path_parameter_inventory_is_exhaustive_and_explicit() -> None:
