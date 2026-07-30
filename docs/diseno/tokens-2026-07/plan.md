@@ -26,6 +26,26 @@
 > así que el `CLAUDE.md` de Agentopsy ya no entra en ninguna llamada (−8.870
 > tokens/turno). La **Fase 4 sigue fuera de alcance** (impacto en calidad sin
 > medir). Gates: `tests/test_session_windowing.py` + tests de ejecutores.
+>
+> **ACTUALIZACIÓN 2 (2026-07-30, rama Rama-Enrique).** La **Fase 4 está
+> implementada** para `ClaudeCodeExecutor`, y en una forma más agresiva que la
+> hipótesis original: en vez de recortar el arnés del CLI, se elimina —
+> `--tools ""` (sin herramientas nativas: sus schemas no viajan y el CLI ya no
+> puede fabricar turnos `tool_use`, el modo de divergencia que `session_guard`
+> detectaba a posteriori), `--setting-sources ""` (ningún CLAUDE.md/skill de
+> `~/.claude` puede entrar en el contexto) y `--system-prompt` con la identidad
+> mínima de Agentopsy en lugar de los 6.602 tokens del prompt de asistente de
+> programación (que además CONTRADECÍA el contrato JSON estricto — la razón por
+> la que el riesgo de calidad se reevaluó como bajo). Verificado contra
+> `claude` 2.1.220 (2026-07-30): una llamada que arrastraba ~13.900 tokens de
+> arnés entra con **202 tokens de input**; los flags son compatibles con
+> `--resume` (mismo `session_id`, `num_turns=1`) y el transcript en disco solo
+> contiene prompts de autor + texto del asistente. Y de la fase de turnos cayó
+> también su punto 4: el bucle inyecta un **nudge de presupuesto** (a 2
+> iteraciones del límite avisa de cerrar; en la última exige el `final`), de
+> modo que una corrida ya no puede agotar el presupuesto sin responder al
+> operador. Gates: `test_claude_argv_strips_the_cli_harness` +
+> `test_budget_nudges_demand_a_final_before_exhaustion`.
 
 ---
 

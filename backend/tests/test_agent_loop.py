@@ -208,3 +208,78 @@ def test_records_nudge_injected_after_tools_without_finding(
     agent.run("lista la raíz", case_id="c", evidence_id="e")
 
     assert seen, "tras 3 herramientas sin registrar hallazgo debe inyectarse el recordatorio"
+
+
+def test_budget_nudges_demand_a_final_before_exhaustion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fase de turnos §6.4 — la corrida medida agotó 21 iteraciones sin emitir un
+    solo `final` (12,97 USD sin respuesta al operador). El agente no conoce su
+    presupuesto salvo que se le diga: a 2 iteraciones del límite se le avisa de
+    que cierre, y en la última se le exige el `final`. Nunca antes."""
+    monkeypatch.setenv("FORENSIA_MAX_TOOL_ATTEMPTS", "10")
+
+    def fake_execute(
+        tool_id, params, *, case_id=None, os_profile=None, timeout=None, evidence_context=None
+    ):
+        return {
+            "tool_id": tool_id, "argv": ["mmls", "/cases/x/original.raw"], "exit_code": 0,
+            "stdout_sample": "ok", "stderr_sample": "", "parsed": None, "run_id": "r",
+        }
+
+    monkeypatch.setattr("forensia.toolkit.dispatcher.execute", fake_execute)
+
+    class _CapturingStates(_AlwaysSameTool):
+        def __init__(self, tool_id: str) -> None:
+            super().__init__(tool_id)
+            self.states: list[list[str]] = []
+
+        def next_action(self, state, tools):  # noqa: ANN001
+            self.states.append(
+                [str(m.get("content") or "") for m in state.get("messages", [])]
+            )
+            return super().next_action(state, tools)
+
+    backend = _CapturingStates("tsk_mmls")
+    agent = ForensicAgent(
+        make_package("unix", max_iterations=4), backend, _FakeEvidence()
+    )
+    agent.run("lista la raíz", case_id="c", evidence_id="e")
+
+    assert len(backend.states) == 4
+    # Las dos primeras iteraciones trabajan sin presión de presupuesto…
+    assert not any("[Presupuesto]" in c for c in backend.states[0])
+    assert not any("[Presupuesto]" in c for c in backend.states[1])
+    # …a 2 del límite se le pide cerrar, y en la última se le exige el `final`.
+    assert any("Quedan 2 iteraciones" in c for c in backend.states[2])
+    assert any("ÚLTIMA iteración" in c for c in backend.states[3])
+
+
+def test_budget_nudge_skips_single_iteration_runs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FORENSIA_MAX_TOOL_ATTEMPTS", "10")
+
+    def fake_execute(
+        tool_id, params, *, case_id=None, os_profile=None, timeout=None, evidence_context=None
+    ):
+        return {
+            "tool_id": tool_id, "argv": ["mmls", "/cases/x/original.raw"], "exit_code": 0,
+            "stdout_sample": "ok", "stderr_sample": "", "parsed": None, "run_id": "r",
+        }
+
+    monkeypatch.setattr("forensia.toolkit.dispatcher.execute", fake_execute)
+
+    seen: list[str] = []
+
+    class _Capturing(_AlwaysSameTool):
+        def next_action(self, state, tools):  # noqa: ANN001
+            seen.extend(str(m.get("content") or "") for m in state.get("messages", []))
+            return super().next_action(state, tools)
+
+    agent = ForensicAgent(
+        make_package("unix", max_iterations=1), _Capturing("tsk_mmls"), _FakeEvidence()
+    )
+    agent.run("lista la raíz", case_id="c", evidence_id="e")
+
+    assert not any("[Presupuesto]" in c for c in seen)

@@ -3,6 +3,11 @@
 > Segunda ronda. Depende de [`diagnostico.md`](diagnostico.md) y [`plan.md`](plan.md).
 > Aprueba las Fases 0-2, deja 3 y 4 fuera con encargo de medición, y abre una fase
 > nueva de diagnóstico sobre el número de turnos.
+>
+> **Nota histórica.** Este documento registra el encargo tal y como se dio el
+> 2026-07-29. Las decisiones «NO implementes» de las Fases 3 y 4 fueron
+> revisadas después: ambas están implementadas en la rama `Rama-Enrique`
+> (2026-07-30) — el estado vigente lo lleva [`plan.md`](plan.md).
 
 ---
 

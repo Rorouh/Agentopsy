@@ -103,6 +103,56 @@ def test_valid_prose_replaces_sections_and_declares_provenance() -> None:
     assert original["sections"][0]["blocks"][0]["text"].startswith("El caso documenta")
 
 
+def test_prompt_carries_the_case_material_and_the_style_contract() -> None:
+    """El pase recibe el MATERIAL bruto del caso (hallazgos íntegros — donde
+    viven las entidades concretas —, evidencias, veredictos MITRE), no solo la
+    prosa determinista, y el contrato de estilo de la referencia (continuidad
+    de sujeto, veredicto por delante). Sin eso el ejecutor no puede redactar al
+    nivel del resumen de referencia (2026-07-30)."""
+    report = _report()
+    report["sections"].insert(2, {
+        "num": narrative.SEC_CUSTODIA, "title": "Cadena de custodia", "blocks": [
+            {"t": "kv", "pairs": [
+                {"k": "Fichero original", "v": "memoria.raw"},
+                {"k": "SO detectado", "v": "windows"},
+                {"k": "SHA-256 baseline", "v": "ab" * 32},
+            ]},
+        ],
+    })
+    report["sections"].append({
+        "num": narrative.SEC_HALLAZGOS, "title": "Hallazgos", "blocks": [
+            {"t": "finding", "sev": "critical", "title": "Exfiltración por correo",
+             "text": "El usuario IEUser envió CLIENTES.xls a insider2@dominio.org.",
+             "tags": ["volatility3", "T1003"], "meta": "Run: 11111111"},
+        ],
+    })
+    report["sections"].append({
+        "num": narrative.SEC_MITRE, "title": "Correlación", "blocks": [
+            {"t": "table", "headers": ["Técnica", "Veredicto"],
+             "rows": [["T1003", "Confirmada"]]},
+        ],
+    })
+    executor = _FakeExecutor(_reply(
+        ["La investigación confirma T1003 con el run 11111111."],
+        ["Cierre sobre T1003."],
+    ))
+
+    humanize_report("caso-1", report, executor=executor, audit=None)
+
+    prompt = executor.prompts[0]
+    # El material bruto viaja: el detalle del hallazgo (las entidades), la
+    # evidencia por su fichero y el veredicto adjudicado.
+    assert "IEUser" in prompt and "insider2@dominio.org" in prompt
+    assert "memoria.raw" in prompt
+    assert "Confirmada" in prompt
+    # El hash baseline NO viaja como dato de evidencia (no es material de prosa).
+    assert "ab" * 32 not in prompt
+    # El contrato de estilo de la referencia.
+    assert "CONTINUIDAD DE SUJETO" in prompt
+    assert "veredicto por delante" in prompt
+    assert "nunca se rellena" in prompt
+
+
 def test_unknown_technique_rejects_the_whole_pass() -> None:
     executor = _FakeExecutor(_reply(
         ["El atacante usó T1566 para el acceso inicial."],  # no está en el informe

@@ -408,6 +408,34 @@ class ForensicAgent:
                 return AgentLoopResult(
                     reply=stopped, iterations=iteration, tool_calls=tool_calls_log
                 )
+            # Nudge de PRESUPUESTO (fase-turnos §6.4): la corrida medida agotó
+            # sus 21 iteraciones sin emitir un solo `final` — 12,97 USD sin
+            # respuesta al operador. El agente no conoce el presupuesto salvo
+            # que se le diga: a 2 iteraciones del límite se le avisa de que
+            # cierre, y en la última se le exige el `final` consolidando lo ya
+            # persistido (los hallazgos registrados en caliente nunca se
+            # pierden; la RESPUESTA sí se perdía).
+            remaining = max_iter - iteration
+            if remaining == 2 and max_iter > 2:
+                messages.append({
+                    "role": "system",
+                    "content": (
+                        "[Presupuesto] Quedan 2 iteraciones de análisis. Cierra "
+                        "lo que estés haciendo: si necesitas herramientas, "
+                        "invócalas AHORA en un único lote, porque tu siguiente "
+                        "respuesta deberá ser `final`."
+                    ),
+                })
+            elif remaining == 1 and max_iter > 1:
+                messages.append({
+                    "role": "system",
+                    "content": (
+                        "[Presupuesto] ÚLTIMA iteración. Responde `final` AHORA: "
+                        "consolida los hallazgos ya registrados y responde al "
+                        "operador con lo concluido. No invoques ninguna "
+                        "herramienta más."
+                    ),
+                })
             # Bug 008 / Fase 3 — provider-agnostic context management. Agentopsy
             # owns the conversation. For a STATELESS executor the whole transcript
             # is re-charged every iteration, so older tool results collapse to

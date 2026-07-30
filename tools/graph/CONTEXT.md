@@ -116,7 +116,15 @@ siembra una sesión) y el recorte por umbral
 (`FORENSIA_SESSION_CONTEXT_MAX_CHARS`) se audita (`context_window_trimmed`).
 Los CLI corren en un **cwd neutro vacío** (`neutral_cwd()`, auditado) para que
 ningún `CLAUDE.md`/`AGENTS.md` del host entre al contexto; `DEFAULT_TIMEOUT_S`
-es 300 s y un timeout audita su coste ESTIMADO en campos etiquetados.
+es 300 s y un timeout audita su coste ESTIMADO en campos etiquetados. **Fase 4
+(2026-07-30):** `ClaudeCodeExecutor` elimina el arnés del CLI en TODA llamada —
+`--tools ""` (sin tools nativas: el CLI no puede fabricar turnos `tool_use`),
+`--setting-sources ""` (ningún `~/.claude` entra al contexto) y
+`--system-prompt` mínimo propio en vez del prompt de asistente de programación
+(verificado contra `claude` 2.1.220: de ~13.900 tokens de arnés a 202 de input;
+compatible con `--resume`). El bucle del agente añade un **nudge de
+presupuesto** (a 2 iteraciones del límite pide cerrar; en la última exige el
+`final`) — una corrida ya no agota iteraciones sin responder.
 
 **Toolkit** — `catalog` (`by_tier` / `for_profile`, `Tool` de enum cerrada y contrato
 central `PathParameter`); `forensia.path_policy` (roles `EVIDENCE_INPUT`, `CASE_INPUT`,
@@ -174,9 +182,15 @@ cerrar un análisis); **`narrative`** (2026-07-30: el hilo conductor — resumen
 ejecutivo narrativo, §5 «Relato de la investigación» con cronología por
 `observed_at` / carril no fechado / descartes, conclusiones con arco táctico en
 orden kill-chain; numeración única `SEC_*`; elige orden y tejido conectivo,
-nunca contenido — RULE 2); **`humanize`** (redacción opcional de §1/§8 vía el
+nunca contenido — RULE 2; desde 2026-07-30 la apertura enmarca el ENCARGO de
+`case.notes`, nombra cada evidencia por su NATURALEZA desde `detected_kind` —
+volcado de RAM / imagen de disco virtual — y enumera de mayor a menor
+volatilidad); **`humanize`** (redacción opcional de §1/§8 vía el
 ejecutor seleccionado, validada contra referentes cerrados del informe
-determinista — un `Txxxx`/UUID/hex desconocido rechaza la pasada entera);
+determinista — un `Txxxx`/UUID/hex desconocido rechaza la pasada entera; recibe
+el informe DESCOMPUESTO en material — hallazgos íntegros, evidencias,
+veredictos — y un contrato de estilo calcado de la referencia «Murciélago»:
+veredicto por delante, continuidad de sujeto, entidades solo literales);
 `pdf.render_pdf` (fpdf2, pure-python).
 
 **Redacción / GDPR** — policy de redacción del paquete (`apply_redaction`,

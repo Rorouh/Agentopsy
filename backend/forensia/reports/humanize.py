@@ -20,12 +20,19 @@ ejecutor que él seleccionó, con tres garantías:
    caso en el contexto) y se añade el evento ``report_humanized`` con qué
    secciones se reescribieron.
 
-Lo que viaja al ejecutor es la prosa del informe determinista: texto sintetizado
-de hallazgos que el propio agente redactó durante el análisis, más
-identificadores generados por Agentopsy — el mismo material que ya cruzó a ese
-ejecutor durante la corrida que los produjo. La selección del ejecutor es del
-operador y el aviso de egreso cloud vive en la Guía (SECURITY INVARIANT 7: sin
-API keys; la sesión del CLI vive en el volumen forensia-cli-auth).
+Lo que viaja al ejecutor es el informe determinista DESCOMPUESTO en material de
+redacción (datos del caso, evidencias con su naturaleza, el relato, los
+hallazgos íntegros —donde viven las entidades concretas: usuarios, equipos,
+ficheros, direcciones— y la correlación con su veredicto), junto con un
+contrato de estilo calcado del resumen ejecutivo de referencia del caso
+«Murciélago» (2026-07-30): encargo+evidencias+método, veredicto por delante,
+secuencia de hechos con continuidad de sujeto, acciones complementarias
+agrupadas por tema. Todo ese material persiste ya en el caso — es el mismo que
+cruzó a ese ejecutor durante la corrida que lo produjo — y TODO forma parte del
+corpus de referentes contra el que se valida la salida. La selección del
+ejecutor es del operador y el aviso de egreso cloud vive en la Guía (SECURITY
+INVARIANT 7: sin API keys; la sesión del CLI vive en el volumen
+forensia-cli-auth).
 
 Lógica pura de superficies (RULE 3): sin HTTP aquí; el router resuelve el
 ejecutor y pasa el ``AuditLog`` del caso.
@@ -95,34 +102,159 @@ def _prose_of(section: dict[str, Any]) -> list[str]:
     ]
 
 
+def _section_or_none(report: dict[str, Any], num: str) -> dict[str, Any] | None:
+    for sec in report.get("sections", []):
+        if sec.get("num") == num:
+            return sec
+    return None
+
+
+#: Claves de §2 que van al material (datos del caso; el resto — versiones,
+#: emisión, ids largos — es ruido para la redacción).
+_CASE_KEYS = (
+    "Nombre del caso", "Examinador", "Perfil de SO", "Estado del caso",
+    "Apertura del caso",
+)
+#: Claves de cada bloque kv de §3 que describen la evidencia para la redacción.
+_EVIDENCE_KEYS = (
+    "Fichero original", "SO detectado", "Tipo detectado", "Tamaño", "Registrada",
+)
+
+
+def _datos_material(report: dict[str, Any]) -> dict[str, str]:
+    section = _section_or_none(report, narrative.SEC_DATOS)
+    out: dict[str, str] = {}
+    if not section:
+        return out
+    for b in section.get("blocks", []):
+        if b.get("t") != "kv":
+            continue
+        for pair in b.get("pairs", []):
+            k = str(pair.get("k", ""))
+            if k in _CASE_KEYS:
+                out[k] = str(pair.get("v", ""))
+    return out
+
+
+def _evidencias_material(report: dict[str, Any]) -> list[dict[str, str]]:
+    section = _section_or_none(report, narrative.SEC_CUSTODIA)
+    out: list[dict[str, str]] = []
+    if not section:
+        return out
+    for b in section.get("blocks", []):
+        if b.get("t") != "kv":
+            continue
+        pairs = {str(p.get("k", "")): str(p.get("v", "")) for p in b.get("pairs", [])}
+        item = {k: pairs[k] for k in _EVIDENCE_KEYS if k in pairs}
+        if item:
+            out.append(item)
+    return out
+
+
+def _relato_material(report: dict[str, Any]) -> list[str]:
+    section = _section_or_none(report, narrative.SEC_RELATO)
+    if not section:
+        return []
+    return [
+        str(b.get("text", ""))
+        for b in section.get("blocks", [])
+        if b.get("t") in ("p", "h3") and str(b.get("text", "")).strip()
+    ]
+
+
+def _hallazgos_material(report: dict[str, Any]) -> list[dict[str, Any]]:
+    section = _section_or_none(report, narrative.SEC_HALLAZGOS)
+    out: list[dict[str, Any]] = []
+    if not section:
+        return out
+    for b in section.get("blocks", []):
+        if b.get("t") != "finding":
+            continue
+        out.append({
+            "titulo": str(b.get("title", "")),
+            "severidad": str(b.get("sev", "")),
+            "detalle": str(b.get("text", "")),
+            "etiquetas": list(b.get("tags", []) or []),
+            "procedencia": str(b.get("meta", "")),
+        })
+    return out
+
+
+def _mitre_material(report: dict[str, Any]) -> dict[str, Any] | None:
+    section = _section_or_none(report, narrative.SEC_MITRE)
+    if not section:
+        return None
+    for b in section.get("blocks", []):
+        if b.get("t") == "table":
+            return {
+                "cabeceras": list(b.get("headers", []) or []),
+                "filas": list(b.get("rows", []) or []),
+            }
+    return None
+
+
 def _prompt(report: dict[str, Any]) -> str:
-    resumen = _prose_of(_section(report, narrative.SEC_RESUMEN))
-    conclusiones = _prose_of(_section(report, narrative.SEC_CONCLUSIONES))
-    relato = _prose_of(_section(report, narrative.SEC_RELATO))
+    # El MATERIAL es el informe determinista descompuesto: datos del caso, la
+    # evidencia con su naturaleza, el relato, los hallazgos ÍNTEGROS (donde
+    # viven las entidades concretas: usuarios, equipos, ficheros, direcciones)
+    # y la correlación con su veredicto. Todo persiste ya en el caso y todo
+    # forma parte del corpus de referentes contra el que se valida la salida.
     material = {
-        "resumen_ejecutivo": resumen,
-        "conclusiones": conclusiones,
-        "relato_de_referencia": relato,
+        "datos_del_caso": _datos_material(report),
+        "evidencias": _evidencias_material(report),
+        "redaccion_determinista": {
+            "resumen": _prose_of(_section(report, narrative.SEC_RESUMEN)),
+            "conclusiones": _prose_of(_section(report, narrative.SEC_CONCLUSIONES)),
+        },
+        "relato_de_la_investigacion": _relato_material(report),
+        "hallazgos": _hallazgos_material(report),
+        "correlacion_mitre": _mitre_material(report),
     }
     return (
-        "Eres el redactor de un informe pericial forense en español. Reescribe "
-        "la prosa del RESUMEN EJECUTIVO y de las CONCLUSIONES para que se lean "
-        "como una narrativa profesional y fluida, conservando el hilo que ya "
-        "traen (qué se investigó, qué secuencia de hechos sostiene la evidencia, "
-        "qué dictamina el perito) y TODO su contenido factual.\n\n"
+        "Eres el perito redactor de un informe pericial forense en español. "
+        "Reescribe la prosa del RESUMEN EJECUTIVO y de las CONCLUSIONES a "
+        "partir del MATERIAL adjunto (los datos persistidos del caso), para que "
+        "se lean como las redactaría un perito experimentado: una narrativa "
+        "profesional con hilo conductor, no una enumeración de recuentos.\n\n"
+        "FACTURA DEL RESUMEN EJECUTIVO (imita esta estructura; el contenido "
+        "sale SOLO del material):\n"
+        "1. Primer párrafo — el encargo y el método: qué se investiga y en qué "
+        "marco, sobre qué evidencias (nómbralas por su naturaleza: volcado de "
+        "memoria RAM, imagen de disco…) y bajo qué garantías (análisis "
+        "post-mortem, cadena de custodia, orden de mayor a menor volatilidad "
+        "si el material lo dice).\n"
+        "2. Segundo párrafo — lo que la investigación establece, con el "
+        "veredicto por delante: «La investigación confirma…» SOLO si la "
+        "correlación trae técnicas con veredicto Confirmada; en caso "
+        "contrario, «El análisis documenta indicios de…». Después, la "
+        "secuencia de los hechos tejida con CONTINUIDAD DE SUJETO — quién "
+        "hizo qué, sobre qué ficheros o cuentas, con qué herramienta, hacia "
+        "dónde — usando únicamente los usuarios, equipos, ficheros, rutas, "
+        "direcciones, herramientas y fechas que aparecen LITERALMENTE en los "
+        "hallazgos del material. Integra el dato técnico dentro de la frase, "
+        "como haría un perito, no como una lista.\n"
+        "3. Párrafos siguientes — las acciones complementarias agrupadas por "
+        "tema cuando el material las traiga (anti-forense y borrado de "
+        "huellas, persistencia, escalada…), las vías exploradas y descartadas "
+        "(dichas como descartes) y lo pendiente de dictamen (dicho como "
+        "pendiente).\n\n"
+        "CONCLUSIONES: cierran ese mismo hilo — qué lectura de los hechos "
+        "sostiene la evidencia, el arco táctico CONFIRMADO por dictamen (solo "
+        "el confirmado), lo que queda bajo sospecha o sin dictamen (dicho "
+        "como tal) y que todo es reproducible desde el log de auditoría.\n\n"
         "REGLAS INNEGOCIABLES:\n"
-        "1. No añadas hechos, fechas, cifras, nombres, técnicas ni "
-        "identificadores que no estén en el material. No alteres ningún "
-        "recuento.\n"
-        "2. Conserva los identificadores presentes (técnicas Txxxx, runs, "
-        "hashes) tal cual aparecen, incluidas las referencias a secciones "
-        "(§3, §5, …).\n"
-        "3. El «relato_de_referencia» es SOLO contexto para que el resumen "
-        "anticipe la misma historia; no lo reescribas ni lo cites literalmente "
-        "entero.\n"
-        "4. Mantén el registro pericial: afirmar solo lo que el material "
-        "afirma, con sus mismas cautelas (indicio vs. prueba, técnica sin "
-        "dictamen no confirmada).\n"
+        "1. Ningún hecho, fecha, cifra, entidad, técnica ni identificador que "
+        "no esté en el material. Si el material no trae una entidad (un "
+        "usuario, un equipo, una dirección), la frase se construye sin ella — "
+        "nunca se rellena.\n"
+        "2. Los identificadores (técnicas Txxxx, runs, hashes) y las "
+        "referencias a secciones (§3, §5, …) se citan tal cual aparecen; la "
+        "prosa se valida contra el informe determinista y una sola invención "
+        "rechaza la redacción ENTERA.\n"
+        "3. Registro pericial: afirmar solo lo que el material afirma, con "
+        "sus mismas cautelas (indicio vs. prueba; una técnica sin dictamen "
+        "no está confirmada).\n"
+        "4. No alteres ningún recuento ni severidad.\n"
         "5. La última idea de las conclusiones debe seguir siendo que el "
         "documento es un BORRADOR hasta su firma.\n\n"
         "MATERIAL (JSON):\n"

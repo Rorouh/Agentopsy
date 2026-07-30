@@ -174,6 +174,47 @@ def test_empty_case_is_honest() -> None:
         assert "secuencia de hechos" not in text  # nada de historia fabricada
 
 
+def test_opening_names_the_encargo_and_the_evidence_nature() -> None:
+    """Nivel de la referencia «Murciélago» (2026-07-30): la apertura enmarca el
+    ENCARGO (case.notes), nombra cada evidencia por su NATURALEZA (volcado de
+    RAM / imagen de disco virtual, no el kind crudo) y la relaciona de mayor a
+    menor volatilidad — la RAM delante aunque se registrara después."""
+    case = _case(notes=(
+        "Sospecha de filtración de información económica desde un equipo del "
+        "departamento financiero hacia un tercero."
+    ))
+    ram = SimpleNamespace(
+        evidence_id="e2", original_path=Path("/cases/x/memoria.raw"),
+        registered_at="2026-07-20T09:00:00Z", detected_os="windows",
+        detected_kind="memory", sha256="cd" * 32,
+    )
+    vmdk = SimpleNamespace(
+        evidence_id="e3", original_path=Path("/cases/x/equipo.vmdk"),
+        registered_at="2026-07-19T09:00:00Z", detected_os="windows",
+        detected_kind="container_disk", sha256="ef" * 32,
+    )
+    text = _text(narrative.executive_blocks(case, [], [vmdk, ram], []))
+
+    assert "El presente informe recoge el análisis forense" in text
+    assert "filtración de información económica" in text  # el encargo, del expediente
+    assert "el volcado de memoria RAM «memoria.raw»" in text
+    assert "la imagen de disco virtual «equipo.vmdk»" in text
+    assert text.index("memoria.raw") < text.index("equipo.vmdk")  # volatilidad
+    assert "de mayor a menor volatilidad" in text
+
+    relato = _text(narrative.story_section(case, [], [vmdk, ram], [], [])["blocks"])
+    assert "encargo anotado en el expediente" in relato
+    assert relato.index("memoria.raw") < relato.index("equipo.vmdk")
+
+
+def test_opening_without_notes_fabricates_no_encargo() -> None:
+    text = _text(narrative.executive_blocks(_case(), [], [_handle()], []))
+    assert "encargo" not in text.lower()
+    assert "la imagen de disco «disk.raw»" in text
+    # Una única evidencia de disco: no se menciona volatilidad alguna.
+    assert "volatilidad" not in text
+
+
 def test_summary_line_carries_the_thread() -> None:
     findings = [_finding(severity="critical")]
     coverage = [{"technique_id": "T1003", "tactic_id": "TA0006",

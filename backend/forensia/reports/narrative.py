@@ -133,6 +133,63 @@ def _tactic_order() -> dict[str, tuple[int, str]]:
         return {}
 
 
+# ── la naturaleza de la evidencia, en prosa ───────────────────────────────────
+
+_VIRTUAL_DISK_EXTS = (".vmdk", ".vdi", ".qcow", ".qcow2", ".vhd", ".vhdx")
+_FORENSIC_CONTAINER_EXTS = (".e01", ".ex01", ".aff", ".aff4", ".s01", ".l01")
+
+
+def _naturaleza(handle: Any) -> str:
+    """Una evidencia como sintagma con su NATURALEZA — «el volcado de memoria
+    RAM "x.raw"», «la imagen de disco virtual "y.vmdk"» — derivada del
+    ``detected_kind`` del triage y, para un contenedor, de la extensión literal
+    del fichero. Un kind desconocido degrada a «la evidencia "x"»: la
+    naturaleza no se adivina (RULE 2)."""
+    name = handle.original_path.name
+    kind = str(getattr(handle, "detected_kind", "") or "").strip()
+    if kind == "memory":
+        return f"el volcado de memoria RAM «{name}»"
+    if kind == "disk":
+        return f"la imagen de disco «{name}»"
+    if kind == "container_disk":
+        ext = handle.original_path.suffix.lower()
+        if ext in _VIRTUAL_DISK_EXTS:
+            return f"la imagen de disco virtual «{name}»"
+        if ext in _FORENSIC_CONTAINER_EXTS:
+            return f"la imagen forense de disco «{name}»"
+        return f"la imagen de disco en formato contenedor «{name}»"
+    return f"la evidencia «{name}»"
+
+
+def _por_volatilidad(evidence_handles: list[Any]) -> list[Any]:
+    """Los handles con la memoria RAM delante (mayor volatilidad) y el resto en
+    su orden de registro. Ordena la ENUMERACIÓN del informe — no afirma en qué
+    orden se procesó nada: eso solo podría decirlo el log de auditoría."""
+    memoria = [
+        h for h in evidence_handles
+        if str(getattr(h, "detected_kind", "") or "") == "memory"
+    ]
+    resto = [
+        h for h in evidence_handles
+        if str(getattr(h, "detected_kind", "") or "") != "memory"
+    ]
+    return memoria + resto
+
+
+def _encargo(case: Any) -> str | None:
+    """El encargo que enmarca la investigación, si el expediente lo anota
+    (``case.notes``). Se colapsa el espaciado y se acota a una longitud de
+    prosa; vacío → ``None`` (no se fabrica un encargo)."""
+    notes = str(getattr(case, "notes", "") or "").strip()
+    if not notes:
+        return None
+    notes = " ".join(notes.split())
+    if len(notes) > 360:
+        corte = notes.rfind(" ", 0, 360)
+        notes = notes[: corte if corte > 0 else 360].rstrip(" ,;:.") + "…"
+    return notes
+
+
 # ── descomposición de los datos en material narrativo ─────────────────────────
 
 
@@ -308,9 +365,23 @@ def _evidencias_frase(evidence_handles: list[Any]) -> str:
     n = len(evidence_handles)
     if n == 0:
         return "un caso que aún no tiene evidencia registrada"
-    nombres = _join([f"«{h.original_path.name}»" for h in evidence_handles[:3]])
-    resto = f", junto con otras {n - 3} evidencias" if n > 3 else ""
-    return f"{n} evidencia{'s' if n != 1 else ''} ({nombres}{resto})"
+    ordenados = _por_volatilidad(evidence_handles)
+    frase = _join([_naturaleza(h) for h in ordenados[:3]])
+    if n > 3:
+        frase += f", junto con otras {n - 3} evidencias"
+    hay_memoria = any(
+        str(getattr(h, "detected_kind", "") or "") == "memory"
+        for h in evidence_handles
+    )
+    hay_disco = any(
+        str(getattr(h, "detected_kind", "") or "") != "memory"
+        for h in evidence_handles
+    )
+    if hay_memoria and hay_disco:
+        # Solo se afirma el ORDEN DE LA ENUMERACIÓN (memoria delante), nunca el
+        # orden en que se procesó — eso lo dice el log de auditoría, no la prosa.
+        frase += ", que este informe relaciona de mayor a menor volatilidad"
+    return frase
 
 
 def executive_blocks(
@@ -321,15 +392,25 @@ def executive_blocks(
     evidencia sostiene, el estado del dictamen (con el desglose técnico) y el
     mapa del informe. Refleja el MISMO hilo que §5 y §8 desarrollan."""
     perfil = case.os_profile or "sin determinar"
-    blocks: list[dict[str, Any]] = [_p(
-        f"La presente investigación tiene por objeto el caso «{case.name}», "
-        f"conducido por {case.examiner} mediante un análisis estrictamente "
-        f"post-mortem sobre {_evidencias_frase(evidence_handles)}, con perfil de "
-        f"sistema operativo {perfil}. Toda la evidencia se examinó bajo cadena "
-        "de custodia verificada: hash SHA-256 fijado como línea base antes de "
-        "exponer un solo byte al análisis, y cada acción registrada en un log "
-        "de auditoría encadenado por hash."
-    )]
+    apertura = (
+        f"El presente informe recoge el análisis forense practicado en el "
+        f"marco del caso «{case.name}», conducido por {case.examiner} en "
+        "modalidad estrictamente post-mortem"
+    )
+    encargo = _encargo(case)
+    if encargo:
+        apertura += (
+            f". El encargo que enmarca la investigación, según consta en el "
+            f"expediente del caso: «{encargo}»"
+        )
+    apertura += (
+        f". El trabajo se apoya en {_evidencias_frase(evidence_handles)}, con "
+        f"perfil de sistema operativo {perfil}. Toda la evidencia se examinó "
+        "bajo cadena de custodia verificada: hash SHA-256 fijado como línea "
+        "base antes de exponer un solo byte al análisis, y cada acción "
+        "registrada en un log de auditoría encadenado por hash."
+    )
+    blocks: list[dict[str, Any]] = [_p(apertura)]
 
     if not finding_list:
         blocks.append(_p(
@@ -453,23 +534,28 @@ def story_section(
     sin fecha, qué se exploró y descartó, y qué queda abierto."""
     blocks: list[dict[str, Any]] = []
 
-    # De dónde parte la investigación: la evidencia y su intake.
+    # De dónde parte la investigación: la evidencia y su intake, enumerada de
+    # mayor a menor volatilidad y con su NATURALEZA en prosa (no el kind crudo).
     if evidence_handles:
         piezas = []
-        for h in evidence_handles:
-            tipo = str(getattr(h, "detected_kind", "") or "").strip()
+        for h in _por_volatilidad(evidence_handles):
+            desc = _naturaleza(h)
             so = str(getattr(h, "detected_os", "") or "").strip()
-            desc = f"«{h.original_path.name}»"
-            rasgos = [r for r in (tipo if tipo not in ("", "unknown") else "",
-                                  f"SO detectado: {so}" if so not in ("", "unknown") else "") if r]
-            if rasgos:
-                desc += f" ({', '.join(rasgos)})"
+            if so not in ("", "unknown"):
+                desc += f" (SO detectado: {so})"
             fecha = _fecha(getattr(h, "registered_at", None))
             if fecha:
                 desc += f", registrada el {fecha}"
             piezas.append(desc)
+        parte = f"La investigación parte de {_join(piezas)}."
+        encargo = _encargo(case)
+        if encargo:
+            parte = (
+                f"La investigación responde al encargo anotado en el expediente "
+                f"(«{encargo}») y parte de {_join(piezas)}."
+            )
         blocks.append(_p(
-            f"La investigación parte de {_join(piezas)}. Cada evidencia quedó "
+            f"{parte} Cada evidencia quedó "
             "bajo custodia antes de análisis alguno: hash SHA-256 de línea base, "
             "copia inmutable y acceso de solo lectura a nivel de bloque "
             f"(el detalle, en §{SEC_CUSTODIA})."

@@ -521,8 +521,8 @@ all 32 targeted a result the window had elided; one artifact was re-read 16
 times; 12 of 21 productive turns did nothing else ≈ 42 % of the run's input), and
 that the run never emitted a `final`. Two unplanned findings appeared on the way:
 the CLI's own harness is 13.716 tokens (`--disallowed-tools` 7.114 +
-`--system-prompt` 6.602 — still NOT acted on: quality impact unmeasured, Fase 4
-stays out of scope), and **Agentopsy injected its own `CLAUDE.md` into every
+`--system-prompt` 6.602 — acted on 2026-07-30, see Fase 4 below), and
+**Agentopsy injected its own `CLAUDE.md` into every
 executor call** (8.870 tokens/turn) because `subprocess.run` inherited the
 working directory — which also contradicted the contract that `agentes/agent.md`
 is the ONE behavioural file the agent reads.
@@ -546,6 +546,26 @@ audits the lost turn's cost in EXPLICITLY-labeled estimate fields
 and a resume-capable CLI that stops returning `session_id` warns once per run
 (cost visibility, never fatal). Pinned by `tests/test_session_windowing.py` and
 the new executor tests.
+
+**Fase 4 + nudge de presupuesto (2026-07-30)**: `ClaudeCodeExecutor` now strips
+the CLI's own harness on EVERY call — `--tools ""` (no built-in tools: their
+schemas leave the prompt and the CLI can no longer append `tool_use` turns
+Agentopsy never wrote, so the `session_guard` divergence mode becomes
+structurally impossible), `--setting-sources ""` (no user/project settings — no
+`~/.claude/CLAUDE.md` or skill can leak into the context) and `--system-prompt`
+with Agentopsy's minimal identity instead of the 6.602-token coding-assistant
+prompt that actively contradicted the strict JSON response contract
+(`agentes/agent.md` stays the ONE behavioural file; the conduct block keeps
+travelling in the prompt). Verified against `claude` 2.1.220: a call that
+carried ~13.900 harness tokens enters with **202 input tokens**, the flags are
+compatible with `--resume` (same `session_id`, `num_turns=1`) and the on-disk
+transcript holds only authored prompts + assistant text. And the failure mode
+«12,97 USD without an answer» is closed: the loop injects a **budget nudge** —
+2 iterations before the cap it tells the model to wrap up, on the last one it
+demands the `final` consolidating what is already persisted (the measured run
+exhausted its 21 iterations without ever emitting a `final`). Pinned by
+`test_claude_argv_strips_the_cli_harness` and
+`test_budget_nudges_demand_a_final_before_exhaustion`.
 
 **Informe pericial con narrativa (2026-07-30, `forensia.reports.narrative` +
 `humanize`)**: the report stopped enumerating and started NARRATING, without
@@ -571,7 +591,25 @@ deterministic report; one unknown referent rejects the whole pass with an
 actionable error — prosa sin validar never persists), the BORRADOR notice is
 re-appended unconditionally, §2 declares the provenance («Redacción narrativa:
 asistida por …») and the pass lands in the audit (`report_humanized`, plus the
-executor run's literal argv — FORENSIC INVARIANT 4).
+executor run's literal argv — FORENSIC INVARIANT 4). **Reference-level redaction
+(2026-07-30, calibrated against the «Murciélago» executive summary)**: the
+deterministic opening now frames the ENCARGO (`case.notes`, capped and
+whitespace-collapsed — never fabricated when absent), names each evidence by its
+NATURE derived from the triage `detected_kind` + literal extension («el volcado
+de memoria RAM "x.raw"», «la imagen de disco virtual "y.vmdk"», never the raw
+kind string), and enumerates memory-first («de mayor a menor volatilidad» — an
+ordering claim about the report's enumeration only, never about processing
+order, which only the audit log can assert). The humanize pass stopped receiving
+only §1/§8 prose: it now gets the deterministic report DECOMPOSED into writing
+material (case data, evidences by nature, the §5 relato, the FULL §6 findings —
+where the concrete entities live: users, hosts, files, addresses — and the §7
+verdict table, baseline hashes excluded) plus a style contract modelled on the
+reference: encargo+evidence+method first, verdict up front («La investigación
+confirma…» ONLY with adjudicated-confirmed techniques), the fact sequence woven
+with SUBJECT CONTINUITY using only entities literally present in the findings,
+complementary actions grouped by theme, descartes and pending verdicts said as
+such. Closed-referent validation is unchanged and the material is a subset of
+the referent corpus by construction.
 
 **Agent analysis hardening (2026-07-15)**: the loop now forces the agent to
 `record_finding` HOT (a strict prompt rule + a **structural nudge** in

@@ -620,6 +620,21 @@ def test_cloud_build_argv_omits_model_when_none() -> None:
     assert "--model" not in codex._build_argv("hi", None)
 
 
+def test_claude_argv_strips_the_cli_harness() -> None:
+    """Fase 4 — el arnés de Claude Code no viaja: sin tools nativas (el CLI no
+    puede fabricar turnos `tool_use`), sin settings de usuario/proyecto (ningún
+    CLAUDE.md puede colarse) y con el system prompt mínimo de Agentopsy en vez
+    del de un asistente de programación. En TODAS las llamadas, `--resume`
+    incluido (verificado contra `claude` 2.1.220: mismo session_id, num_turns=1)."""
+    ex = ClaudeCodeExecutor()
+    for argv in (ex._build_argv("hi", None), ex._build_argv("hi", None, "sid-1")):
+        assert argv[argv.index("--tools") + 1] == ""
+        assert argv[argv.index("--setting-sources") + 1] == ""
+        system = argv[argv.index("--system-prompt") + 1]
+        assert "Agentopsy" in system and "contrato" in system
+    assert "--resume" in ex._build_argv("hi", None, "sid-1")
+
+
 def test_models_endpoint_ollama(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(OllamaExecutor, "list_models", lambda self: ["qwen2.5:7b-instruct"])
     r = client.get(

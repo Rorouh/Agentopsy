@@ -16,6 +16,22 @@ code.claude.com/docs/en/cli-reference (verified 2026-07-03): "Show
 authentication status as JSON. Exits with code 0 if logged in, 1 if not". On
 macOS hosts there is nothing useful to seed (the OAuth token lives in the
 Keychain), so in-container login is the documented path.
+
+Fase 4 (2026-07-30) — the CLI's own harness is stripped: Agentopsy is not a
+coding session, so the Claude Code default system prompt (6.602 tokens
+measured) and the built-in tool schemas (7.114 tokens) are pure noise that
+also CONTRADICTS the strict JSON contract the prompt carries. Every call now
+passes ``--tools ""`` (no built-in tools: the schemas leave the harness and the
+CLI can no longer append ``tool_use`` turns Agentopsy never wrote — the
+``session_guard`` divergence measured on 2026-07-29 becomes structurally
+impossible), ``--setting-sources ""`` (no user/project settings: a CLAUDE.md or
+skill in the volume's ``~/.claude`` can never leak into the model's context),
+and ``--system-prompt`` with Agentopsy's own minimal identity (the behavioral
+contract keeps travelling in the prompt itself — ``agentes/agent.md`` stays the
+ONE behavioral file). Verified against ``claude`` 2.1.220 on 2026-07-30: a
+call that carried ~13.900 harness tokens enters with 202 input tokens, the
+flags are compatible with ``--resume`` (same ``session_id``, ``num_turns=1``)
+and the on-disk transcript holds only authored prompts + assistant text.
 """
 
 from __future__ import annotations
@@ -29,6 +45,18 @@ from forensia.executors.base import (
     Usage,
     _as_float,
     _as_int,
+)
+
+# El system prompt MÍNIMO que sustituye al arnés de Claude Code (Fase 4). La
+# conducta real del agente viaja en el prompt (bloque SISTEMA, renderizado de
+# `agentes/agent.md` — el ÚNICO fichero de conducta); esto solo fija la
+# identidad y remite al contrato. Estable a propósito: cambia el prefijo de
+# caché de TODAS las sesiones si se toca.
+_SYSTEM_PROMPT = (
+    "Eres el motor de razonamiento de Agentopsy, una herramienta de análisis "
+    "forense digital post-mortem. No eres un asistente de programación y no "
+    "tienes herramientas propias: tu única interfaz es el contrato de "
+    "respuesta que el mensaje especifica. Síguelo al pie de la letra."
 )
 
 _LOGIN_HINT = (
@@ -79,6 +107,15 @@ class ClaudeCodeExecutor(CliPromptExecutor):
             # `cache_creation` collapses to the delta. Uses the same OAuth session
             # in the auth volume — no API key is involved (SECURITY INVARIANT 7).
             argv += ["--resume", session_id]
+        # Fase 4 — sin arnés de Claude Code (ver el docstring del módulo). Los
+        # tres flags van TAMBIÉN en los `--resume` (verificado 2026-07-30: mismo
+        # session_id, num_turns=1); el string idéntico en cada llamada mantiene
+        # el prefijo cacheable estable.
+        argv += [
+            "--tools", "",
+            "--setting-sources", "",
+            "--system-prompt", _SYSTEM_PROMPT,
+        ]
         argv += ["--output-format", "json"]
         return argv
 

@@ -14,6 +14,16 @@
 > coste estimado en campos etiquetados (`estimated_input_tokens`,
 > `estimate_basis`). El punto 4 (¿por qué ningún `final`?) queda pendiente de
 > re-medir con el bucle de relectura cerrado.
+>
+> **ACTUALIZACIÓN 2 (2026-07-30).** El punto 4 también está atacado por código,
+> no solo pendiente de re-medición: el bucle inyecta un **nudge de
+> presupuesto** — a 2 iteraciones del límite avisa de que cierre («tu siguiente
+> respuesta deberá ser `final`») y en la última exige el `final` consolidando
+> lo ya persistido. El agente no conocía su presupuesto: agotarlo sin responder
+> era el desenlace por defecto de cualquier análisis largo. Pinado por
+> `test_budget_nudges_demand_a_final_before_exhaustion`. La re-medición de si
+> 21 iteraciones bastan sigue pendiente, pero el modo de fallo «12,97 USD sin
+> respuesta» ya no existe.
 
 ---
 
