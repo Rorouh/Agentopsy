@@ -13,7 +13,7 @@ interface SidebarProps {
   onOpenNewCase?: () => void;
 }
 
-// Estado de una fase DEL CASO — independiente de la vista abierta.
+// Estado de una fase DEL CASO, independiente de la vista abierta.
 type PhaseState = "done" | "current" | "next" | "pending";
 
 const STATUS_LABEL: Record<Case["status"], string> = {

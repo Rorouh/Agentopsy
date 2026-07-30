@@ -652,7 +652,7 @@ def _read_run_stdout(case_id: str, run_id: str) -> str:
     )
     if not bodyfile_path.is_file():
         raise RuntimeError(
-            f"no se encontró el bodyfile de tsk_fls en {bodyfile_path} — el run "
+            f"no se encontró el bodyfile de tsk_fls en {bodyfile_path}, el run "
             f"{run_id} no materializó su artefacto de bodyfile."
         )
     return bodyfile_path.read_text(encoding="utf-8", errors="replace")

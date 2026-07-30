@@ -125,6 +125,80 @@ Lo que Agentopsy no delega, porque es custodia y no redacción. Todas se cruzan
    informe: se cita el comando que se EJECUTÓ, no el que el modelo cree que se
    ejecutó.
 
+Cada puerta recoge **todas** sus violaciones antes de rechazar (no la primera):
+un motivo que nombra los tres identificadores inventados se puede arreglar de una
+vez; uno que nombra el primero se arregla de uno en uno.
+
+### 3.3.bis La ronda de corrección
+
+Rechazar entero es correcto; **tirar la redacción entera es caro y no protege
+nada más**. Medido en un caso real (`TestCase4`, 2026-07-30): 6 min 32 s de
+redacción descartados porque §1 citaba un identificador de documento que el
+modelo se inventó —el informe que se está redactando aún no existe, así que no
+tiene id ni SHA-256—. Dos cambios:
+
+- **El contrato de §1 lo dice explícitamente** (`indice.py`): la revisión que se
+  emite no cita su identificador ni su hash, se asignan al persistir. Y una regla
+  nueva del prompt (`2.bis`) generaliza: lo que no tiene identificador en el
+  material se nombra por su descripción, nunca con un id inventado.
+- **`MAX_REPARACIONES = 1`**: cuando una puerta rechaza, el motivo exacto vuelve
+  al modelo y se le pide que corrija ESO. Si el ejecutor sabe reanudar sesión
+  (`supports_session_resume` + `session_id` devuelto), la corrección viaja como
+  un **delta** sobre su propio borrador; si no, se reenvía el encargo completo
+  con el fallo señalado. La ronda queda en el audit (`report_repair`: intento,
+  motivo, si hubo reanudación) y el informe publicado registra en qué intento
+  pasó (`report_written.attempts`) — un informe corregido no se disfraza de
+  limpio.
+
+**No es un fallback (RULE 2).** No se sustituye el informe por otra cosa, no se
+publica a medias y no se relaja ninguna puerta: es el mismo ejecutor, con el
+mismo contrato, arreglando su propio texto. Si la corrección tampoco pasa, no hay
+informe y el error lo dice.
+
+### 3.3.ter La tipografía del producto (2026-07-30)
+
+Un informe pericial de Agentopsy **no lleva el signo `§`, ni el guion largo `—`,
+ni emojis**. La regla vale igual para el texto de la aplicación web.
+
+De dónde venía: la propia **regla 8 del prompt ordenaba** citar las referencias
+cruzadas como «§3, §6.2, §9», y `contrato_del_indice()` le enseñaba al modelo el
+formato `§1 — Control de versiones`. El informe hacía exactamente lo que se le
+pedía. Ahora el índice se enuncia `1. Control de versiones`, la regla 8 exige
+«apartado 6.2» y prohíbe el signo, y una **regla 9** nueva fija la tipografía:
+prosa en texto plano, incisos entre comas o paréntesis, y la palabra en lugar del
+pictograma.
+
+Pedirlo no basta, así que hay una pasada **después** de las cuatro puertas,
+sobre texto que ya cruzó la custodia: `_normalizar_estilo`.
+
+- **No es una quinta puerta y no rechaza nada.** La tipografía no es un hecho del
+  caso, y el material puede traer una raya que escribió el agente en el título de
+  un hallazgo: copiarla fielmente no puede costar el informe entero.
+- **Sustituye por lo que toca en cada sitio.** El inciso con rayas del español
+  equivale al inciso con comas, así que «el informe —que aún no existe— no tiene
+  id» sale «el informe, que aún no existe, no tiene id». Pegada a un signo de
+  puntuación o al principio de la frase, la raya desaparece. `§6.2` pasa a
+  «apartado 6.2»; tras la palabra «sección» solo se cae el signo.
+- **Nunca toca un bloque `code`.** Ahí vive el argv auditado, carácter a carácter
+  (FORENSIC INVARIANT 4). Si el comando que se ejecutó llevaba una raya, el
+  informe la conserva: es el comando que corrió.
+- **Un texto que ya cumple sale idéntico, byte a byte.** La limpieza de espacios
+  solo actúa donde hubo sustitución: no es un corrector de estilo.
+- **Queda auditado.** `report_written.style_normalized` cuenta cuántos campos se
+  reescribieron; `0` significa que el modelo cumplió la regla 9 por sí mismo. Se
+  normaliza a la vista, no en silencio.
+
+El mismo criterio se aplicó a las otras dos fuentes que el prompt no puede
+corregir: **`agentes/agent.md`** (apartado 9, «Cómo se escribe»), porque es el
+texto que el modelo lee e imita y de ahí salen el `title` y el `summary` de cada
+hallazgo, que viajan al informe; y **la interfaz web**, barrida entera (el hueco
+de «sin dato» pasó de `—` a `n/d`). Lo fija en CI
+`backend/tests/test_estilo_tipografia.py`, que recorre los literales de salida
+del backend, todo `web/src` y `agent.md`. Quedan fuera, a propósito, tres sitios
+donde la raya es **dato y no prosa**: la clave de transliteración del PDF
+(`pdf._PUNCT`, que ya la convertía a guion antes de imprimir), el regex que
+parsea las tácticas de la semilla ATT&CK y el propio `_RAYA_RE`.
+
 ### 3.4 El encargo, literal
 
 `writer.ENCARGO` es la primera línea del prompt:
@@ -161,9 +235,16 @@ opcionales del perito.
 El botón dice por qué no se puede pulsar cuando no se puede: sin ejecutor
 seleccionado, con el ejecutor no disponible (con su motivo accionable), o sin un
 solo hallazgo registrado. Mientras redacta, una barra indeterminada con la fase
-(`material` → `redactando` → `validando` → `listo`) y un cronómetro anclado al
-`created_at` del job en el SERVIDOR: cambiar de sección o recargar no lo
-reinicia, y cerrar la pestaña no aborta la redacción.
+(`material` → `redactando` → `validando` → `corrigiendo`? → `listo`) y un
+cronómetro anclado al `created_at` del job en el SERVIDOR: cambiar de sección o
+recargar no lo reinicia, y cerrar la pestaña no aborta la redacción.
+
+**Un rechazo se queda a la vista.** Una redacción que no publica nada dejaba la
+vista idéntica a «no ha pasado nada» —el motivo solo vivía en un aviso que se
+desvanecía a los seis segundos—, así que el perito buscaba un informe que no
+existía. Ahora el fallo se pinta como bloque persistente con su motivo íntegro, y
+al montar la vista se reengancha el ÚLTIMO job del caso, no solo uno en curso:
+un intento fallido se puede leer después, no solo en el instante en que falla.
 
 **Volver a pulsarlo emite una revisión nueva.** La versión se deriva de las
 revisiones ya registradas (`v0.1`, `v0.2`…) salvo que el perito declare una, y §1
@@ -184,7 +265,15 @@ sigue gobernando «Cerrar caso» del lateral.
 
 - `backend/tests/test_report_writer.py` — el informe es del modelo; el índice
   exacto; las cuatro puertas; el contrato de respuesta; dos casos comparten
-  índice y NO contenido.
+  índice y NO contenido; la ronda de corrección (el motivo vuelve al modelo, la
+  corrección se publica y queda trazada; un segundo rechazo no publica nada ni
+  pide una tercera; con sesión viaja como delta y sin ella se reenvía el
+  encargo); la tipografía (el encargo la prohíbe, el informe publicado no lleva
+  raya ni `§` ni emoji, el `code` auditado conserva su forma literal, un texto
+  limpio no se reescribe y una raya nunca cuesta el informe).
+- `backend/tests/test_estilo_tipografia.py` — la regla en las tres fuentes que
+  ningún prompt corrige: literales de salida del backend, `web/src` entero y
+  `agentes/agent.md`.
 - `backend/tests/test_report_material.py` — todo lo persistido llega al material;
   el material no trae prosa; naturaleza y volatilidad; recorte declarado.
 - `backend/tests/test_reports_works.py` — argv token a token, runs fallidos

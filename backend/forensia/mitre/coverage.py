@@ -138,7 +138,7 @@ class CoverageStore:
         known = {f.id for f in self._findings.list(case_id)}
         if finding_id not in known:
             raise ValueError(
-                f"finding_id {finding_id!r} not found in case {case_id} — refusing "
+                f"finding_id {finding_id!r} not found in case {case_id}, refusing "
                 f"to anchor a technique to a finding that does not exist"
             )
         if not isinstance(technique_ids, list):
@@ -154,7 +154,7 @@ class CoverageStore:
                 if reason:
                     raise ValueError(reason)
                 raise ValueError(
-                    f"{technique_id!r} is not in the ATT&CK seed — refusing to "
+                    f"{technique_id!r} is not in the ATT&CK seed, refusing to "
                     f"anchor a technique the agent may not even emit"
                 )
             if technique_id not in validated:
@@ -205,7 +205,7 @@ class CoverageStore:
             if reason:
                 raise ValueError(reason)
             raise ValueError(
-                f"{technique_id!r} is not in the ATT&CK Enterprise catalog — "
+                f"{technique_id!r} is not in the ATT&CK Enterprise catalog, "
                 f"refusing to adjudicate a technique that does not exist"
             )
         if status not in STATUSES and status != UNMARK:
@@ -219,7 +219,7 @@ class CoverageStore:
         # Retirar un dictamen no exige motivo; emitirlo, sí.
         if status != UNMARK and not rationale:
             raise ValueError(
-                f"adjudicating {technique_id} as {status!r} requires a rationale — "
+                f"adjudicating {technique_id} as {status!r} requires a rationale, "
                 f"an unexplained verdict is worthless in a forensic report"
             )
         if len(rationale) > 2000:

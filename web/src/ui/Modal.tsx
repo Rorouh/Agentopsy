@@ -21,7 +21,7 @@ interface ModalProps {
 }
 
 // Diálogo mínimo: backdrop fijo + panel centrado. Cierra con click en el
-// backdrop, Escape, o el botón ×. Sin createPortal — no hay ningún ancestro
+// backdrop, Escape, o el botón ×. Sin createPortal, no hay ningún ancestro
 // con `transform` en AppShell/index.css que rompa `position: fixed`.
 export function Modal({
   open,

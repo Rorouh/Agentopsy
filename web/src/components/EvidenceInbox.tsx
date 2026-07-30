@@ -70,7 +70,7 @@ function registerProgressLabel(job: EvidenceRegisterJob | null): string {
 // Zona de registro de evidencia. El perito puede DEPOSITAR evidencia en la
 // bandeja de dos formas: copiándola a ./evidence en el host, o SUBIÉNDOLA desde
 // aquí (drag-and-drop o «Examinar», uno o VARIOS ficheros a la vez). La subida
-// escribe en la bandeja (el api la monta rw — cadena de custodia: el agente/
+// escribe en la bandeja (el api la monta rw, cadena de custodia: el agente/
 // maletines la ven ro y nunca mutan la imagen); subir NO registra: deja los
 // ficheros listos para que el operador ELIJA el punto de entrada y pulse
 // «Registrar», donde ocurre el hash-gate. El backend re-valida nombre y formato
@@ -294,7 +294,7 @@ export function EvidenceInbox({
 
       {/* Registrando: PROGRESO REAL del hash-gate (bytes de las tres pasadas),
           sondeado del job. No hay cancelación a propósito: el registro es
-          atómico — se publica entero o no se publica. */}
+          atómico, se publica entero o no se publica. */}
       {registering && !uploading && (
         <div className="progress-block" aria-live="polite">
           <div className="progress-head">
@@ -323,14 +323,14 @@ export function EvidenceInbox({
           )}
           <div className="progress-note">
             El hash-gate recorre la imagen tres veces (SHA-256 del origen → copia inmutable →
-            re-hash de la copia): puede tardar varios minutos. Puedes cerrar esta ventana — el
+            re-hash de la copia): puede tardar varios minutos. Puedes cerrar esta ventana, el
             registro sigue en el servidor y se retoma al volver.
           </div>
         </div>
       )}
 
       {/* Bandeja: filas seleccionables. Las continuaciones EWF se listan pero no
-          se eligen — el punto de entrada del set es el .E01. */}
+          se eligen, el punto de entrada del set es el .E01. */}
       {!busy && sources !== null && sources.length > 0 && (
         <div className="inbox-list">
           <div className="rule-label">

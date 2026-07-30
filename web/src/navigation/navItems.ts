@@ -4,7 +4,7 @@
 // App.tsx mantiene un único `activeView: ViewId` en estado local.
 //
 // Rediseño 2026-07 (docs/diseno/rediseno-2026-07/): el sidebar deja de ser un
-// menú de secciones y pasa a ser el ESTADO DEL CASO — cinco fases en escalera
+// menú de secciones y pasa a ser el ESTADO DEL CASO, cinco fases en escalera
 // más dos utilidades. Las etiquetas cambian; los VALORES de `ViewId` NO:
 // `initialView()` en App.tsx descarta de localStorage cualquier id desconocido,
 // así que renombrar `document-viewer` → `report` mandaría a la vista por defecto

@@ -140,7 +140,7 @@ def build_package(
         )
     return AgentPackage(
         id=f"forensia-{os_profile}",
-        name=f"Agentopsy — {os_profile}",
+        name=f"Agentopsy, {os_profile}",
         version="1.0.0",
         os_profile=os_profile,
         authors=(),

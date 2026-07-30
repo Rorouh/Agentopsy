@@ -175,7 +175,7 @@ def _evidencias_material(
             "so_detectado": ev.get("detected_os") or "unknown",
             "tipo_detectado": ev.get("detected_kind") or "unknown",
             "registrada": ev.get("registered_at") or "",
-            "solo_lectura": f"{act['read_only']['level']} — {act['read_only']['label']}",
+            "solo_lectura": f"{act['read_only']['level']}, {act['read_only']['label']}",
             "hash_de_registro": act["chain_of_custody"].get("register_entry_hash") or "",
             "cadena_auditoria_verificada": bool(
                 act["chain_of_custody"].get("hash_chain_verified")

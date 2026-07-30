@@ -64,13 +64,13 @@ def run_in_container(
     if not isinstance(argv_inside, list) or not all(
         isinstance(a, str) for a in argv_inside
     ):
-        raise TypeError("argv_inside must be a list[str] — never a shell string")
+        raise TypeError("argv_inside must be a list[str], never a shell string")
 
     runtime = container_runtime()
     if runtime is None:
         raise RuntimeError(
             "no OCI runtime (docker/podman/nerdctl) on PATH. "
-            "Install one — see CLAUDE.md RULE 1."
+            "Install one, see CLAUDE.md RULE 1."
         )
 
     _validate_mount_paths(mounts_ro, "mounts_ro")

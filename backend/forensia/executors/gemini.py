@@ -39,7 +39,7 @@ _LOGIN_HINT = (
     "Inicia sesión con tu cuenta de Google: en el HOST, ejecuta `gemini` y "
     "autentícate ANTES del primer `docker compose up` (el arranque seedea "
     "`~/.gemini` al volumen forensia-cli-auth); o dentro del contenedor, "
-    "`docker compose exec -it -e NO_BROWSER=true api gemini` — imprime una "
+    "`docker compose exec -it -e NO_BROWSER=true api gemini`, imprime una "
     "URL para abrir en el navegador del host y pide pegar el código de vuelta. "
     "La sesión se revoca con `docker compose down -v`."
 )

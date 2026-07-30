@@ -51,16 +51,16 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
   // Registro en SEGUNDO PLANO: el hash-gate de una imagen grande tarda minutos,
   // así que no vive dentro de la petición HTTP (504 del proxy + copia cortada a
   // medias). `registerJob` es el último estado sondeado (fase + bytes, para la
-  // barra); `registerJobRef` ata el sondeo a SU caso — cambiar de caso no debe
+  // barra); `registerJobRef` ata el sondeo a SU caso, cambiar de caso no debe
   // sondear el job del anterior contra el nuevo (daría 404).
   const [registerJob, setRegisterJob] = useState<EvidenceRegisterJob | null>(null);
   const [registerJobRef, setRegisterJobRef] = useState<
     { caseId: string; jobId: string } | null
   >(null);
-  // Flash de éxito de registro (2 s) — aria-live en EvidenceInbox.
+  // Flash de éxito de registro (2 s), aria-live en EvidenceInbox.
   const [registerSuccess, setRegisterSuccess] = useState(false);
   const successTimer = useRef<number | undefined>(undefined);
-  // Bandeja de entrada de evidencias (/api/evidence/sources — ./evidence del
+  // Bandeja de entrada de evidencias (/api/evidence/sources./evidence del
   // host): el operador copia el fichero a la bandeja y lo ELIGE aquí
   // (RULE 2: nunca "el único" ni "el más reciente").
   const [sources, setSources] = useState<EvidenceSource[] | null>(null);
@@ -74,7 +74,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
   const [uploadError, setUploadError] = useState<string | null>(null);
   // Resumen informativo de la última tanda (p. ej. segmentos EWF que ya estaban
   // en la bandeja: 409 del backend, que NUNCA sobrescribe evidencia). No es un
-  // error — el operador puede seguir adelante y registrar.
+  // error, el operador puede seguir adelante y registrar.
   const [uploadNotice, setUploadNotice] = useState<string | null>(null);
 
   // Acta de adquisición: modal por evidencia con la metadata de custodia + el
@@ -138,7 +138,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
     try {
       const res = await api.evidence.listSources();
       setSources(res.sources);
-      // Si el fichero seleccionado desapareció de la bandeja, deselecciona —
+      // Si el fichero seleccionado desapareció de la bandeja, deselecciona,
       // jamás se registra una ruta que ya no está (el backend la rechazaría).
       setSelectedSourcePath((prev) => (res.sources.some((s) => s.path === prev) ? prev : ""));
       return res.sources;
@@ -159,7 +159,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
   // reensamble la imagen; por eso se sube el conjunto, no solo el primero.
   // Un 409 («ya está en la bandeja») NO es un fallo: el backend nunca
   // sobrescribe evidencia, así que re-soltar un set del que ya había parte es
-  // el caso normal — se cuenta como informativo.
+  // el caso normal, se cuenta como informativo.
   const uploadSources = useCallback(
     async (files: File[]) => {
       if (files.length === 0) return;
@@ -318,7 +318,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
 
   // Re-enganche: al montar (o al cambiar de caso) pregunta si ese caso tiene un
   // registro VIVO y retoma su sondeo. Cerrar/reabrir la ventana no aborta nada
-  // — el job corre en el api.
+  // el job corre en el api.
   useEffect(() => {
     setRegisterJob(null);
     setRegisterJobRef(null);
@@ -353,7 +353,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
         const updated = await api.cases.verifyEvidence(intendedCaseId, evidenceId);
         // El router devuelve el handle completo con last_verification recién
         // persistida (verification.json + audit.jsonl). Sustituye la fila en
-        // sitio — pero solo si el caso activo no ha cambiado por debajo.
+        // sitio, pero solo si el caso activo no ha cambiado por debajo.
         if (activeCaseIdRef.current === intendedCaseId) {
           setEvidence((prev) =>
             prev.map((ev) => (ev.evidence_id === evidenceId ? { ...ev, ...updated } : ev)),
@@ -381,7 +381,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
   // que la abre por el maletín (solo lectura, a nivel de bloque). Aquí vive
   // todo lo que puede hacer falta cuando esa determinación no llegó a cerrar:
   // reintentarla (el maletín pudo estar arrancando al registrar) y, como último
-  // recurso ante una imagen genuinamente ambigua, anclarla a mano (RULE 2 —
+  // recurso ante una imagen genuinamente ambigua, anclarla a mano (RULE 2,
   // nadie elige un perfil en silencio).
   const [redetecting, setRedetecting] = useState<string | null>(null);
   const [anchoring, setAnchoring] = useState<"unix" | "windows" | null>(null);
@@ -423,7 +423,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
     // De una en una: `redetectOs` abre la imagen dentro del maletín y eso no se
     // paraleliza gratis. Sin esta guarda, el re-render que provoca `setRedetecting`
     // volvería a entrar aquí, marcaría la SEGUNDA evidencia como ya intentada y
-    // se toparía con la salida temprana de `redetectOs` — quedándose sin
+    // se toparía con la salida temprana de `redetectOs`, quedándose sin
     // reintentar de verdad. Al terminar la primera, el efecto vuelve por la
     // siguiente.
     if (redetecting !== null) return;
@@ -470,7 +470,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
       setActaError(null);
       setActaLoading(true);
       try {
-        // Metadata + acta en paralelo — ambas son lecturas puras del backend.
+        // Metadata + acta en paralelo, ambas son lecturas puras del backend.
         const [meta, actaRes] = await Promise.all([
           api.cases.evidenceMetadata(caseId, ev.evidence_id),
           api.cases.custodyAct(caseId, ev.evidence_id),
@@ -658,7 +658,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
               Agentopsy lo determina del CONTENIDO de la evidencia, nunca de la máquina en la
               que corre: cabeceras, sectores de arranque y, en una imagen contenedor, el
               directorio raíz de sus sistemas de ficheros leído a través del maletín (solo
-              lectura, a nivel de bloque — la imagen no se monta). El orquestador enruta con
+              lectura a nivel de bloque: la imagen no se monta). El orquestador enruta con
               ese perfil al sub-agente que corresponde.
             </div>
 
@@ -690,12 +690,12 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
             {/* Último recurso, y sólo cuando la determinación automática no ha
                 podido cerrar: una imagen dual-boot, señales en conflicto o un
                 contenedor que el maletín no pudo abrir. RULE 2 prohíbe elegir
-                un perfil en silencio, así que aquí lo ancla el operador — con
+                un perfil en silencio, así que aquí lo ancla el operador, con
                 la huella delante, no en mitad del chat. */}
             {activeCase.os_profile === null && redetecting === null && (
               <div className="note-rail">
                 La determinación automática no ha podido cerrar el sistema operativo de este
-                caso — o la imagen contiene señales de más de un SO, o el maletín que la abre
+                caso, o la imagen contiene señales de más de un SO, o el maletín que la abre
                 no está disponible. El agente no se enruta hasta que haya un perfil, así que
                 puedes anclarlo tú:
                 <div className="anchor-actions">
@@ -814,7 +814,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
             <div className="acta-row">
               <div className="eyebrow">Origen</div>
               <div className="acta-value acta-value--mono">
-                {acta.evidence.source_path ?? "—"}
+                {acta.evidence.source_path ?? "n/d"}
               </div>
             </div>
             <div className="acta-row">
@@ -845,7 +845,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
                   acta.chain_of_custody.hash_chain_verified ? " is-ok" : " is-bad"
                 }`}
               >
-                entry_hash {acta.chain_of_custody.register_entry_hash ?? "—"} ·{" "}
+                entry_hash {acta.chain_of_custody.register_entry_hash ?? "n/d"} ·{" "}
                 {acta.chain_of_custody.hash_chain_verified
                   ? "cadena verificada"
                   : "⚠ la cadena NO verifica"}

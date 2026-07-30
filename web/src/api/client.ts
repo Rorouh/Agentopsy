@@ -1,10 +1,10 @@
-// Cliente HTTP del servicio api, sobre fetch mismo-origen — nginx (producción)
+// Cliente HTTP del servicio api, sobre fetch mismo-origen, nginx (producción)
 // o el proxy de Vite (desarrollo) reenvían /api hacia api:8000.
 //
 // Token de sesión: se obtiene UNA vez de GET /api/session (legible solo desde
 // el mismo-origen de la UI; ver backend/forensia/routers/session.py) y viaja
 // en X-Forensia-Token en cada llamada. Nunca se persiste (ni localStorage ni
-// cookies) — vive solo en memoria de la pestaña.
+// cookies), vive solo en memoria de la pestaña.
 
 import type {
   AdjudicateRequest,
@@ -213,7 +213,7 @@ export const api = {
     post<{ job_id: string; status: string; case_id: string }>("/api/agent/analyze", req),
   getJob: (jobId: string, since = 0) =>
     request<AgentJob>(`/api/agent/jobs/${encodeURIComponent(jobId)}?since=${since}`),
-  // Botón «Parar»: pide detener un análisis en curso. Parada cooperativa — el
+  // Botón «Parar»: pide detener un análisis en curso. Parada cooperativa, el
   // loop del agente termina limpio conservando lo persistido en caliente.
   cancelJob: (jobId: string) =>
     post<{ job_id: string; cancel_requested: boolean; status: string }>(
@@ -289,14 +289,14 @@ export const api = {
     // Borrado PERMANENTE del caso y toda su cadena de custodia (evidencia,
     // audit hash-encadenado, hallazgos, artefactos). Irreversible: el backend
     // exige que `confirmName` sea EXACTAMENTE el nombre del caso (RULE 2) y
-    // responde 409 si no cuadra — sin borrar nada.
+    // responde 409 si no cuadra, sin borrar nada.
     delete: (caseId: string, confirmName: string) =>
       post<{ deleted: boolean; case_id: string }>(
         `/api/cases/${encodeURIComponent(caseId)}/delete`,
         { confirm_name: confirmName },
       ),
     // Anclaje MANUAL del os_profile por el operador (RULE 2: acción explícita,
-    // nunca adivinada) — cuando el triage quedó ambiguo/sin determinar. Devuelve
+    // nunca adivinada), cuando el triage quedó ambiguo/sin determinar. Devuelve
     // el caso actualizado; queda registrado en el audit log del caso.
     anchorProfile: (caseId: string, os_profile: "unix" | "windows") =>
       post<Case>(`/api/cases/${encodeURIComponent(caseId)}/os-profile`, { os_profile }),
@@ -312,7 +312,7 @@ export const api = {
         {},
       ),
     // Registro SÍNCRONO: espera al hash-gate completo dentro de la petición.
-    // La UI NO lo usa — una imagen grande tarda minutos y nginx la corta con
+    // La UI NO lo usa, una imagen grande tarda minutos y nginx la corta con
     // 504. Para registrar desde el navegador, `evidence.registerAsync`.
     registerEvidence: (caseId: string, source_path: string) =>
       post<EvidenceHandle>(`/api/cases/${encodeURIComponent(caseId)}/evidence`, {
@@ -344,7 +344,7 @@ export const api = {
       request<ExecutorCost[]>(`/api/cases/${encodeURIComponent(caseId)}/executor-cost`),
 
     // ── Timeline forense del caso ───────────────────────────────────────────
-    // Capa 1: timeline de investigación (determinista) — ejecuciones de tool del
+    // Capa 1: timeline de investigación (determinista), ejecuciones de tool del
     // audit log + hallazgos, en orden cronológico UTC.
     timeline: (caseId: string) =>
       request<InvestigationTimeline>(`/api/cases/${encodeURIComponent(caseId)}/timeline`),
@@ -480,16 +480,16 @@ export const api = {
 
   evidence: {
     // Bandeja de entrada (./evidence del host, /evidence en el api). El
-    // operador ELIGE el fichero — la web no tiene diálogo nativo (RULE 2:
+    // operador ELIGE el fichero, la web no tiene diálogo nativo (RULE 2:
     // nunca "el único" ni "el más reciente").
     listSources: () => request<{ sources: EvidenceSource[] }>("/api/evidence/sources"),
-    // Subida del perito: deposita el fichero en la bandeja (NO lo registra —
+    // Subida del perito: deposita el fichero en la bandeja (NO lo registra,
     // eso es un paso aparte, con el hash-gate). `onProgress` va de 0 a 1.
     uploadSource: (file: File, onProgress?: (fraction: number) => void) =>
       upload<EvidenceSource>("/api/evidence/upload", file, onProgress),
 
     // Registro en SEGUNDO PLANO: arranca el hash-gate y devuelve el job al
-    // instante. Es el camino de la UI para imágenes grandes — el registro
+    // instante. Es el camino de la UI para imágenes grandes, el registro
     // síncrono (cases.registerEvidence) tarda minutos dentro de la petición y
     // nginx lo corta con 504. El job sobrevive a cerrar la pestaña.
     registerAsync: (caseId: string, source_path: string) =>
@@ -518,14 +518,14 @@ export const api = {
 
   // Modelos que ofrece el selector del composer para un ejecutor. Ollama devuelve
   // los instalados; los CLIs cloud, atajos + texto libre (allow_custom) que se
-  // pasan como --model — Agentopsy no puede enumerar su catálogo sin API key
+  // pasan como --model, Agentopsy no puede enumerar su catálogo sin API key
   // (SECURITY 7). El modelo elegido se persiste por proveedor (MODEL_CONFIG_KEY).
   executorModels: (id: ExecutorId) =>
     request<ExecutorModels>(`/api/executors/${id}/models`),
 
   // Login web de un ejecutor CLI cloud (Codex/Claude). Todos los POST llevan el
   // token de sesión (SECURITY INVARIANT 3). El código de un solo uso solo viaja
-  // en la respuesta de `startLogin` y en la memoria de la pestaña — nunca se
+  // en la respuesta de `startLogin` y en la memoria de la pestaña, nunca se
   // persiste ni se registra.
   executorLogin: {
     // Capacidad de relay de los ejecutores cloud (batch, para Ajustes).

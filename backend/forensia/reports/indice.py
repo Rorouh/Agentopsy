@@ -1,4 +1,4 @@
-"""El ÍNDICE del informe pericial — lo único que dos informes tienen en común.
+"""El ÍNDICE del informe pericial: lo único que dos informes tienen en común.
 
 Agentopsy ya no rellena una plantilla. Cada investigación produce un informe
 ÚNICO, redactado de principio a fin por el ejecutor que el operador seleccionó
@@ -9,16 +9,21 @@ todos los informes que emite la herramienta.
 
 Por eso el índice es una CONSTANTE del código y no una decisión del modelo: el
 validador del redactor exige que la respuesta cubra estas secciones EXACTAMENTE
-—mismo ``num``, mismo ``title``, mismo orden, ninguna de más, ninguna de
-menos— y rechaza la pasada entera si no (RULE 2: nada se publica a medias). El
+(mismo ``num``, mismo ``title``, mismo orden, ninguna de más, ninguna de menos)
+y rechaza la pasada entera si no (RULE 2: nada se publica a medias). El
 ``contrato`` de cada sección es lo que viaja al modelo: QUÉ debe cubrir el
 apartado y con qué cautelas periciales, nunca con qué palabras.
 
 Origen del índice: ``docs/diseno/informes-2026-07/plantilla-informe.md``, que a
-su vez sigue el orden de la guía metodológica (contexto → metodología →
-hallazgos → análisis → conclusiones → recomendaciones), con la línea de tiempo
-y las TTPs por delante de la descripción del incidente porque es lo que un
-lector técnico escanea primero.
+su vez sigue el orden de la guía metodológica (contexto, metodología, hallazgos,
+análisis, conclusiones, recomendaciones), con la línea de tiempo y las TTPs por
+delante de la descripción del incidente porque es lo que un lector técnico
+escanea primero.
+
+ESTILO (regla de producto, ver ``forensia.reports.writer``): ni en los títulos
+ni en los contratos aparece el signo de sección, el guion largo ni un emoji. Este
+texto es lo que el modelo lee e imita, así que es el primer sitio donde la regla
+tiene que cumplirse.
 
 Lógica pura (RULE 3): solo datos. Sin I/O, sin red.
 """
@@ -54,8 +59,11 @@ INDICE: tuple[SeccionIndice, ...] = (
             "Histórico de revisiones del informe pericial del caso. Usa "
             "`revisiones` del material (los informes periciales ya registrados: "
             "versión, fecha UTC, autor, estado y SHA-256 del contenido) y añade "
-            "la revisión que se está emitiendo, cuyo SHA-256 se fija al "
-            "persistir y por tanto NO se cita. Cierra explicando que el SHA-256 "
+            "la revisión que se está emitiendo, que TODAVÍA no existe como "
+            "documento: su SHA-256 y su identificador se fijan al persistir, "
+            "así que NO se citan ni se inventan (la fila lleva versión, fecha, "
+            "autor y estado, y en su lugar dice que se asignan al registrarse). "
+            "Cierra explicando que el SHA-256 "
             "corresponde al contenido canónico de cada revisión y permite "
             "verificar que una versión previa no se ha alterado. Si es la "
             "primera revisión, dilo."
@@ -69,12 +77,12 @@ INDICE: tuple[SeccionIndice, ...] = (
             "SHA-256, sin nombres de herramienta. Cubre el objeto del encargo "
             "(`caso.encargo`; si no consta, dilo), el alcance examinado "
             "(cuántas evidencias, de qué naturaleza, perfil de SO determinado "
-            "por triaje), lo que la investigación establece —con el veredicto "
+            "por triaje), lo que la investigación establece, con el veredicto "
             "por delante: «La investigación confirma…» SOLO si hay técnicas con "
             "veredicto Confirmada, y en caso contrario «El análisis documenta "
-            "indicios de…»—, la conclusión principal en una o dos frases "
-            "coherente con la sección 9, y el estado del documento con lo que "
-            "implica. Cota dura: 6000 caracteres en total."
+            "indicios de…». Después, la conclusión principal en una o dos "
+            "frases coherente con la sección 9, y el estado del documento con "
+            "lo que implica. Cota dura: 6000 caracteres en total."
         ),
     ),
     SeccionIndice(
@@ -99,7 +107,7 @@ INDICE: tuple[SeccionIndice, ...] = (
         title="MITRE ATT&CK TTPs",
         contrato=(
             "El encuadre táctico desde `mitre` del material. Primero la lista "
-            "de TTPs en el formato «T1053.003: Scheduled Task/Job – Cron», que "
+            "de TTPs en el formato «T1053.003 Scheduled Task/Job: Cron», que "
             "es lo que un lector técnico escanea; después la tabla con técnica, "
             "nombre, táctica, hallazgos que la sostienen (id abreviado + "
             "título) y veredicto del perito. Los DOS EJES no se funden nunca: "
@@ -113,9 +121,9 @@ INDICE: tuple[SeccionIndice, ...] = (
         title="Descripción del incidente, alcance y dispositivos",
         contrato=(
             "Con subapartados `h3`: (5.1) objeto del encargo y solicitante, de "
-            "`caso.encargo`; (5.2) descripción del incidente — lo CONOCIDO "
-            "ANTES del análisis, en bloque `quote` para que se vea que es "
-            "contexto aportado y no resultado del análisis; (5.3) marco "
+            "`caso.encargo`; (5.2) descripción del incidente, es decir lo "
+            "CONOCIDO ANTES del análisis, en bloque `quote` para que se vea que "
+            "es contexto aportado y no resultado del análisis; (5.3) marco "
             "temporal, con zona explícita, o la constancia de que no consta; "
             "(5.4) alcance y exclusiones, incluyendo lo que Agentopsy sabe que "
             "NO cubre: es post-mortem (sin análisis en vivo ni adquisición "
@@ -180,13 +188,13 @@ INDICE: tuple[SeccionIndice, ...] = (
             "LITERALMENTE (hashes, rutas, ficheros, direcciones IP, dominios, "
             "cuentas), en una tabla con tipo, valor, descripción o contexto, "
             "fuente del hallazgo, procedencia (run) y veredicto. Los valores de "
-            "red se escriben *defanged* — `185.239.236[.]170`, "
-            "`hxxp://dominio[.]tld` — y una nota al pie lo advierte para que "
+            "red se escriben *defanged* (`185.239.236[.]170`, "
+            "`hxxp://dominio[.]tld`) y una nota al pie lo advierte para que "
             "nadie crea que el dato está alterado. Nota obligatoria: la guía "
             "metodológica recomienda contrastar cada indicador con fuentes de "
             "Threat Intelligence actualizadas; Agentopsy no hace llamadas de "
             "red propias ni lleva credenciales, así que ese contraste queda "
-            "fuera del alcance de la herramienta y a cargo del perito — los "
+            "fuera del alcance de la herramienta y a cargo del perito. Los "
             "indicadores se presentan como observados en la evidencia, no como "
             "confirmados por inteligencia de amenazas. Si los hallazgos no "
             "traen ningún indicador, dilo; no inventes ninguno."
@@ -198,11 +206,11 @@ INDICE: tuple[SeccionIndice, ...] = (
         contrato=(
             "Una conclusión por bloque, numerada (9.1, 9.2…), derivada de los "
             "hallazgos y NO de recuentos, con referencia cruzada OBLIGATORIA a "
-            "los hallazgos que la sostienen (§6.x, id, severidad, confianza) y "
-            "a la técnica ATT&CK asociada con su veredicto. Emite una "
-            "conclusión por grupo de hallazgos que sostienen una misma técnica "
-            "confirmada, y una por cada hallazgo crítico o alto que ninguna "
-            "cubra. Un hallazgo con confianza inferior a 0,5 NO genera "
+            "los hallazgos que la sostienen (apartado 6.x, id, severidad, "
+            "confianza) y a la técnica ATT&CK asociada con su veredicto. Emite "
+            "una conclusión por grupo de hallazgos que sostienen una misma "
+            "técnica confirmada, y una por cada hallazgo crítico o alto que "
+            "ninguna cubra. Un hallazgo con confianza inferior a 0,5 NO genera "
             "conclusión firme: se enuncia como indicio y se remite a la sección "
             "6. Cierra con un subapartado `h3` «Limitaciones del análisis» "
             "derivado del material: herramientas que fallaron (código de salida "
@@ -235,7 +243,7 @@ INDICE: tuple[SeccionIndice, ...] = (
     ),
     SeccionIndice(
         num="A",
-        title="Anexo — Traza de la investigación",
+        title="Anexo: Traza de la investigación",
         contrato=(
             "Qué hizo el analista y cuándo, desde `traza` del material: es "
             "trazabilidad del TRABAJO, no del incidente, y por eso va a anexo y "
@@ -247,7 +255,7 @@ INDICE: tuple[SeccionIndice, ...] = (
     ),
     SeccionIndice(
         num="B",
-        title="Anexo — Verificación de integridad",
+        title="Anexo: Verificación de integridad",
         contrato=(
             "Cómo un tercero comprueba que nada se ha alterado: el SHA-256 del "
             "contenido del documento y que se recomputa con "
@@ -260,19 +268,24 @@ INDICE: tuple[SeccionIndice, ...] = (
     ),
 )
 
-#: Los ``num`` del índice, en orden — el contrato estructural que el validador
+#: Los ``num`` del índice, en orden: el contrato estructural que el validador
 #: del redactor exige a la respuesta del modelo.
 NUMS: tuple[str, ...] = tuple(s.num for s in INDICE)
 
-#: ``num`` → título canónico.
+#: ``num`` a título canónico.
 TITULOS: dict[str, str] = {s.num: s.title for s in INDICE}
 
 
 def contrato_del_indice() -> str:
     """El índice como texto para el prompt del redactor: número, título y qué
-    debe cubrir cada sección. Es la parte del prompt que NO depende del caso."""
+    debe cubrir cada sección. Es la parte del prompt que NO depende del caso.
+
+    El apartado se enuncia «1. Control de versiones», nunca «§1»: el signo de
+    sección está prohibido en el informe (``forensia.reports.writer``), y esta
+    función es lo que el modelo lee como ejemplo de cómo se nombra un apartado.
+    """
     return "\n\n".join(
-        f"§{s.num} — {s.title}\n{s.contrato}" for s in INDICE
+        f"{s.num}. {s.title}\n{s.contrato}" for s in INDICE
     )
 
 

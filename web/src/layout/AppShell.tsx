@@ -16,7 +16,7 @@ interface AppShellProps {
 
 // Rediseño 2026-07: UNA cabecera contextual para toda la app (eyebrow de fase ·
 // título · meta · acción). Las páginas publican su contenido con `PageHeader`;
-// el armazón solo lo pinta — no decide cuándo una acción procede (RULE 3).
+// el armazón solo lo pinta, no decide cuándo una acción procede (RULE 3).
 //
 // La gestión del caso también sube aquí: el bloque de caso del sidebar está
 // siempre visible, así que «cambiar caso» y «Nuevo caso» tienen que funcionar

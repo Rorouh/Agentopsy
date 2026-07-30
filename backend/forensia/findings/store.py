@@ -102,7 +102,7 @@ def _validate_mitre_hints(raw: Any) -> list[str]:
                 raise ValueError(reason)
             raise ValueError(
                 f"{technique_id!r} is not in the ATT&CK seed "
-                f"(agentes/{catalog.SEED_RELPATH}) — the closed enum the agent may "
+                f"(agentes/{catalog.SEED_RELPATH}), the closed enum the agent may "
                 f"emit. Refusing to record a hallucinated technique id."
             )
         if technique_id not in out:
@@ -179,7 +179,7 @@ class FindingStore:
             raise ValueError(
                 "finding afirmativo requiere procedencia: pasa `run_id` con el "
                 "ArtifactRun que lo sostiene, o marca `finding_kind=\"descarte\"` si "
-                "documentas una vía descartada (RULE 2 — sin procedencia no se registra "
+                "documentas una vía descartada (RULE 2, sin procedencia no se registra "
                 "una afirmación sobre la evidencia)."
             )
 

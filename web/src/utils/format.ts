@@ -20,6 +20,6 @@ export function formatDate(iso: string): string {
 }
 
 export function shortHash(hash: string | null, visible = 10): string {
-  if (!hash) return "—";
+  if (!hash) return "n/d";
   return `${hash.slice(0, visible)}…`;
 }

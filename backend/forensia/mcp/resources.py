@@ -63,7 +63,7 @@ def parse_artifact_uri(uri: str) -> ArtifactRef:
     m = _ARTIFACT_URI.match(uri)
     if not m:
         raise ValueError(
-            f"invalid artifact URI {uri!r} — expected "
+            f"invalid artifact URI {uri!r}, expected "
             f"artifact://<case-uuid>/<run-uuid>/<relpath>"
         )
     return ArtifactRef(case_id=m["case"], run_id=m["run"], relpath=m["rel"])

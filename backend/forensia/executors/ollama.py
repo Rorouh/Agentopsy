@@ -84,7 +84,7 @@ class OllamaExecutor(PromptExecutor):
         host = self._host()
         if host is None:
             raise ExecutorError(
-                "OLLAMA_HOST no está configurado — no se pueden listar modelos "
+                "OLLAMA_HOST no está configurado, no se pueden listar modelos "
                 "(RULE 2: sin defaults silenciosos)."
             )
         try:
@@ -113,14 +113,14 @@ class OllamaExecutor(PromptExecutor):
         host = self._host()
         if host is None:
             raise ExecutorError(
-                "OLLAMA_HOST no está configurado — selecciona/configura el host de "
+                "OLLAMA_HOST no está configurado, selecciona/configura el host de "
                 "Ollama antes de ejecutar (RULE 2: sin defaults silenciosos)."
             )
         model = ctx.get("model")
         if not isinstance(model, str) or not model.strip():
             raise ExecutorError(
                 "falta 'model' en el contexto del ejecutor ollama. Fija OLLAMA_MODEL "
-                "en Settings o declara model.name en el paquete de agente — Agentopsy "
+                "en Settings o declara model.name en el paquete de agente, Agentopsy "
                 "no elige un modelo por ti (RULE 2)."
             )
 

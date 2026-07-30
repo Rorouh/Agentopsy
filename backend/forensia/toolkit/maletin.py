@@ -264,7 +264,7 @@ def _verify_executed_argv(
         rewrite_token, expected_basename, kind = None, None, ""
     if not isinstance(executed, list) or not all(isinstance(t, str) for t in executed):
         raise MaletinExecError(
-            f"el exec-agent {base_url} no devolvió 'executed_argv' (o no es list[str]) — "
+            f"el exec-agent {base_url} no devolvió 'executed_argv' (o no es list[str]), "
             "la imagen del maletín es anterior al contrato P0.5-4; reconstruye con "
             "docker compose build. Sin el argv ejecutado no se puede verificar que el "
             "maletín corrió el comando auditado (FORENSIC INVARIANT 4)."
@@ -272,7 +272,7 @@ def _verify_executed_argv(
     if len(executed) != len(requested):
         raise MaletinExecError(
             f"custodia rota: el exec-agent {base_url} ejecutó un argv de "
-            f"{len(executed)} tokens cuando el auditado tiene {len(requested)} — "
+            f"{len(executed)} tokens cuando el auditado tiene {len(requested)}, "
             "el comando ejecutado no es el registrado (FORENSIC INVARIANT 4)."
         )
     rewrites: set[str] = set()
@@ -281,7 +281,7 @@ def _verify_executed_argv(
             if got == req:
                 raise MaletinExecError(
                     f"custodia rota: el exec-agent {base_url} no reescribió el token "
-                    f"del {kind} (posición {index}) — la tool habría leído el contenedor "
+                    f"del {kind} (posición {index}), la tool habría leído el contenedor "
                     "directamente, que TSK no interpreta (RULE 2: el desencapsulado no "
                     "puede degradarse en silencio)."
                 )
@@ -289,7 +289,7 @@ def _verify_executed_argv(
                 raise MaletinExecError(
                     f"custodia rota: el exec-agent {base_url} reescribió el token del "
                     f"{kind} (posición {index}) a {got!r}, que no es el bloque raw "
-                    f"{expected_basename!r} absoluto esperado — reescritura no reconocida "
+                    f"{expected_basename!r} absoluto esperado, reescritura no reconocida "
                     "(FORENSIC INVARIANT 3/4)."
                 )
             rewrites.add(got)
@@ -297,19 +297,19 @@ def _verify_executed_argv(
             raise MaletinExecError(
                 f"custodia rota: el exec-agent {base_url} ejecutó un argv distinto "
                 f"del auditado (posición {index}: se auditó {req!r}, se ejecutó "
-                f"{got!r}) — FORENSIC INVARIANT 4; el resultado no se acepta."
+                f"{got!r}), FORENSIC INVARIANT 4; el resultado no se acepta."
             )
     if rewrite_token is not None:
         if not rewrites:
             raise MaletinExecError(
                 f"custodia rota: se pidió desencapsulado {kind} para {rewrite_token!r} pero "
-                f"ese token no aparece en el argv auditado — bug del llamador; el "
+                f"ese token no aparece en el argv auditado, bug del llamador; el "
                 f"exec-agent {base_url} no pudo haberlo reescrito."
             )
         if len(rewrites) > 1:
             raise MaletinExecError(
                 f"custodia rota: el exec-agent {base_url} reescribió el token del {kind} a "
-                f"rutas distintas en posiciones distintas ({sorted(rewrites)}) — "
+                f"rutas distintas en posiciones distintas ({sorted(rewrites)}), "
                 "reescritura inconsistente (FORENSIC INVARIANT 4)."
             )
 
@@ -353,7 +353,7 @@ def tool_versions(service: str) -> dict[str, str]:
         raise MaletinExecError(
             f"el exec-agent {base_url} no sirvió un manifiesto de versiones válido "
             f"(estado {status})" + (f": {detail}" if detail else "")
-            + " — reconstruye el maletín (docker compose build) para hornear "
+            + ", reconstruye el maletín (docker compose build) para hornear "
             "versions.json (RULE 1)."
         )
     for binary, version in versions.items():
@@ -364,7 +364,7 @@ def tool_versions(service: str) -> dict[str, str]:
         ):
             raise MaletinExecError(
                 f"el manifiesto de versiones de {service} contiene una entrada "
-                f"inválida ({binary!r}: {version!r}) — manifiesto corrupto; "
+                f"inválida ({binary!r}: {version!r}), manifiesto corrupto; "
                 "reconstruye el maletín."
             )
     return {binary: version.strip() for binary, version in versions.items()}
@@ -382,7 +382,7 @@ def tool_version(service: str, binary: str) -> str:
     if version is None:
         raise MaletinExecError(
             f"el manifiesto de versiones de {service} no contiene el binario "
-            f"{binary!r} — la tool no tiene identidad de versión en ese maletín; "
+            f"{binary!r}, la tool no tiene identidad de versión en ese maletín; "
             "alinea docker/docker/forensic-toolkit/tool-binaries.json con el catálogo "
             "y reconstruye la imagen (RULE 2: sin versión no hay ejecución anclada)."
         )
@@ -417,7 +417,7 @@ def probe_service(service: str, *, base_url: str | None) -> dict[str, Any]:
             "running": None,
             "reason": (
                 f"no se pudo consultar el exec-agent en {base_url} "
-                f"({type(exc).__name__}) — ¿está el maletín '{name}' levantado?"
+                f"({type(exc).__name__}), ¿está el maletín '{name}' levantado?"
             ),
         }
     if status == 200 and isinstance(body, dict) and body.get("ok"):
@@ -425,7 +425,7 @@ def probe_service(service: str, *, base_url: str | None) -> dict[str, Any]:
     return {
         **base,
         "running": False,
-        "reason": f"exec-agent en {base_url} respondió estado {status} — maletín '{name}' inaccesible",
+        "reason": f"exec-agent en {base_url} respondió estado {status}, maletín '{name}' inaccesible",
     }
 
 
@@ -477,7 +477,7 @@ def _tool_status(
             "reason": None,
             "version": None,
             "version_reason": (
-                "vía api-PATH/env-override: sin manifiesto de versiones de build — "
+                "vía api-PATH/env-override: sin manifiesto de versiones de build, "
                 "las ejecuciones ancladas a caso exigen el maletín (INVARIANT 4)"
             ),
             "detail": {},

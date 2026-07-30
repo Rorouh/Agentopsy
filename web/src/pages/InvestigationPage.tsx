@@ -165,7 +165,7 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
   }
 
   // RULE 2: detected_os NUNCA cambia el caso solo. Solo se expone el desacuerdo
-  // y se dice qué perfil correspondería. "unknown" no es un desajuste — el
+  // y se dice qué perfil correspondería. "unknown" no es un desajuste, el
   // triage fue inconcluyente, no contradictorio. Un caso con os_profile todavía
   // null tampoco lo es: es «aún no», no «contradice».
   const profileMismatch =
@@ -183,14 +183,14 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
       {profileMismatch && (
         <div className="mismatch-banner">
           <strong>
-            Desajuste de perfil — el agente activo no es el adecuado para esta evidencia.
+            Desajuste de perfil: el agente activo no es el adecuado para esta evidencia.
           </strong>{" "}
           El caso declara <code>perfil = {activeCase.os_profile}</code> pero la determinación
           sobre el contenido de la evidencia dice <code>{profileMismatch}</code>. El agente del
           caso (<code>forensia-{activeCase.os_profile}</code>) se negará a invocar herramientas
           mientras siga el desacuerdo. Resuélvelo en <strong>Evidencia → Sistema operativo</strong>:
           al anclar el perfil, Agentopsy re-enruta solo al sub-agente que corresponde. No lo
-          cambia por ti (RULE 2 — un desacuerdo lo decide el operador, no el programa).
+          cambia por ti (RULE 2, un desacuerdo lo decide el operador, no el programa).
         </div>
       )}
 

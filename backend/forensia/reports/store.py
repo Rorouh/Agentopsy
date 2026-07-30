@@ -228,7 +228,7 @@ class DocumentStore:
         doc = self.get(case_id, doc_id)
         if doc.status == "final":
             raise ValueError(
-                "a signed (final) document cannot be deleted — chain of custody"
+                "a signed (final) document cannot be deleted, chain of custody"
             )
         self._path(case_id, doc_id).unlink(missing_ok=True)
         self._audit(case_id, "document_deleted", doc)

@@ -43,7 +43,7 @@
   --code-dim:       #8a827a;
 
   /* Severidad de hallazgo: NO son alias de la paleta, tienen semántica propia.
-     Se separan del acento a propósito — «crítico» no puede confundirse con
+     Se separan del acento a propósito, «crítico» no puede confundirse con
      «acción disponible». */
   --danger:         #d92d20;
   --warning:        #b54708;
@@ -342,7 +342,7 @@ html, body, #root {
    Trasladadas literalmente del mock destino
    (docs/diseno/rediseno-2026-07/mocks/rediseno-final.dc.html). El mock no usa
    tarjetas: separa con filete de 1px, espacio y peso tipográfico. Este bloque
-   va al final a propósito — gana a la hoja heredada mientras las vistas se
+   va al final a propósito, gana a la hoja heredada mientras las vistas se
    migran una a una; el encargo de cierre retira lo viejo y lo sube.
    ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -769,7 +769,7 @@ html, body, #root {
 .source-row-side { margin-left: auto; }
 
 /* Progreso REAL: subida a la bandeja y hash-gate del registro son dos barras
-   con vidas separadas. El mock no las dibuja — no son decorativas, y sin ellas
+   con vidas separadas. El mock no las dibuja, no son decorativas, y sin ellas
    un registro de varios minutos parecería colgado. */
 .progress-block { display: flex; flex-direction: column; gap: 8px; padding: 4px 0 2px; }
 .progress-head {
@@ -839,7 +839,7 @@ html, body, #root {
 .custody-meta--danger { color: var(--danger); }
 .custody-action { margin-left: auto; }
 
-/* Determinación de SO: misma forma de fila que la custodia — es el mismo tipo
+/* Determinación de SO: misma forma de fila que la custodia, es el mismo tipo
    de dato (un hecho por evidencia), no una tarjeta aparte. El veredicto es la
    columna que importa, así que va al final y en acento cuando queda abierto. */
 .os-rows { display: flex; flex-direction: column; }
@@ -1001,7 +1001,7 @@ html, body, #root {
 .turn-table td strong { color: var(--ink); }
 .inline-code { font-family: var(--font-mono); font-size: 0.9em; color: var(--ink-2); }
 
-/* En curso: cuadrado que late — el mismo gesto del mock. */
+/* En curso: cuadrado que late, el mismo gesto del mock. */
 .turn-running {
   display: flex;
   align-items: center;
@@ -1545,12 +1545,26 @@ html, body, #root {
 .report-doc.is-active .report-doc-title { font-weight: 600; color: var(--accent); }
 .report-doc-meta { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-4); }
 /* El panel vive en el raíl de 296px: su bloque de texto NO puede reclamar los
-   260px del panel ancho de evidencia — desbordaba la columna (scroll horizontal). */
+   260px del panel ancho de evidencia, desbordaba la columna (scroll horizontal). */
 .report-gen { flex-direction: column; align-items: stretch; gap: 12px; padding: 16px; }
 .report-gen .dashed-panel-main { min-width: 0; }
 .report-gen-fields { display: flex; flex-direction: column; gap: 10px; }
 .report-gen-fields .field-input { font-size: 15px; max-width: none; }
-.report-gen-btn { width: 100%; text-align: center; padding: 10px 16px; }
+/* El botón ocupa el ancho del raíl (296px): con el `nowrap` de `.action-accent`
+   la etiqueta en versalitas + tracking no cabe y el botón la RECORTABA
+   («FINALIZAR INVESTIGACI»). Aquí envuelve en dos líneas antes que perder una
+   letra. */
+.report-gen-btn {
+  width: 100%;
+  text-align: center;
+  padding: 10px 16px;
+  white-space: normal;
+  line-height: 1.4;
+}
+/* Una redacción rechazada NO deja informe: el motivo tiene que quedarse a la
+   vista (un aviso que se desvanece se lee como «no ha pasado nada»). */
+.report-failure { display: flex; flex-direction: column; gap: 6px; }
+.report-failure-reason { font-size: 14.5px; line-height: 1.55; color: var(--ink-2); text-wrap: pretty; }
 
 .report-viewer { overflow-y: auto; padding: 34px 48px 56px; }
 .report-notice { margin-bottom: 20px; }
@@ -1615,7 +1629,7 @@ html, body, #root {
 .report-finding-tags { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-4); }
 .report-finding-text { font-size: 16px; line-height: 1.7; color: var(--ink-2); margin: 7px 0 0; }
 /* Procedencia del hallazgo (run, confianza, hash): el PDF ya la imprime y la
-   pantalla también debe — es lo que hace reejecutable el informe. */
+   pantalla también debe, es lo que hace reejecutable el informe. */
 .report-finding-meta { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-4); margin-top: 6px; word-break: break-all; }
 .report-foot {
   display: flex;

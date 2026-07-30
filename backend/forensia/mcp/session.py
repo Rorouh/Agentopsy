@@ -67,7 +67,7 @@ class McpSession:
     def set_evidence(self, evidence_id: str) -> None:
         if self.case_id is None:
             raise RuntimeError(
-                "set_evidence called with no case selected — internal error: callers "
+                "set_evidence called with no case selected, internal error: callers "
                 "must guard with `case_id is None` before this point."
             )
         self.evidence_id = evidence_id

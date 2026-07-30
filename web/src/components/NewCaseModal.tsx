@@ -47,7 +47,7 @@ export function NewCaseModal({ open, onClose, onCreated }: NewCaseModalProps) {
     setCreating(true);
     setError(null);
     try {
-      // os_profile se omite a propósito — lo deriva el orquestador del
+      // os_profile se omite a propósito, lo deriva el orquestador del
       // contenido de la evidencia al registrarla (RULE 2: no se adivina).
       const created = await api.cases.create({
         name: form.name.trim(),

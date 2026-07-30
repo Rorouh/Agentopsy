@@ -83,7 +83,7 @@ class AgentRegistry:
     def _load(self) -> None:
         if not self.root.is_dir():
             logger.warning(
-                "agentes dir %s does not exist — no agent loaded; the UI will degrade "
+                "agentes dir %s does not exist, no agent loaded; the UI will degrade "
                 "explicitly (no fallback agent, RULE 2).",
                 self.root,
             )

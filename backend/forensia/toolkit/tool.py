@@ -151,7 +151,7 @@ def run_argv(
     ``CompletedProcess.stdout`` is then ``""`` (the payload lives on disk).
     """
     if not isinstance(argv, list) or not all(isinstance(a, str) for a in argv):
-        raise TypeError("argv must be a list[str] — never a shell string")
+        raise TypeError("argv must be a list[str], never a shell string")
     if stdout_path is None:
         return subprocess.run(  # noqa: S603 — shell=False, argv is validated above
             argv,

@@ -179,7 +179,7 @@ def execute(
             raise ToolExecutionError(
                 f"tool {tool_id!r}: toda ejecución anclada al caso {case_id!r} requiere "
                 "el contexto de evidencia verificado (evidence_id + baseline SHA-256 "
-                "desde EvidenceManager) — también las tools de solo input derivado. Sin "
+                "desde EvidenceManager), también las tools de solo input derivado. Sin "
                 "él la acción no puede anclarse a la evidencia (FORENSIC INVARIANT 4); "
                 "no se ejecuta (RULE 2)."
             )
@@ -190,13 +190,13 @@ def execute(
                 f"tool {tool_id!r}: el contexto de evidencia no corresponde a una "
                 f"evidencia del caso {case_id!r} "
                 f"(evidence_id={evidence_context.evidence_id!r}: "
-                f"{type(exc).__name__}: {exc}) — contexto no verificable; no se ejecuta."
+                f"{type(exc).__name__}: {exc}), contexto no verificable; no se ejecuta."
             ) from exc
         if not evidence_context.matches_handle(handle):
             raise ToolExecutionError(
                 f"tool {tool_id!r}: el contexto de evidencia no coincide con el handle "
                 f"autoritativo de EvidenceManager para "
-                f"{evidence_context.evidence_id!r} (baseline SHA-256 divergente) — "
+                f"{evidence_context.evidence_id!r} (baseline SHA-256 divergente), "
                 "contexto falsificado o desactualizado; no se ejecuta (RULE 2)."
             )
         evidence_dir = handle.original_path.parent
@@ -618,7 +618,7 @@ def _gate_path_parameters(
                     ),
                     "evidence": (
                         f"{spec.name}: la evidencia no es un input auxiliar "
-                        "(CASE_INPUT) — entra por el parámetro EVIDENCE_INPUT del "
+                        "(CASE_INPUT), entra por el parámetro EVIDENCE_INPUT del "
                         "contexto verificado o como ArtifactRef derivado; un "
                         "auxiliar no puede leer (ni subsumir) evidencia del caso "
                         "(mismo caso no es misma evidencia)"
@@ -662,7 +662,7 @@ def _resolve_artifact_ref(
     if producer.status == "running":
         raise ToolExecutionError(
             f"input derivado para {name!r}: el run productor {ref['run_id']!r} sigue "
-            "en ejecución — sus artefactos pueden estar mutando y no hay custodia que "
+            "en ejecución, sus artefactos pueden estar mutando y no hay custodia que "
             "verificar todavía. Espera a que cierre (o re-ejecuta el productor); no se "
             "ejecuta (FORENSIC INVARIANT 4)."
         )
@@ -676,7 +676,7 @@ def _resolve_artifact_ref(
                 if producer.status == "error"
                 else ""
             )
-            + ") — su salida puede ser parcial o fallida y no puede alimentar otra "
+            + "), su salida puede ser parcial o fallida y no puede alimentar otra "
             "corrida; re-ejecuta el productor (RULE 2 / FORENSIC INVARIANT 4)."
         )
     # PROVENANCE (Bloqueante D): a derived artifact carries the evidence identity of the
@@ -687,7 +687,7 @@ def _resolve_artifact_ref(
         raise ToolExecutionError(
             f"input derivado para {name!r}: el manifiesto del run productor "
             f"{ref['run_id']!r} no registra procedencia de evidencia (manifiesto "
-            "anterior a P0.5-3) — no se asume compatibilidad; re-ejecuta el productor "
+            "anterior a P0.5-3), no se asume compatibilidad; re-ejecuta el productor "
             "para obtener un artefacto con procedencia (RULE 2)."
         )
     if evidence_context is None:
@@ -702,7 +702,7 @@ def _resolve_artifact_ref(
         evidence_context.baseline_sha256.casefold(),
     ):
         raise ToolExecutionError(
-            f"input derivado para {name!r}: procedencia cruzada — el artefacto "
+            f"input derivado para {name!r}: procedencia cruzada, el artefacto "
             f"{ref['relpath']!r} lo produjo el run {ref['run_id']!r} sobre la evidencia "
             f"{producer.evidence_id!r}, pero esta ejecución está anclada a "
             f"{evidence_context.evidence_id!r}. Un derivado de otra evidencia no puede "
@@ -716,7 +716,7 @@ def _resolve_artifact_ref(
         )
     except ArtifactIntegrityError as exc:
         raise ToolExecutionError(
-            f"input derivado para {name!r}: {exc} — custodia rota; no se ejecuta"
+            f"input derivado para {name!r}: {exc}, custodia rota; no se ejecuta"
         ) from exc
     except (KeyError, ValueError) as exc:
         raise ToolExecutionError(
@@ -844,7 +844,7 @@ def _resolve_tool_version(tool: Tool, maletin_service: str | None) -> str:
             f"tool {tool.id!r}: una ejecución anclada exige la versión AUTORITATIVA de "
             "la herramienta (FORENSIC INVARIANT 4) y esa versión solo existe en el "
             "manifiesto de build del maletín. El binario se resolvió en el PATH del "
-            "api (vía dev/env-override), que no tiene manifiesto — ejecuta por el "
+            "api (vía dev/env-override), que no tiene manifiesto, ejecuta por el "
             "maletín (compose) o retira el override (RULE 2: sin versión local ni "
             "placeholder)."
         )
@@ -853,7 +853,7 @@ def _resolve_tool_version(tool: Tool, maletin_service: str | None) -> str:
     except maletin.MaletinExecError as exc:
         raise ToolExecutionError(
             f"tool {tool.id!r}: no se pudo resolver la versión autoritativa en "
-            f"{maletin_service!r} — la tool no se ejecuta sin versión (INVARIANT 4 / "
+            f"{maletin_service!r}, la tool no se ejecuta sin versión (INVARIANT 4 / "
             f"RULE 2). Causa: {exc}"
         ) from exc
 
@@ -883,7 +883,7 @@ def _prepare_execution(
     if maletin_service is None:
         raise ToolExecutionError(
             f"tool {tool.id!r}: sin venue de ejecución resuelto (ni binario en el PATH "
-            "del api ni maletín seleccionado) — bug del llamador"
+            "del api ni maletín seleccionado), bug del llamador"
         )
     return _PreparedExecution(
         argv=[tool.binary, *argv_tail],
@@ -907,7 +907,7 @@ def _select_maletin(tool: Tool, os_profile: str | None) -> str:
     if not toolkits:
         raise ToolExecutionError(
             f"tool {tool.id!r}: su binario {tool.binary!r} no está en el PATH del api y no "
-            f"declara maletín (toolkits vacío) — no hay dónde ejecutarlo (RULE 1)."
+            f"declara maletín (toolkits vacío), no hay dónde ejecutarlo (RULE 1)."
         )
     if os_profile is not None:
         expected = f"toolkit-{os_profile}"
@@ -915,13 +915,13 @@ def _select_maletin(tool: Tool, os_profile: str | None) -> str:
             return expected
         raise ToolExecutionError(
             f"tool {tool.id!r} no vive en el maletín del perfil {os_profile!r} "
-            f"(está en {list(toolkits)}) — RULE 2: sin fallback entre maletines."
+            f"(está en {list(toolkits)}), RULE 2: sin fallback entre maletines."
         )
     if len(toolkits) == 1:
         return toolkits[0]
     raise ToolExecutionError(
         f"tool {tool.id!r} vive en varios maletines {list(toolkits)}; indica os_profile "
-        f"para elegir — RULE 2: el dispatcher no adivina."
+        f"para elegir, RULE 2: el dispatcher no adivina."
     )
 
 

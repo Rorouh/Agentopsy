@@ -290,7 +290,7 @@ def test_response_contract_stays_last():
     failure costs a whole retry turn."""
     prompt = ExecutorBackend._render_prompt(_messages(), [{"name": "tsk_fls"}])
     assert prompt.rstrip().endswith(
-        "paths absolutos en params — Agentopsy los inyecta."
+        "paths absolutos en params, Agentopsy los inyecta."
     )
     assert prompt.index("## FORMATO DE RESPUESTA") > prompt.index("## RESULTADO DE TOOL")
 
@@ -309,4 +309,4 @@ def test_delta_omits_the_static_blocks_but_keeps_the_contract():
     assert "nueva salida" in delta
     assert "## HERRAMIENTAS DISPONIBLES" not in delta
     assert "## SISTEMA" not in delta
-    assert delta.rstrip().endswith("paths absolutos en params — Agentopsy los inyecta.")
+    assert delta.rstrip().endswith("paths absolutos en params, Agentopsy los inyecta.")

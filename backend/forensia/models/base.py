@@ -112,7 +112,7 @@ _RESPONSE_CONTRACT = (
     "turnos de una. Reserva `tool_call` para cuando de verdad dependas del "
     "resultado anterior.\n"
     "No inventes tool_ids fuera de la lista de especificaciones. No incluyas "
-    "paths absolutos en params — Agentopsy los inyecta."
+    "paths absolutos en params, Agentopsy los inyecta."
 )
 
 
@@ -266,7 +266,7 @@ class ExecutorBackend(ModelBackend):
                     f"{self.executor.name} declara reanudación de sesión pero no "
                     "devolvió session_id en su envelope: cada iteración reenviará "
                     "el contexto completo a coste íntegro. Revisa la versión del "
-                    "CLI — el ahorro por sesión está desactivado en esta corrida."
+                    "CLI, el ahorro por sesión está desactivado en esta corrida."
                 )
             self._reset_session()
 

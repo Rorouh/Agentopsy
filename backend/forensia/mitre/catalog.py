@@ -211,7 +211,7 @@ def technique(technique_id: str) -> Technique:
     except KeyError:
         raise KeyError(
             f"{technique_id!r} is not in the ATT&CK seed "
-            f"(agentes/{SEED_RELPATH}) — the closed enum the agent may emit"
+            f"(agentes/{SEED_RELPATH}), the closed enum the agent may emit"
         ) from None
 
 

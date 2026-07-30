@@ -24,7 +24,7 @@ const LOGIN_COMMANDS = [
 const NOTES = [
   {
     title: "Ejecutor cloud y privacidad (RGPD)",
-    body: "Al elegir un ejecutor cloud los prompts incluyen contenido derivado de la evidencia — posibles datos personales reales — y salen a ese proveedor bajo tu propia suscripción. La alternativa 100 % local es Ollama, que nunca envía nada fuera del equipo.",
+    body: "Al elegir un ejecutor cloud los prompts incluyen contenido derivado de la evidencia (posibles datos personales reales) y sale a ese proveedor bajo tu propia suscripción. La alternativa 100 % local es Ollama, que nunca envía nada fuera del equipo.",
   },
   {
     title: "Coste y tiempo del análisis",
@@ -150,7 +150,7 @@ export function GuidePage({ onNavigate }: GuidePageProps) {
             contenedor. La sesión persiste en el volumen{" "}
             <span className="mono">forensia-cli-auth</span>.
           </div>
-          {/* Bloque de comandos: oscuro en AMBOS temas — es una terminal. */}
+          {/* Bloque de comandos: oscuro en AMBOS temas, es una terminal. */}
           <div className="code-block">
             {LOGIN_COMMANDS.map((c) => (
               <div className="code-line" key={c.cmd}>

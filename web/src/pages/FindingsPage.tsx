@@ -30,7 +30,7 @@ function isHot(sev: AgentFinding["severity"]): boolean {
 }
 
 function fmtDate(iso: string | null | undefined): string {
-  if (!iso) return "—";
+  if (!iso) return "n/d";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleString("es-ES", {
@@ -259,16 +259,16 @@ function FindingDetail({ finding: f }: { finding: AgentFinding }) {
   const kv: Array<[string, string]> = [
     ["Severidad", SEVERITY_LABEL[f.severity]],
     ["Tipo", f.finding_kind === "descarte" ? "descarte" : "afirmación"],
-    ["Herramienta", f.tool_id ?? "—"],
-    ["Run que lo sostiene", f.run_id ?? "—"],
-    ["Evidencia", f.evidence_id ?? "—"],
+    ["Herramienta", f.tool_id ?? "n/d"],
+    ["Run que lo sostiene", f.run_id ?? "n/d"],
+    ["Evidencia", f.evidence_id ?? "n/d"],
     ["Observado en la evidencia", fmtDate(f.observed_at)],
     ["Registrado", fmtDate(f.created_at)],
     [
       "Confianza",
-      f.confidence != null ? `${Math.round(f.confidence * 100)}%` : "—",
+      f.confidence != null ? `${Math.round(f.confidence * 100)}%` : "n/d",
     ],
-    ["SHA-256 del artefacto", f.artifact_sha256 ?? "—"],
+    ["SHA-256 del artefacto", f.artifact_sha256 ?? "n/d"],
   ];
 
   return (

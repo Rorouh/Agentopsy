@@ -13,7 +13,7 @@ import { api } from "../api/client";
 import type { Case } from "../api/types";
 
 // Caso activo GLOBAL, compartido por todas las vistas (Evidencia, Investigación,
-// Timeline, Informe, ATT&CK) y persistido en localStorage — mismo patrón que
+// Timeline, Informe, ATT&CK) y persistido en localStorage, mismo patrón que
 // la vista activa en App.tsx (VIEW_STORAGE_KEY). Antes cada vista resolvía su
 // propio "caso más reciente" y no se sincronizaban: cambiar el caso en una vista
 // no tocaba a las demás. Ahora hay una sola fuente de verdad.
@@ -79,7 +79,7 @@ export function ActiveCaseProvider({ children }: { children: ReactNode }) {
       const list = await api.cases.list();
       setCases(list);
       // Conserva el caso activo si sigue existiendo; si el guardado ya no está
-      // (caso borrado) o no hay ninguno, cae al más reciente — el backend lista
+      // (caso borrado) o no hay ninguno, cae al más reciente, el backend lista
       // con el más reciente primero.
       setActiveCaseId((prev) =>
         prev && list.some((c) => c.id === prev) ? prev : list[0]?.id ?? null,

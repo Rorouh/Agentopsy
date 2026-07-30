@@ -195,7 +195,13 @@ sin `finish` `incompleto`); **`writer`** (`write_report` — UNA llamada al
 ejecutor con `REPORT_TIMEOUT_S` 900 s y CUATRO puertas de custodia antes de
 persistir: índice exacto · modelo de bloques · referentes cerrados del material ·
 comandos literales del audit —FORENSIC INVARIANT 4—; un rechazo no publica nada y
-no hay redacción de repuesto, RULE 2; audita `report_written`);
+no hay redacción de repuesto, RULE 2; cada puerta recoge TODAS sus violaciones y
+el motivo vuelve al modelo en UNA ronda de corrección —`MAX_REPARACIONES`, delta
+por sesión si el ejecutor reanuda, `report_repair` en el audit— antes de darse
+por perdida; audita `report_written` con `attempts`; y una pasada de TIPOGRAFÍA
+tras las puertas —`_normalizar_estilo`: ni `§`, ni guion largo, ni emojis; no es
+puerta y no rechaza nada, nunca toca un bloque `code` (INVARIANT 4) y cuenta lo
+reescrito en `report_written.style_normalized`—);
 `pdf.render_pdf` (fpdf2, pure-python). La superficie es UN acto:
 `POST …/documents/finalize` («Finalizar investigación»), que valida rápido y
 redacta en un job de fondo (`forensia.agent.jobs`, `kind="report"`).

@@ -90,13 +90,13 @@ def _prepare_run(req: QueryRequest) -> tuple[ForensicAgent, str, list, str | Non
         raise HTTPException(
             status_code=422,
             detail="case_id is required: selecciona un caso antes de consultar al "
-                   "agente (Agentopsy no asume 'el único caso' — RULE 2).",
+                   "agente (Agentopsy no asume 'el único caso', RULE 2).",
         )
     if not req.evidence_id:
         raise HTTPException(
             status_code=422,
             detail="evidence_id is required: selecciona una evidencia registrada en "
-                   "el caso (Agentopsy no asume 'la última registrada' — RULE 2).",
+                   "el caso (Agentopsy no asume 'la última registrada', RULE 2).",
         )
 
     executor_id = req.executor or config.get("DEFAULT_EXECUTOR")

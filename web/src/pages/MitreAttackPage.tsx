@@ -31,7 +31,7 @@ const STATUS_LABEL: Record<MitreStatus, string> = {
 const STATUS_ORDER: MitreStatus[] = ["confirmada", "sospechosa", "descartada"];
 
 // Colores de fase: agrupación editorial de Agentopsy, categóricos, IGUALES en
-// ambos temas — son taxonomía, no decoración.
+// ambos temas, son taxonomía, no decoración.
 const PHASE_COLOR: Record<string, string> = {
   prep: "#64748b",
   access: "#d97706",
@@ -49,7 +49,7 @@ export function MitreAttackPage() {
   const [catalog, setCatalog] = useState<MitreCatalog | null>(null);
   const { activeCase: globalCase } = useActiveCase();
   // Modo exploración: recorrer el catálogo sin dictaminar. No toca el caso
-  // global — explorar aquí no deja sin caso a las demás vistas.
+  // global, explorar aquí no deja sin caso a las demás vistas.
   const [explore, setExplore] = useState(false);
   const [coverage, setCoverage] = useState<MitreCoverageEntry[]>([]);
   const [findings, setFindings] = useState<AgentFinding[]>([]);

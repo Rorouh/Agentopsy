@@ -11,7 +11,7 @@ import type {
 import { usePublishShellHeader } from "../layout/shellHeader";
 import { useActiveCase } from "../state/activeCase";
 
-// FASE 4 · Timeline forense del caso — TRES capas REALES (sin datos inventados,
+// FASE 4 · Timeline forense del caso, TRES capas REALES (sin datos inventados,
 // RULE 2):
 //   1) Investigación: cada ejecución de herramienta del audit log + cada
 //      hallazgo, en orden cronológico. Determinista, siempre disponible.
@@ -47,7 +47,7 @@ const CATEGORY_LABEL: Record<string, string> = {
 };
 
 function fmtUtc(ts: string | null): { date: string; time: string } {
-  if (!ts) return { date: "sin fecha", time: "—" };
+  if (!ts) return { date: "sin fecha", time: "n/d" };
   const d = new Date(ts);
   if (isNaN(d.getTime())) return { date: ts.slice(0, 10) || "sin fecha", time: ts.slice(11, 19) };
   const p = (n: number) => String(n).padStart(2, "0");
@@ -422,7 +422,7 @@ export function TimelinePage() {
             onClick={() => setLayer("filesystem")}
           >
             Sistema de ficheros (MACB)
-            <span className="tab-count">{fsResult ? fsResult.total_events : "—"}</span>
+            <span className="tab-count">{fsResult ? fsResult.total_events : "n/d"}</span>
           </button>
           <button
             type="button"
@@ -432,7 +432,7 @@ export function TimelinePage() {
           >
             Eventos relevantes
             <span className="tab-count">
-              {fsResult?.total_relevant !== undefined ? fsResult.total_relevant : "—"}
+              {fsResult?.total_relevant !== undefined ? fsResult.total_relevant : "n/d"}
             </span>
           </button>
         </div>

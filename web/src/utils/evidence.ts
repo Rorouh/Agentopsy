@@ -44,7 +44,7 @@ export function isEwfSegment(name: string): boolean {
   return match !== null && Number(match[2]) >= 1;
 }
 
-// Primer segmento: `.E01` / `.Ex01` — el punto de entrada del set.
+// Primer segmento: `.E01` / `.Ex01`, el punto de entrada del set.
 export function isEwfFirstSegment(name: string): boolean {
   return EWF_FIRST_RE.test(fileExtension(name));
 }

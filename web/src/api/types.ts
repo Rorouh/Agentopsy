@@ -1,5 +1,5 @@
 // Tipos espejo de los contratos JSON del servicio api (backend/forensia/routers/*).
-// Convención: snake_case 1:1 con el backend — sin transformaciones en el cliente.
+// Convención: snake_case 1:1 con el backend, sin transformaciones en el cliente.
 
 export type ExecutorId = "claude-code" | "codex" | "gemini" | "ollama";
 
@@ -21,8 +21,8 @@ export interface AgentJob {
 }
 
 // Estado de un ejecutor tal y como lo reporta /api/capabilities (RULE 2: si no
-// está disponible, `reason` trae la razón accionable — binario ausente,
-// credenciales sin montar, Ollama inaccesible — y la UI degrada explícitamente).
+// está disponible, `reason` trae la razón accionable, binario ausente,
+// credenciales sin montar, Ollama inaccesible, y la UI degrada explícitamente).
 export interface ExecutorStatus {
   name: string;
   local: boolean;
@@ -34,7 +34,7 @@ export interface ExecutorStatus {
 // (/api/executors/{id}/models). Todos son `editable`: el operador elige el modelo
 // y Agentopsy lo respeta (Ollama por HTTP; los CLIs cloud como flag --model). La
 // lista difiere: Ollama devuelve los modelos REALES instalados; los CLIs cloud,
-// solo atajos como sugerencia (`allow_custom` siempre true — se puede escribir
+// solo atajos como sugerencia (`allow_custom` siempre true, se puede escribir
 // cualquier id que acepte el CLI). Agentopsy no puede enumerar el catálogo de un
 // CLI cloud sin API key (SECURITY INVARIANT 7); vacío = el modelo por defecto del
 // CLI (RULE 2). El modelo elegido se persiste por proveedor (MODEL_CONFIG_KEY).
@@ -49,7 +49,7 @@ export interface ExecutorModels {
 // ── Login web de un ejecutor CLI cloud (2026-07-15) ────────────────────────
 // El operador conecta Codex/Claude DESDE LA WEB sin abrir una terminal: el
 // backend relaya el flujo device/OAuth del propio CLI. La sesión sigue viviendo
-// en el volumen forensia-cli-auth (SECURITY INVARIANT 7 — sin API keys).
+// en el volumen forensia-cli-auth (SECURITY INVARIANT 7, sin API keys).
 
 // Capacidad de relay de cada ejecutor cloud (/api/executors/login-capabilities).
 // `relay_supported:false` (Gemini) → la UI degrada al comando manual + «Comprobar»
@@ -74,7 +74,7 @@ export interface ExecutorLoginStart {
 
 export type ExecutorLoginState = "waiting" | "logged_in" | "error" | "expired";
 
-// GET /api/executors/{id}/login/status — sondeado cada ~2-3 s por el modal.
+// GET /api/executors/{id}/login/status, sondeado cada ~2-3 s por el modal.
 export interface ExecutorLoginStatus {
   executor: ExecutorId;
   state: ExecutorLoginState;
@@ -97,7 +97,7 @@ export type StreamEvent =
       status: "ok" | "nonzero" | "error" | "refused" | "blocked";
       exit_code?: number | null;
       run_id?: string;
-      // argv literal ejecutado — el comando que el perito ve en el chat.
+      // argv literal ejecutado, el comando que el perito ve en el chat.
       argv?: string[] | null;
       summary?: string;
     }
@@ -144,7 +144,7 @@ export interface MaletinStatus {
 }
 
 // Disponibilidad de una tool del catálogo: en qué maletín(es) vive y, si no está
-// disponible, la razón accionable (servicio caído, binario ausente) — RULE 2: nunca
+// disponible, la razón accionable (servicio caído, binario ausente), RULE 2: nunca
 // se sustituye un maletín por otro.
 export interface ToolStatus {
   available: boolean;
@@ -169,7 +169,7 @@ export interface QueryResponse {
   status: "llm-loop";
   reply: string;
   iterations?: number;
-  // Lista de {tool_id, run_id?, exit_code?, refused?, error?} — una entrada por
+  // Lista de {tool_id, run_id?, exit_code?, refused?, error?}, una entrada por
   // invocación de tool en este turno. Se persiste en el ChatMessage assistant
   // para que el replay server-side del turno siguiente reconstruya el ledger.
   tool_calls?: unknown[];
@@ -185,7 +185,7 @@ export interface Case {
   name: string;
   examiner: string;
   created_at: string;
-  // El operador ya no lo elige al crear el caso — lo deriva el orquestador
+  // El operador ya no lo elige al crear el caso, lo deriva el orquestador
   // del contenido de la evidencia (forensia.triage). `null` hasta que haya
   // evidencia enrutable registrada.
   os_profile: "unix" | "windows" | null;
@@ -258,7 +258,7 @@ export interface CreateCaseRequest {
 }
 
 // Edición de metadatos del caso (POST /api/cases/{id}/update). Todos
-// opcionales — se manda solo lo que cambia; el backend exige al menos uno
+// opcionales, se manda solo lo que cambia; el backend exige al menos uno
 // (RULE 2: un update sin campos es un bug del caller, no un no-op silencioso).
 // No incluye os_profile: el anclaje de SO tiene su propio endpoint dedicado.
 export interface UpdateCaseRequest {
@@ -271,7 +271,7 @@ export type VerifyResult = EvidenceHandle & { verified: boolean };
 
 // Metadata de custodia de una evidencia (GET …/evidence/{id}/metadata).
 // `read_only_level` es HONESTO: "fs" = solo lectura a nivel de sistema de
-// ficheros (chmod 0444); el bloqueo a nivel de bloque es Fase 2 (RULE 2 —
+// ficheros (chmod 0444); el bloqueo a nivel de bloque es Fase 2 (RULE 2,
 // nunca se anuncia una garantía que no se aplica). `read_only_label` es la
 // etiqueta lista para mostrar.
 export interface EvidenceMetadata {
@@ -401,7 +401,7 @@ export interface DocumentBlock {
   title?: string;
   tags?: string[];
   // Línea de PROCEDENCIA del hallazgo (run, confianza, hash del artefacto). El
-  // PDF ya la imprimía; la web también debe mostrarla — es lo que permite a un
+  // PDF ya la imprimía; la web también debe mostrarla, es lo que permite a un
   // perito contrario reejecutar.
   meta?: string;
 }
@@ -441,7 +441,7 @@ export interface DocumentVerifyResult {
 }
 
 // «Finalizar investigación»: el ejecutor seleccionado redacta el informe
-// pericial COMPLETO (forensia.reports.writer). `executor` es obligatorio — es el
+// pericial COMPLETO (forensia.reports.writer). `executor` es obligatorio, es el
 // modelo que escribe, y Agentopsy no elige uno por el operador (RULE 2); el
 // backend acepta también la selección ya fijada en Configuración
 // (DEFAULT_EXECUTOR). Los datos del perito son opcionales: sin ellos figura el
@@ -531,7 +531,7 @@ export interface ToolUsage {
   failed: number;
 }
 
-// Coste/tokens por ejecutor agregado del audit log (Bug 008 §2 Nivel 0).
+// Coste/tokens por ejecutor agregado del audit log (Bug 008, apartado 2, Nivel 0).
 // `runs_with_tokens` distingue "el ejecutor no reportó tokens" de un cero real
 // (p. ej. Codex hoy no reporta si no se adopta --json).
 export interface ExecutorCost {
@@ -603,7 +603,7 @@ export interface ConfigSnapshot {
 }
 
 // Fichero de la bandeja de evidencias (/api/evidence/sources): `path` es la
-// ruta DENTRO del contenedor api (p. ej. /evidence/disco.raw) — es la que se
+// ruta DENTRO del contenedor api (p. ej. /evidence/disco.raw), es la que se
 // envía a registerAsync (el registro en segundo plano que usa la UI).
 export interface EvidenceSource {
   name: string;
@@ -627,7 +627,7 @@ export interface QueryRequest {
 // Todas las marcas `ts` son UTC, normalizadas a un ISO-8601 con `Z` explícito
 // (hallazgo F: la zona horaria nunca se deja implícita).
 
-// Capa 1 — timeline de INVESTIGACIÓN (determinista, siempre disponible): cada
+// Capa 1, timeline de INVESTIGACIÓN (determinista, siempre disponible): cada
 // ejecución de herramienta del audit log y cada hallazgo, en orden cronológico.
 export interface TimelineToolRunEvent {
   kind: "tool_run";
@@ -660,7 +660,7 @@ export interface InvestigationTimeline {
   events: TimelineEvent[];
 }
 
-// Capa 2 — super-timeline del SISTEMA DE FICHEROS (tsk_fls -m → eventos MACB),
+// Capa 2, super-timeline del SISTEMA DE FICHEROS (tsk_fls -m → eventos MACB),
 // bajo demanda y asíncrona (registro de jobs).
 export interface FsTimelineEvent {
   kind: "fs";

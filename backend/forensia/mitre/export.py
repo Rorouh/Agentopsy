@@ -125,7 +125,7 @@ def _navigator_comment(entry: dict[str, Any]) -> str:
     if status:
         label = _VERDICT_LABEL.get(status, status)
         rationale = (entry.get("rationale") or "").strip()
-        parts.append(f"Dictamen del perito: {label}" + (f" — {rationale}" if rationale else ""))
+        parts.append(f"Dictamen del perito: {label}" + (f", {rationale}" if rationale else ""))
     proposed = entry.get("proposed_by") or []
     if proposed:
         parts.append(f"Propuesta del agente: {len(proposed)} hallazgo(s) [{', '.join(proposed)}]")
@@ -169,7 +169,7 @@ def coverage_to_navigator_layer(
             "showSubtechniques": False,
         })
 
-    name = f"Agentopsy — {case_name}" if case_name else f"Agentopsy — caso {case_id}"
+    name = f"Agentopsy, {case_name}" if case_name else f"Agentopsy, caso {case_id}"
     return {
         "name": name[:255],
         "versions": {"layer": NAVIGATOR_LAYER_VERSION},

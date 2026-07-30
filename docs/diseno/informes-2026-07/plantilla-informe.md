@@ -21,6 +21,14 @@
 > **Regla transversal de tiempo:** toda marca temporal se imprime en **UTC explícito**
 > (`YYYY-MM-DDTHH:MM:SSZ`). Nunca hora local implícita — la guía lo exige (p. 109) y
 > `forensia.timeline.TIMEZONE` ya lo fija.
+>
+> **Regla transversal de tipografía (2026-07-30):** el informe **no lleva el signo
+> `§`, ni el guion largo `—`, ni emojis**. La referencia cruzada se escribe
+> «apartado 6.2» (por eso las cabeceras de este documento se enuncian `6. Hallazgos`
+> y no `§6 — Hallazgos`), los incisos van entre comas o paréntesis, y donde otro
+> pondría un símbolo de correcto o de aviso el informe escribe la palabra. La regla
+> viaja en el encargo (`writer._REGLAS`, reglas 8 y 9) y la garantiza
+> `writer._normalizar_estilo` sobre el texto ya validado.
 
 ---
 
@@ -40,7 +48,7 @@ ilustraciones** (fase F).
 
 ---
 
-## §1 — Control de versiones
+## 1. Control de versiones
 
 **Origen:** `DocumentStore.list(case_id)`, filtrando `type == "pericial"`, más la
 revisión que se está generando.
@@ -63,12 +71,12 @@ revisiones anteriores.
 
 ---
 
-## §2 — Resumen ejecutivo
+## 2. Resumen ejecutivo
 
 **Cota dura: 2 páginas** (guía p. 115). Se controla por presupuesto de caracteres —
 `store._estimate_pages` ya calibra ~3000 chars/página, así que **≤ 6000 caracteres**;
 si la síntesis lo excede, se recorta la enumeración de hallazgos a los de severidad
-`critical` y `high` y se remite a §6.
+`critical` y `high` y se remite a apartado 6.
 
 Sin jerga y sin ids técnicos: es la sección que leen los no técnicos. Nada de
 `run_id`, ni SHA-256, ni nombres de herramienta.
@@ -80,12 +88,12 @@ Estructura:
 2. **Alcance examinado** — nº de evidencias, tipo y perfil de SO determinado por triaje.
 3. **Hallazgos clave** — lista de los `critical` y `high` por título, en lenguaje llano.
    Sin hallazgos: la constancia honesta que ya redacta el generador hoy.
-4. **Conclusión principal** — una o dos frases; debe ser coherente con §9.
+4. **Conclusión principal** — una o dos frases; debe ser coherente con apartado 9.
 5. **Estado** — borrador o firmado, y qué implica.
 
 ---
 
-## §3 — Línea de tiempo del incidente
+## 3. Línea de tiempo del incidente
 
 **Origen (P1: hitos del incidente, no registro del analista):**
 
@@ -98,25 +106,25 @@ Tabla, orden cronológico ascendente:
 
 | Marca temporal (UTC) | Evento | Severidad | Origen | Referencia |
 | --- | --- | --- | --- | --- |
-| 2026-03-14T08:12:44Z | Creación de la tarea programada `updater` | alta | Hallazgo | §6.1 · `a1b2c3d4` |
+| 2026-03-14T08:12:44Z | Creación de la tarea programada `updater` | alta | Hallazgo | apartado 6.1 · `a1b2c3d4` |
 | 2026-03-14T08:13:02Z | `C:\Users\Public\update.exe` — MACB `..cb` | — | Sistema de ficheros | run `7e9f…` |
 
 Reglas:
 
 - **Un hallazgo sin `observed_at` NO entra aquí.** Usar `created_at` fecharía el
   incidente con la hora del análisis. Se listan al final bajo *«Hallazgos sin anclaje
-  temporal»* con su referencia a §6.
+  temporal»* con su referencia a apartado 6.
 - Si no hay super-timeline persistido, se dice — y se indica que se genera desde la
   vista Timeline con `tsk_fls -m`.
 - **Figura** (fase F): línea temporal dibujada, al estilo de la ilustración de la
   guía (p. 117). Entra en el índice de ilustraciones.
 - Nota fija: los sellos temporales son los del sistema de origen; un reloj desajustado
   o una manipulación deliberada de marcas (*timestomping*) los desplaza. Es una
-  limitación que §9 recoge.
+  limitación que apartado 9 recoge.
 
 ---
 
-## §4 — MITRE ATT&CK TTPs
+## 4. MITRE ATT&CK TTPs
 
 **Origen:** `CoverageStore.coverage` + `forensia.mitre.catalog`. **Se conserva la tabla
 actual** (`_correlacion_mitre`), que ya cumple: técnica, nombre, táctica, hallazgos que
@@ -133,7 +141,7 @@ Se añade:
 
 ---
 
-## §5 — Descripción del incidente, alcance y dispositivos
+## 5. Descripción del incidente, alcance y dispositivos
 
 Funde los apartados «Descripción del incidente» (p. 119) y «Dispositivos
 proporcionados» (p. 119) porque en Agentopsy comparten origen: la ficha pericial + la
@@ -145,7 +153,7 @@ custodia. Subapartados `h3`:
 ### 5.2 Descripción del incidente
 `ficha.incidente` — **lo conocido ANTES del análisis**. Bloque `quote` para dejar visible
 que es contexto aportado, no resultado del análisis. Distinción crítica: lo que el
-análisis demuestra va a §6 y §9.
+análisis demuestra va a apartado 6 y apartado 9.
 
 ### 5.3 Marco temporal
 `ficha.marco_temporal.inicio` / `.fin`, con zona explícita. Sin él: *«No consta el marco
@@ -172,7 +180,7 @@ Una entrada por evidencia. La tabla `kv` de custodia que ya existe hoy
 | Hash de registro, cadena de auditoría verificada | `AuditLog` |
 
 Si `procedencia == "adquirido"`, la guía exige que el proceso de adquisición figure en
-§7 (p. 120): se emite una **referencia cruzada** a la subsección de esa evidencia.
+apartado 7 (p. 120): se emite una **referencia cruzada** a la subsección de esa evidencia.
 
 Una evidencia registrada sin entrada en la ficha se imprime igual, con «procedencia: no
 consta». Una entrada de ficha cuyo `evidence_id` no existe **no puede darse**: el store
@@ -180,13 +188,13 @@ la rechaza al escribir.
 
 ---
 
-## §6 — Hallazgos
+## 6. Hallazgos
 
 **Origen:** `FindingStore`. **Se conserva la estructura actual** (agrupación por
 severidad, bloques `finding`, línea de procedencia de `_finding_provenance`). Cambios:
 
-1. **Numeración estable y referenciable** — `6.1`, `6.2`… por hallazgo, para que §3, §8,
-   §9 y §10 puedan citarlo. Hoy solo hay agrupación por severidad, sin ancla.
+1. **Numeración estable y referenciable** — `6.1`, `6.2`… por hallazgo, para que apartado 3, apartado 8,
+   apartado 9 y apartado 10 puedan citarlo. Hoy solo hay agrupación por severidad, sin ancla.
 2. **Los `descarte` se imprimen en su propio subapartado** *«Vías exploradas sin
    resultado»*. No es relleno: es la objetividad que la guía exige (p. 125) — deja
    constancia de que la hipótesis se consideró y no se sostuvo.
@@ -199,7 +207,7 @@ severidad, bloques `finding`, línea de procedencia de `_finding_provenance`). C
 
 ---
 
-## §7 — Trabajos realizados
+## 7. Trabajos realizados
 
 La sección más extensa (guía p. 120). **Origen:** `forensia.reports.works.tool_runs`.
 
@@ -229,7 +237,7 @@ Por cada ejecución, un bloque `kv` + un bloque `code` con el argv literal:
 | SHA-256 de stdout / stderr | `stdout_sha256`, `stderr_sha256` |
 | Ficheros de salida | `output_files_count` |
 | Artefactos de entrada | `derived_inputs[]` (id, relpath, hash verificado) |
-| Hallazgos derivados | `finding_ids` que citan ese `run_id` → referencia cruzada a §6 |
+| Hallazgos derivados | `finding_ids` que citan ese `run_id` → referencia cruzada a apartado 6 |
 
 ```
 $ tsk_fls -m C:/ -r -o 2048 /evidence/<id>/original.E01
@@ -239,7 +247,7 @@ Reglas:
 
 - **Las ejecuciones con `exit_code != 0` se imprimen igual**, con su `error_message`. Un
   informe que solo muestra lo que funcionó no es reproducible, y esos fallos alimentan
-  las limitaciones de §9.
+  las limitaciones de apartado 9.
 - El argv es el **literal auditado**, no una reconstrucción ni la intención declarada
   por el modelo (FORENSIC INVARIANT 4).
 - Si `ficha.dispositivos[].procedencia == "adquirido"`, la subsección de esa evidencia
@@ -249,7 +257,7 @@ Reglas:
 
 ---
 
-## §8 — Indicadores de compromiso (IOCs)
+## 8. Indicadores de compromiso (IOCs)
 
 **Origen:** `IocStore` agregado por `(ioc_type, value)` + veredictos del perito.
 
@@ -258,8 +266,8 @@ puede dar y la guía no contempla:
 
 | Tipo de IOC | Valor | Descripción / Contexto | Fuente del hallazgo | Procedencia | Veredicto |
 | --- | --- | --- | --- | --- | --- |
-| Hash (SHA-256) | `e3b0c442…1e46` | Ejecutable de malware (Backdoor X) | `C:\Users\Public\update.exe` | run `7e9f…` · §6.2 | Validado |
-| IP maliciosa | `185.239.236[.]170` | Servidor de mando y control (C2) | Conexiones salientes | run `a13c…` · §6.4 | Sin dictaminar |
+| Hash (SHA-256) | `e3b0c442…1e46` | Ejecutable de malware (Backdoor X) | `C:\Users\Public\update.exe` | run `7e9f…` · apartado 6.2 | Validado |
+| IP maliciosa | `185.239.236[.]170` | Servidor de mando y control (C2) | Conexiones salientes | run `a13c…` · apartado 6.4 | Sin dictaminar |
 
 Reglas:
 
@@ -279,7 +287,7 @@ Reglas:
 
 ---
 
-## §9 — Conclusiones
+## 9. Conclusiones
 
 **Cada conclusión, un bloque, con referencia cruzada obligatoria.** Se deriva de los
 hallazgos, no de recuentos.
@@ -287,8 +295,8 @@ hallazgos, no de recuentos.
 Formato por conclusión:
 
 > **9.1** Se acredita la creación de un mecanismo de persistencia en el sistema
-> analizado. *Se sostiene en:* §6.1 (`a1b2c3d4`, severidad alta, confianza 0,90),
-> §6.3 (`f5e6d7c8`). *Técnica ATT&CK asociada:* T1053.003, **confirmada** por dictamen
+> analizado. *Se sostiene en:* apartado 6.1 (`a1b2c3d4`, severidad alta, confianza 0,90),
+> apartado 6.3 (`f5e6d7c8`). *Técnica ATT&CK asociada:* T1053.003, **confirmada** por dictamen
 > pericial.
 
 Reglas de generación:
@@ -296,7 +304,7 @@ Reglas de generación:
 - Se emite una conclusión por **grupo de hallazgos que sostienen una misma técnica
   confirmada**, y una por cada hallazgo `critical`/`high` no cubierto por ninguna.
 - Un hallazgo con `confidence < 0.5` **no genera conclusión firme**: se enuncia como
-  indicio y se remite a §6. La guía es explícita: *«no todo hallazgo permite una
+  indicio y se remite a apartado 6. La guía es explícita: *«no todo hallazgo permite una
   conclusión firme»*.
 - Sin hallazgos, se conserva el texto honesto de hoy.
 
@@ -306,7 +314,7 @@ Subapartado **obligatorio** (guía p. 123), derivado — no redactado a mano:
 
 | Limitación | Cómo se detecta |
 | --- | --- |
-| Herramientas que fallaron | ejecuciones con `exit_code != 0` en §7 |
+| Herramientas que fallaron | ejecuciones con `exit_code != 0` en apartado 7 |
 | Evidencias sin perfil de SO determinado con confianza | `os_profile_source`, triaje `unknown` / baja confianza |
 | Hallazgos sin anclaje temporal | `observed_at` nulo |
 | Hallazgos sin procedencia de artefacto | `artifact_sha256` nulo |
@@ -321,7 +329,7 @@ acto registrado en el audit hash-encadenado.
 
 ---
 
-## §10 — Recomendaciones y plan de acción
+## 10. Recomendaciones y plan de acción
 
 **Origen:** `ficha.recomendaciones[]`, ordenadas por prioridad (`alta` → `media` → `baja`).
 
@@ -330,7 +338,7 @@ Un `h3` por prioridad; dentro, un `kv` por recomendación:
 | Campo | Contenido |
 | --- | --- |
 | Recomendación | `texto` |
-| Justificación | referencia cruzada a los hallazgos de `finding_ids` (§6.x) |
+| Justificación | referencia cruzada a los hallazgos de `finding_ids` (apartado 6.x) |
 | Plazo estimado | `plazo` |
 | Recursos necesarios | `recursos` |
 | Cómo se medirá el éxito | `metrica` |
@@ -348,12 +356,12 @@ Reglas:
 
 ---
 
-## Anexo A — Traza de la investigación
+## A. Anexo: Traza de la investigación
 
 `build_investigation_timeline` completo: qué hizo el analista y cuándo. Va a anexo, no
 al cuerpo: es trazabilidad del trabajo, no del incidente (P1).
 
-## Anexo B — Verificación de integridad
+## B. Anexo: Verificación de integridad
 
 - SHA-256 del contenido del documento y cómo recomputarlo.
 - Estado de la cadena hash del audit del caso (`hash_chain_verified`).

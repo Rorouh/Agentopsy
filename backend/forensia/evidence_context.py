@@ -39,7 +39,7 @@ class EvidenceContext:
         ):
             raise ValueError(
                 "EvidenceContext.baseline_sha256 must be a 64-hex SHA-256 digest "
-                f"(got {self.baseline_sha256!r}) — no empty/None/placeholder allowed"
+                f"(got {self.baseline_sha256!r}), no empty/None/placeholder allowed"
             )
 
     @classmethod

@@ -52,7 +52,7 @@ def get_redaction_mode() -> RedactionMode:
     if raw not in _VALID_MODES:
         raise ValueError(
             f"invalid FORENSIA_REDACTION_MODE={raw!r}; "
-            f"expected one of {_VALID_MODES}. RULE 2 — no fallback."
+            f"expected one of {_VALID_MODES}. RULE 2, no fallback."
         )
     return raw  # type: ignore[return-value]
 
@@ -84,8 +84,8 @@ def apply_redaction(
         return result
 
     if agent_package is None:
-        result["stdout_sample"] = "[NO REDACTION APPLIED — no agent package]"
-        result["stderr_sample"] = "[NO REDACTION APPLIED — no agent package]"
+        result["stdout_sample"] = "[NO REDACTION APPLIED, no agent package]"
+        result["stderr_sample"] = "[NO REDACTION APPLIED, no agent package]"
         result["redaction"] = {"applied": False, "reason": "no agent package"}
         return result
 

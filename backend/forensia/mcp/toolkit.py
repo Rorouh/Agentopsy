@@ -147,7 +147,7 @@ def build_server(consent_ref: str) -> tuple[Server, Lifecycle]:
             if params_schema is None:
                 logger.warning(
                     "tool %s lacks a schema in forensia.mcp.schemas.SCHEMA_BY_TOOL; "
-                    "not publishing via MCP (RULE 2 — no fallback schema). Add a "
+                    "not publishing via MCP (RULE 2, no fallback schema). Add a "
                     "BaseModel + register it to expose this tool.",
                     tool_id,
                 )
@@ -259,7 +259,7 @@ async def _dispatch_forensic(
     case_id = session.case_id
     if case_id is None:
         return _error(
-            "no case selected — call `select_case` first. RULE 2 (no fallbacks): "
+            "no case selected, call `select_case` first. RULE 2 (no fallbacks): "
             "the server does not auto-pick a case even if there is only one."
         )
 
@@ -290,7 +290,7 @@ async def _dispatch_forensic(
     evidence_id = session.evidence_id
     if evidence_id is None:
         return _error(
-            "no evidence selected — call `select_evidence` first. RULE 2 (no fallbacks): "
+            "no evidence selected, call `select_evidence` first. RULE 2 (no fallbacks): "
             "the server does not auto-pick evidence even if the case has only one."
         )
     # Read the selected handle and use the catalog's shared path contract. No MCP-local

@@ -45,7 +45,7 @@ def build_argv(params: dict[str, Any]) -> list[str]:
     fmt = params.get("format", "raw")
     if fmt not in _FORMATS:
         raise ValueError(
-            f"ftkimager params.format must be one of {sorted(_FORMATS)} — got {fmt!r}"
+            f"ftkimager params.format must be one of {sorted(_FORMATS)}, got {fmt!r}"
         )
     verify = params.get("verify", True)
     if not isinstance(verify, bool):

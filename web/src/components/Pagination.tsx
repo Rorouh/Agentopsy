@@ -5,7 +5,7 @@ interface PaginationProps {
 }
 
 // Paginador client-side compartido (casos y evidencias). El mock no la dibuja
-// —sus listas son de tres filas— pero los volúmenes reales la necesitan; se
+// sus listas son de tres filas, pero los volúmenes reales la necesitan; se
 // oculta sola cuando no hay nada que paginar.
 export function Pagination({ page, pageCount, onPage }: PaginationProps) {
   if (pageCount <= 1) return null;

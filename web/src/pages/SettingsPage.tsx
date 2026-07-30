@@ -218,7 +218,7 @@ export function SettingsPage({ caps, version, onCapsRefresh }: SettingsPageProps
 
                           {open && (
                             <div className="engine-panel">
-                              {/* RULE 2: un ejecutor no disponible NO se oculta —
+                              {/* RULE 2: un ejecutor no disponible NO se oculta,
                                   se muestra con la razón accionable que reporta
                                   capabilities. */}
                               <div className="engine-note">
@@ -447,7 +447,7 @@ export function SettingsPage({ caps, version, onCapsRefresh }: SettingsPageProps
                         <span
                           className={`tool-chip${v.available ? "" : " is-off"}`}
                           key={k}
-                          title={v.available ? `${k} — ${v.toolkits.join(", ")}` : v.reason ?? k}
+                          title={v.available ? `${k}: ${v.toolkits.join(", ")}` : v.reason ?? k}
                         >
                           <span className={`dot${v.available ? " dot--ok" : ""}`} />
                           {k}
@@ -465,7 +465,7 @@ export function SettingsPage({ caps, version, onCapsRefresh }: SettingsPageProps
                       <div className="kv-row">
                         <span className="kv-k">Backend api</span>
                         <span className="kv-v">
-                          {version ? `v${version}` : "—"} · 127.0.0.1:8000
+                          {version ? `v${version}` : "n/d"} · 127.0.0.1:8000
                         </span>
                       </div>
                       <div className="kv-row">
@@ -480,7 +480,7 @@ export function SettingsPage({ caps, version, onCapsRefresh }: SettingsPageProps
                       </div>
                       <div className="kv-row">
                         <span className="kv-k">Configuración</span>
-                        <span className="kv-v">{config?.config_file ?? "—"}</span>
+                        <span className="kv-v">{config?.config_file ?? "n/d"}</span>
                       </div>
                     </div>
                   </div>

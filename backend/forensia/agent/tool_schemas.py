@@ -221,7 +221,7 @@ TOOL_PARAM_SCHEMAS: dict[str, dict[str, Any]] = {
             "plugin": {
                 "type": "string",
                 "description": (
-                    "Volatility 3 plugin id — ALWAYS module + class, e.g. "
+                    "Volatility 3 plugin id, ALWAYS module + class, e.g. "
                     "windows.pslist.PsList, linux.pslist.PsList, "
                     "windows.netscan.NetScan, windows.malfind.Malfind. "
                     "An 'invalid choice' error means the NAME is malformed (class "
@@ -230,7 +230,7 @@ TOOL_PARAM_SCHEMAS: dict[str, dict[str, Any]] = {
                     "windows.registry.hashdump.Hashdump / .lsadump.Lsadump / "
                     ".cachedump.Cachedump. Known REAL limit: "
                     "windows.consoles.Consoles and windows.cmdscan.CmdScan raise "
-                    "NotImplementedError on Windows 7 (NT 6.1) — cmdscan shares "
+                    "NotImplementedError on Windows 7 (NT 6.1), cmdscan shares "
                     "the consoles code, so it is not an alternative."
                 ),
             },
@@ -444,7 +444,7 @@ TOOL_PARAM_SCHEMAS: dict[str, dict[str, Any]] = {
                 "enum": ["Kroll_Batch.reb"],
                 "description": (
                     "RECmd batch file NAME from the BatchExamples/ shipped in the "
-                    "maletín (e.g. Kroll_Batch.reb). A bare name — never a path."
+                    "maletín (e.g. Kroll_Batch.reb). A bare name, never a path."
                 ),
             },
             "is_directory": {
@@ -560,7 +560,7 @@ TOOL_PARAM_SCHEMAS: dict[str, dict[str, Any]] = {
 # Descripciones humanas para que el LLM entienda qué hace cada tool.
 TOOL_DESCRIPTIONS: dict[str, str] = {
     "file_info": "Identify what KIND of file the evidence actually is. ALWAYS run this FIRST. If it returns generic data, follow up with strings_head before invoking any forensic tool.",
-    "xxd_head": "Hex-dump the first bytes of the evidence to read its magic number directly. Use this when file_info returns 'data' (no signature) — most container formats are identifiable from bytes 0..32.",
+    "xxd_head": "Hex-dump the first bytes of the evidence to read its magic number directly. Use this when file_info returns 'data' (no signature), most container formats are identifiable from bytes 0..32.",
     "strings_head": "Extract printable strings from the evidence to look for vendor names, kernel banners, format markers (Linux version, LiME, EnCase, VMware, EVTX). Use it when file_info is non-diagnostic.",
     "tsk_mmls": "List partitions of the raw disk evidence. Run this first to discover the partition layout.",
     "tsk_fls": "List files in the partition. Useful for triaging the filesystem and producing bodyfiles for mactime.",
@@ -572,23 +572,23 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "hayabusa": "Run Hayabusa with Sigma rules over a directory of pre-extracted EVTX files.",
     "chainsaw": "Hunt over EVTX or JSON files with Sigma rules.",
     "regripper": "Run RegRipper against a pre-extracted Windows registry hive.",
-    "tsk_icat": "Extract a file's raw bytes by inode (from tsk_fls) straight off the image without mounting — allocated or deleted. The extracted artifact can feed a downstream parser (regripper, mftecmd, evtxecmd…) as {run_id, relpath}.",
+    "tsk_icat": "Extract a file's raw bytes by inode (from tsk_fls) straight off the image without mounting, allocated or deleted. The extracted artifact can feed a downstream parser (regripper, mftecmd, evtxecmd…) as {run_id, relpath}.",
     "evtxecmd": "Parse a pre-extracted .evtx file (or directory) into CSV.",
     "mftecmd": "Parse a pre-extracted $MFT into CSV.",
-    "lecmd": "Parse pre-extracted Windows shortcut .lnk files (file or directory) into CSV — target paths, timestamps, volume info.",
-    "jlecmd": "Parse pre-extracted Jump Lists (Automatic/CustomDestinations-ms, from the user's Recent/ folder) into CSV — per-app document access history.",
+    "lecmd": "Parse pre-extracted Windows shortcut .lnk files (file or directory) into CSV, target paths, timestamps, volume info.",
+    "jlecmd": "Parse pre-extracted Jump Lists (Automatic/CustomDestinations-ms, from the user's Recent/ folder) into CSV, per-app document access history.",
     "recmd": "Run a RECmd batch (e.g. Kroll_Batch.reb) against a pre-extracted registry hive (or directory of hives) into CSV.",
-    "amcacheparser": "Parse a pre-extracted Amcache.hve into CSVs — program/file inventory, evidence of execution.",
-    "appcompatcacheparser": "Parse the ShimCache (AppCompatCache) from a pre-extracted SYSTEM hive into CSV — executables present/run on the system.",
-    "sbecmd": "Parse ShellBags from UsrClass.dat/NTUSER.DAT hives under a directory into CSV — folders the user browsed, even if deleted.",
-    "wxtcmd": "Parse a pre-extracted Windows Timeline ActivitiesCache.db (Win10 1803+) into CSV — app/document activity history.",
-    "rbcmd": "Parse Recycle Bin $I metadata (directory or single file) into CSV — original path, size and deletion time of recycled files.",
-    "ftkimager": "Convert the disk-image evidence between formats — raw (dd) ↔ E01/SMART — with MD5/SHA1 verification and an acquisition report. E.g. produce a TSK-friendly raw copy from an E01, or a compressed E01 from a raw image.",
-    "plaso_log2timeline": "Build a SUPER-TIMELINE (.plaso storage) from the disk evidence — fuses filesystem, EVTX, registry, browser and more into one chronological store. HEAVY: always narrow it with `parsers` (e.g. 'win7', 'winevtx,winreg,prefetch') and `partitions`. Feed the resulting timeline.plaso to plaso_psort.",
-    "plaso_psort": "Post-process a .plaso storage (from plaso_log2timeline) into a readable timeline — CSV by default. Pass the producing run as {run_id, relpath} in plaso_path.",
+    "amcacheparser": "Parse a pre-extracted Amcache.hve into CSVs, program/file inventory, evidence of execution.",
+    "appcompatcacheparser": "Parse the ShimCache (AppCompatCache) from a pre-extracted SYSTEM hive into CSV, executables present/run on the system.",
+    "sbecmd": "Parse ShellBags from UsrClass.dat/NTUSER.DAT hives under a directory into CSV, folders the user browsed, even if deleted.",
+    "wxtcmd": "Parse a pre-extracted Windows Timeline ActivitiesCache.db (Win10 1803+) into CSV, app/document activity history.",
+    "rbcmd": "Parse Recycle Bin $I metadata (directory or single file) into CSV, original path, size and deletion time of recycled files.",
+    "ftkimager": "Convert the disk-image evidence between formats, raw (dd) ↔ E01/SMART, with MD5/SHA1 verification and an acquisition report. E.g. produce a TSK-friendly raw copy from an E01, or a compressed E01 from a raw image.",
+    "plaso_log2timeline": "Build a SUPER-TIMELINE (.plaso storage) from the disk evidence, fuses filesystem, EVTX, registry, browser and more into one chronological store. HEAVY: always narrow it with `parsers` (e.g. 'win7', 'winevtx,winreg,prefetch') and `partitions`. Feed the resulting timeline.plaso to plaso_psort.",
+    "plaso_psort": "Post-process a .plaso storage (from plaso_log2timeline) into a readable timeline, CSV by default. Pass the producing run as {run_id, relpath} in plaso_path.",
     "hashdeep": "Hash a file or a whole extracted tree with several algorithms at once (MD5/SHA-256/…). Use it to cross-check an image against its baseline, or to produce the hash set of extracted artifacts for the report.",
-    "foremost": "Carve files by header/footer signature from unallocated space — recovers deleted files whose metadata is gone. Writes carved files grouped by type plus an audit.txt into the run output.",
-    "aff4imager": "List or extract streams from an AFF4 volume (e.g. a WinPmem 3.x RAM acquisition). Call WITHOUT params to list the stream URNs; call again with `stream`=<that URN> to export it into the run output — then feed the exported raw to volatility3 as {run_id, relpath}.",
+    "foremost": "Carve files by header/footer signature from unallocated space, recovers deleted files whose metadata is gone. Writes carved files grouped by type plus an audit.txt into the run output.",
+    "aff4imager": "List or extract streams from an AFF4 volume (e.g. a WinPmem 3.x RAM acquisition). Call WITHOUT params to list the stream URNs; call again with `stream`=<that URN> to export it into the run output, then feed the exported raw to volatility3 as {run_id, relpath}.",
     "jq": "Filter JSON output from other tools.",
 }
 
@@ -701,7 +701,7 @@ _INTERNAL_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 "type": "string",
                 "pattern": "^[0-9a-fA-F]{64}$",
                 "description": (
-                    "SHA-256 (64 hex) del output del run que sostiene el hallazgo — "
+                    "SHA-256 (64 hex) del output del run que sostiene el hallazgo, "
                     "procedencia a nivel de artefacto. Opcional; el ancla obligatoria "
                     "es run_id."
                 ),
@@ -723,7 +723,7 @@ _INTERNAL_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                     "Técnicas ATT&CK que sostiene este hallazgo, p. ej. "
                     "[\"T1547.001\"]. ENUM CERRADA: sólo ids de la semilla "
                     "(_orchestrator/knowledge/mitre_attack_seed.md). Un id fuera de "
-                    "la semilla RECHAZA el hallazgo entero — no inventes ids. Mapea "
+                    "la semilla RECHAZA el hallazgo entero, no inventes ids. Mapea "
                     "a sub-técnica cuando la evidencia lo permita; si no, a la "
                     "técnica padre. Omite el campo si el hallazgo no sostiene "
                     "ninguna técnica."
@@ -816,7 +816,7 @@ _INTERNAL_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 "type": "string",
                 "description": (
                     "SUBCADENA literal, sin distinguir mayúsculas. Devuelve solo las "
-                    "líneas que la contienen — como un `grep`. Omítela para leer "
+                    "líneas que la contienen, como un `grep`. Omítela para leer "
                     "secuencialmente."
                 ),
             },
@@ -881,7 +881,7 @@ _INTERNAL_DESCRIPTIONS: dict[str, str] = {
     "consultar_conocimiento": (
         "LEE bajo demanda un documento de referencia del «Mapa de memoria» (system "
         "prompt): detalle por-herramienta, catálogo de artefactos por SO, etc. NO "
-        "cargues todo de antemano — consulta solo el doc que necesites para la tarea "
+        "cargues todo de antemano, consulta solo el doc que necesites para la tarea "
         "en curso (economía de contexto). `doc_id` debe ser uno de los ids listados en "
         "el Mapa de memoria; un id desconocido se rechaza con la lista de ids válidos."
     ),
@@ -891,7 +891,7 @@ _INTERNAL_DESCRIPTIONS: dict[str, str] = {
         "X e Y?», «¿hubo algún registro el <fecha>?» o «enséñame los artefactos web»: lee "
         "el bodyfile hasheado del run de fls y filtra TODOS sus eventos MACB por rango de "
         "fechas, categoría de relevancia y/o subcadena de ruta. Es una proyección "
-        "determinista y exhaustiva — no infiere. Si la super-timeline aún no existe, te lo "
+        "determinista y exhaustiva, no infiere. Si la super-timeline aún no existe, te lo "
         "dice (status=no_timeline) para que la generes primero en vez de adivinar. Prefiere "
         "esto a re-lanzar tsk_fls/tsk_mactime cuando la timeline ya está construida."
     ),
@@ -902,7 +902,7 @@ _INTERNAL_DESCRIPTIONS: dict[str, str] = {
         "findings panel in the UI reads these. severity: low for context, medium for "
         "noteworthy, high for actionable, critical for clear compromise. An "
         "AFFIRMATIVE finding (something you assert about the evidence) REQUIRES "
-        "run_id (the ArtifactRun that backs it) — it is rejected without it; set "
+        "run_id (the ArtifactRun that backs it), it is rejected without it; set "
         "finding_kind=\"descarte\" when you document a ruled-out lead instead. Attach "
         "confidence (0..1), observed_at (when it happened in the evidence) and "
         "artifact_sha256 when you have them, and mitre_hints when the finding "
@@ -914,7 +914,7 @@ _INTERNAL_DESCRIPTIONS: dict[str, str] = {
         "techniques (e.g. the examiner asks for the MITRE correlation), or to fill in "
         "hints you didn't attach at record time. finding_id must exist; ids come from "
         "the seed. Idempotent per finding: re-call with the FULL list (it replaces the "
-        "previous one). This PERSISTS the correlation — prose in your answer does not "
+        "previous one). This PERSISTS the correlation, prose in your answer does not "
         "reach the board on its own."
     ),
     "declarar_pivote": (
@@ -923,7 +923,7 @@ _INTERNAL_DESCRIPTIONS: dict[str, str] = {
         "soportado, plugin ausente, el disco no abre) y vas a atacar el mismo objetivo "
         "por OTRO artefacto.\n"
         "No es rendirse ni es cambiar de tema: es la jugada que resuelve casos reales "
-        "—«el disco no abre → vuelco los hives desde la RAM y respondo igual»—. Lo que "
+        ", «el disco no abre → vuelco los hives desde la RAM y respondo igual». Lo que "
         "NO puedes hacer es cambiar de vía en silencio: el perito tiene que ver que "
         "descartaste algo, con qué prueba y qué haces en su lugar. Queda registrado en "
         "el log de custodia.\n"
@@ -932,7 +932,7 @@ _INTERNAL_DESCRIPTIONS: dict[str, str] = {
     ),
     "leer_artefacto": (
         "LEE la salida COMPLETA de una herramienta que ya ejecutaste, filtrándola por "
-        "líneas — es tu `grep`/`head` sobre tus propios resultados. Lo que ves al "
+        "líneas, es tu `grep`/`head` sobre tus propios resultados. Lo que ves al "
         "ejecutar una tool es solo una MUESTRA recortada: si la salida importa "
         "(un árbol de `fls`, las cuentas de `regripper`, un CSV de `mftecmd`, las "
         "conexiones de `netscan`), LÉELA con esta tool antes de concluir nada.\n"
@@ -945,7 +945,7 @@ _INTERNAL_DESCRIPTIONS: dict[str, str] = {
     ),
     "anotar_conocimiento": (
         "ESCRIBE en el grafo de conocimiento de ESTE caso: lo que has averiguado, "
-        "dónde está y qué queda abierto. Es tu memoria entre turnos — el contexto se "
+        "dónde está y qué queda abierto. Es tu memoria entre turnos, el contexto se "
         "recorta, esto no. Anota EN CALIENTE, en cuanto una herramienta te da algo "
         "que vas a necesitar después: el perfil del sistema y el huso horario, las "
         "cuentas, un hito de la cronología, y sobre todo el `run_id` de un artefacto "

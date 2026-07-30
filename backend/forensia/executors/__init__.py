@@ -97,7 +97,7 @@ def executor_models(executor_id: str) -> dict[str, object]:
         "models": executor.suggested_models(),
         "note": (
             f"Agentopsy no puede enumerar los modelos de {executor.name} sin una API "
-            "key (SECURITY INVARIANT 7). Escribe el id que aceptes en su CLI — se "
+            "key (SECURITY INVARIANT 7). Escribe el id que aceptes en su CLI, se "
             "pasa como --model; déjalo vacío para usar el modelo por defecto del CLI."
         ),
     }

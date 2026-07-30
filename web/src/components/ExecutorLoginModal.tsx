@@ -5,11 +5,11 @@ import { Modal } from "../ui/Modal";
 
 // Conecta un ejecutor CLI cloud (Codex/Claude) DESDE LA WEB, sin abrir terminal.
 // El backend relaya el flujo device/OAuth del propio CLI; este modal muestra la
-// URL + código, sondea el estado, y —para Claude— reenvía el código pegado.
+// URL + código, sondea el estado, y, para Claude, reenvía el código pegado.
 //
 // Degradación explícita (RULE 2): si el CLI no puede relayarse (Gemini, cuyo
 // login individual rechaza Google), se muestra el comando manual exacto y un
-// botón «Comprobar» — nunca un spinner que no termina.
+// botón «Comprobar», nunca un spinner que no termina.
 
 interface ExecutorLoginModalProps {
   executorId: ExecutorId;

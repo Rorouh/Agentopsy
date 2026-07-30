@@ -69,7 +69,7 @@ export function CaseSearchModal({
     [cases, activeCaseId],
   );
 
-  // Foco directo al input al abrir — es un buscador, se llega tecleando.
+  // Foco directo al input al abrir, es un buscador, se llega tecleando.
   // Cada apertura vuelve al panel de búsqueda: nadie espera reencontrarse con
   // el formulario de borrado a medio escribir.
   useEffect(() => {

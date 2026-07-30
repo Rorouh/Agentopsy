@@ -136,7 +136,7 @@ def finalize_investigation(
             status_code=422,
             detail="el caso no tiene ningún hallazgo registrado: no hay "
                    "investigación que informar. Analiza la evidencia con el "
-                   "agente antes de finalizar la investigación — Agentopsy no "
+                   "agente antes de finalizar la investigación, Agentopsy no "
                    "redacta un informe que nada sostiene (RULE 2).",
         )
 

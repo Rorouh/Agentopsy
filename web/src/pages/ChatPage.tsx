@@ -13,7 +13,7 @@ import type {
 } from "../api/types";
 import { ExecutorLoginModal } from "../components/ExecutorLoginModal";
 
-// Markdown mínimo del turno del agente. SEC INV 8: se pinta como TEXTO — en
+// Markdown mínimo del turno del agente. SEC INV 8: se pinta como TEXTO, en
 // todo web/src no hay un solo dangerouslySetInnerHTML, y esta pantalla es la
 // tentación número uno de romperlo.
 function renderInline(text: string) {
@@ -247,14 +247,14 @@ function ElapsedSince({ since }: { since: string }) {
   }, []);
 
   // Sin ancla parseable no inventamos un cero que parecería «acaba de empezar»
-  // (RULE 2: nada de valores fabricados) — simplemente no se pinta el contador.
+  // (RULE 2: nada de valores fabricados), simplemente no se pinta el contador.
   if (Number.isNaN(startedAt)) return null;
   const seconds = Math.max(0, Math.round((now - startedAt) / 1000));
   return <span className="turn-elapsed">{formatElapsed(seconds)}</span>;
 }
 
 // Bloque «Cadena de ejecución»: lo que el agente EJECUTÓ, con el argv literal.
-// No es la intención declarada por el LLM — es el comando que corrió y quedó en
+// No es la intención declarada por el LLM, es el comando que corrió y quedó en
 // el log de auditoría encadenado (FORENSIC INVARIANT 4).
 function ToolChain({ activity, streaming }: { activity: StreamEvent[]; streaming: boolean }) {
   const steps = activity.filter((e) => e.type === "tool_call").length;
@@ -298,7 +298,7 @@ function ToolChain({ activity, streaming }: { activity: StreamEvent[]; streaming
               &nbsp;&nbsp;
               {cmd || ev.status}
               <span className="toolchain-note">
-                {" — "}
+                {" · "}
                 {ev.summary ?? ev.status}
                 {ev.status === "nonzero" && ev.exit_code != null ? ` (exit ${ev.exit_code})` : ""}
               </span>
@@ -311,7 +311,7 @@ function ToolChain({ activity, streaming }: { activity: StreamEvent[]; streaming
   );
 }
 
-// One session id per case is enough for v1 — múltiples investigaciones por caso
+// One session id per case is enough for v1, múltiples investigaciones por caso
 // se introducen cuando el flujo lo pida explícitamente.
 const CHAT_SESSION_ID = "main";
 
@@ -360,7 +360,7 @@ export function ChatPage({
 
   // Ejecutor elegido por el operador para esta sesión. Se preselecciona con
   // DEFAULT_EXECUTOR solo si el usuario lo fijó EXPLÍCITAMENTE en Configuración
-  // (agencia del operador — RULE 2); nunca se inventa uno. El vacío inicial es
+  // (agencia del operador, RULE 2); nunca se inventa uno. El vacío inicial es
   // deliberado: no es un hueco que haya que "arreglar" con un ?? "ollama".
   const [executor, setExecutor] = useState<ExecutorId | "">("");
 
@@ -393,7 +393,7 @@ export function ChatPage({
         setModelByProvider(restored);
       })
       .catch(() => {
-        /* sin config aún — el operador elige a mano */
+        /* sin config aún, el operador elige a mano */
       });
   }, []);
 
@@ -434,7 +434,7 @@ export function ChatPage({
   }, [openMenu]);
 
   // Persiste la elección de modelo del proveedor ACTUAL. Un valor vacío la
-  // limpia (cloud → por defecto del CLI; Ollama → modelo del paquete) — RULE 2:
+  // limpia (cloud → por defecto del CLI; Ollama → modelo del paquete), RULE 2:
   // Agentopsy nunca se inventa uno.
   const saveModel = async (value: string) => {
     if (!executor) return;
@@ -458,7 +458,7 @@ export function ChatPage({
   };
 
   // Al elegir proveedor lo recordamos como DEFAULT_EXECUTOR (agencia del
-  // operador — no un default inventado; RULE 2).
+  // operador, no un default inventado; RULE 2).
   const selectExecutor = (id: ExecutorId) => {
     setExecutor(id);
     setOpenMenu(null);
@@ -468,7 +468,7 @@ export function ChatPage({
   };
 
   // Fuente de verdad de la selección de agente: el os_profile del CASO, no el
-  // del host. `null` = el orquestador aún no lo ha derivado — no es un error.
+  // del host. `null` = el orquestador aún no lo ha derivado, no es un error.
   const activeProfile: "unix" | "windows" | null = activeCase
     ? activeCase.os_profile
     : caps?.os === "windows"
@@ -770,7 +770,7 @@ export function ChatPage({
   };
 
   // Botón «Parar»: pide al backend detener el análisis en curso. La parada es
-  // COOPERATIVA — el loop del agente termina entre iteraciones conservando lo
+  // COOPERATIVA, el loop del agente termina entre iteraciones conservando lo
   // persistido en caliente (findings, grafo, artefactos). El sondeo verá el
   // estado `cancelled` y cerrará el turno con el mensaje de parada.
   const onStop = async () => {
@@ -831,7 +831,7 @@ export function ChatPage({
               la evidencia (cabeceras, sectores de arranque y, en imágenes
               contenedor, el disco des-encapsulado dentro del maletín). El caso
               ambiguo que el triage no puede cerrar se resuelve en Evidencia,
-              junto a la huella que lo justifica — no interrumpiendo la
+              junto a la huella que lo justifica, no interrumpiendo la
               investigación con una pregunta que el sistema debe saber responder. */}
 
           {msgs.map((msg, i) =>
@@ -963,7 +963,7 @@ export function ChatPage({
                         title={status.reason ?? "No disponible"}
                       >
                         <span>
-                          {status.name} — no disponible
+                          {status.name}: no disponible
                         </span>
                         {!status.local && (
                           <button
@@ -984,7 +984,7 @@ export function ChatPage({
               )}
             </div>
 
-            {/* Modelo — la lista depende del proveedor. */}
+            {/* Modelo, la lista depende del proveedor. */}
             <div className="composer-menu-wrap">
               <button
                 type="button"

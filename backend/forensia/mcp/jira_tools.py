@@ -52,7 +52,7 @@ JIRA_TOOL_DEFINITIONS: list[types.Tool] = [
             "Select a case as the active context for subsequent forensic tool "
             "calls. The server will load the agent package for the case's "
             "os_profile and emit `tools/list_changed` so the client refreshes "
-            "the available tools. RULE 2: no fallback — passing an invalid id "
+            "the available tools. RULE 2: no fallback, passing an invalid id "
             "or a profile with no agent package loaded fails loud."
         ),
         inputSchema={
@@ -87,7 +87,7 @@ JIRA_TOOL_DEFINITIONS: list[types.Tool] = [
         description=(
             "Select an evidence within the active case for subsequent forensic "
             "tool calls. The server injects the read-only evidence path into "
-            "the tool arguments — clients never see raw paths. RULE 2: no "
+            "the tool arguments, clients never see raw paths. RULE 2: no "
             "fallback to 'the only evidence', no fallback to 'the most "
             "recently registered'."
         ),
@@ -136,7 +136,7 @@ def select_case(session: McpSession, arguments: dict[str, Any]) -> dict[str, Any
     try:
         case = case_manager.load(case_id)
     except KeyError:
-        return _err(f"unknown case_id {case_id!r} — call `list_cases` to see valid ids.")
+        return _err(f"unknown case_id {case_id!r}, call `list_cases` to see valid ids.")
     # Resolve the os_profile from the case (derived from evidence content by
     # triage, or operator-anchored) — never guessed. Ambiguity escalates.
     try:
@@ -148,7 +148,7 @@ def select_case(session: McpSession, arguments: dict[str, Any]) -> dict[str, Any
     except KeyError:
         return _err(
             f"no agent package loaded for os_profile {os_profile!r}. "
-            f"Drop one under agentes/ and restart the MCP server. RULE 2 — "
+            f"Drop one under agentes/ and restart the MCP server. RULE 2, "
             f"the server will not fall back to a different package."
         )
     session.set_case(case_id, pkg)
@@ -173,7 +173,7 @@ def select_case(session: McpSession, arguments: dict[str, Any]) -> dict[str, Any
 
 def list_evidence(session: McpSession) -> dict[str, Any]:
     if session.case_id is None:
-        return _err("no case selected — call `select_case` first.")
+        return _err("no case selected, call `select_case` first.")
     handles = evidence_manager.list(session.case_id)
     return {
         "evidence": [
@@ -197,7 +197,7 @@ def list_evidence(session: McpSession) -> dict[str, Any]:
 
 def select_evidence(session: McpSession, arguments: dict[str, Any]) -> dict[str, Any]:
     if session.case_id is None:
-        return _err("no case selected — call `select_case` first.")
+        return _err("no case selected, call `select_case` first.")
     evidence_id = arguments.get("evidence_id")
     if not isinstance(evidence_id, str) or not evidence_id:
         return _err("select_evidence requires `evidence_id` (UUID4 from list_evidence).")
@@ -205,7 +205,7 @@ def select_evidence(session: McpSession, arguments: dict[str, Any]) -> dict[str,
         handle = evidence_manager.get(session.case_id, evidence_id)
     except KeyError:
         return _err(
-            f"unknown evidence_id {evidence_id!r} in case {session.case_id!r} — "
+            f"unknown evidence_id {evidence_id!r} in case {session.case_id!r}, "
             f"call `list_evidence` to see valid ids."
         )
     session.set_evidence(evidence_id)
@@ -219,7 +219,7 @@ def select_evidence(session: McpSession, arguments: dict[str, Any]) -> dict[str,
         },
         "next": (
             "Forensic tools in `tools/list` now operate on this evidence. The "
-            "server injects the read-only path automatically — never pass raw "
+            "server injects the read-only path automatically, never pass raw "
             "paths in tool arguments."
         ),
     }

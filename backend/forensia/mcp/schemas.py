@@ -327,7 +327,7 @@ class RECmdParams(_StrictModel):
     batch: Literal["Kroll_Batch.reb"] = Field(
         description=(
             "RECmd batch file name from the maletín's BatchExamples/ "
-            "(e.g. `Kroll_Batch.reb`). A bare name — never a path."
+            "(e.g. `Kroll_Batch.reb`). A bare name, never a path."
         ),
     )
     is_directory: bool = Field(
@@ -581,7 +581,7 @@ class Volatility3Params(_StrictModel):
         description=(
             "Volatility3 plugin name (module + class). This enum is FORENSIA's "
             "CURATED POLICY, not the capability of the maletín: a name rejected "
-            "here may well exist in the build — widen the list in schemas.py. "
+            "here may well exist in the build, widen the list in schemas.py. "
             "Never report a rejection as 'the plugin does not exist'."
         ),
     )

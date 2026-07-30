@@ -253,6 +253,42 @@ say so explicitly and do not claim the push is CI-safe. After pushing, still ver
 green on GitHub (`gh run watch` / the Actions tab); a push is not "done" until CI is green on the
 remote. This rule composes with RULE 4 (docs in sync) — both are preconditions of a push.
 
+## RULE 7 — Product typography: no `§`, no em dash, no emojis
+
+Everything Agentopsy PUTS IN FRONT OF A HUMAN — the pericial report and every piece of
+text in the web app — is written without three characters:
+
+- **`§`** (section sign). A cross-reference reads «apartado 6.2» or «la sección 9,
+  Conclusiones y limitaciones». The canonical index enunciates `1. Control de
+  versiones`, never `§1`.
+- **`—`** (em dash) and its long-dash variants `―⸺⸻`. The Spanish dash parenthetical
+  is written with commas, parentheses or a colon.
+- **emojis and decorative pictograms**, in prose, tables and lists alike. Where another
+  document would put a check or a warning symbol, this one writes the word.
+
+It applies to three layers, and each enforces it differently:
+
+1. **The model's output** — the prompt DEMANDS it (`writer._REGLAS` rules 8 and 9;
+   `agentes/agent.md` section 9) and `writer._normalizar_estilo` GUARANTEES it on text
+   that already cleared the four custody gates. It is not a fifth gate and never
+   rejects a report: typography is not a fact of the case. It never touches a `code`
+   block (the audited argv, character by character — FORENSIC INVARIANT 4), leaves a
+   compliant text byte-identical, and audits how much it rewrote
+   (`report_written.style_normalized`).
+2. **Backend strings** — any literal that can reach the UI, the model or the report.
+   Docstrings and comments are development documentation, not product output, and stay
+   out of scope.
+3. **`web/src`** — labels, prose and placeholders (the «no data» blank is `n/d`).
+
+Enforced by `backend/tests/test_estilo_tipografia.py`. Exempt, because there the dash is
+DATA and substituting it would break the code that looks for it: the PDF transliteration
+key (`reports/pdf._PUNCT`), the ATT&CK-seed tactic regex (`mitre/catalog.py`) and
+`writer._RAYA_RE`. A literal may also NAME the character in order to forbid it.
+
+Typography is not cosmetics here: a report is read by a court-adjacent reader, and the
+model imitates whatever text it is shown — which is why `agent.md` and the index
+constant had to comply first.
+
 ## FORENSIC INVARIANTS (chain of custody — do not erode these)
 
 1. **`EvidenceManager` is the single owner of evidence.** No tool and no agent ever
@@ -603,7 +639,20 @@ the audited form (FORENSIC INVARIANT 4: the report cites the command that RAN,
 not the one the model believes ran). A rejection publishes nothing and says why
 (RULE 2 — there is no deterministic fallback; the redacted report is the
 product, not a substitute). The pass lands in the audit as `report_written`
-alongside the executor run's literal argv. The surface is ONE act: **«Finalizar
+alongside the executor run's literal argv. **A rejected redaction gets ONE
+correction round** (`MAX_REPARACIONES`, 2026-07-30): rejecting whole is right,
+but discarding a whole redaction is expensive and protects nothing extra — a
+measured run lost 6 min 32 s because §1 cited a document id the model invented
+(the report being written does not exist yet, so it has neither id nor SHA-256;
+§1's contract now says so, and prompt rule `2.bis` generalises it). Each gate
+now collects ALL its violations, and the exact reason goes back to the model:
+as a DELTA over its own draft when the executor can resume its session
+(`supports_session_resume` + returned `session_id`), otherwise as the whole
+encargo with the fault named. The round is audited (`report_repair`: attempt,
+reason, resumed) and `report_written.attempts` records which attempt passed — a
+corrected report is not disguised as a clean one. It is NOT a fallback: same
+executor, same contract, no gate relaxed, and if the correction fails too there
+is no report. The surface is ONE act: **«Finalizar
 investigación»** on the Informe pericial page → `POST
 …/documents/finalize`, which validates fast (case 404 · no findings 422 · no
 executor selected 422 naming the valid ones · executor unusable 503 with the
@@ -611,10 +660,25 @@ login command) and then runs the redaction as a BACKGROUND JOB (shared
 `forensia.agent.jobs`, `kind="report"`, polled at `…/documents/jobs/{id}`,
 listed at `…/documents/jobs` so the SPA re-attaches on mount) — closing the tab
 no longer aborts it, and the elapsed counter anchors to the job's server-side
-`created_at`. Pressing it again issues a NEW revision (version derived from the
-registered revisions, `v0.1` → `v0.2`…, which §1 lists); the case is NOT closed
-— that stays the sidebar's «Cerrar caso». The document is still born a BORRADOR
-and gains pericial validity when signed.
+`created_at`. A redaction that publishes nothing now SAYS SO persistently: the
+failure is a block with its full reason (it used to live only in a toast that
+faded after 6 s, leaving a view indistinguishable from «nothing happened»), and
+mounting the view re-attaches to the case's LAST report job, not only a running
+one. Pressing it again issues a NEW revision (version derived from the
+registered revisions, `v0.1` → `v0.2`…, which section 1 lists); the case is NOT
+closed — that stays the sidebar's «Cerrar caso». The document is still born a
+BORRADOR and gains pericial validity when signed. **Product typography
+(2026-07-30, RULE 7)**: the report was full of `§6.2` because **prompt rule 8
+ordered it** and `contrato_del_indice()` taught the model the form
+`§1 — Control de versiones`. Now the index reads `1. Control de versiones`,
+rule 8 demands «apartado 6.2», a new rule 9 fixes the typography, and
+`writer._normalizar_estilo` guarantees it after the four gates without ever
+being a fifth one. The same sweep reached the two sources no prompt can fix:
+`agentes/agent.md` (section 9, «Cómo se escribe», because a finding's
+`title`/`summary` travel to the report) and the whole web interface (the «no
+data» blank went from `—` to `n/d`). A document already persisted is NOT
+rewritten: a stored report keeps the text it was signed off with, and the new
+typography applies to the next revision.
 
 **Agent analysis hardening (2026-07-15)**: the loop now forces the agent to
 `record_finding` HOT (a strict prompt rule + a **structural nudge** in

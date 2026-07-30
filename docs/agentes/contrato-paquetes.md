@@ -20,6 +20,8 @@ Al arrancar, `forensia.agent.loader.load_packages()` lee ese texto y construye *
 como `prompts.system` y difieren solo en la allowlist de herramientas. La registry
 (`forensia.agent.registry`) los indexa por `os_profile`.
 
+El apartado 9 de `agent.md` («Cómo se escribe») fija además la **tipografía del producto**: ni el signo `§`, ni el guion largo, ni emojis. No es cosmética: ese texto es el que el modelo imita, y el `title` y el `summary` de cada `record_finding` viajan tal cual al informe pericial (`forensia.reports.writer`).
+
 Si `agent.md` no existe o está vacío, la registry arranca **vacía** y
 `/api/agent/query` devuelve 503 para cualquier perfil: la UI degrada explícitamente,
 sin agente fallback (CLAUDE.md RULE 2).
@@ -31,7 +33,7 @@ sin agente fallback (CLAUDE.md RULE 2).
 | `policy/tools.yaml` (`allowed:`) | **catálogo filtrado por `os_profile`** — `forensia.toolkit.catalog.for_profile`. Un tool es invocable ⇔ el catálogo lo declara para ese perfil. Imposible desalinearla. |
 | `policy/redaction.yaml` | `DEFAULT_REDACTION_PATTERNS` en `forensia.agent.loader` — secretos que nunca sirven al análisis y siempre son peligrosos de filtrar (claves privadas, tokens). No se redacta nada que ciegue al agente. |
 | `prompts/system.md` + `identity.md` + `playbook.md` | el texto de `agent.md` (todo en `prompts.system`; `identity`/`playbook` vacíos). |
-| `objetivos:` (mapa pregunta→artefacto→herramienta) | va **dentro** de `agent.md` (§4 del propio archivo). |
+| `objetivos:` (mapa pregunta→artefacto→herramienta) | va **dentro** de `agent.md` (apartado 4 del propio archivo). |
 | `knowledge/` (docs estáticos del paquete) | retirado. El **grafo de conocimiento POR CASO** (`forensia.knowledge`) lo escribe el agente en runtime con `anotar_conocimiento` — es la «FICHA/REGISTRO» del caso. |
 | `case_knowledge:` (núcleo del grafo) | retirado. El grafo empieza vacío y el agente crea los nodos que necesite (`ficha`, `cronologia`, `registro`, `pendientes`). |
 | `model:` (name/temperature/max_iterations) | constantes por defecto en el loader (el ejecutor real lo elige el operador en runtime — RULE 2). |

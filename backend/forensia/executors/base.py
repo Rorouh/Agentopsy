@@ -331,7 +331,7 @@ def resolve_timeout(context: dict[str, Any]) -> int:
     if value <= 0:
         raise ExecutorError(
             f"timeout de ejecutor inválido en {source}: {raw!r}. Debe ser un "
-            "entero de segundos > 0 — Agentopsy no lo sustituye por el default "
+            "entero de segundos > 0, Agentopsy no lo sustituye por el default "
             "(RULE 2)."
         )
     return value

@@ -276,7 +276,7 @@ def _discard_staging(staging: Path) -> None:
         shutil.rmtree(staging, onexc=_clear_readonly_and_retry)
     except OSError as exc:
         logger.error(
-            "no se pudo limpiar el directorio temporal de registro %s: %s — "
+            "no se pudo limpiar el directorio temporal de registro %s: %s, "
             "bórralo a mano (no es evidencia registrada)", staging, exc,
         )
 
@@ -384,7 +384,7 @@ def _discover_ewf_segment_set(first: Path) -> list[Path]:
         # target could point outside the source dir / be swapped later.
         if entry.is_symlink():
             raise ValueError(
-                f"EWF segment {entry.name!r} is a symlink — refusing (SECURITY "
+                f"EWF segment {entry.name!r} is a symlink, refusing (SECURITY "
                 "INVARIANT 6). Provide the real, co-located segment files."
             )
         if not entry.is_file():
@@ -392,7 +392,7 @@ def _discover_ewf_segment_set(first: Path) -> list[Path]:
         if index in found:
             raise ValueError(
                 f"duplicate EWF segment index {index}: {found[index].name!r} and "
-                f"{entry.name!r} — ambiguous set, refusing (RULE 2)."
+                f"{entry.name!r}, ambiguous set, refusing (RULE 2)."
             )
         found[index] = entry
 
@@ -452,7 +452,7 @@ class EvidenceManager:
         case = self._cases.load(case_id)
         if case.status != "active":
             raise ValueError(
-                f"case {case_id} is closed — reopen it (POST /api/cases/{case_id}"
+                f"case {case_id} is closed, reopen it (POST /api/cases/{case_id}"
                 "/reopen) before registering evidence"
             )
         case_dir = self._cases.case_dir(case_id)
@@ -486,7 +486,7 @@ class EvidenceManager:
         elif _is_ewf_middle_segment(suffix):
             raise ValueError(
                 f"{src.name} is a non-first EWF segment. Register the first segment "
-                f"of the set (…{suffix[:2]}01) instead — Agentopsy ingests the whole "
+                f"of the set (…{suffix[:2]}01) instead, Agentopsy ingests the whole "
                 "co-located set from it; a middle segment alone cannot assemble the "
                 "image (RULE 2)."
             )
@@ -567,7 +567,7 @@ class EvidenceManager:
                 _report("verifying", seg_index, force=True)
                 if copy_sha != src_sha or copy_size != src_size:
                     raise OSError(  # noqa: TRY301 — cleanup happens in the handler below
-                        f"evidence copy hash mismatch on {seg_src.name} — corruption "
+                        f"evidence copy hash mismatch on {seg_src.name}, corruption "
                         f"during copy (source={src_sha} copy={copy_sha})"
                     )
                 os.chmod(dest, _READ_ONLY_MODE)

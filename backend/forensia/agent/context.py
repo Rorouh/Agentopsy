@@ -60,7 +60,7 @@ def session_context_budget_chars() -> int:
     if value <= 0:
         raise RuntimeError(
             f"FORENSIA_SESSION_CONTEXT_MAX_CHARS={raw!r} no es válido: debe ser "
-            "un entero de caracteres > 0 — Agentopsy no lo sustituye por el "
+            "un entero de caracteres > 0, Agentopsy no lo sustituye por el "
             "default (RULE 2)."
         )
     return value
@@ -132,7 +132,7 @@ def _stub_for(content: Any) -> str:
     return (
         "[resultado de tool elidido para acotar el contexto"
         + (f" ({meta})" if meta else "")
-        + "; el detalle sigue en el artefacto del run — recupéralo con `jq` si lo necesitas]"
+        + "; el detalle sigue en el artefacto del run, recupéralo con `jq` si lo necesitas]"
     )
 
 

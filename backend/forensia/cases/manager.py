@@ -295,7 +295,7 @@ class CaseManager:
         if confirm_name != case.name:
             raise ValueError(
                 f"confirm_name does not match the case name: expected {case.name!r}, "
-                f"got {confirm_name!r}. Nothing was deleted — type the case name "
+                f"got {confirm_name!r}. Nothing was deleted, type the case name "
                 "exactly to confirm the deletion."
             )
 
@@ -543,7 +543,7 @@ def resolve_os_profile(case: Case) -> str:
         return case.os_profile  # type: ignore[return-value]
     anchor_hint = (
         f"Ancla el perfil manualmente (POST /api/cases/{case.id}/os-profile "
-        '{"os_profile": "unix"|"windows"}) — RULE 2: en ambigüedad el operador '
+        '{"os_profile": "unix"|"windows"}), RULE 2: en ambigüedad el operador '
         "ancla, nunca se enruta en silencio ni se adivina desde el host."
     )
     if case.os_profile_source == _OS_SOURCE_CONFLICT:

@@ -22,7 +22,7 @@ import { useActiveCase } from "../state/activeCase";
 // redacta ÍNTEGRO por el ejecutor que el operador seleccione, una sola vez, al
 // FINALIZAR la investigación. Lo único que este informe comparte con el de
 // cualquier otro caso es el índice. Por eso esta vista tiene UNA acción de
-// emisión —«Finalizar investigación»— y ninguna opción de "modo de redacción":
+// emisión, «Finalizar investigación», y ninguna opción de "modo de redacción":
 // no hay alternativa determinista que elegir.
 
 type StatusFilter = "all" | "draft" | "final";
@@ -59,6 +59,7 @@ const PHASE_LABEL: Record<string, string> = {
   material: "Reuniendo el material del caso…",
   redactando: "El modelo está redactando el informe…",
   validando: "Validando índice, referentes y comandos auditados…",
+  corrigiendo: "La validación rechazó el borrador: el modelo lo está corrigiendo…",
   listo: "Informe redactado.",
 };
 
@@ -87,7 +88,7 @@ export function DocumentsPage() {
   const [caps, setCaps] = useState<Capabilities | null>(null);
 
   // Ejecutor que REDACTA el informe. Vacío = sin selección: el botón no se
-  // pulsa y el motivo se dice (nunca se elige uno por el perito — RULE 2).
+  // pulsa y el motivo se dice (nunca se elige uno por el perito, RULE 2).
   const [executor, setExecutor] = useState<ExecutorId | "">("");
   // Cuántos hallazgos sostiene el caso: sin ninguno no hay informe que emitir.
   const [findingCount, setFindingCount] = useState<number | null>(null);
@@ -127,7 +128,7 @@ export function DocumentsPage() {
         }
       })
       .catch(() => {
-        /* sin config aún — el perito elige a mano */
+        /* sin config aún, el perito elige a mano */
       });
     return () => {
       cancelled = true;
@@ -162,12 +163,16 @@ export function DocumentsPage() {
       } catch {
         if (!cancelled) setFindingCount(null);
       }
-      // Reengancha una redacción que siguiera en curso: cerrar la pestaña no la
-      // aborta, así que al volver debe verse su progreso, no un botón inerte.
+      // Reengancha la última redacción del caso: si sigue en curso, para ver su
+      // progreso en vez de un botón inerte; si terminó RECHAZADA, para que el
+      // motivo no se pierda con la pestaña, un intento que no dejó informe
+      // tiene que poder leerse después, no solo en el instante en que falla.
       try {
         const jobs = await api.cases.listReportJobs(caseId);
-        const running = jobs.find((j) => j.status === "running");
-        if (!cancelled && running) setJob(running);
+        const last = jobs[0];
+        if (!cancelled && last && (last.status === "running" || last.status === "error")) {
+          setJob(last);
+        }
       } catch {
         /* sin jobs: el botón queda listo */
       }
@@ -515,7 +520,7 @@ export function DocumentsPage() {
                 Modelo que redacta
               </label>
               {/* Selección EXPLÍCITA del operador. Un ejecutor no disponible se
-                  lista deshabilitado con su nombre — nunca se sustituye por
+                  lista deshabilitado con su nombre, nunca se sustituye por
                   otro (RULE 2), y no hay opción "determinista": la plantilla ya
                   no existe. */}
               <select
@@ -568,6 +573,20 @@ export function DocumentsPage() {
               <div className="progress-note">
                 Puedes cambiar de sección o cerrar la pestaña: la redacción corre en el servidor
                 y al volver aquí se retoma su progreso.
+              </div>
+            </div>
+          )}
+
+          {/* Un rechazo de custodia NO deja documento. Si eso solo se dijera en
+              un aviso que se desvanece, la vista quedaría idéntica a «no ha
+              pasado nada» y el perito buscaría un informe que no existe. */}
+          {job?.status === "error" && (
+            <div className="danger-notice report-failure">
+              <strong>La redacción no llegó a publicarse</strong>
+              <div className="report-failure-reason">{job.error}</div>
+              <div className="report-failure-reason">
+                No se ha guardado ningún documento: el informe se publica entero o no se
+                publica. Puedes volver a pulsar «Finalizar investigación».
               </div>
             </div>
           )}
@@ -633,8 +652,8 @@ export function DocumentsPage() {
               )}
             </div>
 
-            {/* El resultado de verificar tiene DOS caras, y la mala —hash
-                recalculado ≠ registrado— es la que importa. No puede quedarse
+            {/* El resultado de verificar tiene DOS caras, y la mala, hash
+                recalculado ≠ registrado, es la que importa. No puede quedarse
                 en un icono. */}
             {verify && (
               <div className={`verify-line${verify.ok ? " is-ok" : " is-bad"}`}>
