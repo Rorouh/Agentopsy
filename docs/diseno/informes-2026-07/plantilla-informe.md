@@ -1,6 +1,15 @@
 # Plantilla del informe pericial — 10 secciones
 
-> Especificación de salida de `forensia.reports.generator.build_pericial_report`.
+> ✅ **VIGENTE como ÍNDICE, superado como plantilla (2026-07-30 —
+> [`redaccion-integra.md`](redaccion-integra.md)).** Las diez secciones + los dos
+> anexos de este documento son ahora el índice canónico del código
+> (`forensia.reports.indice.INDICE`) y lo ÚNICO que dos informes comparten: el
+> validador del redactor los exige con este número, este título y este orden. Lo
+> que ya NO se cumple al pie de la letra es la forma de cada bloque: el CONTENIDO
+> —qué se dice, con qué prosa y con qué longitud— lo escribe el modelo
+> seleccionado a partir del material del caso. Lo que sí sobrevive de cada
+> apartado es su intención, que viaja al prompt como el `contrato` de la sección.
+>
 > Cada sección es un `{num, title, blocks[]}` del modelo de `forensia.reports.store`.
 > Los tipos de bloque disponibles son los que el store ya valida: `p`, `h3`, `quote`,
 > `list`, `code`, `kv`, `table`, `finding` (+ las dos figuras de la fase F).

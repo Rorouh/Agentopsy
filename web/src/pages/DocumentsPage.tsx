@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, api } from "../api/client";
 import type {
   Capabilities,
@@ -8,7 +8,8 @@ import type {
   DocumentVerifyResult,
   ExecutorId,
   ExecutorStatus,
-  GenerateReportRequest,
+  FinalizeInvestigationRequest,
+  ReportJob,
 } from "../api/types";
 import { usePublishShellHeader } from "../layout/shellHeader";
 import { useActiveCase } from "../state/activeCase";
@@ -16,6 +17,13 @@ import { useActiveCase } from "../state/activeCase";
 // FASE 5 · Informe pericial. Almacén real (forensia.reports): cada documento
 // lleva su SHA-256 y las acciones del perito (verificar integridad, firmar como
 // final, eliminar borrador) operan sobre ficheros reales y quedan en el audit.
+//
+// El informe NO se rellena desde una plantilla (retirada el 2026-07-30): se
+// redacta ÍNTEGRO por el ejecutor que el operador seleccione, una sola vez, al
+// FINALIZAR la investigación. Lo único que este informe comparte con el de
+// cualquier otro caso es el índice. Por eso esta vista tiene UNA acción de
+// emisión —«Finalizar investigación»— y ninguna opción de "modo de redacción":
+// no hay alternativa determinista que elegir.
 
 type StatusFilter = "all" | "draft" | "final";
 type GroupBy = "evidence" | "type" | "none";
@@ -26,13 +34,40 @@ function fmtDate(iso: string): string {
 }
 const shortHash = (h: string) => (h ? `${h.slice(0, 8)}` : "");
 
-const PERITO_FIELDS: { key: keyof GenerateReportRequest; label: string; placeholder: string }[] = [
+// Cada cuánto se pregunta por el estado de la redacción en curso.
+const JOB_POLL_MS = 1500;
+
+// El ejecutor elegido se recuerda como DEFAULT_EXECUTOR, igual que en el chat:
+// es agencia del operador, no un default inventado (RULE 2).
+const EXECUTOR_CONFIG_KEY = "DEFAULT_EXECUTOR";
+
+const PERITO_FIELDS: {
+  key: keyof FinalizeInvestigationRequest;
+  label: string;
+  placeholder: string;
+}[] = [
   { key: "name", label: "Perito", placeholder: "" },
   { key: "colegiado", label: "Nº de colegiado", placeholder: "p. ej. COL-1234" },
   { key: "organization", label: "Organización", placeholder: "Laboratorio / empresa" },
   { key: "email", label: "Contacto", placeholder: "correo@dominio" },
-  { key: "version", label: "Versión", placeholder: "v0.1" },
+  { key: "version", label: "Versión", placeholder: "se deriva de las revisiones" },
 ];
+
+// Fases del redactor (forensia.reports.writer emite `report_phase`). Es
+// progreso OBSERVACIONAL: sin él, una llamada de minutos parece colgada.
+const PHASE_LABEL: Record<string, string> = {
+  material: "Reuniendo el material del caso…",
+  redactando: "El modelo está redactando el informe…",
+  validando: "Validando índice, referentes y comandos auditados…",
+  listo: "Informe redactado.",
+};
+
+function elapsed(fromIso: string, now: number): string {
+  const start = new Date(fromIso).getTime();
+  if (isNaN(start)) return "";
+  const s = Math.max(0, Math.floor((now - start) / 1000));
+  return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+}
 
 export function DocumentsPage() {
   const { activeCase, phase: casesPhase, error: casesError } = useActiveCase();
@@ -48,12 +83,29 @@ export function DocumentsPage() {
   const [busy, setBusy] = useState(false);
   const [verify, setVerify] = useState<DocumentVerifyResult | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [perito, setPerito] = useState<GenerateReportRequest>({});
-  // Redacción del informe: "" = narrativa determinista (sin llamada a ningún
-  // modelo); un ExecutorId = prosa de resumen/conclusiones humanizada por ese
-  // ejecutor y VALIDADA por el backend. Selección explícita, nunca un default.
-  const [redactor, setRedactor] = useState<ExecutorId | "">("");
+  const [perito, setPerito] = useState<FinalizeInvestigationRequest>({});
   const [caps, setCaps] = useState<Capabilities | null>(null);
+
+  // Ejecutor que REDACTA el informe. Vacío = sin selección: el botón no se
+  // pulsa y el motivo se dice (nunca se elige uno por el perito — RULE 2).
+  const [executor, setExecutor] = useState<ExecutorId | "">("");
+  // Cuántos hallazgos sostiene el caso: sin ninguno no hay informe que emitir.
+  const [findingCount, setFindingCount] = useState<number | null>(null);
+
+  // Redacción en curso (job en segundo plano) y su último evento de fase.
+  const [job, setJob] = useState<ReportJob | null>(null);
+  const [jobPhase, setJobPhase] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const pollRef = useRef<number | null>(null);
+
+  const showNotice = useCallback((t: string) => {
+    setNotice(t);
+    window.setTimeout(() => setNotice(null), 6000);
+  }, []);
+
+  const refreshDocs = useCallback(async (caseId: string) => {
+    setDocuments(await api.cases.listDocuments(caseId));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,37 +117,59 @@ export function DocumentsPage() {
       .catch(() => {
         if (!cancelled) setCaps(null);
       });
+    // Recupera la selección de ejecutor que el operador fijó explícitamente.
+    api.config
+      .get()
+      .then((snap) => {
+        const def = snap.keys[EXECUTOR_CONFIG_KEY];
+        if (!cancelled && def?.set && def.preview) {
+          setExecutor((prev) => prev || (def.preview as ExecutorId));
+        }
+      })
+      .catch(() => {
+        /* sin config aún — el perito elige a mano */
+      });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const showNotice = useCallback((t: string) => {
-    setNotice(t);
-    window.setTimeout(() => setNotice(null), 3200);
-  }, []);
-
-  const refreshDocs = useCallback(async (caseId: string) => {
-    setDocuments(await api.cases.listDocuments(caseId));
-  }, []);
-
-  // Documentos del caso activo. Se recargan al cambiar de caso y se limpia la
-  // selección para no arrastrar un documento del caso anterior.
+  // Documentos + hallazgos del caso activo. Se recargan al cambiar de caso y se
+  // limpia la selección para no arrastrar un documento del caso anterior.
   useEffect(() => {
     const caseId = activeCase?.id;
     if (!caseId) {
       setDocuments([]);
       setSelectedId(null);
+      setFindingCount(null);
+      setJob(null);
       return;
     }
     let cancelled = false;
     setSelectedId(null);
+    setJob(null);
+    setJobPhase(null);
     (async () => {
       try {
         const docs = await api.cases.listDocuments(caseId);
         if (!cancelled) setDocuments(docs);
       } catch {
         if (!cancelled) setDocuments([]);
+      }
+      try {
+        const findings = await api.cases.listFindings(caseId);
+        if (!cancelled) setFindingCount(findings.length);
+      } catch {
+        if (!cancelled) setFindingCount(null);
+      }
+      // Reengancha una redacción que siguiera en curso: cerrar la pestaña no la
+      // aborta, así que al volver debe verse su progreso, no un botón inerte.
+      try {
+        const jobs = await api.cases.listReportJobs(caseId);
+        const running = jobs.find((j) => j.status === "running");
+        if (!cancelled && running) setJob(running);
+      } catch {
+        /* sin jobs: el botón queda listo */
       }
     })();
     return () => {
@@ -123,6 +197,53 @@ export function DocumentsPage() {
       cancelled = true;
     };
   }, [activeCase?.id, selectedId]);
+
+  // Sondeo de la redacción en curso. El cronómetro se ancla al `created_at` del
+  // job en el SERVIDOR, así que cambiar de sección o recargar no lo reinicia.
+  useEffect(() => {
+    const caseId = activeCase?.id;
+    if (!caseId || !job || job.status !== "running") return;
+    let cancelled = false;
+
+    const tick = async () => {
+      try {
+        const snap = await api.cases.reportJob(caseId, job.job_id);
+        if (cancelled) return;
+        const last = (snap.events ?? [])
+          .filter((e) => e.type === "report_phase" && e.phase)
+          .pop();
+        if (last?.phase) setJobPhase(last.phase);
+        setJob(snap);
+        if (snap.status === "done" && snap.result) {
+          await refreshDocs(caseId);
+          setSelectedId(snap.result.doc_id);
+          showNotice(
+            `Informe ${snap.result.version} redactado (${snap.result.page_count} pág.). ` +
+              "Nace en BORRADOR: revísalo y fírmalo para darle validez pericial.",
+          );
+        } else if (snap.status === "error") {
+          showNotice(snap.error ?? "La redacción del informe no pudo completarse.");
+        }
+      } catch (err) {
+        if (!cancelled) {
+          showNotice(err instanceof ApiError ? err.detail : String(err));
+          setJob(null);
+        }
+      }
+    };
+
+    pollRef.current = window.setInterval(() => {
+      setNow(Date.now());
+      void tick();
+    }, JOB_POLL_MS);
+    setNow(Date.now());
+    void tick();
+    return () => {
+      cancelled = true;
+      if (pollRef.current !== null) window.clearInterval(pollRef.current);
+      pollRef.current = null;
+    };
+  }, [activeCase?.id, job?.job_id, job?.status, refreshDocs, showNotice]);
 
   const matches = useCallback(
     (d: DocumentMeta) => {
@@ -208,30 +329,51 @@ export function DocumentsPage() {
       showNotice("Borrador eliminado del caso.");
     });
 
-  // Síntesis: el backend redacta el informe pericial desde los hallazgos, la
-  // custodia y la correlación MITRE REALES del caso. Los campos del perito son
-  // opcionales; sin ellos figura el examinador del caso.
-  const onGenerate = () =>
+  const selectExecutor = (id: ExecutorId | "") => {
+    setExecutor(id);
+    if (id) {
+      api.config.set(EXECUTOR_CONFIG_KEY, id).catch(() => {
+        /* persistencia best-effort */
+      });
+    }
+  };
+
+  // «Finalizar investigación»: el acto que emite el informe. Arranca la
+  // redacción en segundo plano y devuelve el job; el documento aparece cuando
+  // el modelo termina y las cuatro validaciones del backend pasan.
+  const onFinalize = () =>
     runAction(async () => {
       if (!activeCase) return;
-      const payload: GenerateReportRequest = {};
+      const payload: FinalizeInvestigationRequest = { executor: executor || undefined };
       (["name", "colegiado", "organization", "email", "version"] as const).forEach((k) => {
         const v = perito[k]?.trim();
         if (v) payload[k] = v;
       });
-      if (redactor) payload.executor = redactor;
-      const doc = await api.cases.generateReport(activeCase.id, payload);
-      await refreshDocs(activeCase.id);
-      setSelectedId(doc.id);
-      showNotice(
-        redactor
-          ? "Informe generado con redacción humanizada validada."
-          : "Informe pericial generado como borrador.",
-      );
+      const started = await api.cases.finalizeInvestigation(activeCase.id, payload);
+      setJobPhase(null);
+      setJob(started);
     });
 
   const drafts = documents.filter((d) => d.status === "draft").length;
   const finals = documents.length - drafts;
+  const running = job?.status === "running";
+  const executorStatus: ExecutorStatus | null =
+    executor && caps ? caps.executors[executor] ?? null : null;
+  const executorEntries: [ExecutorId, ExecutorStatus][] = caps
+    ? (Object.entries(caps.executors) as [ExecutorId, ExecutorStatus][])
+    : [];
+
+  // Por qué NO se puede finalizar todavía. Un motivo concreto, nunca un botón
+  // apagado sin explicación (RULE 2: el error nombra la dependencia que falta).
+  const blocker: string | null = running
+    ? null
+    : !executor
+      ? "Elige el modelo que redactará el informe: sin selección Agentopsy no llama a ninguno."
+      : executorStatus && !executorStatus.available
+        ? executorStatus.reason ?? `${executorStatus.name} no está disponible.`
+        : findingCount === 0
+          ? "El caso no tiene ningún hallazgo registrado: no hay investigación que informar. Analiza la evidencia en Investigación primero."
+          : null;
 
   usePublishShellHeader(
     {
@@ -275,7 +417,7 @@ export function DocumentsPage() {
         <div className="empty-rail">
           <div className="empty-rail-title">Sin caso abierto</div>
           <div className="empty-rail-body">
-            Los informes se generan y se firman dentro de un caso. Abre uno desde el lateral.
+            Los informes se redactan y se firman dentro de un caso. Abre uno desde el lateral.
           </div>
         </div>
       </div>
@@ -328,8 +470,7 @@ export function DocumentsPage() {
         <div className="report-docs">
           {documents.length === 0 ? (
             <div className="inv-empty">
-              Aún no hay documentos. El almacén y el visor están listos: genera un borrador
-              abajo y aparecerá aquí con su SHA-256, su PDF y la firma del perito.
+              Aún no hay ningún informe. Se emite al finalizar la investigación, aquí abajo.
             </div>
           ) : filtered.length === 0 ? (
             <div className="inv-empty">Ningún documento coincide con la búsqueda o el filtro.</div>
@@ -358,14 +499,43 @@ export function DocumentsPage() {
 
         <div className="dashed-panel report-gen">
           <div className="dashed-panel-main">
-            <div className="dashed-panel-title">Generar borrador</div>
+            <div className="dashed-panel-title">Finalizar investigación</div>
             <div className="dashed-panel-body">
-              Se redacta desde los hallazgos, la cadena de custodia y la correlación MITRE
-              reales del caso, con el relato de la investigación como hilo conductor. Los
-              datos del perito son opcionales; sin ellos figura el examinador.
+              El modelo que elijas redacta el informe pericial COMPLETO a partir de todos los
+              hallazgos, evidencias, ejecuciones auditadas y veredictos ATT&CK del caso. Cada
+              informe es único: solo el índice es común. Agentopsy valida que el índice esté
+              entero, que ningún identificador ni hash sea inventado y que cada comando citado
+              sea el argv literal del log de auditoría.
             </div>
           </div>
+
           <div className="report-gen-fields">
+            <div className="field">
+              <label className="eyebrow" htmlFor="report-executor">
+                Modelo que redacta
+              </label>
+              {/* Selección EXPLÍCITA del operador. Un ejecutor no disponible se
+                  lista deshabilitado con su nombre — nunca se sustituye por
+                  otro (RULE 2), y no hay opción "determinista": la plantilla ya
+                  no existe. */}
+              <select
+                id="report-executor"
+                className="field-input field-input--sm"
+                value={executor}
+                disabled={running}
+                onChange={(e) => selectExecutor(e.target.value as ExecutorId | "")}
+              >
+                <option value="">Elige un ejecutor…</option>
+                {executorEntries.map(([id, st]) => (
+                  <option key={id} value={id} disabled={!st.available}>
+                    {st.available ? st.name : `${st.name} (no disponible)`}
+                    {st.local ? " · local" : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="eyebrow">Datos del perito (opcionales)</div>
             {PERITO_FIELDS.map((f) => (
               <div className="field" key={f.key}>
                 <label className="eyebrow" htmlFor={`perito-${f.key}`}>
@@ -375,47 +545,42 @@ export function DocumentsPage() {
                   id={`perito-${f.key}`}
                   className="field-input field-input--sm"
                   value={perito[f.key] ?? ""}
+                  disabled={running}
                   onChange={(e) => setPerito((p) => ({ ...p, [f.key]: e.target.value }))}
                   placeholder={f.key === "name" ? activeCase.examiner : f.placeholder}
                 />
               </div>
             ))}
-            <div className="field">
-              <label className="eyebrow" htmlFor="report-redactor">
-                Redacción
-              </label>
-              {/* Selección EXPLÍCITA del operador: la opción por defecto es la
-                  narrativa determinista (cero llamadas a modelos). Un ejecutor
-                  no disponible se lista deshabilitado con su nombre — nunca se
-                  sustituye por otro (RULE 2). */}
-              <select
-                id="report-redactor"
-                className="field-input field-input--sm"
-                value={redactor}
-                onChange={(e) => setRedactor(e.target.value as ExecutorId | "")}
-              >
-                <option value="">Determinista (sin ejecutor)</option>
-                {caps
-                  ? (Object.entries(caps.executors) as [ExecutorId, ExecutorStatus][]).map(
-                      ([id, st]) => (
-                        <option key={id} value={id} disabled={!st.available}>
-                          {st.available
-                            ? `Humanizada · ${st.name}`
-                            : `${st.name} (no disponible)`}
-                        </option>
-                      ),
-                    )
-                  : null}
-              </select>
-            </div>
           </div>
+
+          {/* Progreso REAL de la redacción: es una llamada de minutos a un
+              modelo, y sin esto parecería colgada. El cronómetro sale del
+              `created_at` del job en el servidor. */}
+          {running && job && (
+            <div className="progress-block">
+              <div className="progress-head">
+                <span>{jobPhase ? PHASE_LABEL[jobPhase] ?? jobPhase : PHASE_LABEL.material}</span>
+                <span className="mono">{elapsed(job.created_at, now)}</span>
+              </div>
+              <div className="progress-track">
+                <div className="progress-fill progress-fill--indeterminate" />
+              </div>
+              <div className="progress-note">
+                Puedes cambiar de sección o cerrar la pestaña: la redacción corre en el servidor
+                y al volver aquí se retoma su progreso.
+              </div>
+            </div>
+          )}
+
+          {blocker && <div className="inline-note">{blocker}</div>}
+
           <button
             type="button"
             className="action-accent report-gen-btn"
-            disabled={busy}
-            onClick={() => void onGenerate()}
+            disabled={busy || running || blocker !== null}
+            onClick={() => void onFinalize()}
           >
-            {busy ? "Generando…" : "Generar borrador"}
+            {running ? "Redactando informe…" : "Finalizar investigación"}
           </button>
         </div>
       </div>
@@ -425,10 +590,13 @@ export function DocumentsPage() {
 
         {!selectedDoc ? (
           <div className="empty-rail">
-            <div className="empty-rail-title">Ningún documento abierto</div>
+            <div className="empty-rail-title">
+              {documents.length === 0 ? "Sin informe todavía" : "Ningún documento abierto"}
+            </div>
             <div className="empty-rail-body">
-              Elige un documento de la lista para leerlo, verificar su integridad y descargarlo
-              en PDF.
+              {documents.length === 0
+                ? "El informe pericial se emite una sola vez, cuando la investigación termina: pulsa «Finalizar investigación» en el panel de la izquierda y el modelo seleccionado lo redactará de principio a fin desde los hallazgos y las evidencias del caso."
+                : "Elige un documento de la lista para leerlo, verificar su integridad y descargarlo en PDF."}
             </div>
           </div>
         ) : (
@@ -595,6 +763,7 @@ function Block({ b }: { b: DocumentBlock }) {
             )}
           </div>
           {b.text && <p className="report-finding-text">{b.text}</p>}
+          {b.meta && <div className="report-finding-meta">{b.meta}</div>}
         </div>
       );
     default:

@@ -78,7 +78,7 @@ la «telaraña» de documentos de un caso: se entra por uno y se salta a los dem
 | **FICHA / REGISTRO del caso** — perfil, husos, cuentas, hitos, `run_id` que citarás luego, qué queda abierto | grafo de conocimiento del caso (`knowledge/`) | `anotar_conocimiento(doc_id, section, content)` · `consultar_conocimiento(doc_id)` |
 | **HALLAZGOS con evidencia** — la cadena de custodia de conclusiones | `findings.jsonl` + audit encadenado | `record_finding(title, summary, severity, tool_id?, run_id?, mitre_hints?)` |
 | **Salida CRUDA de cada herramienta** — el `output/` inviolable | artefactos del caso (cada corrida guarda su salida entera + hash) | se crea sola al ejecutar; la relees con `leer_artefacto(run_id, fichero?, buscar?)` |
-| **ENTREGABLES** — el informe pericial | subsistema de documentos | lo compone Agentopsy a partir de tus hallazgos |
+| **ENTREGABLES** — el informe pericial | subsistema de documentos | lo redacta el modelo al FINALIZAR la investigación, a partir de tus hallazgos y de la evidencia registrada — cuanto mejor sea tu `summary` y tu procedencia, mejor será el informe |
 
 **Anota en caliente en el grafo** lo que vas a necesitar después y no cabe en la
 conversación (que se recorta entre turnos): el **perfil y el huso**, las **cuentas**,

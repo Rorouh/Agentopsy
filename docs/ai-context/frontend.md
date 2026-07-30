@@ -182,8 +182,10 @@ web/src/                       ← the SPA (own package.json + vite.config.ts at
 │   │                       no está en el mock y no puede faltar. Panel de dictamen con motivo obligatorio.
 │   ├── TimelinePage.tsx    FASE 4. Tres capas (investigación / MACB / eventos relevantes), día con filete,
 │   │                       fila hora·tipo·cuerpo. La evidencia de la super-timeline se ELIGE (RULE 2).
-│   ├── DocumentsPage.tsx   FASE 5. Rejilla 296px 1fr: lista + generador a la izquierda, documento a la
-│   │                       derecha. Un documento FINAL no se borra; el PDF va por fetch con token.
+│   ├── DocumentsPage.tsx   FASE 5. Rejilla 296px 1fr: lista + «Finalizar investigación» a la izquierda,
+│   │                       documento a la derecha. UNA sola acción de emisión: el modelo seleccionado
+│   │                       redacta el informe entero (job de fondo con fase y cronómetro del servidor);
+│   │                       no hay «modo de redacción» que elegir. Un FINAL no se borra; PDF por fetch.
 │   ├── SettingsPage.tsx    Pestañas «Motor de análisis / Sistema · Maletín / Apariencia». Un motor por
 │   │                       fila desplegable: disponibilidad + ámbito + por-defecto + modelo en la misma línea.
 │   └── GuidePage.tsx       Seis pasos numerados cuyo estado REFLEJA el caso activo (useCaseFacts),

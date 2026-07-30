@@ -400,6 +400,10 @@ export interface DocumentBlock {
   sev?: "critical" | "high" | "medium" | "low";
   title?: string;
   tags?: string[];
+  // Línea de PROCEDENCIA del hallazgo (run, confianza, hash del artefacto). El
+  // PDF ya la imprimía; la web también debe mostrarla — es lo que permite a un
+  // perito contrario reejecutar.
+  meta?: string;
 }
 
 export interface DocumentSection {
@@ -436,19 +440,56 @@ export interface DocumentVerifyResult {
   recomputed_sha256: string;
 }
 
-// Datos opcionales del perito para la síntesis del informe pericial. Todos
-// opcionales: sin ellos el backend usa el examinador del caso como perito.
-// `executor`: redacción humanizada opcional — la prosa del resumen ejecutivo y
-// de las conclusiones se reescribe a través de ese ejecutor y se valida contra
-// los datos del caso. Sin valor NO hay llamada a ningún modelo (la narrativa
-// determinista es el producto, no un fallback — RULE 2).
-export interface GenerateReportRequest {
+// «Finalizar investigación»: el ejecutor seleccionado redacta el informe
+// pericial COMPLETO (forensia.reports.writer). `executor` es obligatorio — es el
+// modelo que escribe, y Agentopsy no elige uno por el operador (RULE 2); el
+// backend acepta también la selección ya fijada en Configuración
+// (DEFAULT_EXECUTOR). Los datos del perito son opcionales: sin ellos figura el
+// examinador del caso, y sin `version` se deriva de las revisiones ya
+// registradas.
+export interface FinalizeInvestigationRequest {
+  executor?: ExecutorId;
   name?: string;
   colegiado?: string;
   organization?: string;
   email?: string;
   version?: string;
+}
+
+// Job de redacción del informe. Espejo de forensia.agent.jobs.Job para el
+// `kind: "report"`: la redacción es una llamada larga a un modelo y corre
+// desacoplada de la petición HTTP, así que cerrar la pestaña no la aborta.
+export interface ReportJob {
+  job_id: string;
+  case_id: string;
+  kind: "report";
+  status: "running" | "done" | "error" | "cancelled";
+  created_at: string;
+  finished_at: string | null;
+  error: string | null;
+  event_count: number;
+  events?: ReportJobEvent[];
+  result: {
+    doc_id: string;
+    title: string;
+    version: string;
+    page_count: number;
+    sha256: string;
+  } | null;
+  case_name?: string;
+  executor?: { id: ExecutorId; name: string; local: boolean };
+}
+
+// Progreso OBSERVACIONAL de la redacción: en qué fase está y, al final, qué
+// documento salió. No altera el contenido ni la validación.
+export interface ReportJobEvent {
+  type: "report_phase" | "report_ready";
+  phase?: "material" | "redactando" | "validando" | "listo";
   executor?: string;
+  prompt_chars?: number;
+  version?: string;
+  doc_id?: string;
+  title?: string;
 }
 
 export interface MitreCatalog {

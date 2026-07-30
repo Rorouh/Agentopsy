@@ -30,6 +30,7 @@
 ## Diseño de la interfaz
 
 - [`diseno/rediseno-2026-07/`](diseno/rediseno-2026-07/README.md) — rediseño de la SPA (julio 2026): mocks navegables del destino visual y estructural, plan de migración y la secuencia de encargos con la que se ejecuta.
+- [`diseno/informes-2026-07/`](diseno/informes-2026-07/redaccion-integra.md) — el informe pericial: el índice canónico (`plantilla-informe.md`, lo ÚNICO común entre informes) y la redacción ÍNTEGRA por el modelo seleccionado al finalizar la investigación (`redaccion-integra.md`, vigente; el `README.md` y el `plan-migracion.md` de esa carpeta quedan como registro del diagnóstico).
 
 ## Contexto para asistentes IA
 

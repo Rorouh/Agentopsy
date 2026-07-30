@@ -175,23 +175,30 @@ de evidencia, token de sesión, chats, findings, uso de tools, artefactos,
 `allowed_hosts`, `HostHeaderMiddleware` (anti DNS-rebinding), `require_token`; gates
 de seguridad. (SECURITY INVARIANTS 1-3)
 
-**Informes** (`forensia.reports`) — `DocumentStore` (integridad SHA-256, firmar
-/ verificar / borrar auditados); `generator.build_pericial_report` (8 secciones
-desde los datos reales del caso) + `generate_draft_report` (borrador auto al
-cerrar un análisis); **`narrative`** (2026-07-30: el hilo conductor — resumen
-ejecutivo narrativo, §5 «Relato de la investigación» con cronología por
-`observed_at` / carril no fechado / descartes, conclusiones con arco táctico en
-orden kill-chain; numeración única `SEC_*`; elige orden y tejido conectivo,
-nunca contenido — RULE 2; desde 2026-07-30 la apertura enmarca el ENCARGO de
-`case.notes`, nombra cada evidencia por su NATURALEZA desde `detected_kind` —
-volcado de RAM / imagen de disco virtual — y enumera de mayor a menor
-volatilidad); **`humanize`** (redacción opcional de §1/§8 vía el
-ejecutor seleccionado, validada contra referentes cerrados del informe
-determinista — un `Txxxx`/UUID/hex desconocido rechaza la pasada entera; recibe
-el informe DESCOMPUESTO en material — hallazgos íntegros, evidencias,
-veredictos — y un contrato de estilo calcado de la referencia «Murciélago»:
-veredicto por delante, continuidad de sujeto, entidades solo literales);
-`pdf.render_pdf` (fpdf2, pure-python).
+**Informes** (`forensia.reports`) — el informe pericial ya NO se ensambla desde
+una plantilla (2026-07-30, `docs/diseno/informes-2026-07/redaccion-integra.md`):
+lo redacta ÍNTEGRO el ejecutor que el operador selecciona, una sola vez, al
+FINALIZAR la investigación. `generator` / `narrative` / `humanize` y el borrador
+automático al cerrar un análisis fueron ELIMINADOS. Cuatro piezas:
+`DocumentStore` (integridad SHA-256, firmar / verificar / borrar auditados);
+**`indice`** (`INDICE` / `NUMS` / `TITULOS` / `contrato_del_indice` — el índice
+canónico como CONSTANTE: 10 secciones + 2 anexos de `plantilla-informe.md`, lo
+ÚNICO que dos informes comparten; cada una lleva el `contrato` de qué debe
+cubrir, que viaja al prompt); **`material`** (`build_material` — todo lo
+persistido del caso sin una sola frase: caso+encargo, evidencias con acta de
+custodia y `naturaleza` derivada del `detected_kind`, hallazgos íntegros con
+hashes completos, trabajos, uso de tools, ATT&CK con veredicto, revisiones,
+traza, integridad; cotas declaradas y recorte anunciado en `truncado`) y
+**`works`** (`tool_runs` / `audited_argvs` — reensambla `audit.jsonl` por
+`run_id`: argv token a token, run fallido presente, versión no inventada, run
+sin `finish` `incompleto`); **`writer`** (`write_report` — UNA llamada al
+ejecutor con `REPORT_TIMEOUT_S` 900 s y CUATRO puertas de custodia antes de
+persistir: índice exacto · modelo de bloques · referentes cerrados del material ·
+comandos literales del audit —FORENSIC INVARIANT 4—; un rechazo no publica nada y
+no hay redacción de repuesto, RULE 2; audita `report_written`);
+`pdf.render_pdf` (fpdf2, pure-python). La superficie es UN acto:
+`POST …/documents/finalize` («Finalizar investigación»), que valida rápido y
+redacta en un job de fondo (`forensia.agent.jobs`, `kind="report"`).
 
 **Redacción / GDPR** — policy de redacción del paquete (`apply_redaction`,
 `RedactionPattern`); redacción de egress antes de cruzar a un modelo cloud; modo de

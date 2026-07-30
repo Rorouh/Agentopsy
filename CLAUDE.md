@@ -470,10 +470,10 @@ only; a final can't be deleted — chain of custody) / **real PDF** (`fpdf2`,
 pure-python) rendered in the pericial-report format (cover + metadata + TOC +
 numbered H2/H3 sections + tables / findings / quotes / lists + per-page
 header-footer). The `DocumentsPage` (light theme, from the Claude Design import)
-lists and renders them and drives the actions. The report SYNTHESIS from the
-case's real data IS implemented (`forensia.reports.generator`:
-`build_pericial_report` + the auto-draft at analysis close), and since
-2026-07-30 it narrates — see **Informe pericial con narrativa** below. The old delivery model is fully
+lists and renders them and drives the actions. The report is no longer
+SYNTHESISED from a template: it is WRITTEN end to end by the operator-selected
+executor, once, when the investigation is finalised — see **Informe pericial
+redactado por el modelo** below. The old delivery model is fully
 dismantled: `desktop/`, `docker/agent/`, `vendor/`, the PyInstaller spec and the
 release workflow are gone (2026-07-02) — nothing ships outside the compose.
 
@@ -567,49 +567,54 @@ exhausted its 21 iterations without ever emitting a `final`). Pinned by
 `test_claude_argv_strips_the_cli_harness` and
 `test_budget_nudges_demand_a_final_before_exhaustion`.
 
-**Informe pericial con narrativa (2026-07-30, `forensia.reports.narrative` +
-`humanize`)**: the report stopped enumerating and started NARRATING, without
-losing a byte of technical detail. `build_pericial_report` now assembles **8
-sections**: the executive summary tells the story (the assignment, the dated
-sequence of facts with real titles/dates, the adjudication state with the
-severity breakdown intact, and a map of the report), §5 is the new **«Relato de
-la investigación»** — dated findings narrated chronologically with their full
-`summary`, provenance (tool, run, calibrated confidence) and ATT&CK framing;
-undated findings in their own lane (said as such, never disguised as incident
-chronology); descartes narrated as explored-and-closed avenues; open verdicts
-stated — and the conclusions close the thread with the kill-chain-ordered
-tactical arc of confirmed techniques. The narrative layer chooses ORDER and
-CONNECTIVE TISSUE, never content (RULE 2): every sentence is assembled from
-persisted case data, an empty case produces an honest no-story report, and
-section numbering lives in ONE place (`narrative.SEC_*`) so prose
-cross-references (§5, §8…) cannot drift. On top, **optional humanized
-redaction**: `POST …/documents/generate` accepts `executor` (operator-selected,
-never a default — the UI's «Redacción» picker on the Informe page); the prose of
-§1/§8 is rewritten by that executor and **validated against closed referents**
-(any `Txxxx`, UUID or hex token in the output must already exist in the
-deterministic report; one unknown referent rejects the whole pass with an
-actionable error — prosa sin validar never persists), the BORRADOR notice is
-re-appended unconditionally, §2 declares the provenance («Redacción narrativa:
-asistida por …») and the pass lands in the audit (`report_humanized`, plus the
-executor run's literal argv — FORENSIC INVARIANT 4). **Reference-level redaction
-(2026-07-30, calibrated against the «Murciélago» executive summary)**: the
-deterministic opening now frames the ENCARGO (`case.notes`, capped and
-whitespace-collapsed — never fabricated when absent), names each evidence by its
-NATURE derived from the triage `detected_kind` + literal extension («el volcado
-de memoria RAM "x.raw"», «la imagen de disco virtual "y.vmdk"», never the raw
-kind string), and enumerates memory-first («de mayor a menor volatilidad» — an
-ordering claim about the report's enumeration only, never about processing
-order, which only the audit log can assert). The humanize pass stopped receiving
-only §1/§8 prose: it now gets the deterministic report DECOMPOSED into writing
-material (case data, evidences by nature, the §5 relato, the FULL §6 findings —
-where the concrete entities live: users, hosts, files, addresses — and the §7
-verdict table, baseline hashes excluded) plus a style contract modelled on the
-reference: encargo+evidence+method first, verdict up front («La investigación
-confirma…» ONLY with adjudicated-confirmed techniques), the fact sequence woven
-with SUBJECT CONTINUITY using only entities literally present in the findings,
-complementary actions grouped by theme, descartes and pending verdicts said as
-such. Closed-referent validation is unchanged and the material is a subset of
-the referent corpus by construction.
+**Informe pericial redactado por el modelo (2026-07-30,
+`docs/diseno/informes-2026-07/redaccion-integra.md`)**: Agentopsy stopped
+filling in a template. The deterministic engine is GONE —
+`reports/generator.py`, `reports/narrative.py`, `reports/humanize.py`,
+`generate_draft_report`/`AUTO_DRAFT_TITLE`, the `_maybe_auto_draft` hook in
+`routers/agent.py` and `POST …/documents/generate` were all removed — because it
+produced the same mould for every case, with different blanks filled. Now each
+investigation yields a UNIQUE report, written from start to finish by the
+executor the operator selected, and **the only thing two reports share is the
+index**: narrative, level of detail and LENGTH depend entirely on the case.
+`forensia.reports.indice.INDICE` is that index as a code CONSTANT — the ten
+sections + two annexes of `docs/diseno/informes-2026-07/plantilla-informe.md`
+(Control de versiones · Resumen ejecutivo · Línea de tiempo · MITRE ATT&CK TTPs
+· Descripción del incidente, alcance y dispositivos · Hallazgos · Trabajos
+realizados · IOCs · Conclusiones y limitaciones · Recomendaciones · Anexo A
+traza · Anexo B integridad), each carrying the `contrato` of what it must cover.
+`forensia.reports.material.build_material` gathers EVERYTHING the case
+persisted, without writing a sentence (case + encargo, evidences with their
+verified custody act and nature, findings whole with full hashes, tool runs with
+their audited argv via the new `forensia.reports.works`, tool usage, ATT&CK with
+its verdict, prior revisions, investigation trace, hash-chain integrity; long
+collections capped by declared constants with the trim ANNOUNCED in `truncado`).
+`forensia.reports.writer.write_report` sends índice+material to the executor in
+ONE call (`REPORT_TIMEOUT_S` 900 s — the longest answer Agentopsy ever asks
+for) and then crosses **four custody gates before persisting anything**: (1) the
+index EXACT — a missing, extra, reordered or retitled section rejects the whole
+redaction; (2) the block model — only the types `DocumentStore` validates,
+coerced, so a key the model invented never reaches the store; (3) closed
+referents — every `Txxxx`, UUID and hex string cited must already exist in the
+material (a hash may be cited by prefix; a token EXTENDING a permitted prefix is
+fabrication; a long decimal is not mistaken for a hash); (4) literal commands —
+every `code` block must match an AUDITED argv token for token and is snapped to
+the audited form (FORENSIC INVARIANT 4: the report cites the command that RAN,
+not the one the model believes ran). A rejection publishes nothing and says why
+(RULE 2 — there is no deterministic fallback; the redacted report is the
+product, not a substitute). The pass lands in the audit as `report_written`
+alongside the executor run's literal argv. The surface is ONE act: **«Finalizar
+investigación»** on the Informe pericial page → `POST
+…/documents/finalize`, which validates fast (case 404 · no findings 422 · no
+executor selected 422 naming the valid ones · executor unusable 503 with the
+login command) and then runs the redaction as a BACKGROUND JOB (shared
+`forensia.agent.jobs`, `kind="report"`, polled at `…/documents/jobs/{id}`,
+listed at `…/documents/jobs` so the SPA re-attaches on mount) — closing the tab
+no longer aborts it, and the elapsed counter anchors to the job's server-side
+`created_at`. Pressing it again issues a NEW revision (version derived from the
+registered revisions, `v0.1` → `v0.2`…, which §1 lists); the case is NOT closed
+— that stays the sidebar's «Cerrar caso». The document is still born a BORRADOR
+and gains pericial validity when signed.
 
 **Agent analysis hardening (2026-07-15)**: the loop now forces the agent to
 `record_finding` HOT (a strict prompt rule + a **structural nudge** in

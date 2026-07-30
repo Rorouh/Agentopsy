@@ -1,5 +1,14 @@
 # Plan de migración — informes 2026-07
 
+> ⚠️ **SUPERADO (2026-07-30) por [`redaccion-integra.md`](redaccion-integra.md).**
+> Estas siete fases describían cómo enriquecer `generator.py` sección a sección;
+> ese fichero ya no existe. De todo el plan solo se conservó la **Fase A**, y
+> transformada: `forensia/reports/works.py` reensambla las ejecuciones del audit
+> con su argv literal, pero ya no para imprimir §7 — para dárselo al modelo como
+> material y para VALIDAR que ningún comando citado en el informe se haya
+> reescrito. Se mantiene el documento como registro de las decisiones y de los
+> orígenes de dato que se identificaron.
+>
 > Siete fases, ordenadas para que **cada una deje el árbol verde y el informe mejor que
 > antes**. Ninguna depende de que la siguiente exista. Las fases A-C son las de mayor
 > retorno (arreglan lo que ya está roto sin contratos nuevos); D-E añaden los almacenes;

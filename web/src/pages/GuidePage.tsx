@@ -98,8 +98,8 @@ export function GuidePage({ onNavigate }: GuidePageProps) {
     },
     {
       n: "06",
-      title: "Redactar y firmar el informe",
-      desc: "Genera el informe pericial desde los hallazgos reales, verifica su integridad y fírmalo como versión final.",
+      title: "Finalizar la investigación y firmar el informe",
+      desc: "Pulsa «Finalizar investigación» y el modelo que elijas redactará el informe pericial completo desde los hallazgos y las evidencias del caso. Verifica su integridad y fírmalo como versión final.",
       state: has(facts.documents) ? "done" : has(facts.findings) ? "now" : "todo",
       view: "document-viewer",
     },

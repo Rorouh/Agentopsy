@@ -1,37 +1,35 @@
 """Documentos / informes del caso.
 
-Tres ejes: el **almacén** de documentos con su integridad (``store``), la
-**síntesis** del informe pericial desde los datos reales del caso
-(``generator``) y la **narrativa** que le da hilo conductor (``narrative``,
-2026-07-30) — más la **redacción humanizada opcional** a través del ejecutor
-seleccionado por el operador (``humanize``). Un documento se persiste por caso
-con su SHA-256 real, y las acciones del perito (verificar integridad, firmar
-como final, eliminar borrador) operan sobre ficheros reales y quedan en el
-audit hash-encadenado.
+Cuatro piezas. El **almacén** de documentos con su integridad SHA-256
+(``store``); el **índice canónico** del informe pericial (``indice``), que es lo
+ÚNICO que dos informes tienen en común; el **material** que el caso ha
+persistido (``material`` + ``works``), sin una sola frase redactada; y el
+**redactor** (``writer``), que entrega ese material al ejecutor seleccionado por
+el operador para que escriba el informe de principio a fin y valida lo que
+devuelve antes de que llegue al almacén.
 
-``build_pericial_report`` ensambla las secciones del informe (resumen ejecutivo
-narrativo, metadatos, cadena de custodia, metodología, RELATO de la
-investigación, hallazgos, correlación MITRE y conclusiones que cierran el hilo)
-desde ``forensia.cases`` / ``custody`` / ``findings`` / ``mitre`` /
-``toolkit.usage``; el router lo pasa por ``DocumentStore.create``. No inventa
-nada (RULE 2): la narrativa elige orden y tejido conectivo — nunca contenido —
-y un caso sin hallazgos produce un informe honesto que lo dice.
+**La plantilla determinista se retiró el 2026-07-30** (``generator`` /
+``narrative`` / ``humanize``, y con ellos el borrador automático al cerrar un
+análisis). Agentopsy ya no rellena huecos de un molde: cada investigación
+produce un informe único, con la narrativa y la longitud que ese caso pide, y se
+redacta UNA sola vez, al FINALIZAR la investigación
+(``POST …/documents/finalize``). Lo que Agentopsy no delega es la custodia: el
+índice exacto, el modelo de bloques, los referentes cerrados del material y los
+comandos literales del audit son cuatro puertas que se cruzan antes de persistir
+nada (ver ``writer``).
 """
 
 from __future__ import annotations
 
-from forensia.reports.generator import (
-    AUTO_DRAFT_TITLE,
-    build_pericial_report,
-    generate_draft_report,
-)
+from forensia.reports.material import build_material
 from forensia.reports.store import Document, DocumentStore, document_store
+from forensia.reports.writer import ReportWriteError, write_report
 
 __all__ = [
-    "AUTO_DRAFT_TITLE",
     "Document",
     "DocumentStore",
-    "build_pericial_report",
+    "ReportWriteError",
+    "build_material",
     "document_store",
-    "generate_draft_report",
+    "write_report",
 ]

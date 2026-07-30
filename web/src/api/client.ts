@@ -22,7 +22,8 @@ import type {
   DocumentMeta,
   DocumentFull,
   DocumentVerifyResult,
-  GenerateReportRequest,
+  FinalizeInvestigationRequest,
+  ReportJob,
   EvidenceHandle,
   EvidenceMetadata,
   EvidenceRegisterJob,
@@ -426,13 +427,21 @@ export const api = {
       request<DocumentFull>(
         `/api/cases/${encodeURIComponent(caseId)}/documents/${encodeURIComponent(docId)}`,
       ),
-    // Síntesis "con un clic": el backend redacta el informe pericial desde los
-    // hallazgos / custodia / MITRE reales del caso y lo persiste como borrador.
-    generateReport: (caseId: string, perito: GenerateReportRequest) =>
-      post<DocumentFull>(
-        `/api/cases/${encodeURIComponent(caseId)}/documents/generate`,
-        perito,
+    // «Finalizar investigación»: arranca la REDACCIÓN del informe pericial por
+    // el ejecutor seleccionado y devuelve el job al instante (la llamada al
+    // modelo dura minutos). El documento aparece cuando el job termina.
+    finalizeInvestigation: (caseId: string, req: FinalizeInvestigationRequest) =>
+      post<ReportJob>(
+        `/api/cases/${encodeURIComponent(caseId)}/documents/finalize`,
+        req,
       ),
+    reportJob: (caseId: string, jobId: string, since = 0) =>
+      request<ReportJob>(
+        `/api/cases/${encodeURIComponent(caseId)}/documents/jobs/${encodeURIComponent(jobId)}?since=${since}`,
+      ),
+    // Las redacciones del caso, para reengancharse a una en curso al montar.
+    listReportJobs: (caseId: string) =>
+      request<ReportJob[]>(`/api/cases/${encodeURIComponent(caseId)}/documents/jobs`),
     verifyDocument: (caseId: string, docId: string) =>
       post<DocumentVerifyResult>(
         `/api/cases/${encodeURIComponent(caseId)}/documents/${encodeURIComponent(docId)}/verify`,

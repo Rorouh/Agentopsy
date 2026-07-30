@@ -1,5 +1,15 @@
 # Rediseño de informes — 2026-07
 
+> ⚠️ **SUPERADO EN PARTE (2026-07-30) por
+> [`redaccion-integra.md`](redaccion-integra.md).** Agentopsy ya no ensambla el
+> informe sección a sección: lo redacta ÍNTEGRO el ejecutor que el operador
+> selecciona, una sola vez, al finalizar la investigación. Lo que **sigue
+> vigente** de este documento es el diagnóstico, los principios (P1-P5) y el
+> mapeo dato → origen, que son ahora el contrato del MATERIAL
+> (`forensia.reports.material`) y de las reglas del prompt. Lo que **ya no
+> aplica** es que las secciones las construya `generator.py` (eliminado, junto
+> con `narrative.py` y `humanize.py`).
+>
 > **Estado:** diseño aprobado en alcance, pendiente de implementar.
 > **Rama:** `tools`.
 > **Fuente normativa:** UCM · Máster en Ciberseguridad · *Introducción a la práctica
@@ -15,14 +25,16 @@ Este directorio contiene:
 | --- | --- |
 | `README.md` (este) | Diagnóstico, principios y el mapeo **dato → origen** |
 | [`plantilla-informe.md`](plantilla-informe.md) | La plantilla de las 10 secciones, bloque a bloque |
-| [`plan-migracion.md`](plan-migracion.md) | Fases, ficheros tocados, tests y gates de CI |
+| [`plan-migracion.md`](plan-migracion.md) | Fases, ficheros tocados, tests y gates de CI (superado) |
+| [`redaccion-integra.md`](redaccion-integra.md) | **Vigente**: el informe lo redacta el modelo; el índice es lo único común |
 
 ---
 
 ## 1. El problema
 
-El informe que Agentopsy genera hoy (`forensia.reports.generator.build_pericial_report`)
-tiene **7 secciones**:
+El informe que Agentopsy generaba cuando se escribió este diagnóstico
+(`forensia.reports.generator.build_pericial_report`, eliminado el 2026-07-30)
+tenía **7 secciones**:
 
 ```
 1. Resumen ejecutivo          5. Hallazgos
