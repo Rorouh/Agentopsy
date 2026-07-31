@@ -124,7 +124,7 @@ Se materializa en la estructura del informe:
 
 | Nivel | Qué es en Agentopsy | Dónde vive en el informe |
 | --- | --- | --- |
-| **Dato observado** | Salida de un `ArtifactRun` (argv + exit + hash) | §7 Trabajos realizados |
+| **Dato observado** | Salida de un `ArtifactRun` (argv + exit + hash) | El audit log; §7 lo resume (uso de herramientas + fallos), no lo transcribe |
 | **Hallazgo** | `Finding` con procedencia (`run_id`) | §6 Hallazgos |
 | **Conclusión** | Síntesis, con referencia cruzada al hallazgo que la sostiene | §9 Conclusiones |
 
@@ -360,7 +360,7 @@ Cada requisito del apartado «Cómo documentar la investigación», y dónde que
 | MITRE ATT&CK TTPs | 118 | §4 (ya cubierto) |
 | Descripción del incidente y marco temporal | 119 | §5 ← ficha pericial |
 | Dispositivos: adquiridos vs. proporcionados | 119 | §5 ← ficha pericial |
-| Trabajos realizados, jerárquico por artefacto | 120 | §7 |
+| Trabajos realizados | 120 | §7, en RESUMEN: uso de herramientas + ejecuciones fallidas. El detalle corrida a corrida se dejó de imprimir el 2026-07-31 (está íntegro en el audit log) |
 | IOCs en tabla accionable | 121-122 | §8 + export CSV |
 | Conclusiones ligadas a prueba concreta; limitaciones transparentes | 123 | §9 con referencias cruzadas y subapartado de limitaciones |
 | Recomendaciones priorizadas con recursos, plazos y métrica | 124 | §10 ← ficha pericial |

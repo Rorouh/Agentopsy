@@ -73,7 +73,9 @@ GET /api/cases/{id}/documents/jobs/{job_id}    ← sondeo del progreso
   `tool_run_finish` y cruzando los hallazgos que lo citan. El `argv` es el
   auditado token a token; un run sin versión no inventa `"unknown"`; un run sin
   `finish` aparece como `incompleto`, no se descarta (era la Fase A del plan
-  antiguo, ahora al servicio del redactor).
+  antiguo, ahora al servicio del redactor). Devuelve las corridas ENTERAS, pero
+  el informe ya no las vuelca: desde el 2026-07-31 el apartado 7 las RESUME y
+  detalla solo las fallidas (ver `plantilla-informe.md`, sección 7).
 - **`forensia/reports/material.py`** — reúne todo lo anterior en el material.
   No redacta: las dos únicas decisiones de presentación son la **naturaleza** de
   cada evidencia (derivada del `detected_kind` del triaje) y el **orden por
