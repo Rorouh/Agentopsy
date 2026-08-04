@@ -1,6 +1,7 @@
 {
   "communities": {
     "0": [
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_client_api",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_agentfinding",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_capabilities",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_executorcost",
@@ -55,83 +56,20 @@
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_investigationpage_investigationpageprops",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_investigationpage_severity_label",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_investigationpage_tsx",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_mitreattackpage_mitreattackpage",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_repositorypage_repositorypageprops",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_settingspage_settingspageprops",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_state_activecase_activecasecontext",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_state_activecase_activecaseprovider",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_state_activecase_casesphase",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_state_activecase_initialactivecaseid",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_state_activecase_tsx",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_state_activecase_useactivecase",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_state_casefacts_usecasefacts",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_themeprovider_getinitialtheme",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_themeprovider_theme",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_themeprovider_themecontext",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_themeprovider_themectx",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_themeprovider_themeprovider",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_themeprovider_tsx"
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_state_casefacts_casefacts",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_state_casefacts_empty_facts",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_state_casefacts_ts",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_state_casefacts_usecasefacts"
     ],
     "1": [
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_client_download",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_client_gettoken",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_client_post",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_client_readdetail",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_client_request",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_client_ts",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_client_upload",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_adjudicaterequest",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_agentjob",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_analysiscostestimate",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_analysiscosttariff",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_analysisestimate",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_analysisestimaterange",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_configkeystatus",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_configsnapshot",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_createcaserequest",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_custodyact",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_documentsection",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_evidencemetadata",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_executorid",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_executorlogincapability",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_executorloginstart",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_executorloginstate",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_executorloginstatus",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_executormodels",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_executorstatus",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_investigationtimeline",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_maletinstatus",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_mitrecatalog",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_mitrecoverageentry",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_mitrestatus",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_mitretactic",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_mitretechnique",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_persistedchatmessage",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_queryrequest",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_queryresponse",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_redetectosresult",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_timelinefindingevent",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_timelinejobprogress",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_timelinetoolrunevent",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_toolstatus",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_ts",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_updatecaserequest",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_verificationrecord",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_verifyresult",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_executorloginmodal_executorloginmodal",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_executorloginmodal_executorloginmodalprops",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_executorloginmodal_phase",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_executorloginmodal_tsx",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_mitreattackpage_phase",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_mitreattackpage_phase_color",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_mitreattackpage_selection",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_mitreattackpage_status_label",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_mitreattackpage_status_order",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_mitreattackpage_tsx",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_settingspage_model_config_key",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_settingspage_settingspage",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_settingspage_tabid",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_settingspage_tabs",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_settingspage_timeout_options",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_settingspage_tsx",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_themeprovider_usetheme"
-    ],
-    "2": [
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_evidencehandle",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_evidenceregisterjob",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_evidencesource",
@@ -170,41 +108,7 @@
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_utils_format_shorthash",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_utils_format_ts"
     ],
-    "3": [
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_client_api",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_case",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_casesearchmodal_casefilter",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_casesearchmodal_casesearchmodal",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_casesearchmodal_casesearchmodalprops",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_casesearchmodal_casesort",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_casesearchmodal_filter_label",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_casesearchmodal_pane",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_casesearchmodal_tsx",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_newcasemodal_empty_form",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_newcasemodal_formstate",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_newcasemodal_newcasemodal",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_newcasemodal_newcasemodalprops",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_newcasemodal_tsx",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_pagination_pagination",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_pagination_paginationprops",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_pagination_tsx",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_state_activecase_activecasecontext",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_state_activecase_activecasecontextvalue",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_state_activecase_activecaseprovider",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_state_activecase_casesphase",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_state_activecase_initialactivecaseid",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_state_activecase_tsx",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_state_casefacts_casefacts",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_state_casefacts_empty_facts",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_state_casefacts_ts",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_ui_errorstate_errorstate",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_ui_errorstate_errorstateprops",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_ui_errorstate_tsx",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_ui_modal_modal",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_ui_modal_modalprops",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_ui_modal_tsx"
-    ],
-    "4": [
+    "2": [
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_package_dependencies",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_package_dependencies_react",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_package_dependencies_react_dom",
@@ -233,7 +137,32 @@
       "vite",
       "vitejs_plugin_react"
     ],
-    "5": [
+    "3": [
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_case",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_casesearchmodal_casefilter",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_casesearchmodal_casesearchmodal",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_casesearchmodal_casesearchmodalprops",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_casesearchmodal_casesort",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_casesearchmodal_filter_label",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_casesearchmodal_pane",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_casesearchmodal_tsx",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_newcasemodal_empty_form",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_newcasemodal_formstate",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_newcasemodal_newcasemodal",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_newcasemodal_newcasemodalprops",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_newcasemodal_tsx",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_pagination_pagination",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_pagination_paginationprops",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_pagination_tsx",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_state_activecase_activecasecontextvalue",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_ui_errorstate_errorstate",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_ui_errorstate_errorstateprops",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_ui_errorstate_tsx",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_ui_modal_modal",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_ui_modal_modalprops",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_ui_modal_tsx"
+    ],
+    "4": [
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_agentsummary",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_streamevent",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_chatpage_alignof",
@@ -249,31 +178,112 @@
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_chatpage_istablerow",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_chatpage_model_config_key",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_chatpage_quick_prompts",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_chatpage_reasoning_config_key",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_chatpage_renderinline",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_chatpage_severity_label",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_chatpage_splitrow",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_chatpage_toolchain",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_chatpage_tsx"
     ],
+    "5": [
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_client_download",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_client_gettoken",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_client_post",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_client_readdetail",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_client_request",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_client_ts",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_client_upload",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_adjudicaterequest",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_agentjob",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_createcaserequest",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_custodyact",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_evidencemetadata",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_executorloginstatus",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_investigationtimeline",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_persistedchatmessage",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_queryrequest",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_queryresponse",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_redetectosresult",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_updatecaserequest",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_verifyresult"
+    ],
     "6": [
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_client_apierror",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_client_apierror_constructor",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_analysiscostestimate",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_analysiscosttariff",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_analysisestimate",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_analysisestimaterange",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_configkeystatus",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_documentsection",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_executorloginstate",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_executormodeldetail",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_executorreasoning",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_maletinstatus",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_mitretactic",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_reasoningeffort",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_reportjobevent",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_timelinefindingevent",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_timelinejobprogress",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_timelinetoolrunevent",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_toolstatus",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_ts",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_verificationrecord"
+    ],
+    "7": [
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_documentblock",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_documentfull",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_documentmeta",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_documentverifyresult",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_generatereportrequest",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_finalizeinvestigationrequest",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_reportjob",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_documentspage_block",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_documentspage_documentspage",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_documentspage_elapsed",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_documentspage_fmtdate",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_documentspage_groupby",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_documentspage_perito_fields",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_documentspage_phase_label",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_documentspage_sev_label",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_documentspage_shorthash",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_documentspage_statusfilter",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_documentspage_tsx"
     ],
-    "7": [
+    "8": [
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_client_apierror",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_client_apierror_constructor",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_fsrelevantevent",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_fstimelineevent",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_fstimelinejob",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_fstimelineresult",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_timelineevent",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_timelinepage_category_label",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_timelinepage_evidencename",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_timelinepage_fmtutc",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_timelinepage_groupbyday",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_timelinepage_layer",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_timelinepage_pager",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_timelinepage_sev_label",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_timelinepage_timelinepage",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_timelinepage_tsx"
+    ],
+    "9": [
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_configsnapshot",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_executorid",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_executorlogincapability",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_executorloginstart",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_executormodels",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_executorstatus",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_executorloginmodal_executorloginmodal",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_executorloginmodal_executorloginmodalprops",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_executorloginmodal_phase",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_executorloginmodal_tsx",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_settingspage_model_config_key",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_settingspage_settingspage",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_settingspage_tabid",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_settingspage_tabs",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_settingspage_timeout_options",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_settingspage_tsx"
+    ],
+    "10": [
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_tsconfig_compileroptions",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_tsconfig_compileroptions_jsx",
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_tsconfig_compileroptions_lib",
@@ -291,48 +301,53 @@
       "ref_es2022",
       "ref_src"
     ],
-    "8": [
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_fsrelevantevent",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_fstimelineevent",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_fstimelinejob",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_fstimelineresult",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_timelineevent",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_timelinepage_category_label",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_timelinepage_evidencename",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_timelinepage_fmtutc",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_timelinepage_groupbyday",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_timelinepage_layer",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_timelinepage_pager",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_timelinepage_sev_label",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_timelinepage_timelinepage",
-      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_timelinepage_tsx"
+    "11": [
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_mitrecatalog",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_mitrecoverageentry",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_mitrestatus",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_mitretechnique",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_mitreattackpage_mitreattackpage",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_mitreattackpage_phase",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_mitreattackpage_phase_color",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_mitreattackpage_selection",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_mitreattackpage_status_label",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_mitreattackpage_status_order",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_mitreattackpage_tsx"
     ],
-    "9": [
+    "12": [
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_themeprovider_getinitialtheme",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_themeprovider_theme",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_themeprovider_themecontext",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_themeprovider_themectx",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_themeprovider_themeprovider",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_themeprovider_tsx",
+      "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_themeprovider_usetheme"
+    ],
+    "13": [
       "c_users_super_desktop_tfm_forensia_forensia_ai_web_vite_config_ts"
     ]
   },
   "cohesion": {
-    "0": 0.06490384615384616,
-    "1": 0.05658381808566896,
-    "2": 0.13513513513513514,
-    "3": 0.08669354838709678,
-    "4": 0.07407407407407407,
-    "5": 0.14736842105263157,
-    "6": 0.15833333333333333,
-    "7": 0.125,
-    "8": 0.1978021978021978,
-    "9": 1.0
+    "0": 0.0642243328810493,
+    "1": 0.13513513513513514,
+    "2": 0.07407407407407407,
+    "3": 0.11462450592885376,
+    "4": 0.1380952380952381,
+    "5": 0.1368421052631579,
+    "6": 0.10526315789473684,
+    "7": 0.15441176470588236,
+    "8": 0.16666666666666666,
+    "9": 0.15,
+    "10": 0.125,
+    "11": 0.2,
+    "12": 0.3333333333333333,
+    "13": 1.0
   },
   "gods": [
     {
       "id": "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_state_activecase_useactivecase",
       "label": "useActiveCase()",
       "degree": 21
-    },
-    {
-      "id": "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_layout_shellheader_usepublishshellheader",
-      "label": "usePublishShellHeader()",
-      "degree": 18
     },
     {
       "id": "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_navigation_navitems_viewid",
@@ -350,8 +365,8 @@
       "degree": 11
     },
     {
-      "id": "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_repositorypage_repositorypage",
-      "label": "RepositoryPage()",
+      "id": "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_layout_shellheader_usepublishshellheader",
+      "label": "usePublishShellHeader()",
       "degree": 10
     },
     {
@@ -360,14 +375,19 @@
       "degree": 10
     },
     {
+      "id": "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_capabilities",
+      "label": "Capabilities",
+      "degree": 9
+    },
+    {
       "id": "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_evidencehandle",
       "label": "EvidenceHandle",
       "degree": 9
     },
     {
-      "id": "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_api_types_capabilities",
-      "label": "Capabilities",
-      "degree": 8
+      "id": "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_pages_repositorypage_repositorypage",
+      "label": "RepositoryPage()",
+      "degree": 9
     },
     {
       "id": "c_users_super_desktop_tfm_forensia_forensia_ai_web_src_components_evidenceinbox_evidenceinbox",
@@ -377,15 +397,15 @@
   ],
   "surprises": [
     {
-      "source": "Sidebar()",
-      "target": "useTheme()",
+      "source": "EvidenceTableProps",
+      "target": "EvidenceHandle",
       "source_files": [
-        "src/layout/Sidebar.tsx",
-        "src/ThemeProvider.tsx"
+        "src/components/EvidenceTable.tsx",
+        "src/api/types.ts"
       ],
       "confidence": "EXTRACTED",
-      "relation": "calls",
-      "why": "bridges separate communities"
+      "relation": "references",
+      "why": "peripheral node `EvidenceTableProps` unexpectedly reaches hub `EvidenceHandle`"
     },
     {
       "source": "ExecutorLoginModalProps",
@@ -435,38 +455,38 @@
   "questions": [
     {
       "type": "bridge_node",
-      "question": "Why does `api` connect `activeCase.tsx` to `App.tsx`, `types.ts`, `RepositoryPage.tsx`, `ChatPage.tsx`, `DocumentsPage.tsx`, `TimelinePage.tsx`?",
-      "why": "High betweenness centrality (0.023) - this node is a cross-community bridge."
+      "question": "Why does `useActiveCase()` connect `App.tsx` to `TimelinePage.tsx`, `RepositoryPage.tsx`, `MitreAttackPage.tsx`, `DocumentsPage.tsx`?",
+      "why": "High betweenness centrality (0.024) - this node is a cross-community bridge."
     },
     {
       "type": "bridge_node",
-      "question": "Why does `useActiveCase()` connect `App.tsx` to `types.ts`, `RepositoryPage.tsx`, `activeCase.tsx`, `DocumentsPage.tsx`, `TimelinePage.tsx`?",
+      "question": "Why does `api` connect `App.tsx` to `RepositoryPage.tsx`, `CaseSearchModal.tsx`, `ChatPage.tsx`, `client.ts`, `DocumentsPage.tsx`, `TimelinePage.tsx`, `SettingsPage.tsx`, `MitreAttackPage.tsx`?",
       "why": "High betweenness centrality (0.022) - this node is a cross-community bridge."
     },
     {
       "type": "bridge_node",
-      "question": "Why does `ViewId` connect `App.tsx` to `types.ts`, `RepositoryPage.tsx`?",
-      "why": "High betweenness centrality (0.020) - this node is a cross-community bridge."
+      "question": "Why does `ViewId` connect `App.tsx` to `RepositoryPage.tsx`, `SettingsPage.tsx`?",
+      "why": "High betweenness centrality (0.019) - this node is a cross-community bridge."
     },
     {
       "type": "isolated_nodes",
       "question": "What connects `name`, `version`, `private` to the rest of the system?",
-      "why": "102 weakly-connected nodes found - possible documentation gaps or missing edges."
+      "why": "108 weakly-connected nodes found - possible documentation gaps or missing edges."
     },
     {
       "type": "low_cohesion",
       "question": "Should `App.tsx` be split into smaller, more focused modules?",
-      "why": "Cohesion score 0.06490384615384616 - nodes in this community are weakly interconnected."
-    },
-    {
-      "type": "low_cohesion",
-      "question": "Should `types.ts` be split into smaller, more focused modules?",
-      "why": "Cohesion score 0.05658381808566896 - nodes in this community are weakly interconnected."
+      "why": "Cohesion score 0.0642243328810493 - nodes in this community are weakly interconnected."
     },
     {
       "type": "low_cohesion",
       "question": "Should `RepositoryPage.tsx` be split into smaller, more focused modules?",
       "why": "Cohesion score 0.13513513513513514 - nodes in this community are weakly interconnected."
+    },
+    {
+      "type": "low_cohesion",
+      "question": "Should `package.json` be split into smaller, more focused modules?",
+      "why": "Cohesion score 0.07407407407407407 - nodes in this community are weakly interconnected."
     }
   ]
 }
