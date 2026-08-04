@@ -6,6 +6,14 @@ ese ``run_id``. Es la materia prima de la sección «Trabajos realizados» del
 informe (``forensia.reports.indice`` §7) y del gate de comandos literales del
 redactor (``forensia.reports.writer``).
 
+Lo que el informe hace con esto NO es volcarlo: el apartado 7 resume el uso de
+herramientas y detalla las ejecuciones FALLIDAS, y el detalle corrida a corrida
+(argv, versiones, marcas temporales, hashes de las salidas) se queda donde ya
+estaba íntegro, en el audit hash-encadenado. Este módulo lo entrega completo de
+todas formas: es la fuente de la que salen ese resumen, las limitaciones del
+apartado 9 y el corpus de argv auditados contra el que se valida cada bloque
+``code`` del informe.
+
 Dos reglas gobiernan este módulo, y las dos vienen de FORENSIC INVARIANT 4:
 
 1. **El ``argv`` es el del audit, token a token.** Nunca se reconstruye desde

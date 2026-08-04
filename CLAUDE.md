@@ -644,6 +644,18 @@ sections + two annexes of `docs/diseno/informes-2026-07/plantilla-informe.md`
 · Descripción del incidente, alcance y dispositivos · Hallazgos · Trabajos
 realizados · IOCs · Conclusiones y limitaciones · Recomendaciones · Anexo A
 traza · Anexo B integridad), each carrying the `contrato` of what it must cover.
+**«Trabajos realizados» is a SUMMARY, not a dump (2026-07-31)**: its `contrato`
+used to order a subsection per evidence with one `kv` + one `code` per run, and
+that produced eleven of a real report's thirty-one pages without adding a single
+proof — the literal argv, tool versions, timestamps, stdout/stderr SHA-256 and
+output-file counts are already WHOLE in the hash-chained audit log, which is
+what a third party verifies (FORENSIC INVARIANT 4). Section 7 now carries the
+tool-usage table, the executions that FAILED (with their error and what was done
+next, feeding section 9's limitations) and the reproducibility close pointing at
+the audit log; the per-finding provenance stays in section 6, untouched. The
+material still ships `trabajos[]` whole: it feeds that summary, section 9 and the
+audited-argv corpus of gate 4. Pinned by
+`test_trabajos_realizados_no_pide_una_ficha_por_ejecucion`.
 `forensia.reports.material.build_material` gathers EVERYTHING the case
 persisted, without writing a sentence (case + encargo, evidences with their
 verified custody act and nature, findings whole with full hashes, tool runs with

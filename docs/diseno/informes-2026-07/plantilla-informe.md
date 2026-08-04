@@ -209,51 +209,46 @@ severidad, bloques `finding`, línea de procedencia de `_finding_provenance`). C
 
 ## 7. Trabajos realizados
 
-La sección más extensa (guía p. 120). **Origen:** `forensia.reports.works.tool_runs`.
+Una sección **de resumen** (guía p. 120). **Origen:** `forensia.reports.works.tool_runs`
+y `forensia.toolkit.usage.tool_usage`.
 
-Jerarquía en tres niveles, como la del ejemplo de la guía:
+Tres piezas, y ninguna más:
 
 ```
 7    Trabajos realizados
-7.1  Resumen de ejecuciones                    ← tabla de tool_usage (la de hoy)
-7.2  Evidencia «disco-portatil.E01»
-     7.2.1  Triaje y determinación del perfil de SO
-     7.2.2  tsk_mmls — tabla de particiones
-     7.2.3  tsk_fls — enumeración del sistema de ficheros
-     7.2.4  bulk_extractor — extracción de artefactos
-7.3  Evidencia «memoria.raw»
-     7.3.1  volatility3 — …
+     párrafo: qué se hizo sobre cada evidencia y con qué herramientas
+7.1  Resumen de ejecuciones                    ← tabla de tool_usage
+     las ejecuciones FALLIDAS (exit_code != 0), en prosa o tabla breve
+     párrafo de cierre: reproducibilidad
 ```
 
-Por cada ejecución, un bloque `kv` + un bloque `code` con el argv literal:
+**Lo que NO lleva** (revisado el 2026-07-31): un subapartado por evidencia con una
+entrada por ejecución, una ficha `kv` por corrida y un bloque `code` con su argv. Ese
+volcado ocupaba **once de las treinta y una páginas** de un informe real (caso
+`db120d23`, revisión V1.0) y no añadía una sola prueba: el argv literal, la versión de
+la herramienta, las marcas temporales, los SHA-256 de stdout/stderr, los ficheros de
+salida y los artefactos de entrada ya constan **íntegros** en el log de auditoría
+hash-encadenado, que es la fuente que un tercero verifica (FORENSIC INVARIANT 4). El
+informe apunta a ella en vez de transcribirla.
 
-| Campo | Origen (`audit.jsonl`) |
-| --- | --- |
-| Identificador de ejecución (`run_id`) | `tool_run_start.run_id` |
-| Herramienta y **versión** | `tool_id` + `tool_version` (manifiesto del maletín) |
-| Evidencia y SHA-256 baseline | `evidence_id`, `baseline_sha256` |
-| Inicio / fin (UTC) | `ts_utc` de start / finish |
-| Código de salida | `tool_run_finish.exit_code` |
-| SHA-256 de stdout / stderr | `stdout_sha256`, `stderr_sha256` |
-| Ficheros de salida | `output_files_count` |
-| Artefactos de entrada | `derived_inputs[]` (id, relpath, hash verificado) |
-| Hallazgos derivados | `finding_ids` que citan ese `run_id` → referencia cruzada a apartado 6 |
-
-```
-$ tsk_fls -m C:/ -r -o 2048 /evidence/<id>/original.E01
-```
+Se generaba porque el contrato de la sección lo **ordenaba** (`forensia.reports.indice`,
+sección 7), así que es ese contrato el que ahora lo prohíbe, y
+`tests/test_report_writer.py::test_trabajos_realizados_no_pide_una_ficha_por_ejecucion`
+lo fija. El material sigue viajando entero: `trabajos[]` alimenta el resumen, las
+limitaciones de apartado 9 y el corpus de argv auditados del gate de comandos.
 
 Reglas:
 
-- **Las ejecuciones con `exit_code != 0` se imprimen igual**, con su `error_message`. Un
-  informe que solo muestra lo que funcionó no es reproducible, y esos fallos alimentan
-  las limitaciones de apartado 9.
-- El argv es el **literal auditado**, no una reconstrucción ni la intención declarada
-  por el modelo (FORENSIC INVARIANT 4).
-- Si `ficha.dispositivos[].procedencia == "adquirido"`, la subsección de esa evidencia
-  abre con el proceso de adquisición (guía p. 120).
-- Párrafo de cierre: cualquier tercero con la misma imagen, el mismo maletín y estos
-  argv reproduce el análisis — que es la definición de reproducibilidad de la guía.
+- **Las ejecuciones con `exit_code != 0` se detallan igual**, con su `error_message` y
+  qué se hizo después. Un informe que solo muestra lo que funcionó no es reproducible,
+  y esos fallos alimentan las limitaciones de apartado 9.
+- La procedencia **por hallazgo** (run_id completo, tool_id, SHA-256 del artefacto) no
+  se toca: vive en apartado 6, que es donde un perito contrario la busca.
+- Si un bloque `code` aparece pese a todo, sigue validándose contra el argv **literal
+  auditado**, no contra una reconstrucción (FORENSIC INVARIANT 4).
+- Párrafo de cierre: cualquier tercero con la misma imagen, el mismo maletín en las
+  versiones registradas y los argv literales del log de auditoría reproduce el análisis,
+  que es la definición de reproducibilidad de la guía.
 
 ---
 

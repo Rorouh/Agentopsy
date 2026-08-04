@@ -609,6 +609,32 @@ def test_the_prompt_forbids_the_section_sign_and_the_em_dash() -> None:
         assert f"§{num}" not in prompt
 
 
+def test_trabajos_realizados_no_pide_una_ficha_por_ejecucion() -> None:
+    """El apartado 7 RESUME el trabajo; no vuelca una entrada por corrida.
+
+    El volcado (un subapartado por evidencia con un `kv` y un `code` por cada
+    ejecución) ocupaba once de las treinta y una páginas de un informe real y no
+    añadía prueba: el argv literal, las versiones, las marcas temporales y los
+    SHA-256 de las salidas ya constan ÍNTEGROS en el log de auditoría
+    hash-encadenado, que es lo que un tercero verifica. Se generaba porque el
+    contrato de la sección lo ORDENABA, así que es el contrato lo que lo
+    prohíbe.
+    """
+    from forensia.reports.indice import INDICE
+
+    contrato = next(s for s in INDICE if s.num == "7").contrato
+
+    assert "NO enumeres las ejecuciones una por una" in contrato
+    assert "ni un subapartado por evidencia" in contrato
+    assert "ni una ficha `kv` por ejecución" in contrato
+    assert "ni un bloque `code` con el argv de cada corrida" in contrato
+    # Lo que SÍ sigue exigiendo: el resumen de uso y las ejecuciones fallidas.
+    assert "`uso_de_tools`" in contrato
+    assert "FALLARON" in contrato
+    # Y dónde vive el detalle que ya no se imprime.
+    assert "log de auditoría hash-encadenado" in contrato
+
+
 def test_the_indice_itself_carries_no_forbidden_typography() -> None:
     """El índice es una constante del producto: si él trae una raya, el informe
     la copia."""
