@@ -35,6 +35,7 @@ from forensia.executors import (
     DEFAULT_TIMEOUT_S,
     EXECUTOR_IDS,
     MODEL_CONFIG_KEY,
+    REASONING_CONFIG_KEY,
     ClaudeCodeExecutor,
     CodexExecutor,
     ExecutorAvailability,
@@ -45,6 +46,7 @@ from forensia.executors import (
     get_executor,
     resolve_timeout,
     validate_model_id,
+    validate_reasoning_effort,
 )
 from forensia.executors import base as executors_base
 from forensia.server import create_app
@@ -68,6 +70,7 @@ def clean_config(monkeypatch: pytest.MonkeyPatch) -> None:
         "OLLAMA_MODEL",
         "CLAUDE_CODE_MODEL",
         "CODEX_MODEL",
+        "CODEX_REASONING_EFFORT",
         "GEMINI_MODEL",
         "FORENSIA_EXECUTOR_TIMEOUT",
     ):
@@ -544,17 +547,83 @@ def test_no_api_key_strings_anywhere_in_backend() -> None:
 # executor_models — selector de modelos del composer (por proveedor)
 # --------------------------------------------------------------------------- #
 def test_executor_models_cloud_is_editable_with_suggestions_and_custom() -> None:
-    """El operador elige el modelo del CLI cloud (--model); Agentopsy no puede
-    ENUMERAR el catálogo sin API key (SECURITY 7), así que ofrece atajos + texto
-    libre y lo dice en la nota."""
-    for cid in ("claude-code", "codex", "gemini"):
+    """El operador elige el modelo del CLI cloud (--model); para Claude y Gemini
+    Agentopsy no puede ENUMERAR el catálogo sin API key (SECURITY 7), así que
+    ofrece atajos + texto libre y lo dice en la nota. Codex NO entra aquí: su
+    propio CLI cachea el catálogo con la sesión OAuth (ver más abajo)."""
+    for cid in ("claude-code", "gemini"):
         res = executor_models(cid)
         assert res["editable"] is True
         assert res["allow_custom"] is True
         assert isinstance(res["models"], list)
         assert isinstance(res["note"], str) and "API" in res["note"]
+        # Sin fuente real de datos ricos no se inventa ninguna (RULE 2).
+        assert res["model_details"] == []
+        assert res["reasoning"] is None
     # Claude documenta alias estables; se ofrecen como sugerencias.
     assert "opus" in executor_models("claude-code")["models"]
+
+
+def test_executor_models_codex_lists_the_cli_catalog(tmp_path: Path, monkeypatch) -> None:
+    """Codex enumera de verdad: el catálogo sale del caché que el PROPIO CLI
+    escribe en CODEX_HOME con la sesión del operador (sin API key). Se filtran
+    los modelos internos (`visibility != list`) y viajan los niveles de
+    razonamiento que cada modelo declara."""
+    (tmp_path / "models_cache.json").write_text(
+        json.dumps({
+            "models": [
+                {
+                    "slug": "gpt-5.6-sol",
+                    "display_name": "GPT-5.6-Sol",
+                    "description": "Frontier",
+                    "visibility": "list",
+                    "default_reasoning_level": "low",
+                    "supported_reasoning_levels": [
+                        {"effort": "low", "description": "rápido"},
+                        {"effort": "ultra", "description": "máximo"},
+                    ],
+                },
+                {  # interno: el CLI lo esconde, Agentopsy tampoco lo ofrece
+                    "slug": "codex-auto-review",
+                    "visibility": "hide",
+                    "supported_reasoning_levels": [{"effort": "high", "description": ""}],
+                },
+            ]
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+
+    res = executor_models("codex")
+    assert res["models"] == ["gpt-5.6-sol"]
+    assert res["note"] is None
+    assert res["allow_custom"] is True  # el operador siempre puede escribirlo
+    assert res["model_details"] == [{
+        "id": "gpt-5.6-sol",
+        "label": "GPT-5.6-Sol",
+        "description": "Frontier",
+        "default_effort": "low",
+        "efforts": [
+            {"id": "low", "description": "rápido"},
+            {"id": "ultra", "description": "máximo"},
+        ],
+    }]
+    assert res["reasoning"] == {
+        "config_key": REASONING_CONFIG_KEY["codex"],
+        "note": res["reasoning"]["note"],
+    }
+
+
+def test_executor_models_codex_degrades_without_catalog(tmp_path: Path, monkeypatch) -> None:
+    """Sin caché no hay lista, y la razón viaja en `note`: nunca una lista de
+    respaldo escrita a mano (RULE 2)."""
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "vacio"))
+    res = executor_models("codex")
+    assert res["models"] == []
+    assert res["model_details"] == []
+    assert "todavía no ha cacheado" in str(res["note"])
+    # El selector de potencia sigue existiendo: el ejecutor SÍ soporta nivel.
+    assert res["reasoning"] is not None
 
 
 def test_executor_models_ollama_lists_installed(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -620,6 +689,55 @@ def test_cloud_build_argv_omits_model_when_none() -> None:
     assert "--model" not in codex._build_argv("hi", None)
 
 
+@pytest.mark.parametrize("bad", ["ULTRA", "ultra high", "-c", "x\"", "", "a" * 17])
+def test_validate_reasoning_effort_rejects_malformed_levels(bad: str) -> None:
+    """El nivel acaba dentro de un elemento de argv que el CLI parsea como TOML:
+    solo minúsculas, para que no pueda cerrar la cadena ni colar otra clave
+    (SECURITY INVARIANT 5)."""
+    with pytest.raises(ExecutorError, match="nivel de razonamiento inválido"):
+        validate_reasoning_effort(bad)
+
+
+def test_codex_argv_carries_the_reasoning_effort() -> None:
+    """La «potencia» no tiene flag propio: viaja como override de configuración
+    con el valor ENTRECOMILLADO (verificado contra codex-cli 0.146.0, que
+    imprime `reasoning effort: ultra` en la cabecera del run)."""
+    codex = CodexExecutor()
+    codex._last_message_path = "/tmp/x.md"
+    codex._reasoning_effort = "ultra"
+    argv = codex._build_argv("hi", "gpt-5.6-sol")
+    assert argv[argv.index("-c") + 1] == 'model_reasoning_effort="ultra"'
+    assert argv[-1] == "hi"
+    # Sin nivel elegido no se sobreescribe nada: manda el CLI (RULE 2).
+    codex._reasoning_effort = None
+    assert "-c" not in codex._build_argv("hi", "gpt-5.6-sol")
+
+
+def test_codex_rejects_an_effort_the_model_cannot_take(tmp_path: Path, monkeypatch) -> None:
+    """Un par (modelo, nivel) que el catálogo declara imposible se corta ANTES de
+    lanzar el proceso: si no, sale el turno, viaja el prompt entero y vuelve un
+    400 `unsupported_value` (verificado en vivo con gpt-5.5 + ultra)."""
+    (tmp_path / "models_cache.json").write_text(
+        json.dumps({"models": [{
+            "slug": "gpt-5.5",
+            "visibility": "list",
+            "supported_reasoning_levels": [
+                {"effort": "high", "description": ""},
+                {"effort": "xhigh", "description": ""},
+            ],
+        }]}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    codex = CodexExecutor()
+    with pytest.raises(ExecutorError, match="no admite el nivel"):
+        codex.run("hola", {"model": "gpt-5.5", "reasoning_effort": "ultra"})
+    # Modelo fuera del catálogo: no se sabe, así que no se decide aquí. Llega a
+    # la puerta de disponibilidad (el CLI no está instalado en el test).
+    with pytest.raises(ExecutorError, match="no está en el PATH|sesión iniciada"):
+        codex.run("hola", {"model": "modelo-que-no-esta", "reasoning_effort": "ultra"})
+
+
 def test_claude_argv_strips_the_cli_harness() -> None:
     """Fase 4 — el arnés de Claude Code no viaja: sin tools nativas (el CLI no
     puede fabricar turnos `tool_use`), sin settings de usuario/proyecto (ningún
@@ -672,6 +790,40 @@ def test_cloud_model_key_rejects_flag_injection(client: TestClient, clean_config
     r = _set_config(client, "CODEX_MODEL", "--dangerously-skip-permissions")
     assert r.status_code == 422
     assert "id de modelo inválido" in r.json()["detail"]
+
+
+def test_reasoning_effort_key_set_unset_and_validated(
+    client: TestClient, clean_config: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """La potencia se persiste como una clave más, se limpia con vacío (vuelve al
+    nivel del CLI) y se valida contra el catálogo QUE CACHEÓ EL CLI, no contra
+    una lista escrita en Agentopsy (RULE 2)."""
+    (tmp_path / "models_cache.json").write_text(
+        json.dumps({"models": [{
+            "slug": "gpt-5.6-sol",
+            "visibility": "list",
+            "supported_reasoning_levels": [
+                {"effort": "low", "description": ""},
+                {"effort": "ultra", "description": ""},
+            ],
+        }]}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+
+    r = _set_config(client, "CODEX_REASONING_EFFORT", "ultra")
+    assert r.status_code == 200 and r.json()["preview"] == "ultra"
+    assert config.get("CODEX_REASONING_EFFORT") == "ultra"
+
+    # Forma inválida: cortada por la puerta de argv (SECURITY 5).
+    assert _set_config(client, "CODEX_REASONING_EFFORT", "-c").status_code == 422
+    # Forma válida pero ausente del catálogo del CLI: 422 nombrando los reales.
+    r = _set_config(client, "CODEX_REASONING_EFFORT", "turbo")
+    assert r.status_code == 422 and "low, ultra" in r.json()["detail"]
+
+    r = _set_config(client, "CODEX_REASONING_EFFORT", "")
+    assert r.status_code == 200 and r.json()["set"] is False
+    assert config.get("CODEX_REASONING_EFFORT") is None
 
 
 def test_models_endpoint_unknown_id_is_400(client: TestClient) -> None:

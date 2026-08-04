@@ -336,6 +336,14 @@ const MODEL_CONFIG_KEY: Record<ExecutorId, string> = {
   ollama: "OLLAMA_MODEL",
 };
 
+// Config key que persiste la POTENCIA (nivel de razonamiento) por proveedor
+// (espejo de backend/forensia/executors/__init__.py REASONING_CONFIG_KEY). Solo
+// aparece el ejecutor cuyo nivel se ha verificado contra su binario real; un
+// proveedor ausente no lleva nivel y lo decide su CLI (RULE 2).
+const REASONING_CONFIG_KEY: Partial<Record<ExecutorId, string>> = {
+  codex: "CODEX_REASONING_EFFORT",
+};
+
 interface ChatPageProps {
   caps: Capabilities | null;
   activeCase?: Case | null;
@@ -367,6 +375,9 @@ export function ChatPage({
   const [openMenu, setOpenMenu] = useState<null | "provider" | "model">(null);
   const [loginExecutor, setLoginExecutor] = useState<ExecutorId | null>(null);
   const [modelByProvider, setModelByProvider] = useState<Partial<Record<ExecutorId, string>>>({});
+  // Potencia (nivel de razonamiento) elegida, por proveedor. Solo la tienen los
+  // que declaran clave en el backend; el resto ni pinta el selector.
+  const [effortByProvider, setEffortByProvider] = useState<Partial<Record<ExecutorId, string>>>({});
   const [modelDraft, setModelDraft] = useState<string>("");
   const [modelSaving, setModelSaving] = useState(false);
   const [providerModels, setProviderModels] = useState<ExecutorModels | null>(null);
@@ -391,6 +402,14 @@ export function ChatPage({
           if (mdl?.set && mdl.preview) restored[id] = mdl.preview;
         });
         setModelByProvider(restored);
+        // Y la última potencia elegida de los que la tienen.
+        const efforts: Partial<Record<ExecutorId, string>> = {};
+        (Object.keys(REASONING_CONFIG_KEY) as ExecutorId[]).forEach((id) => {
+          const key = REASONING_CONFIG_KEY[id];
+          const eff = key ? snap.keys[key] : undefined;
+          if (eff?.set && eff.preview) efforts[id] = eff.preview;
+        });
+        setEffortByProvider(efforts);
       })
       .catch(() => {
         /* sin config aún, el operador elige a mano */
@@ -452,6 +471,30 @@ export function ChatPage({
       setOpenMenu(null);
     } catch {
       /* el backend degrada (id inválido, etc.); se deja el menú abierto */
+    } finally {
+      setModelSaving(false);
+    }
+  };
+
+  // Persiste la POTENCIA del proveedor actual. Vacío = la que tenga configurada
+  // su CLI. El menú NO se cierra: la potencia se suele ajustar justo después de
+  // cambiar de modelo, y cerrar obligaría a reabrir para verlo aplicado.
+  const saveEffort = async (value: string) => {
+    if (!executor) return;
+    const key = REASONING_CONFIG_KEY[executor];
+    if (!key) return;
+    const v = value.trim();
+    setModelSaving(true);
+    try {
+      await api.config.set(key, v);
+      setEffortByProvider((prev) => {
+        const next = { ...prev };
+        if (v) next[executor] = v;
+        else delete next[executor];
+        return next;
+      });
+    } catch {
+      /* el backend degrada (nivel desconocido); se deja el menú abierto */
     } finally {
       setModelSaving(false);
     }
@@ -805,6 +848,14 @@ export function ChatPage({
   const modelLabel = !executor
     ? ""
     : effectiveModel || (executor === "ollama" ? "modelo" : "por defecto");
+  // Potencia: los niveles los declara el catálogo POR MODELO, así que sin
+  // modelo elegido no hay lista que ofrecer (no existe una global correcta).
+  const reasoning = providerModels?.reasoning ?? null;
+  const efforts =
+    providerModels?.model_details?.find((d) => d.id === effectiveModel)?.efforts ?? [];
+  const configuredEffort = executor ? effortByProvider[executor] ?? "" : "";
+  const effortMismatch =
+    configuredEffort !== "" && efforts.length > 0 && !efforts.some((e) => e.id === configuredEffort);
 
   return (
     <div className="chat-column">
@@ -1070,6 +1121,51 @@ export function ChatPage({
                       <div className="composer-popover-note">
                         Se guarda como <code>{executor ? MODEL_CONFIG_KEY[executor] : ""}</code>.
                       </div>
+
+                      {reasoning && (
+                        <>
+                          <div className="composer-popover-title">Potencia</div>
+                          {efforts.length === 0 ? (
+                            <div className="composer-popover-note">
+                              {effectiveModel
+                                ? `El catálogo no declara niveles para ${effectiveModel}.`
+                                : "Elige antes un modelo: los niveles dependen de él."}
+                            </div>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                className={`composer-popover-item${!configuredEffort ? " is-active" : ""}`}
+                                disabled={modelSaving}
+                                onClick={() => void saveEffort("")}
+                              >
+                                <span>Por defecto del CLI</span>
+                                {!configuredEffort && <span aria-hidden>✓</span>}
+                              </button>
+                              {efforts.map((eff) => (
+                                <button
+                                  key={eff.id}
+                                  type="button"
+                                  className={`composer-popover-item${eff.id === configuredEffort ? " is-active" : ""}`}
+                                  title={eff.description}
+                                  disabled={modelSaving}
+                                  onClick={() => void saveEffort(eff.id)}
+                                >
+                                  <span>{eff.id}</span>
+                                  {eff.id === configuredEffort && <span aria-hidden>✓</span>}
+                                </button>
+                              ))}
+                              {effortMismatch && (
+                                <div className="composer-popover-note">
+                                  {effectiveModel} no admite «{configuredEffort}»: el turno
+                                  fallaría. Elige uno de los de arriba.
+                                </div>
+                              )}
+                            </>
+                          )}
+                          <div className="composer-popover-note">{reasoning.note}</div>
+                        </>
+                      )}
                     </>
                   )}
                 </div>

@@ -18,6 +18,11 @@ logging in inside the container). Editable keys:
   chose for each cloud CLI, passed as ``--model``. Optional: unset (empty) means
   the CLI's own default (RULE 2 — Agentopsy never invents one). Validated with the
   same id gate as the executor layer (SECURITY INVARIANT 5).
+- ``CODEX_REASONING_EFFORT`` — reasoning level («potencia») for the Codex CLI,
+  passed as ``-c model_reasoning_effort``. Optional: unset means the level the
+  CLI has configured. Validated for FORM always, and against the catalog the CLI
+  itself cached when that catalog is readable — never against a list written
+  here (RULE 2).
 - ``FORENSIA_EXECUTOR_TIMEOUT`` — seconds one executor run may take before it
   is aborted (and audited) as a timeout; see ``forensia.executors.base``.
 """
@@ -32,7 +37,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from forensia.config import CONFIG_DIR, CONFIG_FILE, config
-from forensia.executors import EXECUTOR_IDS, ExecutorError, executor_models, validate_model_id
+from forensia.executors import (
+    EXECUTOR_IDS,
+    REASONING_CONFIG_KEY,
+    ExecutorError,
+    executor_models,
+    read_model_catalog,
+    validate_model_id,
+    validate_reasoning_effort,
+)
 from forensia.security import require_token
 
 router = APIRouter()
@@ -41,18 +54,23 @@ router = APIRouter()
 # Per-cloud-CLI model keys — validated strictly (they become a --model argv flag).
 _CLOUD_MODEL_KEYS = ("CLAUDE_CODE_MODEL", "CODEX_MODEL", "GEMINI_MODEL")
 
+# Reasoning-level keys — same treatment as the model keys (they become argv too).
+_REASONING_KEYS = tuple(REASONING_CONFIG_KEY.values())
+
 _EDITABLE_KEYS = (
     "DEFAULT_EXECUTOR",
     "OLLAMA_HOST",
     "OLLAMA_MODEL",
     *_CLOUD_MODEL_KEYS,
+    *_REASONING_KEYS,
     "FORENSIA_EXECUTOR_TIMEOUT",
 )
 
 # Keys the operator may CLEAR (empty value = unset). The model keys are optional:
 # clearing a cloud model reverts to the CLI's own default; clearing OLLAMA_MODEL
-# reverts to the agent package's declared model (RULE 2 — no invented value).
-_UNSETTABLE_KEYS = ("OLLAMA_MODEL", *_CLOUD_MODEL_KEYS)
+# reverts to the agent package's declared model; clearing a reasoning level
+# reverts to the one the CLI has configured (RULE 2 — no invented value).
+_UNSETTABLE_KEYS = ("OLLAMA_MODEL", *_CLOUD_MODEL_KEYS, *_REASONING_KEYS)
 
 _HTTP_URL_RE = re.compile(r"^https?://[^\s]+$")
 
@@ -113,6 +131,25 @@ def set_config(req: SetConfigRequest) -> dict[str, Any]:
             validate_model_id(value)
         except ExecutorError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+    elif key in _REASONING_KEYS:
+        # Form first (it becomes an argv token), then the catalog the CLI itself
+        # cached — the only list Agentopsy trusts. An unreadable catalog does NOT
+        # block the operator: the run gate and the CLI still speak (RULE 2 — the
+        # answer to "I can't enumerate" is never a hand-written enum).
+        try:
+            validate_reasoning_effort(value)
+        except ExecutorError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        catalog, _note = read_model_catalog()
+        known = {eff for entry in catalog for eff, _desc in entry.efforts}
+        if known and value not in known:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"nivel de razonamiento {value!r} desconocido para el catálogo "
+                    f"de Codex. Niveles declarados: {', '.join(sorted(known))}."
+                ),
+            )
     elif key == "FORENSIA_EXECUTOR_TIMEOUT":
         # Se valida aquí Y en resolve_timeout (un valor corrupto en config.json
         # o en el entorno también falla alto — RULE 2).

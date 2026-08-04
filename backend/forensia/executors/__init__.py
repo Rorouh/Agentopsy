@@ -17,7 +17,12 @@ from forensia.executors.base import (
     validate_model_id,
 )
 from forensia.executors.claude_code import ClaudeCodeExecutor
-from forensia.executors.codex import CodexExecutor
+from forensia.executors.codex import (
+    CodexExecutor,
+    read_model_catalog,
+    supported_efforts,
+    validate_reasoning_effort,
+)
 from forensia.executors.gemini import GeminiExecutor
 from forensia.executors.ollama import OllamaExecutor
 
@@ -34,6 +39,16 @@ MODEL_CONFIG_KEY: dict[str, str] = {
     "codex": "CODEX_MODEL",
     "gemini": "GEMINI_MODEL",
     "ollama": "OLLAMA_MODEL",
+}
+
+# Config key that persists the operator-selected REASONING LEVEL — la «potencia»
+# del modelo (2026-07-30). Solo Codex: es el único CLI cuyo nivel de
+# razonamiento se ha verificado contra el binario real (`-c
+# model_reasoning_effort=…`, codex-cli 0.146.0). No se declara una clave para
+# los demás «por simetría»: sería exactamente la suposición que prohíbe RULE 2.
+# Un ejecutor ausente de este mapa no lleva nivel y su CLI decide.
+REASONING_CONFIG_KEY: dict[str, str] = {
+    "codex": "CODEX_REASONING_EFFORT",
 }
 
 _FACTORIES = {
@@ -65,31 +80,54 @@ def executor_models(executor_id: str) -> dict[str, object]:
     - ``ollama`` returns the REAL installed models (``/api/tags``); if the host
       is down the reason travels in ``note`` (empty list) so the UI degrades
       explicitly.
-    - the cloud CLIs return only the documented shortcut aliases as SUGGESTIONS
-      (``allow_custom`` is always true — the operator can type any id the CLI
-      accepts). Agentopsy cannot ENUMERATE their catalogs: that would need an API
-      key (SECURITY INVARIANT 7). Leaving the model empty uses the CLI's own
-      default (RULE 2: Agentopsy never invents one).
+    - ``codex`` returns the REAL catalog too, plus the reasoning levels each
+      model admits: the CLI itself caches it in ``CODEX_HOME`` using the
+      operator's OAuth session, so enumerating needs no API key (SECURITY
+      INVARIANT 7). See ``forensia.executors.codex.read_model_catalog``.
+    - the other cloud CLIs return only the documented shortcut aliases as
+      SUGGESTIONS (``allow_custom`` is always true — the operator can type any id
+      the CLI accepts). Agentopsy cannot ENUMERATE their catalogs: that would
+      need an API key. Leaving the model empty uses the CLI's own default
+      (RULE 2: Agentopsy never invents one).
+
+    ``model_details`` (rich per-model data) and ``reasoning`` (the level picker)
+    are EMPTY/``None`` for the executors that have no verified source for them —
+    the UI paints what exists instead of a picker that would guess.
     """
     executor = get_executor(executor_id)  # loud on unknown id
     if isinstance(executor, OllamaExecutor):
         try:
             models = executor.list_models()
-            return {
-                "executor": executor_id,
-                "editable": True,
-                "allow_custom": True,
-                "models": models,
-                "note": None,
-            }
+            note: str | None = None
         except ExecutorError as exc:
-            return {
-                "executor": executor_id,
-                "editable": True,
-                "allow_custom": True,
-                "models": [],
-                "note": str(exc),
-            }
+            models, note = [], str(exc)
+        return {
+            "executor": executor_id,
+            "editable": True,
+            "allow_custom": True,
+            "models": models,
+            "note": note,
+            "model_details": [],
+            "reasoning": None,
+        }
+    if isinstance(executor, CodexExecutor):
+        catalog, catalog_note = read_model_catalog()
+        return {
+            "executor": executor_id,
+            "editable": True,
+            "allow_custom": True,
+            "models": [entry.slug for entry in catalog],
+            "note": catalog_note,
+            "model_details": [entry.as_dict() for entry in catalog],
+            "reasoning": {
+                "config_key": REASONING_CONFIG_KEY["codex"],
+                "note": (
+                    "La potencia se pasa como `-c model_reasoning_effort`. Los "
+                    "niveles dependen del modelo (solo la generación 5.6 llega a "
+                    "«ultra»). Sin elegir manda el nivel configurado en el CLI."
+                ),
+            },
+        }
     return {
         "executor": executor_id,
         "editable": True,
@@ -100,6 +138,8 @@ def executor_models(executor_id: str) -> dict[str, object]:
             "key (SECURITY INVARIANT 7). Escribe el id que aceptes en su CLI, se "
             "pasa como --model; déjalo vacío para usar el modelo por defecto del CLI."
         ),
+        "model_details": [],
+        "reasoning": None,
     }
 
 
@@ -123,6 +163,7 @@ __all__ = [
     "DEFAULT_TIMEOUT_S",
     "EXECUTOR_IDS",
     "MODEL_CONFIG_KEY",
+    "REASONING_CONFIG_KEY",
     "ExecutorAvailability",
     "ExecutorError",
     "ExecutorResult",
@@ -134,6 +175,9 @@ __all__ = [
     "get_executor",
     "executor_models",
     "executors_status",
+    "read_model_catalog",
     "resolve_timeout",
+    "supported_efforts",
     "validate_model_id",
+    "validate_reasoning_effort",
 ]

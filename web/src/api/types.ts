@@ -30,20 +30,50 @@ export interface ExecutorStatus {
   reason: string | null;
 }
 
+// Un nivel de razonamiento («potencia») tal y como lo declara el catálogo del
+// propio CLI. La descripción viene del catálogo, no la escribe Agentopsy.
+export interface ReasoningEffort {
+  id: string;
+  description: string;
+}
+
+// Datos ricos de un modelo, cuando el ejecutor tiene una fuente REAL de la que
+// leerlos (hoy solo Codex, que cachea su catálogo en CODEX_HOME). `efforts` está
+// vacío si ese modelo no declara niveles: entonces no se pinta selector de
+// potencia en vez de inventar uno.
+export interface ExecutorModelDetail {
+  id: string;
+  label: string;
+  description: string;
+  default_effort: string | null;
+  efforts: ReasoningEffort[];
+}
+
+// Selector de potencia de un ejecutor: dónde se persiste y qué contarle al
+// operador. `null` = ese ejecutor no tiene nivel verificado y no se ofrece.
+export interface ExecutorReasoning {
+  config_key: string;
+  note: string;
+}
+
 // Modelos que el selector del composer ofrece para un ejecutor
 // (/api/executors/{id}/models). Todos son `editable`: el operador elige el modelo
 // y Agentopsy lo respeta (Ollama por HTTP; los CLIs cloud como flag --model). La
-// lista difiere: Ollama devuelve los modelos REALES instalados; los CLIs cloud,
-// solo atajos como sugerencia (`allow_custom` siempre true, se puede escribir
-// cualquier id que acepte el CLI). Agentopsy no puede enumerar el catálogo de un
-// CLI cloud sin API key (SECURITY INVARIANT 7); vacío = el modelo por defecto del
-// CLI (RULE 2). El modelo elegido se persiste por proveedor (MODEL_CONFIG_KEY).
+// lista difiere: Ollama devuelve los modelos REALES instalados y Codex también
+// (su CLI cachea el catálogo con la sesión OAuth, sin API key); los demás CLIs
+// cloud, solo atajos como sugerencia (`allow_custom` siempre true, se puede
+// escribir cualquier id que acepte el CLI). Agentopsy no puede enumerar el
+// catálogo de esos sin API key (SECURITY INVARIANT 7); vacío = el modelo por
+// defecto del CLI (RULE 2). Lo elegido se persiste por proveedor
+// (MODEL_CONFIG_KEY, y REASONING_CONFIG_KEY para la potencia).
 export interface ExecutorModels {
   executor: ExecutorId;
   editable: boolean;
   allow_custom: boolean;
   models: string[];
   note: string | null;
+  model_details: ExecutorModelDetail[];
+  reasoning: ExecutorReasoning | null;
 }
 
 // ── Login web de un ejecutor CLI cloud (2026-07-15) ────────────────────────

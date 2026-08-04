@@ -98,13 +98,46 @@ Luego en la UI, **Configuración → Ejecutores/IA**: pon *Ejecutor por defecto*
 si quieres, fija *Modelo de Ollama* (`OLLAMA_MODEL`, p. ej. `qwen2.5:14b`). También puedes
 elegir proveedor y modelo desde el propio chat (menús *Proveedor* / *Modelo* del composer);
 la elección se **recuerda** por proveedor (`DEFAULT_EXECUTOR` + `OLLAMA_MODEL` /
-`CLAUDE_CODE_MODEL` / `CODEX_MODEL` / `GEMINI_MODEL`).
+`CLAUDE_CODE_MODEL` / `CODEX_MODEL` / `GEMINI_MODEL`, y `CODEX_REASONING_EFFORT` para la
+potencia de Codex).
 
 Para los **CLIs cloud** (Claude Code / Codex / Gemini) el modelo se pasa como `--model`. El
 menú *Modelo* ofrece atajos (p. ej. `opus`, `sonnet` para Claude) y admite escribir cualquier
 id que acepte el CLI; *Por defecto del CLI* lo deja sin fijar y manda el modelo por defecto del
-CLI. Agentopsy **no puede enumerar** el catálogo de un CLI cloud sin API key (SECURITY 7): la
-lista son sugerencias, no el catálogo completo. Ollama sí lista los modelos realmente instalados.
+CLI. Agentopsy **no puede enumerar** el catálogo de Claude ni de Gemini sin API key (SECURITY 7):
+esa lista son sugerencias, no el catálogo completo. Ollama sí lista los modelos realmente
+instalados, y **Codex también** (ver abajo).
+
+#### Codex: catálogo real + *potencia* (nivel de razonamiento)
+
+Codex es la excepción a «no se puede enumerar»: **su propio CLI** descarga el catálogo con la
+sesión OAuth del operador y lo cachea en `CODEX_HOME/models_cache.json` (dentro del volumen
+`forensia-cli-auth`), así que Agentopsy lo **lee de ahí** — sin API key, sin lista escrita a
+mano. El menú *Modelo* muestra los modelos reales (`gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.5`…),
+ocultando los internos que el propio catálogo marca `visibility: hide`.
+
+Debajo aparece **Potencia**, el nivel de razonamiento (`CODEX_REASONING_EFFORT`), que viaja como
+`-c model_reasoning_effort="<nivel>"`. Los niveles **dependen del modelo** y salen del mismo
+catálogo: solo la generación 5.6 llega a `ultra`, y `gpt-5.6-luna` se queda en `max`. Por eso el
+selector no aparece hasta que hay un modelo elegido. *Por defecto del CLI* lo deja sin fijar y
+manda el nivel del `config.toml` del volumen.
+
+Importante: **el modelo tope no usa su nivel tope por defecto**. `gpt-5.6-sol` trae
+`default_reasoning_level = low`; si quieres `ultra` hay que pedirlo explícitamente aquí. Un par
+imposible (p. ej. `gpt-5.5` + `ultra`) se corta **antes** de lanzar el turno, con los niveles
+válidos en el error: si saliera, el servidor devolvería un 400 `unsupported_value` y el prompt
+entero se habría pagado para nada.
+
+Si el catálogo aún no está cacheado (CLI recién instalado, ningún turno ejecutado), el menú lo
+dice y deja escribir el id a mano — nunca cae a una lista de respaldo (RULE 2).
+
+```bash
+# Comprobar el catálogo que ve el contenedor
+docker compose exec -T api sh -c 'grep -o "\"slug\":\"[^\"]*\"" /root/.codex/models_cache.json'
+# Ver el nivel aplicado en un turno real (la cabecera imprime `reasoning effort:`)
+docker compose exec -T api codex exec --skip-git-repo-check --sandbox read-only \
+  -m gpt-5.6-sol -c model_reasoning_effort="ultra" -o /tmp/x.md "di solo: ok"
+```
 
 #### Alias (`opus`, `sonnet`) vs id completo — cuidado con la generación
 

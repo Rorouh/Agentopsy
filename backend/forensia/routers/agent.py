@@ -43,7 +43,12 @@ from forensia.cases.manager import (
 )
 from forensia.config import config
 from forensia.evidence import evidence_manager
-from forensia.executors import EXECUTOR_IDS, MODEL_CONFIG_KEY, get_executor
+from forensia.executors import (
+    EXECUTOR_IDS,
+    MODEL_CONFIG_KEY,
+    REASONING_CONFIG_KEY,
+    get_executor,
+)
 from forensia.models.base import ExecutorBackend
 from forensia.security import require_token
 
@@ -165,6 +170,13 @@ def _prepare_run(req: QueryRequest) -> tuple[ForensicAgent, str, list, str | Non
         # Cloud CLI: pass the chosen model as --model. Unset → the CLI's own
         # default (Agentopsy does not override it).
         run_context["model"] = configured_model
+    # Nivel de razonamiento («potencia»), solo para los ejecutores que declaran
+    # clave. Ausente → el que tenga configurado su CLI (RULE 2).
+    reasoning_key = REASONING_CONFIG_KEY.get(executor.id)
+    if reasoning_key:
+        configured_effort = config.get(reasoning_key)
+        if configured_effort:
+            run_context["reasoning_effort"] = configured_effort
 
     model = ExecutorBackend(executor, run_context=run_context)
     agent = ForensicAgent(package=pkg, model=model, evidence=evidence_manager, audit=audit)

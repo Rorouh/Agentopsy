@@ -750,6 +750,7 @@ def write_report(
     audit: Any,
     perito: dict[str, Any] | None = None,
     model: str | None = None,
+    reasoning_effort: str | None = None,
     material: dict[str, Any] | None = None,
     material_fn: Callable[..., dict[str, Any]] | None = None,
     on_progress: Callable[[dict[str, Any]], None] | None = None,
@@ -798,6 +799,12 @@ def write_report(
     }
     if model:
         context["model"] = model
+    if reasoning_effort:
+        # La «potencia» elegida por el operador. El informe es la respuesta más
+        # larga y la más cara de rehacer: si el perito ha pedido razonar alto,
+        # se razona alto aquí también (el ejecutor que no la soporte la ignora
+        # porque su contexto no la lleva).
+        context["reasoning_effort"] = reasoning_effort
 
     permitidos = _referentes(json.dumps(mat, ensure_ascii=False, default=str))
     argvs = audited_argvs(mat.get("trabajos") or [])

@@ -1753,6 +1753,9 @@ html, body, #root {
 }
 .engine-note { font-size: 15px; line-height: 1.55; color: var(--ink-3); }
 .engine-models { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Separa «Potencia» del bloque de modelo: la fila del motor ya tiene gap, así
+   que basta un poco de aire arriba para que se lea como otro apartado. */
+.engine-sublabel { margin-top: 4px; }
 .engine-custom { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; width: 100%; }
 
 .toolkit-rows { display: flex; flex-direction: column; }

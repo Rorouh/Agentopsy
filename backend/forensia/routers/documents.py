@@ -30,7 +30,12 @@ from forensia.agent.jobs import job_registry
 from forensia.audit import AuditLog
 from forensia.cases import case_manager
 from forensia.config import config
-from forensia.executors import EXECUTOR_IDS, MODEL_CONFIG_KEY, get_executor
+from forensia.executors import (
+    EXECUTOR_IDS,
+    MODEL_CONFIG_KEY,
+    REASONING_CONFIG_KEY,
+    get_executor,
+)
 from forensia.findings.store import finding_store
 from forensia.reports import document_store
 from forensia.reports.pdf import render_pdf
@@ -166,6 +171,9 @@ def finalize_investigation(
     # Modelo elegido por el operador para ese ejecutor (Configuración), igual que
     # en /api/agent/query — nunca uno inventado aquí (RULE 2).
     model = config.get(MODEL_CONFIG_KEY[executor.id])
+    # Nivel de razonamiento, solo si ese ejecutor declara clave (hoy, Codex).
+    reasoning_key = REASONING_CONFIG_KEY.get(executor.id)
+    reasoning_effort = config.get(reasoning_key) if reasoning_key else None
     perito = req.model_dump(exclude_none=True, exclude={"executor"})
 
     # ``should_cancel`` lo exige la firma del registro de jobs, pero aquí no se
@@ -182,6 +190,7 @@ def finalize_investigation(
             audit=audit,
             perito=perito or None,
             model=model,
+            reasoning_effort=reasoning_effort,
             on_progress=emit,
         )
         doc = document_store.create(case_id, data)

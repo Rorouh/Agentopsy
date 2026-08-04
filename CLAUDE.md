@@ -603,6 +603,31 @@ exhausted its 21 iterations without ever emitting a `final`). Pinned by
 `test_claude_argv_strips_the_cli_harness` and
 `test_budget_nudges_demand_a_final_before_exhaustion`.
 
+**Selector de modelo y de potencia de Codex (2026-07-30)**: Codex deja de ser
+un CLI cuyo catálogo Agentopsy «no puede enumerar». Su propio binario descarga
+la lista con la sesión OAuth del operador y la cachea en
+`CODEX_HOME/models_cache.json` (el volumen `forensia-cli-auth`), así que
+`forensia.executors.codex.read_model_catalog` la LEE de ahí — sin API key
+(SECURITY INVARIANT 7) y sin lista escrita a mano: si el fichero falta o cambia
+de forma, la lista queda VACÍA con la razón en `note` y el operador escribe el
+id, nunca una lista de respaldo (RULE 2). Con el catálogo llega el segundo eje,
+la **potencia**: `CODEX_REASONING_EFFORT` (`REASONING_CONFIG_KEY`, declarado
+SOLO para el ejecutor cuyo nivel se ha verificado contra el binario real) viaja
+como `-c model_reasoning_effort="<nivel>"` — no hay flag propio; verificado
+contra codex-cli 0.146.0, que imprime `reasoning effort: ultra` en la cabecera
+del run. Los niveles **dependen del modelo** (solo la generación 5.6 llega a
+`ultra`), así que el selector se pinta por modelo y un par imposible se corta
+ANTES de lanzar el proceso: `gpt-5.5` + `ultra` devolvía un 400
+`unsupported_value` del servidor con el prompt entero ya pagado. Importante
+porque el default engaña: `gpt-5.6-sol` declara `default_reasoning_level = low`,
+o sea que el mejor modelo NO razona al máximo salvo que se le pida. Ambos ejes
+se eligen en Configuración → Ejecutores/IA y en el menú *Modelo* del composer, y
+se aplican tanto al chat como a la redacción del informe (`write_report`).
+El CLI de la imagen subió a **0.146.0** (`CODEX_VERSION`) porque el 0.142.5
+pinneado rechazaba `gpt-5.6-sol` con «requires a newer version of Codex»: el
+`config.toml` del host —que el entrypoint seedea ENTERO, no solo las
+credenciales— traía ese modelo al contenedor.
+
 **Informe pericial redactado por el modelo (2026-07-30,
 `docs/diseno/informes-2026-07/redaccion-integra.md`)**: Agentopsy stopped
 filling in a template. The deterministic engine is GONE —

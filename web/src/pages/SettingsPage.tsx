@@ -184,6 +184,22 @@ export function SettingsPage({ caps, version, onCapsRefresh }: SettingsPageProps
                       const modelLabel = status.available
                         ? configured || "por defecto"
                         : "conectar →";
+                      // Potencia (nivel de razonamiento): solo la ofrecen los
+                      // ejecutores que declaran clave, y los niveles dependen
+                      // del MODELO elegido: no hay una lista global válida.
+                      const reasoning = providerModels?.reasoning ?? null;
+                      const efforts =
+                        providerModels?.model_details?.find((d) => d.id === configured)?.efforts ??
+                        [];
+                      const configuredEffort = reasoning
+                        ? (config?.keys[reasoning.config_key]?.preview ?? "")
+                        : "";
+                      // Guardado un nivel que el modelo actual no admite: se
+                      // avisa en vez de corregirlo por detrás (RULE 2).
+                      const effortMismatch =
+                        configuredEffort !== "" &&
+                        efforts.length > 0 &&
+                        !efforts.some((e) => e.id === configuredEffort);
                       return (
                         <div key={id}>
                           <button
@@ -294,6 +310,56 @@ export function SettingsPage({ caps, version, onCapsRefresh }: SettingsPageProps
                                         </span>
                                       )}
                                     </div>
+                                  )}
+
+                                  {reasoning && (
+                                    <>
+                                      <div className="eyebrow engine-sublabel">Potencia</div>
+                                      {efforts.length === 0 ? (
+                                        <div className="engine-note">
+                                          {configured
+                                            ? `El catálogo no declara niveles de razonamiento para ${configured}.`
+                                            : "Elige antes un modelo: los niveles disponibles dependen de él."}
+                                        </div>
+                                      ) : (
+                                        <>
+                                          <div className="engine-models">
+                                            <button
+                                              type="button"
+                                              className={`chip-option${!configuredEffort ? " is-on" : ""}`}
+                                              disabled={savingKey === reasoning.config_key}
+                                              onClick={() =>
+                                                void saveKey(reasoning.config_key, "")
+                                              }
+                                            >
+                                              Por defecto del CLI
+                                            </button>
+                                            {efforts.map((eff) => (
+                                              <button
+                                                key={eff.id}
+                                                type="button"
+                                                className={`chip-option${eff.id === configuredEffort ? " is-on" : ""}`}
+                                                title={eff.description}
+                                                disabled={savingKey === reasoning.config_key}
+                                                onClick={() =>
+                                                  void saveKey(reasoning.config_key, eff.id)
+                                                }
+                                              >
+                                                {eff.id}
+                                              </button>
+                                            ))}
+                                          </div>
+                                          {effortMismatch && (
+                                            <div className="engine-note">
+                                              El nivel guardado (<code>{configuredEffort}</code>) no
+                                              lo admite {configured}: el turno fallaría. Elige uno
+                                              de los de arriba.
+                                            </div>
+                                          )}
+                                        </>
+                                      )}
+                                      <div className="engine-note">{reasoning.note}</div>
+                                    </>
                                   )}
                                 </>
                               )}
