@@ -38,9 +38,8 @@ contiene los Dockerfiles de los servicios (`api/`, `web/`,
 > **En Linux usa el Docker Engine nativo** (contexto `default`), no Docker
 > Desktop. Docker Desktop —también en Linux— ejecuta los contenedores dentro de
 > una VM y los bind-mounts pasan por su capa de compartición de ficheros: eso
-> rompe el invariante de soundness para montar evidencia (ver
-> `docs/soundness-forense.md` del repo raíz) y además su file-sharing no cubre
-> rutas fuera de `$HOME` (p. ej. `/mnt`). Si tienes ambos instalados:
+> rompe el invariante de soundness para montar evidencia y además su file-sharing
+> no cubre rutas fuera de `$HOME` (p. ej. `/mnt`). Si tienes ambos instalados:
 > `docker context use default` o prefija los comandos con
 > `docker --context default …`.
 
@@ -57,8 +56,8 @@ Forensia-AI/                        # raíz del repo
     ├── docker/forensic-toolkit/
     │   ├── Dockerfile              # multi-stage: base + windows + unix
     │   ├── requirements-windows.txt# parsers Python de artefactos Windows
+    │   ├── tool-binaries.json      # binarios y versiones fijadas del maletín
     │   └── .dockerignore
-    └── docs/CATALOGO_MALETIN.md    # catálogo de herramientas y comandos
 ```
 
 ## Construir y levantar (un solo comando)
@@ -119,7 +118,7 @@ docker compose up -d
    docker compose exec toolkit-unix    log2timeline.py /cases/out.plaso /evidence/linux.raw
    ```
 
-Catálogo completo de herramientas y ejemplos: [`docs/CATALOGO_MALETIN.md`](docs/CATALOGO_MALETIN.md).
+Catálogo completo de herramientas de cada maletín: `docker compose exec toolkit-unix forensia-info` (o `toolkit-windows`); las versiones fijadas viven en [`docker/forensic-toolkit/tool-binaries.json`](docker/forensic-toolkit/tool-binaries.json).
 
 ## Cómo lo consulta la IA (tool-calling)
 
@@ -128,8 +127,8 @@ El maletín queda **habilitado para que el `api` lo consulte** así:
 - Cada contenedor corre el **exec-agent** (`python3 /opt/forensia/exec_agent.py`) con
   todas las herramientas en el `PATH`, las evidencias en `/evidence:ro` y las salidas en
   `/cases`. El exec-agent es un HTTP mínimo en la red interna del compose (`:8666`, **sin
-  puerto publicado**) — es el canal api→maletín §B, sin socket de Docker. Ver
-  [`docs/operacion/exec-agent.md`](../docs/operacion/exec-agent.md).
+  puerto publicado**) — es el canal api→maletín, sin socket de Docker. El código
+  del agente vive en [`docker/forensic-toolkit/exec_agent.py`](docker/forensic-toolkit/exec_agent.py).
 - El `api` consulta presencia de tools (`GET /health`, `POST /which`) por HTTP a
   `http://toolkit-unix:8666` / `http://toolkit-windows:8666` — es lo que reporta
   `capabilities` — y ejecuta las tools del agente por el mismo canal (`POST /exec`):
@@ -175,6 +174,6 @@ montada, comenta `cap_add`, `devices` y `security_opt` en el compose.
 
 ## Versiones
 
-Ver tabla de versiones fijadas en [`docs/CATALOGO_MALETIN.md`](docs/CATALOGO_MALETIN.md).
+Las versiones fijadas de cada binario viven en [`docker/forensic-toolkit/tool-binaries.json`](docker/forensic-toolkit/tool-binaries.json) y en los `ARG *_SHA256` del `Dockerfile`.
 Los binarios descargados (hayabusa, chainsaw) se verifican por SHA-256 durante
 el build.

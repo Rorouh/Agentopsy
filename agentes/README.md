@@ -42,18 +42,3 @@ sus tools internas. La correspondencia:
 | Hallazgos con evidencia | `findings.jsonl` + audit encadenado — `record_finding` |
 | `output/NN_tool/__raw` + `_run.md` | artefactos del caso (cada corrida guarda su salida entera + hash + el argv literal en el audit) — se releen con `leer_artefacto` |
 | `entregables/` (informe) | subsistema de documentos (`documents/`) |
-
-## `referencia/` — material de solo lectura (no lo carga el agente)
-
-Es el **banco de pruebas destilado** del que sale el método de `agent.md`, para que un
-humano vea de dónde viene y compare:
-
-- [`referencia/FLUJO-destilado.md`](referencia/FLUJO-destilado.md) — la receta completa.
-- [`referencia/ejemplo-murcielago/`](referencia/ejemplo-murcielago/) — un caso resuelto
-  de punta a punta (FICHA, REGISTRO, PETICIONES, salidas por herramienta e informe).
-  Contiene solo las salidas de texto ligeras; los binarios y derivados grandes (imagen
-  raw, hives, USN de 41 MB) se omitieron a propósito — no van al repo.
-- [`referencia/PLANTILLAS/`](referencia/PLANTILLAS/) — los documentos en blanco del
-  esquema original.
-
-Nada de `referencia/` se carga en runtime ni afecta al comportamiento del agente.

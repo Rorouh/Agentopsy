@@ -1,16 +1,1 @@
-{
-  "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 tools/graph/graph-refresh.py 2>/dev/null || python tools/graph/graph-refresh.py 2>/dev/null || true",
-            "statusMessage": "Actualizando el grafo del repo…",
-            "timeout": 300
-          }
-        ]
-      }
-    ]
-  }
-}
+{}

@@ -1,8 +1,0 @@
-# Inodes clave para tsk_icat (de la pasada recursiva, run ddee03ec)
-# formato TSK: <tipo> <inode>: <nombre>
-r/r 13552:  config/config.inc.php   ← credenciales DVWA (root/p@ssw0rd, app/vulnerables)
-r/r 13553:  config.inc.php.dist
-r/r  1030:  main.sh                 ← entrypoint del contenedor
-r/r   375:  /etc/passwd
-r/r   726:  /etc/shadow
-# (listado completo de 14.234 entradas en el ArtifactRun ddee03ec/stdout.txt)

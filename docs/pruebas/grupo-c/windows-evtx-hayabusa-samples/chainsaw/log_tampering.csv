@@ -1,5 +1,0 @@
-timestamp,detections,path,Event ID,Record ID,Computer,User
-2021-04-29T07:55:53.423761+00:00,Security Audit Logs Cleared,/evidence/windows-evtx-hayabusa-samples/CredentialAccess/T1558.004_StealOrForgeKerberosTicketsAS-REP-Roasting_Security.evtx,1102,37860,DC-Server-1.labcorp.local,Administrator
-2021-04-29T09:23:54.244226+00:00,Security Audit Logs Cleared,/evidence/windows-evtx-hayabusa-samples/CredentialAccess/T1558.003_StealOrForgeKerberosTicketsKerberoasting_Security.evtx,1102,38677,DC-Server-1.labcorp.local,Administrator
-2022-02-23T09:44:15.214460+00:00,Security Audit Logs Cleared,/evidence/windows-evtx-hayabusa-samples/LateralMovement/T1210_Zerologon_WindowsDefaultLogging.evtx,1102,12136,dc1.test.local,Administrator
-2022-02-23T10:10:03.602365+00:00,Security Audit Logs Cleared,/evidence/windows-evtx-hayabusa-samples/LateralMovement/T1210_Zerologon_WindowsExtraLogging.evtx,1102,12551,dc1.test.local,Administrator

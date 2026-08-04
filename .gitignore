@@ -18,33 +18,10 @@
 *_findings.json
 /results/investigations/
 
-# --- Knowledge graph (tools/graph): the readable snapshot (graph.json,
-#     GRAPH_REPORT.md, graph.html, forensia-graph.json) IS committed so the project
-#     architecture is available on clone / at chat start. Only the machine-specific
-#     SHA256 cache is excluded (churny, not portable across machines).
-tools/graph/out/**/cache/
-# Per-machine state of the session refresh (tools/graph/graph-refresh.py): the stamp
-# is a fingerprint of local file mtimes and the status card is a timestamp of THIS
-# machine's last run. Committing either would make a fresh clone believe someone
-# else's snapshot describes its own working tree — precisely the stale-map problem
-# the refresh exists to prevent. Both are regenerated at every session start.
-tools/graph/out/.graph-stamp.json
-tools/graph/out/GRAPH_STATUS.md
-# Stray graphify output from running graphify directly on a subfolder (e.g. backend/,
-# web/) instead of the tools/graph runner. Never committed; the canonical output is
-# tools/graph/out/.
-graphify-out/
-
-# --- Evidence corpus (CTF images: too large / licensed; referenced by URL+SHA-256
-#     in docs/agentes/corpus-windows.md, NEVER stored in git). The folder ignore
-#     also covers companion artefacts with no dedicated extension rule above,
-#     e.g. pagefile.sys and FTK Imager logs.
+# --- Evidence corpus (CTF images: too large / licensed, NEVER stored in git). The
+#     folder ignore also covers companion artefacts with no dedicated extension rule
+#     above, e.g. pagefile.sys and FTK Imager logs.
 evidence-corpus/
-
-# --- Notas internas de trabajo: NO se publican ---
-# Borradores de revisión/objeciones que no son documentación del producto. Se
-# quedan en la máquina del equipo; el prefijo INTERNO- las marca a simple vista.
-/docs/**/INTERNO-*.md
 
 # --- Secrets / config ---
 .env
@@ -82,10 +59,8 @@ Thumbs.db
 # `.claude/*` (no la barra final): con `.claude/` git ni siquiera desciende al
 # directorio y la excepción de abajo no llegaría a aplicarse.
 .claude/*
-# EXCEPCIÓN: settings.json es la config de EQUIPO (hooks del repo), no preferencias
-# personales — y es la que engancha el refresco del grafo al arranque de sesión
-# (tools/graph/README.md §3). Sin versionarla, el enganche solo existiría en la
-# máquina de quien lo creó. Lo personal va en .claude/settings.local.json, que sigue
-# ignorado por la regla de arriba.
+# EXCEPCIÓN: settings.json es la config de EQUIPO del repo, no preferencias
+# personales. Lo personal va en .claude/settings.local.json, que sigue ignorado por
+# la regla de arriba.
 !.claude/settings.json
 
