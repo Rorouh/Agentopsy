@@ -21,7 +21,8 @@ podía conectar un ejecutor cloud — la fila quedaba «No disponible» sin sali
 ## Diagnóstico real de cada CLI (capturado dentro del contenedor `api`)
 
 El parser de cada CLI se diseñó a partir de su **E/S real**, no de suposiciones
-(versiones fijadas en la imagen: codex-cli 0.142.5, Claude Code 2.1.187,
+(versiones fijadas en la imagen: codex-cli 0.146.0 —la E/S se capturó con
+0.142.5, sin cambios en el flujo de login—, Claude Code 2.1.187,
 gemini-cli 0.49.0):
 
 | Ejecutor | argv de login | qué imprime (stdout) | ¿pega código? | fin |

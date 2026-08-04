@@ -39,7 +39,7 @@ RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
 # (Configuración → Ejecutores/IA). Detalle y comprobación:
 # docs/operacion/guia-despliegue-y-pruebas-ui.md §3 «Alias vs id completo».
 ARG CLAUDE_CODE_VERSION=2.1.187
-ARG CODEX_VERSION=0.142.5
+ARG CODEX_VERSION=0.146.0
 ARG GEMINI_CLI_VERSION=0.49.0
 RUN npm install -g \
       "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
