@@ -9,8 +9,7 @@
 
 Herramienta de análisis forense **post-mortem** asistida por IA, **autoalojada**: se despliega con `git clone` + `docker compose up --build` y se usa desde el navegador. Sin instaladores nativos y **sin API keys**.
 
-> **Trabajo Final de Máster · Entrega: 7 de septiembre de 2026.**  
-> Documento maestro de alcance y planificación: [`FORENSIA_Alcance_y_Planificacion.md`](FORENSIA_Alcance_y_Planificacion.md).
+> **Trabajo Final de Máster · Entrega: 7 de septiembre de 2026.**
 
 ---
 
@@ -99,14 +98,9 @@ La sesión persiste entre reinicios. Comprueba el estado en *Ajustes → Ejecuto
 
 Documentación técnica:
 
-- [Arquitectura](docs/arquitectura.md) — capas, transporte, decisiones bloqueadas.
-- [Modelo de amenazas](docs/modelo-amenazas.md) — superficie MCP incluida.
-- [Cadena de custodia](docs/soundness-forense.md) — read-only a nivel de bloque, audit log.
 - [Maletín contenedorizado](docker/README.md) — los dos toolkits, uso y seguridad del contenedor.
-- [Contrato de paquetes de agente](docs/agentes/contrato-paquetes.md)
-- [Inventario de servidores MCP](docs/maletin/inventario-mcps.md) — 13 candidatos priorizados P0–P3.
-- [Plan del MCP toolkit (S1 cerrado)](docs/maletin/mcp-toolkit-s1.md)
-- Índice completo: [`docs/README.md`](docs/README.md).
+- Comportamiento del agente: [`agentes/README.md`](agentes/README.md) y [`agentes/agent.md`](agentes/agent.md).
+- Invariantes de arquitectura, forenses y de seguridad: [`CLAUDE.md`](CLAUDE.md).
 
 ## Desarrollo local
 
@@ -137,7 +131,7 @@ python -m forensia.server
 
 ### Servidor MCP standalone
 
-El maletín se expone también como servidor MCP estándar para clientes externos (Claude Desktop, Continue, Cline). Detalle en [`docs/maletin/mcp-toolkit-s1.md`](docs/maletin/mcp-toolkit-s1.md).
+El maletín se expone también como servidor MCP estándar para clientes externos (Claude Desktop, Continue, Cline).
 
 ```bash
 cd backend
@@ -145,10 +139,6 @@ source .venv/bin/activate
 pip install -e ".[mcp]"
 FORENSIA_CLOUD_CONSENT=manual_test python -m forensia.mcp
 ```
-
-## Estado del proyecto
-
-Estado actualizado, deuda técnica y próximos pasos: [`docs/operacion/proximos-pasos.md`](docs/operacion/proximos-pasos.md).
 
 ## Equipo
 

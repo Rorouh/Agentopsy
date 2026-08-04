@@ -1,3 +1,0 @@
-Volatility 3 Framework 2.28.0
-
-PID	Process	ConsoleInfo	Property	Address	Data
