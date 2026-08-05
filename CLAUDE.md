@@ -593,6 +593,28 @@ explícitamente para que nadie persiga un fantasma en Ajustes. Pinned by
 `test_claude_surfaces_the_expired_session_instead_of_an_empty_stderr` y
 `test_claude_extract_error_stays_quiet_when_the_envelope_says_nothing`.
 
+**plaso dejaba de colgarse, y de mentir (2026-08-05)**: `plaso_log2timeline`
+sobre una imagen de 8 GB con LVM se comía los 1800 s del techo del exec-agent
+sin parsear un byte. Eran DOS fallos encadenados, y el segundo tapaba al
+primero. (1) plaso encontraba dos volúmenes LVM y **preguntaba por teclado**
+cuál procesar («Volume identifier(s):»), bloqueado leyendo un stdin que el
+exec-agent no da: 20 minutos de reloj con 4 SEGUNDOS de CPU. Peor aún con stdin
+cerrado, que es el modo silencioso del fallo: lee EOF, no procesa NINGÚN
+volumen y termina diciendo «Processing completed» con un `.plaso` vacío, es
+decir una línea de tiempo vacía que parece un éxito, que en un informe pericial
+es más grave que un error. (2) Ya sin el prompt, el motor MULTIPROCESO seguía
+colgado en `futex_wait_queue` sin levantar un solo worker: el `multiprocessing`
+de plaso deadlockea con el maletín EMULADO (los maletines van fijados a
+`linux/amd64` porque el PPA GIFT no publica arm64, así que en un host arm64
+corren bajo QEMU). El wrapper pasa ahora `--volumes all` (por defecto, con
+parámetro `volumes`), `--unattended` (plaso TERMINA CON ERROR en vez de esperar
+a un humano que no existe, RULE 2) y `--single_process`; `--no_vss`, deprecado
+en plaso 20240308, pasa a `--vss_stores none`. El multiproceso se recupera
+pidiendo `workers` EXPLÍCITAMENTE (volver al modo que se cuelga es decisión del
+operador, nunca un default). Medido: la misma corrida pasa de 4 s de CPU en 20
+minutos a 100 % de CPU con el `.plaso` creciendo a 72 MB en 100 segundos.
+Pinned by `test_build_argv_never_blocks_waiting_for_a_human`.
+
 **Selector de modelo y de potencia de Codex (2026-07-30)**: Codex deja de ser
 un CLI cuyo catálogo Agentopsy «no puede enumerar». Su propio binario descarga
 la lista con la sesión OAuth del operador y la cachea en

@@ -272,6 +272,26 @@ TOOL_PARAM_SCHEMAS: dict[str, dict[str, Any]] = {
                 "type": "string",
                 "description": "Time zone of the source system, e.g. 'Europe/Madrid'.",
             },
+            "volumes": {
+                "type": "string",
+                "pattern": "^(all|[0-9,.]+)$",
+                "default": "all",
+                "description": (
+                    "LVM/APFS volume selector: 'all' (default) or e.g. '1', '1,2'. "
+                    "Leave it unset: with anything other than 'all' plaso may skip the "
+                    "volume that holds the filesystem and produce an EMPTY timeline."
+                ),
+            },
+            "workers": {
+                "type": "integer",
+                "minimum": 1,
+                "description": (
+                    "Worker processes. LEAVE IT UNSET unless you have a reason: by "
+                    "default the run is single-process, because plaso's multiprocessing "
+                    "engine deadlocks when the toolkit image runs emulated (linux/amd64 "
+                    "on an arm64 host), hanging until the execution ceiling kills it."
+                ),
+            },
         },
         "additionalProperties": False,
     },

@@ -1513,6 +1513,54 @@ class TestPlasoLog2timeline:
         assert "--partitions" in argv and "1" in argv
         assert "--parsers" in argv and "filestat" in argv
 
+    def test_build_argv_never_blocks_waiting_for_a_human(self):
+        """Las tres banderas que impiden que la corrida se cuelgue (medido 2026-08-05).
+
+        Sobre una imagen de 8 GB con LVM y el maletín emulado (linux/amd64 sobre
+        arm64, porque el PPA GIFT no publica arm64):
+        1+2. plaso PREGUNTABA por teclado qué volumen LVM procesar y se quedaba
+             bloqueado leyendo un stdin que el exec-agent no da, comiéndose los
+             1800 s del techo. Sin stdin es peor: no procesa NINGÚN volumen y
+             dice «Processing completed» con un .plaso vacío, un falso éxito.
+        3.   Ya sin el prompt, el motor multiproceso seguía colgado en
+             `futex_wait_queue` con 4 SEGUNDOS de CPU en 20 minutos y cero
+             workers. Con las tres, la corrida pasa a 100 % de CPU.
+        """
+        argv = plaso_log2timeline.build_argv({"image_path": "/x", "output_dir": "/o"})
+        assert argv[argv.index("--volumes") + 1] == "all"
+        assert "--unattended" in argv
+        assert "--single_process" in argv
+        assert "--workers" not in argv
+        # `--no_vss` está deprecado en plaso 20240308; la forma soportada es esta.
+        assert argv[argv.index("--vss_stores") + 1] == "none"
+        assert "--no_vss" not in argv
+
+    def test_build_argv_bad_volumes_raises(self):
+        with pytest.raises(ValueError, match="volumes"):
+            plaso_log2timeline.build_argv(
+                {"image_path": "/x", "output_dir": "/o", "volumes": "; rm -rf /"}
+            )
+
+    def test_build_argv_workers_is_an_explicit_opt_in(self):
+        """Volver al motor que se cuelga es decisión EXPLÍCITA del operador (RULE 2)."""
+        argv = plaso_log2timeline.build_argv(
+            {"image_path": "/x", "output_dir": "/o", "workers": 4}
+        )
+        assert argv[argv.index("--workers") + 1] == "4"
+        assert "--single_process" not in argv
+        # workers=1 es monoproceso, no un multiproceso de un solo worker.
+        argv_one = plaso_log2timeline.build_argv(
+            {"image_path": "/x", "output_dir": "/o", "workers": 1}
+        )
+        assert "--single_process" in argv_one and "--workers" not in argv_one
+
+    def test_build_argv_bad_workers_raises(self):
+        for bad in (0, -2, "4", True, 1.5):
+            with pytest.raises(ValueError, match="workers"):
+                plaso_log2timeline.build_argv(
+                    {"image_path": "/x", "output_dir": "/o", "workers": bad}
+                )
+
     def test_build_argv_missing_image_path_raises(self):
         with pytest.raises(ValueError, match="image_path"):
             plaso_log2timeline.build_argv({"output_dir": "/o"})
