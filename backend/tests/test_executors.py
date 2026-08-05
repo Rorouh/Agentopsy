@@ -753,6 +753,44 @@ def test_claude_argv_strips_the_cli_harness() -> None:
     assert "--resume" in ex._build_argv("hi", None, "sid-1")
 
 
+def test_claude_surfaces_the_expired_session_instead_of_an_empty_stderr() -> None:
+    """Sesión OAuth caducada: la causa viaja en STDOUT y el stderr va VACÍO.
+
+    Medido en vivo el 2026-08-05 (`claude` 2.1.187) sobre un caso real: las seis
+    corridas del audit log murieron con `exit_code 1` y `error: "stderr:
+    (vacío)"`, que no dice qué arreglar, porque `ClaudeCodeExecutor` no
+    implementaba `_extract_error` y el envoltorio JSON con el 401 se tiraba. El
+    motivo tiene que nombrar el comando de login (RULE 2).
+    """
+    envelope = json.dumps(
+        {
+            "type": "result",
+            "subtype": "success",
+            "is_error": True,
+            "api_error_status": 401,
+            "result": (
+                "Failed to authenticate. API Error: 401 OAuth access token has "
+                "expired. Re-authenticate to continue."
+            ),
+            "session_id": "ba5b465f-f457-4af8-af49-d753b0d1e996",
+        }
+    )
+    detail = ClaudeCodeExecutor()._extract_error(envelope, "")
+    assert detail is not None, "el envoltorio traía la causa y se ha perdido"
+    assert "OAuth access token has expired" in detail
+    assert "claude auth login" in detail, "el motivo no nombra el comando que lo arregla"
+    assert "forensia-cli-auth" in detail
+
+
+def test_claude_extract_error_stays_quiet_when_the_envelope_says_nothing() -> None:
+    """No inventa un motivo: sin envoltorio aprovechable devuelve None y la
+    corrida cae al stderr de siempre (RULE 2, nada de causas fabricadas)."""
+    ex = ClaudeCodeExecutor()
+    assert ex._extract_error("not json", "") is None
+    assert ex._extract_error(json.dumps(["lista"]), "") is None
+    assert ex._extract_error(json.dumps({"type": "result"}), "") is None
+
+
 def test_models_endpoint_ollama(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(OllamaExecutor, "list_models", lambda self: ["qwen2.5:7b-instruct"])
     r = client.get(

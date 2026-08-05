@@ -67,6 +67,34 @@ _LOGIN_HINT = (
     "máquina."
 )
 
+#: Marcas de un fallo de AUTENTICACIÓN en el mensaje que devuelve el propio CLI.
+#: Se usan junto al `api_error_status`, no en su lugar: el estado HTTP es la señal
+#: fuerte y el texto cubre los casos en que el envoltorio no lo trae.
+_AUTH_ERROR_MARKERS = (
+    "oauth",
+    "authenticate",
+    "authentication",
+    "unauthorized",
+    "expired",
+    "invalid api key",
+)
+
+_EXPIRED_SESSION_HINT = (
+    "La sesión de Claude Code guardada en el volumen forensia-cli-auth ya no es "
+    "válida (caducada o revocada). Ojo: `claude auth status` sigue devolviendo "
+    "`loggedIn: true` con un token caducado, así que Ajustes puede mostrarlo "
+    "como disponible hasta que se intenta una corrida. " + _LOGIN_HINT
+)
+
+
+def _is_auth_failure(message: str, status: int | None) -> bool:
+    """¿El fallo que reporta el CLI es de autenticación? El 401/403 manda; si el
+    envoltorio no trae estado, se mira el texto del propio CLI."""
+    if status in (401, 403):
+        return True
+    low = message.lower()
+    return any(marker in low for marker in _AUTH_ERROR_MARKERS)
+
 
 class ClaudeCodeExecutor(CliPromptExecutor):
     id = "claude-code"
@@ -137,8 +165,10 @@ class ClaudeCodeExecutor(CliPromptExecutor):
                 f"Claude Code devolvió {type(envelope).__name__} en vez de un objeto JSON"
             )
         if envelope.get("is_error"):
+            detail = self._envelope_error(envelope)
             raise ExecutorError(
-                f"Claude Code reportó is_error=true: {str(envelope.get('result'))[:500]}"
+                "Claude Code reportó is_error=true: "
+                f"{detail or str(envelope.get('result'))[:500]}"
             )
         result = envelope.get("result")
         if not isinstance(result, str):
@@ -146,6 +176,45 @@ class ClaudeCodeExecutor(CliPromptExecutor):
                 "la respuesta JSON de Claude Code no contiene el campo 'result' de texto"
             )
         return result
+
+    def _envelope_error(self, envelope: dict) -> str | None:
+        """Causa legible a partir del envoltorio JSON, con el comando de login
+        cuando el fallo es de autenticación. Devuelve ``None`` si el envoltorio no
+        dice nada aprovechable (nunca inventa un motivo, RULE 2)."""
+        result = envelope.get("result")
+        message = result.strip() if isinstance(result, str) and result.strip() else ""
+        status = _as_int(envelope.get("api_error_status"))
+        if not message and status is None:
+            return None
+        if not message:
+            message = f"la API devolvió el estado {status}"
+        elif status is not None:
+            message = f"{message} (api_error_status={status})"
+        if _is_auth_failure(message, status):
+            return f"{message[:800]} {_EXPIRED_SESSION_HINT}"
+        return message[:1200]
+
+    def _extract_error(self, stdout: str, stderr: str) -> str | None:
+        """Motivo ACCIONABLE cuando el CLI sale con código distinto de cero.
+
+        Medido en vivo el 2026-08-05 (`claude` 2.1.187): con la sesión OAuth
+        caducada la corrida falla dejando la causa en STDOUT
+        (``{"is_error":true,"api_error_status":401,"result":"Failed to
+        authenticate. API Error: 401 OAuth access token has expired…"}``) y el
+        stderr VACÍO. Sin este hook el perito solo veía ``stderr: (vacío)``, que
+        no dice qué arreglar. Y no basta con mirar la disponibilidad antes de
+        lanzar: `claude auth status` devuelve exit 0 y ``loggedIn: true`` con el
+        token ya muerto, así que la corrida es donde aparece la verdad y es ahí
+        donde hay que nombrar el comando de login (RULE 2: fallar alto con la
+        causa REAL, no con un arenque rojo).
+        """
+        try:
+            envelope = json.loads(stdout)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        if not isinstance(envelope, dict):
+            return None
+        return self._envelope_error(envelope)
 
     def _extract_usage(self, raw: str) -> Usage | None:
         # `claude -p --output-format json` carries `usage.{input_tokens,

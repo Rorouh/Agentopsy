@@ -577,6 +577,22 @@ exhausted its 21 iterations without ever emitting a `final`). Pinned by
 `test_claude_argv_strips_the_cli_harness` and
 `test_budget_nudges_demand_a_final_before_exhaustion`.
 
+**Una sesión caducada ya no se disfraza de «stderr vacío» (2026-08-05)**: un
+caso real dejó seis corridas de `claude-code` muertas con `exit_code 1` y
+`error: "stderr: (vacío)"`, y el perito no tenía forma de saber qué arreglar.
+La causa estaba entera en STDOUT (`{"is_error":true,"api_error_status":401,
+"result":"Failed to authenticate. API Error: 401 OAuth access token has
+expired…"}`) y se tiraba porque `ClaudeCodeExecutor` era el único ejecutor sin
+`_extract_error` (Codex sí lo implementaba). Ahora lo implementa: parsea el
+envoltorio y, cuando el fallo es de autenticación (401/403 o el texto del
+propio CLI), NOMBRA el comando de login. Detalle que obliga a arreglarlo en la
+corrida y no en la disponibilidad: **`claude auth status` devuelve exit 0 y
+`loggedIn: true` con el token ya caducado**, así que `capabilities` lo da por
+disponible de buena fe y la verdad solo aparece al ejecutar. El aviso lo dice
+explícitamente para que nadie persiga un fantasma en Ajustes. Pinned by
+`test_claude_surfaces_the_expired_session_instead_of_an_empty_stderr` y
+`test_claude_extract_error_stays_quiet_when_the_envelope_says_nothing`.
+
 **Selector de modelo y de potencia de Codex (2026-07-30)**: Codex deja de ser
 un CLI cuyo catálogo Agentopsy «no puede enumerar». Su propio binario descarga
 la lista con la sesión OAuth del operador y la cachea en
