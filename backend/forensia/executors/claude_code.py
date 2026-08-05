@@ -81,9 +81,13 @@ _AUTH_ERROR_MARKERS = (
 
 _EXPIRED_SESSION_HINT = (
     "La sesión de Claude Code guardada en el volumen forensia-cli-auth ya no es "
-    "válida (caducada o revocada). Ojo: `claude auth status` sigue devolviendo "
-    "`loggedIn: true` con un token caducado, así que Ajustes puede mostrarlo "
-    "como disponible hasta que se intenta una corrida. " + _LOGIN_HINT
+    "válida (caducada o revocada). Renuévala SIN salir de la aplicación: "
+    "Configuración, Ejecutores / IA, despliega Claude Code y pulsa «Renovar "
+    "sesión de Claude Code»; el diálogo te da la URL que abrir y te pide pegar "
+    "de vuelta el código que devuelve el navegador. Ojo: `claude auth status` "
+    "sigue devolviendo `loggedIn: true` con un token caducado, así que el "
+    "ejecutor puede aparecer como disponible hasta que se intenta una corrida. "
+    "Si prefieres la terminal: " + _LOGIN_HINT
 )
 
 

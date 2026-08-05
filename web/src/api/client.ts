@@ -533,8 +533,14 @@ export const api = {
       request<{ executors: Record<ExecutorId, ExecutorLoginCapability> }>(
         "/api/executors/login-capabilities",
       ),
-    start: (id: ExecutorId) =>
-      post<ExecutorLoginStart>(`/api/executors/${id}/login`, {}),
+    // `force` renueva una sesión que el sondeo da por buena: el CLI de Claude
+    // reporta `loggedIn: true` con el token ya caducado, así que sin esto la
+    // reautenticación desde la aplicación quedaba bloqueada.
+    start: (id: ExecutorId, force = false) =>
+      post<ExecutorLoginStart>(
+        `/api/executors/${id}/login${force ? "?force=true" : ""}`,
+        {},
+      ),
     status: (id: ExecutorId) =>
       request<ExecutorLoginStatus>(`/api/executors/${id}/login/status`),
     submitCode: (id: ExecutorId, code: string) =>

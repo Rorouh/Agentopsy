@@ -18,6 +18,10 @@ interface ExecutorLoginModalProps {
   onClose: () => void;
   // Refresca capabilities en el padre cuando el ejecutor pasa a Disponible.
   onConnected: () => Promise<void> | void;
+  // RENOVAR una sesión que el sondeo da por buena. El CLI de Claude reporta
+  // `loggedIn: true` con el token caducado, así que sin esto el backend rechaza
+  // el login («ya tiene sesión iniciada») y la única salida era la terminal.
+  force?: boolean;
 }
 
 type Phase = "loading" | "relay-unsupported" | "waiting" | "logged_in" | "error";
@@ -30,6 +34,7 @@ export function ExecutorLoginModal({
   open,
   onClose,
   onConnected,
+  force = false,
 }: ExecutorLoginModalProps) {
   const [phase, setPhase] = useState<Phase>("loading");
   const [capability, setCapability] = useState<ExecutorLoginCapability | null>(null);
@@ -79,7 +84,7 @@ export function ExecutorLoginModal({
     setPhase("loading");
     setReason(null);
     try {
-      const res = await api.executorLogin.start(executorId);
+      const res = await api.executorLogin.start(executorId, force);
       startedRelayRef.current = true;
       setStart(res);
       setPhase("waiting");
@@ -89,7 +94,7 @@ export function ExecutorLoginModal({
       setPhase("error");
       setReason(err instanceof Error ? err.message : String(err));
     }
-  }, [executorId, poll, stopPolling]);
+  }, [executorId, force, poll, stopPolling]);
 
   // Al abrir: consulta la capacidad de relay y arranca el flujo adecuado.
   useEffect(() => {

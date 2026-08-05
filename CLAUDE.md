@@ -593,6 +593,26 @@ explícitamente para que nadie persiga un fantasma en Ajustes. Pinned by
 `test_claude_surfaces_the_expired_session_instead_of_an_empty_stderr` y
 `test_claude_extract_error_stays_quiet_when_the_envelope_says_nothing`.
 
+**Renovar una sesión caducada SIN salir de la aplicación (2026-08-05)**: el
+login web de los ejecutores cloud existía desde 2026-07-15, pero era
+INALCANZABLE justo cuando hacía falta. Dos puertas lo cerraban, y las dos se
+apoyaban en el mismo sondeo que miente (`claude auth status` devuelve exit 0 y
+`loggedIn: true` con el token muerto): la UI solo pintaba «Conectar» en la rama
+`!available`, y `start_login` rechazaba de plano con «ya tiene sesión iniciada;
+revócala con `docker compose down -v`». Resultado: la única salida era la
+terminal, o borrar el volumen entero, que además se lleva por delante las
+sesiones de los OTROS ejecutores y los modelos de Ollama. Ahora `start_login`
+acepta `force` (`POST …/login?force=true`), que salta esa comprobación **solo
+ante una petición explícita del operador** desde «Renovar sesión de X», el
+botón que Configuración, Ejecutores / IA pinta siempre para un ejecutor cloud,
+esté disponible o no. No es un fallback ni un default (RULE 2): sin `force`, el
+rechazo informativo sigue igual. Deliberadamente NO se marca el ejecutor como
+no disponible al detectar la caducidad (`~/.claude/.credentials.json` trae
+`claudeAiOauth.expiresAt`): si el CLI todavía pudiera refrescar el token con su
+`refreshToken`, bloquearlo abortaría en seco una sesión que funciona, y eso es
+cambiar un fallo claro por una regresión. Pinned by
+`test_force_renews_a_session_the_probe_calls_healthy`.
+
 **plaso dejaba de colgarse, y de mentir (2026-08-05)**: `plaso_log2timeline`
 sobre una imagen de 8 GB con LVM se comía los 1800 s del techo del exec-agent
 sin parsear un byte. Eran DOS fallos encadenados, y el segundo tapaba al

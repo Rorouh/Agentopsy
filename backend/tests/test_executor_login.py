@@ -178,6 +178,31 @@ def test_start_already_logged_in_fails_loud(fake, monkeypatch: pytest.MonkeyPatc
     assert "ya tiene sesión" in str(exc.value)
 
 
+def test_force_renews_a_session_the_probe_calls_healthy(fake, monkeypatch) -> None:
+    """Renovar una sesión que el sondeo da por buena, SIN borrar el volumen.
+
+    Medido el 2026-08-05: `claude auth status` devuelve exit 0 y `loggedIn:
+    true` con el token OAuth caducado, y la corrida muere con un 401
+    «Re-authenticate to continue». Con el guard incondicional, la aplicación se
+    negaba a reconectar («ya tiene sesión iniciada») y la única salida era la
+    terminal o `docker compose down -v`, que ademas se lleva las sesiones de los
+    otros ejecutores y los modelos de Ollama. `force` es intención EXPLÍCITA del
+    operador, no un default (RULE 2).
+    """
+    fake("claude-code", "claude")
+    # El sondeo MIENTE: dice que hay sesión cuando el token ya está muerto.
+    monkeypatch.setattr(
+        login_mod, "_availability", lambda _eid: ExecutorAvailability(available=True)
+    )
+    # Sin force, el rechazo informativo se mantiene.
+    with pytest.raises(login_mod.LoginError):
+        login_mod.start_login("claude-code")
+    # Con force, el login arranca de verdad y emite su url.
+    payload = login_mod.start_login("claude-code", force=True)
+    assert payload["url"]
+    login_mod.cancel_login("claude-code")
+
+
 def test_start_unknown_id_is_value_error() -> None:
     with pytest.raises(ValueError) as exc:
         login_mod.start_login("gpt-4o")

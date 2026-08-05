@@ -45,9 +45,12 @@ def login_caps() -> dict[str, Any]:
 
 
 @router.post("/api/executors/{executor_id}/login", dependencies=[Depends(require_token)])
-def start(executor_id: str) -> dict[str, Any]:
+def start(executor_id: str, force: bool = False) -> dict[str, Any]:
+    # `force`: renovar una sesión que el sondeo da por buena. Lo pide el operador
+    # explícitamente desde «Renovar sesión» porque el sondeo puede mentir (el CLI
+    # de Claude reporta `loggedIn: true` con el token caducado). Ver `start_login`.
     try:
-        return start_login(executor_id)
+        return start_login(executor_id, force=force)
     except LoginRelayUnsupported as exc:
         raise HTTPException(
             status_code=409,

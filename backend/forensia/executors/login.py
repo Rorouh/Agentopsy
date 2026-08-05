@@ -307,12 +307,26 @@ def login_capabilities() -> dict[str, dict[str, object]]:
     return {eid: login_info(eid) for eid in CLOUD_EXECUTOR_IDS}
 
 
-def start_login(executor_id: str) -> dict[str, object]:
+def start_login(executor_id: str, *, force: bool = False) -> dict[str, object]:
     """Launch (or resume) ``executor_id``'s login and return ``{url, code,
     needs_code_input, state}``.
 
+    ``force`` RENUEVA una sesión que el sondeo da por buena. Existe porque el
+    sondeo puede MENTIR: medido el 2026-08-05, `claude auth status` devuelve
+    exit 0 y ``loggedIn: true`` con el token OAuth ya caducado, y la corrida
+    muere con un 401 «Re-authenticate to continue». Sin esta puerta, el perito
+    quedaba encerrado: la aplicación se negaba a reconectar («ya tiene sesión
+    iniciada») y la ÚNICA salida era la terminal, o borrar el volumen entero con
+    ``docker compose down -v`` (que además se lleva por delante las sesiones de
+    los otros ejecutores y los modelos de Ollama).
+
+    No es un fallback ni un default silencioso (RULE 2): solo lo activa una
+    petición EXPLÍCITA del operador desde «Renovar sesión». Sin ``force``, pedir
+    conectar un ejecutor sano sigue devolviendo el mismo rechazo informativo.
+
     RULE 2: unknown / non-cloud id → ValueError; relay-unsupported →
-    LoginRelayUnsupported; already authenticated or unparseable output → LoginError.
+    LoginRelayUnsupported; already authenticated (sin ``force``) o salida
+    ilegible → LoginError.
     """
     spec = _require_cloud_id(executor_id)
 
@@ -323,12 +337,14 @@ def start_login(executor_id: str) -> dict[str, object]:
             manual_command=spec.manual_command,
         )
 
-    availability = _availability(executor_id)
-    if availability.available:
-        raise LoginError(
-            f"{executor_id} ya tiene sesión iniciada; no hay nada que conectar. "
-            "Revócala con `docker compose down -v` si quieres reautenticar."
-        )
+    if not force:
+        availability = _availability(executor_id)
+        if availability.available:
+            raise LoginError(
+                f"{executor_id} ya tiene sesión iniciada; no hay nada que conectar. "
+                "Si la sesión ha caducado y quieres renovarla sin borrar el volumen, "
+                "usa «Renovar sesión» en Configuración, Ejecutores / IA."
+            )
 
     with _REGISTRY_LOCK:
         existing = _ACTIVE.get(executor_id)

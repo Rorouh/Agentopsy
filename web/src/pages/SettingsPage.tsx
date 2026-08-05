@@ -400,14 +400,31 @@ export function SettingsPage({ caps, version, onCapsRefresh }: SettingsPageProps
                               )}
 
                               {status.available ? (
-                                <button
-                                  type="button"
-                                  className="link-action"
-                                  disabled={isDefault || savingKey === "DEFAULT_EXECUTOR"}
-                                  onClick={() => void saveKey("DEFAULT_EXECUTOR", id)}
-                                >
-                                  {isDefault ? "es el motor por defecto" : "usar por defecto"}
-                                </button>
+                                <>
+                                  <button
+                                    type="button"
+                                    className="link-action"
+                                    disabled={isDefault || savingKey === "DEFAULT_EXECUTOR"}
+                                    onClick={() => void saveKey("DEFAULT_EXECUTOR", id)}
+                                  >
+                                    {isDefault ? "es el motor por defecto" : "usar por defecto"}
+                                  </button>
+                                  {/* Reconectar SIEMPRE alcanzable en los ejecutores cloud, no
+                                      solo cuando el sondeo los da por caídos: el CLI puede
+                                      seguir diciendo que hay sesión (`claude auth status`
+                                      devuelve loggedIn: true) con un token ya caducado, y
+                                      entonces el fallo solo aparece al lanzar la corrida. Sin
+                                      esto, la única salida era la terminal. */}
+                                  {!status.local && (
+                                    <button
+                                      type="button"
+                                      className="link-action"
+                                      onClick={() => setLoginExecutor(id)}
+                                    >
+                                      Renovar sesión de {status.name}
+                                    </button>
+                                  )}
+                                </>
                               ) : !status.local ? (
                                 <button
                                   type="button"
@@ -597,6 +614,10 @@ export function SettingsPage({ caps, version, onCapsRefresh }: SettingsPageProps
           open={loginExecutor !== null}
           onClose={() => setLoginExecutor(null)}
           onConnected={refreshCaps}
+          // Si el ejecutor YA sale como disponible, lo que el operador ha
+          // pedido es RENOVAR: el backend rechazaría el login de otro modo,
+          // y esa negativa es la que dejaba la terminal como única salida.
+          force={caps?.executors[loginExecutor]?.available ?? false}
         />
       )}
     </div>
