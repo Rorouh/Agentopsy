@@ -30,6 +30,12 @@ from __future__ import annotations
 from typing import Any
 
 from forensia.export_csv import NO_APLICA, build_sheet, iso_utc_ahora, unir
+from forensia.timeline.vocabulario import (
+    KIND_LABEL,
+    SEVERITY_LABEL,
+    STATUS_LABEL,
+    etiqueta,
+)
 
 #: Cabecera de la tabla del timeline. Orden estable, es un contrato que los tests
 #: fijan. Cubre los dos tipos de evento (``tool_run`` y ``finding``); cada fila
@@ -50,37 +56,6 @@ CSV_HEADER: tuple[str, ...] = (
     "Ficheros de salida",
     "Comando ejecutado (argv literal auditado)",
 )
-
-#: Vocabulario cerrado del tipo de evento que ensambla el builder.
-_KIND_LABEL: dict[str, str] = {
-    "tool_run": "Ejecución de herramienta",
-    "finding": "Hallazgo",
-}
-
-#: Estado de una ejecución tal y como lo escribe el dispatcher en el audit log.
-_STATUS_LABEL: dict[str, str] = {
-    "running": "En curso",
-    "finished": "Finalizada",
-    "error": "Con error",
-}
-
-#: Severidad de un hallazgo (``forensia.findings.store``).
-_SEVERITY_LABEL: dict[str, str] = {
-    "info": "Informativa",
-    "low": "Baja",
-    "medium": "Media",
-    "high": "Alta",
-    "critical": "Crítica",
-}
-
-
-def _etiqueta(tabla: dict[str, str], valor: Any) -> str:
-    """La etiqueta en castellano de un valor de vocabulario cerrado. Un valor que
-    no esté en la tabla se devuelve TAL CUAL: es un dato del caso, y traducirlo a
-    lo que se le parezca sería inventar (RULE 2)."""
-    texto = str(valor or "").strip()
-    return tabla.get(texto, texto)
-
 
 def timeline_to_csv(
     events: list[dict[str, Any]],
@@ -145,12 +120,12 @@ def timeline_to_csv(
         filas.append([
             n,
             ev.get("ts") or "",
-            _etiqueta(_KIND_LABEL, kind),
+            etiqueta(KIND_LABEL, kind),
             ev.get("tool_id") or "",
-            _etiqueta(_STATUS_LABEL, ev.get("status")) if es_run else NO_APLICA,
+            etiqueta(STATUS_LABEL, ev.get("status")) if es_run else NO_APLICA,
             NO_APLICA if not es_run else ("" if exit_code is None else exit_code),
             ev.get("title") or (NO_APLICA if es_run else ""),
-            _etiqueta(_SEVERITY_LABEL, ev.get("severity")) if not es_run else NO_APLICA,
+            etiqueta(SEVERITY_LABEL, ev.get("severity")) if not es_run else NO_APLICA,
             ev.get("summary") or (NO_APLICA if es_run else ""),
             unir(ev.get("mitre_hints") or []) if not es_run else NO_APLICA,
             ev.get("evidence_id") or "",

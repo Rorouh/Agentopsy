@@ -116,6 +116,47 @@ def test_tool_run_event_pairs_start_with_finish() -> None:
     assert ev["ts"].endswith("Z")  # explicit UTC
 
 
+def test_tool_run_event_carries_its_audited_end_and_duration() -> None:
+    """El log encadenado registra el inicio Y el fin de cada ejecución, así que la
+    duración es un dato MEDIDO. El evento la lleva porque es lo que convierte una
+    ejecución en una barra en el dibujo de la línea temporal."""
+    audit = [
+        {
+            "action": "tool_run_start",
+            "ts_utc": "2026-07-15T10:00:00+00:00",
+            "run_id": "r1",
+            "tool_id": "tsk_fls",
+            "argv": ["fls"],
+        },
+        {
+            "action": "tool_run_finish",
+            "ts_utc": "2026-07-15T10:02:30+00:00",
+            "run_id": "r1",
+            "status": "finished",
+            "exit_code": 0,
+        },
+    ]
+    (ev,) = assemble_investigation_timeline(audit, [])
+    assert ev["ts_end"] == "2026-07-15T10:02:30.000Z"
+    assert ev["duration_s"] == 150.0
+
+
+def test_a_run_still_in_flight_has_no_end_and_no_duration() -> None:
+    """Cero segundos se leería como «tardó nada», que es otro dato (RULE 2)."""
+    audit = [
+        {
+            "action": "tool_run_start",
+            "ts_utc": "2026-07-15T10:00:00+00:00",
+            "run_id": "r1",
+            "tool_id": "tsk_fls",
+            "argv": ["fls"],
+        },
+    ]
+    (ev,) = assemble_investigation_timeline(audit, [])
+    assert ev["ts_end"] is None
+    assert ev["duration_s"] is None
+
+
 def test_tool_run_without_finish_is_running_and_kept() -> None:
     audit = [
         {

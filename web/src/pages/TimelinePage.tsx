@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError } from "../api/client";
 import type {
+  DiagramLayer,
   EvidenceHandle,
   FsRelevantEvent,
   FsTimelineEvent,
   FsTimelineJob,
   FsTimelineResult,
+  TimelineDiagramLayout,
   TimelineEvent,
 } from "../api/types";
+import { TimelineDiagram } from "../components/TimelineDiagram";
+import type { TimelineDiagramHandle } from "../components/TimelineDiagram";
 import { usePublishShellHeader } from "../layout/shellHeader";
 import { useActiveCase } from "../state/activeCase";
 import { useCaseEvidence } from "../state/caseEvidence";
@@ -23,6 +27,11 @@ import { useCaseEvidence } from "../state/caseEvidence";
 // NUNCA se convierten a la hora local del navegador.
 
 type Layer = "investigation" | "filesystem" | "relevant";
+
+// Las dos formas de VER una capa. La lista y la hoja de cálculo se leen; el
+// dibujo se ve de un golpe, se imprime y se adjunta. No es una vista interactiva
+// de análisis (sin zoom ni selección de rango): es una FIGURA.
+type Mode = "lista" | "dibujo";
 
 const SEV_LABEL: Record<string, string> = {
   low: "Baja",
@@ -131,6 +140,7 @@ export function TimelinePage() {
   // recargar la página.
   const { evidence: evidences } = useCaseEvidence();
   const [layer, setLayer] = useState<Layer>("investigation");
+  const [mode, setMode] = useState<Mode>("lista");
   const [search, setSearch] = useState("");
   // Página actual de las tablas del sistema de ficheros (capas 2 y 3).
   const [fsPage, setFsPage] = useState(0);
@@ -327,9 +337,101 @@ export function TimelinePage() {
   const canGenerate =
     !!selectedEvidence && !starting && fsJob?.status !== "running" && evidences.length > 0;
 
-  // Exportar CSV pertenece SOLO a la capa de investigación; generar la
-  // super-timeline (tsk_fls -m), solo a las de sistema de ficheros. La cabecera
-  // transporta la acción YA RESUELTA por la página, no la regla (RULE 3).
+  // ── El DIBUJO de la capa activa ─────────────────────────────────────────────
+  // Solo hay DOS dibujos, uno por volumen: la franja de trabajos de la
+  // investigación y la banda de densidad del sistema de ficheros. La capa de
+  // eventos relevantes no tiene dibujo propio, son las marcas de la banda.
+  const diagramLayer: DiagramLayer = isInvestigation ? "investigation" : "filesystem";
+  const [diagram, setDiagram] = useState<TimelineDiagramLayout | null>(null);
+  const [diagramNote, setDiagramNote] = useState("");
+  const [diagramError, setDiagramError] = useState("");
+  const [diagramLoading, setDiagramLoading] = useState(false);
+  const figureRef = useRef<TimelineDiagramHandle>(null);
+
+  useEffect(() => {
+    const caseId = activeCase?.id;
+    if (mode !== "dibujo" || !caseId) return;
+    if (diagramLayer === "filesystem" && !selectedEvidence) {
+      setDiagram(null);
+      setDiagramNote("");
+      return;
+    }
+    let cancelled = false;
+    setDiagramLoading(true);
+    setDiagramError("");
+    (async () => {
+      try {
+        const res = await api.cases.timelineDiagram(
+          caseId,
+          diagramLayer,
+          diagramLayer === "filesystem" ? selectedEvidence : undefined,
+        );
+        if (cancelled) return;
+        setDiagram(res.diagram);
+        setDiagramNote(res.message ?? "");
+      } catch (err) {
+        if (!cancelled) {
+          setDiagram(null);
+          setDiagramError(err instanceof ApiError ? err.detail : String(err));
+        }
+      } finally {
+        if (!cancelled) setDiagramLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // `events.length` y el estado del job son las dos señales de que hay actividad
+    // nueva que dibujar: sin ellas la figura se quedaría en la de hace un rato.
+  }, [mode, activeCase?.id, diagramLayer, selectedEvidence, events.length, fsJob?.status]);
+
+  // La acción de la cabecera la resuelve la PÁGINA, que es la que sabe en qué capa
+  // y en qué forma está; la cabecera solo la pinta (RULE 3). En el dibujo se ofrece
+  // descargarlo, y cuando todavía no hay nada que dibujar se sigue ofreciendo lo
+  // único que se puede hacer, que es generar la super-timeline.
+  const headerAction =
+    !activeCase ? undefined : mode === "dibujo" && diagram ? (
+      <button type="button" onClick={() => figureRef.current?.descargarSvg()}>
+        Descargar SVG
+      </button>
+    ) : isInvestigation ? (
+      mode === "dibujo" ? undefined : (
+        <button type="button" disabled={exporting} onClick={() => void exportInvestigationCsv()}>
+          {exporting ? "Exportando…" : "Exportar CSV"}
+        </button>
+      )
+    ) : (
+      <button
+        type="button"
+        disabled={!canGenerate}
+        title={selectedEvidence ? undefined : "Elige primero la evidencia."}
+        onClick={() => void startFsTimeline()}
+      >
+        {fsJob?.status === "running" || starting ? "Generando…" : "Generar super-timeline"}
+      </button>
+    );
+
+  // Las capas de sistema de ficheros necesitan una evidencia ELEGIDA antes de
+  // tener nada que enseñar, en lista y en dibujo. La condición es la misma en las
+  // dos formas, así que el aviso es uno.
+  const puertaDeEvidencia = isInvestigation ? null : evidences.length === 0 ? (
+    <div className="empty-rail">
+      <div className="empty-rail-title">Sin evidencia registrada</div>
+      <div className="empty-rail-body">
+        Registra una evidencia en el caso para construir la super-timeline del sistema de
+        ficheros.
+      </div>
+    </div>
+  ) : !selectedEvidence ? (
+    <div className="empty-rail">
+      <div className="empty-rail-title">Elige la evidencia</div>
+      <div className="empty-rail-body">
+        La super-timeline se construye sobre una evidencia concreta. Agentopsy no elige por
+        ti cuál analizar.
+      </div>
+    </div>
+  ) : null;
+
   usePublishShellHeader(
     {
       title: "Timeline forense",
@@ -340,24 +442,13 @@ export function TimelinePage() {
           : fsResult
             ? `UTC · ${fsResult.total_events} eventos MACB`
             : "UTC · super-timeline sin generar",
-      action: !activeCase ? undefined : isInvestigation ? (
-        <button type="button" disabled={exporting} onClick={() => void exportInvestigationCsv()}>
-          {exporting ? "Exportando…" : "Exportar CSV"}
-        </button>
-      ) : (
-        <button
-          type="button"
-          disabled={!canGenerate}
-          title={selectedEvidence ? undefined : "Elige primero la evidencia."}
-          onClick={() => void startFsTimeline()}
-        >
-          {fsJob?.status === "running" || starting ? "Generando…" : "Generar super-timeline"}
-        </button>
-      ),
+      action: headerAction,
     },
     [
       activeCase?.id,
       isInvestigation,
+      mode,
+      diagram !== null,
       counts.toolRuns,
       counts.findings,
       fsResult?.total_events,
@@ -435,26 +526,55 @@ export function TimelinePage() {
             </span>
           </button>
         </div>
+        <div className="tl-mode" role="group" aria-label="Forma de ver la línea de tiempo">
+          <button
+            type="button"
+            className={`chip-option${mode === "lista" ? " is-on" : ""}`}
+            onClick={() => setMode("lista")}
+          >
+            Lista
+          </button>
+          <button
+            type="button"
+            className={`chip-option${mode === "dibujo" ? " is-on" : ""}`}
+            onClick={() => setMode("dibujo")}
+            title="La misma capa como figura: se lee de un golpe y se adjunta al informe."
+          >
+            Dibujo
+          </button>
+        </div>
         <span className="bar-note">Todas las horas en UTC</span>
       </div>
 
       <div className="tl-toolbar">
-        <label className="visually-hidden" htmlFor="tl-search">
-          Buscar en la línea de tiempo
-        </label>
-        <input
-          id="tl-search"
-          className="field-input tl-search"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder={
-            isInvestigation
-              ? "Buscar por herramienta, argv, hallazgo o técnica…"
-              : layer === "relevant"
-                ? "Buscar por ruta, motivo, categoría, MACB o inode…"
-                : "Buscar por ruta, MACB o inode…"
-          }
-        />
+        {/* La búsqueda filtra FILAS: en el dibujo no se pinta, porque una figura a
+            la que se le quitan eventos deja de ser la línea temporal del caso. */}
+        {mode === "lista" ? (
+          <>
+            <label className="visually-hidden" htmlFor="tl-search">
+              Buscar en la línea de tiempo
+            </label>
+            <input
+              id="tl-search"
+              className="field-input tl-search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={
+                isInvestigation
+                  ? "Buscar por herramienta, argv, hallazgo o técnica…"
+                  : layer === "relevant"
+                    ? "Buscar por ruta, motivo, categoría, MACB o inode…"
+                    : "Buscar por ruta, MACB o inode…"
+              }
+            />
+          </>
+        ) : (
+          <div className="tl-meta tl-mode-note">
+            {isInvestigation
+              ? "Una barra por ejecución con su duración medida, una marca por hallazgo."
+              : "La altura de cada cubeta es el número de eventos MACB de ese tramo."}
+          </div>
+        )}
         {isInvestigation ? (
           <div className="tl-meta">
             {counts.toolRuns} ejecuciones · {counts.findings} hallazgos
@@ -491,7 +611,42 @@ export function TimelinePage() {
             <div className="error-state">No se pudo exportar: {exportError}</div>
           )}
 
-          {isInvestigation ? (
+          {mode === "dibujo" && (
+            <>
+              {puertaDeEvidencia}
+              {!puertaDeEvidencia && diagramError && (
+                <div className="error-state">No se pudo construir el dibujo: {diagramError}</div>
+              )}
+              {!puertaDeEvidencia && !diagramError && diagramLoading && !diagram && (
+                <div className="loading-state">
+                  <span className="spinner" aria-hidden="true" />
+                  <span>Calculando el dibujo…</span>
+                </div>
+              )}
+              {!puertaDeEvidencia && !diagramError && diagram && (
+                <>
+                  {layer === "relevant" && (
+                    <div className="inline-note">
+                      Los eventos relevantes no tienen dibujo propio: son las marcas que
+                      señalan las cubetas de la banda de densidad.
+                    </div>
+                  )}
+                  <TimelineDiagram ref={figureRef} diagram={diagram} />
+                </>
+              )}
+              {!puertaDeEvidencia && !diagramError && !diagram && !diagramLoading && (
+                <div className="empty-rail">
+                  <div className="empty-rail-title">Nada que dibujar todavía</div>
+                  <div className="empty-rail-body">
+                    {diagramNote ||
+                      "Esta capa no tiene ningún evento que situar en el eje temporal."}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {mode === "lista" && (isInvestigation ? (
             events.length === 0 ? (
               <div className="empty-rail">
                 <div className="empty-rail-title">Sin actividad todavía</div>
@@ -563,23 +718,7 @@ export function TimelinePage() {
             )
           ) : (
             <>
-              {evidences.length === 0 ? (
-                <div className="empty-rail">
-                  <div className="empty-rail-title">Sin evidencia registrada</div>
-                  <div className="empty-rail-body">
-                    Registra una evidencia en el caso para construir la super-timeline del
-                    sistema de ficheros.
-                  </div>
-                </div>
-              ) : !selectedEvidence ? (
-                <div className="empty-rail">
-                  <div className="empty-rail-title">Elige la evidencia</div>
-                  <div className="empty-rail-body">
-                    La super-timeline se construye sobre una evidencia concreta. Agentopsy no
-                    elige por ti cuál analizar.
-                  </div>
-                </div>
-              ) : null}
+              {puertaDeEvidencia}
 
               {fsError && <div className="error-state">{fsError}</div>}
 
@@ -750,7 +889,7 @@ export function TimelinePage() {
                 </>
               )}
             </>
-          )}
+          ))}
         </div>
       </div>
     </div>

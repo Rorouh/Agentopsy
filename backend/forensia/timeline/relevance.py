@@ -129,13 +129,14 @@ def classify(path: str, macb: str) -> dict[str, Any] | None:
 
 
 def select_relevant_events(
-    events: list[dict[str, Any]], *, limit: int = DEFAULT_RELEVANT_LIMIT
+    events: list[dict[str, Any]], *, limit: int | None = DEFAULT_RELEVANT_LIMIT
 ) -> tuple[list[dict[str, Any]], int]:
     """Pick the forensically relevant events out of a full MACB event list.
 
     Each kept event is the original event enriched with ``category`` / ``reason`` /
     ``weight``. The result is sorted by importance (weight desc) then chronologically, and
-    capped at ``limit``. Returns ``(relevant, total)`` where ``total`` is how many were
+    capped at ``limit`` (``None`` = no cap, for a caller that AGGREGATES them instead of
+    listing them). Returns ``(relevant, total)`` where ``total`` is how many were
     relevant before the cap, so the caller can report truncation (RULE 2: never hide it).
     """
     scored: list[dict[str, Any]] = []

@@ -8,6 +8,7 @@ import type {
   MitreTechnique,
 } from "../api/types";
 import { usePublishShellHeader } from "../layout/shellHeader";
+import { PHASE_COLOR } from "../palette";
 import { useActiveCase } from "../state/activeCase";
 
 // FASE 3 · Matriz ATT&CK del caso. Dos ejes que NUNCA se funden:
@@ -30,15 +31,8 @@ const STATUS_LABEL: Record<MitreStatus, string> = {
 
 const STATUS_ORDER: MitreStatus[] = ["confirmada", "sospechosa", "descartada"];
 
-// Colores de fase: agrupación editorial de Agentopsy, categóricos, IGUALES en
-// ambos temas, son taxonomía, no decoración.
-const PHASE_COLOR: Record<string, string> = {
-  prep: "#64748b",
-  access: "#d97706",
-  root: "#ea580c",
-  act: "#db2777",
-  goal: "#dc2626",
-};
+// Los colores de fase viven en `palette.ts`: los comparte la banda de fases del
+// dibujo del timeline, que tiene que leerse como esta misma clasificación.
 
 interface Selection {
   tacticId: string;

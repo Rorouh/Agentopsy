@@ -767,17 +767,55 @@ detalle del hallazgo y el recuento de ficheros de salida. Pinned by
 `test_sheet_opens_as_a_spreadsheet_and_declares_its_provenance` y
 `test_an_unknown_vocabulary_value_travels_verbatim`.
 
-**Lo pendiente vive en `hoja-de-ruta.md`** (2026-08-06): el dibujo de la línea
-temporal (dos figuras, una franja de trabajos para la capa de investigación y una
-banda de densidad para la capa MACB, con un layout calculado en el backend y dos
-pintores, SVG en el navegador y `fpdf2` en el PDF) y el plan de coste del informe
-pericial, medido sobre la redacción real del caso LoneWolf: **1,0659 USD en una
-llamada** (36.923 tokens de entrada, 26.637 de salida), con el 36,8 % del
-material duplicado (los 16 eventos `tool_run` de `traza` están los 16 en
-`trabajos` y sus 12 `finding` en `hallazgos`; el comando viaja tres veces) y el
-43 % de la salida gastada en transcribir a mano tablas que Agentopsy ya tiene
-exactas. Ahí está también lo que NO hay que hacer, empezando por trocear el
-informe en una llamada por apartado.
+**La línea temporal se DIBUJA (2026-08-06, `forensia.timeline.diagram` +
+`web/src/components/TimelineDiagram.tsx`)**: la lista de eventos y la hoja de
+cálculo son las dos formas correctas de LEER el timeline, y ninguna deja VERLO,
+así que el perito no podía señalar «aquí» en una reunión ni adjuntar una figura
+que resuma de un golpe seis minutos de trabajo o cuatro días de actividad del
+sistema de ficheros. Son **dos** dibujos porque son dos volúmenes distintos, y
+forzar uno solo era la manera de que no se leyera ninguno: la **franja de
+trabajos** (capa de investigación: un carril por evidencia, cada ejecución una
+barra de su duración AUDITADA, cada hallazgo una marca vertical con su técnica, y
+debajo la banda de fases de ATT&CK, que es lo que convierte el dibujo en una
+historia) y la **banda de densidad** (capa MACB: cubetas con el número de eventos
+por letra y marcas del triage de relevancia encima, porque en decenas de miles de
+eventos repartidos en años lo que se lee no es el evento, es la densidad, los
+picos y los HUECOS). El layout se calcula en el backend en **unidades de dominio**
+(segundos desde el origen del eje y conteos, sin un solo píxel) y lo pinta el
+navegador en SVG; el pintor de `fpdf2` para el informe es lo único que queda
+(`hoja-de-ruta.md`, apartado 1: necesita el bloque `ref` de la Fase B para entrar
+sin que el backend inyecte nada a espaldas de la redacción). Todo lo que las dos
+salidas tienen que pintar IGUAL se decide en el dominio, y esa frontera se pagó
+aprendiéndola: el eje elige su paso y escribe sus etiquetas (con la FECHA en la
+primera marca y en cada cambio de día, o un dibujo de tres días se lee como si
+fuera de uno); las barras se EMPAQUETAN en filas (16 ejecuciones en 5 min 54 s
+dan barras del 3 % del eje, donde no cabe ni «tsk_fls»), reservando la barra MÁS
+su etiqueta, no el máximo de las dos, que es lo que dejaba «regripper» encima de
+«tsk_icat»; y el LADO de cada etiqueta lo decide también el dominio, porque un
+pintor que volteaba por su cuenta la etiqueta que no cabía al final del eje la
+dejaba encima de la anterior. La duración sale del par
+`tool_run_start`/`tool_run_finish` del log encadenado (el evento del timeline gana
+`ts_end` y `duration_s`); sin cierre registrado la barra es un TRAZO y `dur_s` es
+`null`, nunca un cero que se leería como «tardó nada» (RULE 2). Lo que no se puede
+situar en el eje se cuenta en `avisos` y se escribe en la figura. La superficie es
+`GET …/timeline/diagram?layer=investigation|filesystem` (la capa es obligatoria;
+la banda de densidad exige su evidencia y, para no mentir en lo que dice medir,
+relee los bodyfiles hasheados en vez de la ventana recortada que persiste la
+vista) y un conmutador *Lista | Dibujo* en la vista de Timeline. El SVG se
+descarga con el bloque de procedencia dentro y el nombre de `export_basename`,
+igual que las hojas, y con los colores del tema resueltos a literales
+(`web/src/palette.ts` los lee de `index.css`), porque un fichero que se abre en un
+visor no tiene las variables CSS de la aplicación. Pinned by
+`test_timeline_diagram.py` (30 pruebas).
+
+**Lo pendiente vive en `hoja-de-ruta.md`** (2026-08-06): la figura del timeline
+DENTRO del informe y el plan de coste del informe pericial, medido sobre la
+redacción real del caso LoneWolf: **1,0659 USD en una llamada** (36.923 tokens de
+entrada, 26.637 de salida), con el 36,8 % del material duplicado (los 16 eventos
+`tool_run` de `traza` están los 16 en `trabajos` y sus 12 `finding` en
+`hallazgos`; el comando viaja tres veces) y el 43 % de la salida gastada en
+transcribir a mano tablas que Agentopsy ya tiene exactas. Ahí está también lo que
+NO hay que hacer, empezando por trocear el informe en una llamada por apartado.
 
 **Selector de modelo y de potencia de Codex (2026-07-30)**: Codex deja de ser
 un CLI cuyo catálogo Agentopsy «no puede enumerar». Su propio binario descarga

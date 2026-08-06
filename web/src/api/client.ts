@@ -19,6 +19,7 @@ import type {
   ConfigSnapshot,
   CreateCaseRequest,
   CustodyAct,
+  DiagramLayer,
   DocumentMeta,
   DocumentFull,
   DocumentVerifyResult,
@@ -41,6 +42,7 @@ import type {
   QueryRequest,
   QueryResponse,
   RedetectOsResult,
+  TimelineDiagramResponse,
   ToolUsage,
   UpdateCaseRequest,
   VerifyResult,
@@ -393,6 +395,14 @@ export const api = {
         `/api/cases/${encodeURIComponent(caseId)}/timeline/filesystem?evidence_id=${encodeURIComponent(
           evidenceId,
         )}`,
+      ),
+    // El DIBUJO de una capa: el layout en unidades de dominio que pinta
+    // `TimelineDiagram.tsx`. `layer` es obligatorio (el backend no elige capa por
+    // el operador) y la banda de densidad MACB exige su evidencia.
+    timelineDiagram: (caseId: string, layer: DiagramLayer, evidenceId?: string) =>
+      request<TimelineDiagramResponse>(
+        `/api/cases/${encodeURIComponent(caseId)}/timeline/diagram?layer=${layer}` +
+          (evidenceId ? `&evidence_id=${encodeURIComponent(evidenceId)}` : ""),
       ),
     // Cobertura ATT&CK del caso: propuestas del agente + dictámenes del operador.
     listMitreCoverage: (caseId: string) =>

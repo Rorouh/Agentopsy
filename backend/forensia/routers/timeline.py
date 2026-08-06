@@ -12,6 +12,9 @@ Two layers:
 - ``GET /api/cases/{case_id}/timeline/filesystem?evidence_id=…`` — the last PERSISTED
   filesystem super-timeline for that evidence (``{result: … | null}``), used to rehydrate
   the view without re-running ``fls``.
+- ``GET /api/cases/{case_id}/timeline/diagram?layer=…`` — el LAYOUT del dibujo de una
+  capa (``forensia.timeline.diagram``), en unidades de dominio: lo pinta el navegador en
+  SVG y, cuando la figura entre en el informe, el PDF con las mismas cifras.
 
 RULE 2 — nothing is inferred: no ``evidence_id`` → 422; an unresolved ``os_profile``
 (unknown / low confidence / conflict) → 409 the operator must anchor; ``fls`` failure →
@@ -37,7 +40,10 @@ from forensia.export_csv import export_basename
 from forensia.security import require_token
 from forensia.timeline import (
     TIMEZONE,
+    build_filesystem_diagram,
+    build_investigation_diagram,
     build_investigation_timeline,
+    full_filesystem_events,
     load_filesystem_timeline,
     run_filesystem_timeline,
 )
@@ -88,6 +94,124 @@ def export_investigation_timeline_csv(case_id: str) -> Response:
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+#: Las dos capas que se pueden DIBUJAR. La tercera (eventos relevantes) no es una
+#: capa aparte en el dibujo: son las marcas sobre la banda de densidad.
+_CAPAS_DIBUJABLES = ("investigation", "filesystem")
+
+
+def _etiquetas_de_evidencia(case_id: str) -> dict[str, str]:
+    """``evidence_id`` → etiqueta del carril del dibujo.
+
+    El nombre del fichero copiado más los ocho primeros caracteres del
+    identificador. Dos conjuntos EWF registrados en el mismo caso se copian los dos
+    a ``original.E01``, así que el nombre a secas dejaría dos carriles
+    indistinguibles en una figura que acaba en un anexo.
+    """
+    return {
+        handle.evidence_id: f"{handle.original_path.name} · {handle.evidence_id[:8]}"
+        for handle in evidence_manager.list(case_id)
+    }
+
+
+@router.get(
+    "/api/cases/{case_id}/timeline/diagram",
+    dependencies=[Depends(require_token)],
+)
+def timeline_diagram(
+    case_id: str, layer: str | None = None, evidence_id: str | None = None
+) -> dict[str, Any]:
+    """El LAYOUT del dibujo de una capa del timeline, en unidades de dominio.
+
+    ``layer=investigation`` dibuja la franja de trabajos (un carril por evidencia,
+    una barra por ejecución con su duración auditada, una marca por hallazgo y la
+    banda de fases de ATT&CK) y no necesita evidencia. ``layer=filesystem`` dibuja
+    la banda de densidad MACB de UNA evidencia, y la exige.
+
+    ``diagram`` es ``null`` con un ``message`` accionable cuando no hay nada que
+    dibujar todavía (un caso sin actividad, una super-timeline sin generar): un eje
+    vacío con leyenda sugeriría que se midió algo (RULE 2). ``layer`` es
+    obligatorio: no se elige una capa por el operador.
+    """
+    if layer not in _CAPAS_DIBUJABLES:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"layer inválido: {layer!r}. Indica la capa que quieres dibujar, "
+                f"una de {list(_CAPAS_DIBUJABLES)} (Agentopsy no elige una por ti, "
+                "RULE 2)."
+            ),
+        )
+    try:
+        case = case_manager.load(case_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    respuesta: dict[str, Any] = {
+        "case_id": case_id,
+        "layer": layer,
+        "timezone": TIMEZONE,
+        "diagram": None,
+        "message": None,
+    }
+
+    if layer == "investigation":
+        events = build_investigation_timeline(case_id)
+        diagram = build_investigation_diagram(
+            events,
+            case_id=case_id,
+            case_name=case.name,
+            evidence_labels=_etiquetas_de_evidencia(case_id),
+        )
+        respuesta["diagram"] = diagram
+        if diagram is None:
+            respuesta["message"] = (
+                "El caso no tiene todavía ningún evento con marca temporal que "
+                "situar en el eje. La franja de trabajos se dibuja con las "
+                "ejecuciones del log de auditoría y los hallazgos registrados."
+            )
+        return respuesta
+
+    if not evidence_id:
+        raise HTTPException(
+            status_code=422,
+            detail="evidence_id is required: la banda de densidad se dibuja sobre "
+                   "una evidencia concreta (Agentopsy no asume 'la única' ni 'la "
+                   "última', RULE 2).",
+        )
+    try:
+        handle = evidence_manager.get(case_id, evidence_id)
+        material = full_filesystem_events(case_id, evidence_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if material is None:
+        respuesta["message"] = (
+            "La super-timeline de esta evidencia aún no está generada, así que no "
+            "hay densidad que dibujar. Pulsa «Generar super-timeline» y vuelve al "
+            "dibujo."
+        )
+        return respuesta
+    events, relevant, _persisted = material
+    respuesta["diagram"] = build_filesystem_diagram(
+        events,
+        relevant,
+        case_id=case_id,
+        case_name=case.name,
+        evidence_id=evidence_id,
+        evidence_label=f"{handle.original_path.name} · {handle.evidence_id[:8]}",
+    )
+    if respuesta["diagram"] is None:
+        respuesta["message"] = (
+            "La super-timeline de esta evidencia no tiene ningún evento con marca "
+            "temporal legible."
+        )
+    return respuesta
 
 
 class FilesystemTimelineRequest(BaseModel):

@@ -1,8 +1,7 @@
 # Hoja de ruta
 
-Lo que viene después de la tanda del 2026-08-06. Dos cosas nuevas y un plan de
-coste, todo medido sobre los casos reales que hay en `./projects` (LoneWolf,
-M57-jean), no sobre estimaciones de sobremesa.
+Lo que queda por hacer, medido sobre los casos reales que hay en `./projects`
+(LoneWolf, M57-jean), no sobre estimaciones de sobremesa.
 
 El estado de lo YA implementado vive en `CLAUDE.md`, sección *Status*. Este
 fichero es solo lo pendiente: cuando algo de aquí se implementa, se documenta
@@ -10,9 +9,11 @@ allí y se borra de aquí.
 
 ---
 
-## 0. Contexto: qué se cerró el 2026-08-06
+## 0. Contexto: de dónde vienen los dos apartados siguientes
 
-Tres arreglos que son la razón de que existan los dos apartados siguientes.
+Los arreglos del 2026-08-06 y el dibujo de la línea temporal, ya
+implementados (el detalle está en `CLAUDE.md`), son la razón de que existan los
+dos apartados que siguen.
 
 **Los desplegables en tema oscuro.** La lista de un `<select>` la dibuja el
 navegador, no el CSS de la aplicación, y hereda el color del control: el campo
@@ -35,89 +36,40 @@ a un informe). Ahora las dos salen por `forensia.export_csv`: BOM, `sep=;`,
 procedencia de dos columnas, una línea vacía y la tabla, con cabeceras en
 castellano y el `argv` literal en la última columna, que es el dato más ancho.
 
+**El dibujo de la línea temporal.** Las dos figuras (la franja de trabajos de la
+investigación y la banda de densidad MACB) se calculan como un layout en
+unidades de dominio en `forensia.timeline.diagram` y las pinta en SVG
+`web/src/components/TimelineDiagram.tsx`. El bloque de procedencia que estrenaron
+las hojas de cálculo viaja también en la figura, y el nombre del SVG descargado
+sale del mismo `export_basename`. Lo que queda de esto es el apartado 1.
+
 ---
 
-## 1. El dibujo de la línea temporal
+## 1. La figura del timeline DENTRO del informe pericial
 
-Hoy el timeline se lee como una lista de eventos y se exporta como tabla. Las
-dos formas son correctas y ninguna deja VER la investigación: el perito no puede
-señalar «aquí» en una reunión, y el informe pericial no tiene una figura que
-resuma seis minutos de trabajo o cuatro días de actividad del sistema de
-ficheros.
+El dibujo de la línea temporal está implementado y se usa desde la vista de
+Timeline (conmutador *Lista | Dibujo*, con su SVG descargable); el detalle vive
+en `CLAUDE.md`. Lo que queda es meterlo en el informe, y no está pendiente por
+falta de código sino por una decisión de contrato:
 
-### 1.1 Dos dibujos, porque son dos volúmenes distintos
+- El pintor del PDF (`reports/pdf.py` con las primitivas vectoriales de `fpdf2`,
+  que ya es dependencia) consume el MISMO layout que el SVG del navegador
+  (`forensia.timeline.diagram`, en unidades de dominio), así que no hay lógica
+  que duplicar: son las mismas cifras, otro lienzo.
+- Pero **el informe lo redacta el modelo de principio a fin** y el índice es lo
+  único común, así que la figura tiene que entrar como un bloque que el modelo
+  PIDE en el apartado 3, *Línea de tiempo del incidente*, nunca como algo que el
+  backend inyecta a espaldas de la redacción. Ese mecanismo es exactamente el
+  bloque `ref` de la **Fase B** del apartado siguiente: un tipo de bloque nuevo
+  que el modelo referencia y el `writer` expande en el servidor.
 
-No hay un solo diagrama que sirva para las dos capas del timeline, y forzarlo
-sería la manera de que ninguna se lea:
+Por eso el orden importa: la figura del informe va DESPUÉS de la Fase B, y
+reutiliza su contrato en vez de inventarse un segundo camino para lo mismo.
 
-- **Capa de investigación**: decenas de eventos (el caso LoneWolf tiene 28: 16
-  ejecuciones y 12 hallazgos) repartidos en minutos. Cada ejecución tiene inicio
-  Y fin auditados, así que tiene DURACIÓN, no solo instante.
-- **Capa de sistema de ficheros (MACB)**: decenas de miles de eventos repartidos
-  en años. Aquí lo que se lee no es el evento, es la DENSIDAD: los picos de
-  actividad y los huecos.
-
-**Dibujo A, «franja de trabajos» (capa de investigación).** Eje temporal
-horizontal. Un carril por evidencia (con un carril extra para lo que no cuelga
-de ninguna). Cada ejecución es una barra de su duración real, con el color de
-estado del sistema visual (tinta para finalizada, `--danger` para la que acabó
-con error). Cada hallazgo es una marca vertical sobre el carril, con su severidad,
-y con la etiqueta de la técnica ATT&CK cuando la propone. Debajo, una banda con
-los colores de fase de la matriz (`PHASE_COLOR` ya existe en
-`MitreAttackPage`), que es lo que convierte el dibujo en una historia y no en un
-registro de actividad: se ve el acceso, luego la recolección, luego la
-exfiltración.
-
-**Dibujo B, «banda de densidad» (capa MACB).** Eje temporal horizontal con
-cubetas (día, semana o mes según el rango) y la altura de cada cubeta como
-número de eventos, separando por letra MACB. Encima, marcas para los eventos
-que la capa de relevancia (`forensia.timeline.relevance`) ya clasifica como
-forensemente relevantes. Es el dibujo que responde a la pregunta que un listado
-de 40.000 filas no responde: cuándo pasó algo.
-
-### 1.2 Cómo se construye, para no romper la RULE 3
-
-Un layout calculado en el backend y DOS pintores sobre el mismo layout:
-
-```
-forensia/timeline/diagram.py     build_diagram_layout(events) -> dict
-    carriles, barras, marcas y cubetas en UNIDADES DE DOMINIO
-    (segundos y conteos), sin un solo píxel. Puro, testeable.
-        │
-        ├─▶ web: TimelineDiagram.tsx pinta el layout en SVG
-        │   (paleta y filete del sistema visual, tema claro/oscuro)
-        │
-        └─▶ PDF: reports/pdf.py pinta el MISMO layout con las
-            primitivas vectoriales de fpdf2, que ya es dependencia
-```
-
-Que el layout no lleve píxeles es lo que permite las dos salidas sin duplicar
-lógica, y que el mismo dibujo del navegador sea el que aparece en el anexo del
-informe. `fpdf2` ya está en la imagen del api (RULE 1: no hay que añadir nada al
-compose), y dibujar líneas y rectángulos no necesita rasterizar nada.
-
-### 1.3 Superficie
-
-- `GET /api/cases/{id}/timeline/diagram?layer=investigation|filesystem&evidence_id=…`
-  devuelve el layout. Sin `evidence_id` para la capa MACB, 422 (RULE 2: no se
-  asume «la única» evidencia).
-- La vista de Timeline gana un conmutador `Lista | Dibujo` junto a las pestañas
-  que ya tiene. El dibujo se descarga como SVG con el mismo nombre y bloque de
-  procedencia que las hojas (`export_basename`), para que el fichero que acabe
-  en el anexo se pueda identificar después.
-- El informe pericial gana la figura en el apartado 3, *Línea de tiempo del
-  incidente*. Aquí hay una decisión de contrato que tomar antes de escribir
-  código: **el índice del informe es fijo y lo escribe el modelo**, así que la
-  figura tiene que entrar como un bloque que el modelo PIDE (ver el apartado 2.3
-  de este documento, es el mismo mecanismo), nunca como algo que el backend
-  inyecta a espaldas de la redacción.
-
-### 1.4 Lo que este dibujo NO es
-
-No es una vista interactiva de análisis (zoom, brushing, selección de rango).
-Eso es otra herramienta y otro proyecto. Es una FIGURA: se lee de un golpe, se
-imprime, se adjunta. Si más adelante hace falta interacción, el layout ya está
-en el backend y la decisión será solo del pintor del navegador.
+Lo que este dibujo NO es, y conviene que siga sin ser: una vista interactiva de
+análisis (zoom, *brushing*, selección de rango). Es una FIGURA: se lee de un
+golpe, se imprime, se adjunta. Si más adelante hace falta interacción, el layout
+ya está en el backend y la decisión será solo del pintor del navegador.
 
 ---
 
@@ -297,9 +249,6 @@ apartados que pasan las cuatro puertas en el PRIMER intento
 2. **Fase B del informe** (bloque `ref` expandido en el servidor). Es la que más
    ahorra y la que toca el contrato, así que va después de tener la medición
    limpia de A.
-3. **Dibujo A** (franja de trabajos) en la vista de Timeline, con su SVG
-   descargable.
-4. **La figura en el informe**, que necesita el bloque `ref` de la Fase B para
-   entrar sin que el backend inyecte nada a espaldas de la redacción.
-5. **Dibujo B** (banda de densidad MACB), que es independiente de todo lo
-   anterior y se puede adelantar si hace falta enseñar algo pronto.
+3. **La figura del timeline en el informe** (apartado 1), que necesita el bloque
+   `ref` de la Fase B para entrar sin que el backend inyecte nada a espaldas de
+   la redacción, y el pintor de `fpdf2` sobre el layout que ya existe.

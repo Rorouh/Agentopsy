@@ -219,6 +219,38 @@ def is_known(technique_id: str) -> bool:
     return technique_id in _index()
 
 
+def _phase_index() -> dict[str, str]:
+    """Técnica de la semilla → fase editorial de su táctica."""
+    return {
+        tech.id: tactic.phase
+        for tactic in load().tactics
+        for tech in tactic.techniques
+    }
+
+
+def phase_of(technique_id: str) -> str | None:
+    """La fase editorial (:data:`PHASES`) en la que cae una técnica, o ``None``.
+
+    ``None`` cuando la técnica no está en la semilla o su táctica no tiene fase
+    asignada: quien lo consuma (el dibujo de la línea temporal) pinta la técnica
+    igual pero NO la sitúa en una fase que no le consta (RULE 2).
+
+    Una sub-técnica que la semilla no liste hereda la fase de su técnica padre.
+    No es una suposición: en ATT&CK una sub-técnica pertenece a la táctica de su
+    padre, y es el mismo criterio con el que ``enterprise_display_id`` decide en
+    qué celda de la matriz se pinta.
+    """
+    index = _phase_index()
+    if technique_id in index:
+        return index[technique_id]
+    return index.get(technique_id.split(".")[0])
+
+
+def phase_label(phase: str) -> str:
+    """Etiqueta en castellano de una fase; el propio valor si no es una fase."""
+    return dict(PHASES).get(phase, phase)
+
+
 def unavailable_reason() -> str | None:
     """Motivo accionable si el catálogo no está disponible; `None` si lo está."""
     if load().available:

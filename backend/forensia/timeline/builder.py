@@ -62,10 +62,12 @@ _EVIDENCE_ID_RE = re.compile(
 # --------------------------------------------------------------------------- #
 # Timestamp normalization
 # --------------------------------------------------------------------------- #
-def _parse_iso_utc(value: Any) -> datetime | None:
+def parse_iso_utc(value: Any) -> datetime | None:
     """Parse an ISO-8601 timestamp to an aware UTC ``datetime``; ``None`` if unparseable.
 
     Accepts both the audit log's ``…+00:00`` and the findings' ``…Z`` spellings.
+    Public because ``forensia.timeline.diagram`` places every event on its axis with
+    exactly this parse: two readings of the same timestamp would be two timelines.
     """
     if not isinstance(value, str) or not value.strip():
         return None
@@ -81,14 +83,14 @@ def _parse_iso_utc(value: Any) -> datetime | None:
     return dt.astimezone(timezone.utc)
 
 
-def _dt_to_z(dt: datetime) -> str:
+def dt_to_z(dt: datetime) -> str:
     """Canonical explicit-UTC ISO-8601 string with millisecond precision and a ``Z``."""
     return dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{dt.microsecond // 1000:03d}Z"
 
 
 def _normalize_iso_utc(value: Any) -> str | None:
-    dt = _parse_iso_utc(value)
-    return _dt_to_z(dt) if dt is not None else None
+    dt = parse_iso_utc(value)
+    return dt_to_z(dt) if dt is not None else None
 
 
 def _epoch_to_z(epoch: int) -> str | None:
@@ -133,7 +135,7 @@ def assemble_investigation_timeline(
     for finding in findings:
         events.append(_finding_event(finding))
 
-    events.sort(key=lambda e: _parse_iso_utc(e.get("ts")) or _FAR_FUTURE)
+    events.sort(key=lambda e: parse_iso_utc(e.get("ts")) or _FAR_FUTURE)
     return events
 
 
@@ -145,19 +147,29 @@ def _tool_run_event(
     output_files_count: int | None = None
     exit_code: int | None = None
     status = "running"
+    ts_end: str | None = None
     if finish is not None:
         status = str(finish.get("status") or "running")
         raw_exit = finish.get("exit_code")
         exit_code = raw_exit if isinstance(raw_exit, int) else None
         raw_count = finish.get("output_files_count")
         output_files_count = raw_count if isinstance(raw_count, int) else None
+        ts_end = _normalize_iso_utc(finish.get("ts_utc"))
         for relpath, key in (("stdout.txt", "stdout_sha256"), ("stderr.txt", "stderr_sha256")):
             sha = finish.get(key)
             if isinstance(sha, str) and sha:
                 artifacts.append({"relpath": relpath, "sha256": sha})
+    ts = _normalize_iso_utc(start.get("ts_utc"))
     return {
         "kind": "tool_run",
-        "ts": _normalize_iso_utc(start.get("ts_utc")),
+        "ts": ts,
+        # Instante de cierre y duración MEDIDA entre las dos entradas del log
+        # encadenado (``tool_run_start`` / ``tool_run_finish``), no una estimación:
+        # es lo que convierte una ejecución en una BARRA en el dibujo. ``None``
+        # mientras el run sigue en vuelo o si una de las dos marcas no se puede
+        # leer — nunca un cero que se leería como «instantánea» (RULE 2).
+        "ts_end": ts_end,
+        "duration_s": _duracion_s(ts, ts_end),
         "tool_id": start.get("tool_id"),
         "run_id": start.get("run_id"),
         "argv": list(argv) if isinstance(argv, list) else [],
@@ -167,6 +179,21 @@ def _tool_run_event(
         "artifacts": artifacts,
         "output_files_count": output_files_count,
     }
+
+
+def _duracion_s(ts: str | None, ts_end: str | None) -> float | None:
+    """Segundos entre el inicio y el fin auditados de una ejecución.
+
+    ``None`` si falta cualquiera de las dos marcas. Un fin ANTERIOR al inicio
+    (reloj movido entre las dos entradas del log) también da ``None``: una
+    duración negativa no es un dato, es una inconsistencia, y dibujarla como cero
+    la escondería.
+    """
+    inicio, fin = parse_iso_utc(ts), parse_iso_utc(ts_end)
+    if inicio is None or fin is None:
+        return None
+    delta = (fin - inicio).total_seconds()
+    return delta if delta >= 0 else None
 
 
 def _finding_event(finding: Finding) -> dict[str, Any]:
@@ -460,7 +487,7 @@ def run_filesystem_timeline(
         "total_relevant": total_relevant,
         "relevant_returned": len(relevant),
         "relevant_truncated": total_relevant > len(relevant),
-        "generated_at": _dt_to_z(datetime.now(timezone.utc)),
+        "generated_at": dt_to_z(datetime.now(timezone.utc)),
     }
     # Persistir el resultado (acotado) por evidencia bajo el caso, para que la
     # super-timeline SOBREVIVA a recargas de la página y reinicios del api (el
@@ -505,6 +532,54 @@ def load_filesystem_timeline(case_id: str, evidence_id: str) -> dict[str, Any] |
         # Un JSON corrupto no es una super-timeline: se trata como "no hay",
         # regenerable con «Generar» (RULE 2: nunca una línea temporal a medias).
         return None
+
+
+def persisted_fls_run_ids(persisted: dict[str, Any]) -> list[str]:
+    """Los runs de ``fls -m`` cuyos bodyfiles componen una super-timeline persistida.
+
+    Un disco particionado persiste un run por sistema de ficheros (``fls_run_ids``);
+    una super-timeline antigua, o la de una imagen sin tabla de particiones,
+    persiste uno solo (``fls_run_id``). Devuelve la lista COMPLETA para que quien
+    relea los bodyfiles cubra todas las particiones y no solo la primera; vacía si
+    el JSON no referencia ninguno (lo que obliga a regenerarla, nunca a responder
+    con media línea temporal).
+    """
+    run_ids = persisted.get("fls_run_ids")
+    if isinstance(run_ids, list) and run_ids and all(isinstance(r, str) for r in run_ids):
+        return list(run_ids)
+    single = persisted.get("fls_run_id")
+    return [single] if isinstance(single, str) and single else []
+
+
+def full_filesystem_events(
+    case_id: str, evidence_id: str
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]] | None:
+    """Todos los eventos MACB de la super-timeline persistida de una evidencia.
+
+    Relee los bodyfiles HASHEADOS de los runs de ``fls -m`` y los expande enteros,
+    igual que :func:`query_filesystem_timeline`: la vista materializada guarda una
+    ventana RECORTADA (``DEFAULT_FS_EVENT_LIMIT``), y una banda de densidad
+    calculada sobre el recorte mentiría exactamente en lo que dice medir. No
+    ejecuta ninguna herramienta.
+
+    Devuelve ``(eventos, relevantes, persistido)`` o ``None`` si la evidencia no
+    tiene super-timeline generada (o el JSON no referencia sus runs) — el llamante
+    dice «genérala primero», nunca un vacío que se leería como «no pasó nada».
+    ``ValueError`` si el ``evidence_id`` está malformado.
+    """
+    persisted = load_filesystem_timeline(case_id, evidence_id)
+    if persisted is None:
+        return None
+    run_ids = persisted_fls_run_ids(persisted)
+    if not run_ids:
+        return None
+    events = _bodyfile_to_all_events(
+        "\n".join(_read_run_stdout(case_id, rid) for rid in run_ids)
+    )
+    # Relevancia sobre TODOS los eventos y SIN tope: aquí no se listan, se cuentan
+    # por cubeta, así que un tope solo desplazaría el pico de actividad.
+    relevant, _ = select_relevant_events(events, limit=None)
+    return events, relevant, persisted
 
 
 def _parse_query_bound(value: str, *, end: bool) -> datetime:
@@ -558,13 +633,7 @@ def query_filesystem_timeline(
                 "vista Timeline) y vuelve a consultar; no infiero actividad sin ella."
             ),
         }
-    # A partitioned disk persists one fls run per filesystem (``fls_run_ids``); an older /
-    # bare-fs timeline persists a single ``fls_run_id``. Merge all their bodyfiles so the
-    # query is exhaustive over every partition, not just the first.
-    run_ids = persisted.get("fls_run_ids")
-    if not (isinstance(run_ids, list) and run_ids and all(isinstance(r, str) for r in run_ids)):
-        single = persisted.get("fls_run_id")
-        run_ids = [single] if isinstance(single, str) else None
+    run_ids = persisted_fls_run_ids(persisted)
     if not run_ids:
         return {
             "status": "no_timeline",

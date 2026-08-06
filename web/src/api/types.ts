@@ -691,6 +691,11 @@ export interface QueryRequest {
 export interface TimelineToolRunEvent {
   kind: "tool_run";
   ts: string | null;
+  // Cierre e instante de la ejecución tal y como los registró el log encadenado.
+  // `duration_s` es null mientras el run sigue en vuelo o si falta una de las dos
+  // marcas: cero se leería como «tardó nada», que es otro dato (RULE 2).
+  ts_end: string | null;
+  duration_s: number | null;
   tool_id: string | null;
   run_id: string | null;
   argv: string[];
@@ -760,6 +765,178 @@ export interface TimelineJobProgress {
   stage?: string;
   message?: string;
 }
+// ── El DIBUJO de la línea temporal (backend/forensia/timeline/diagram.py) ────
+// El backend calcula el layout en UNIDADES DE DOMINIO (segundos desde el origen
+// del eje y conteos), sin un solo píxel: `TimelineDiagram.tsx` lo pinta en SVG y
+// el PDF del informe lo pintará con las mismas cifras. Todo lo que las dos
+// salidas tienen que pintar igual (las marcas del eje y sus etiquetas, la fila de
+// cada barra, la granularidad de las cubetas, el texto de la leyenda) viene
+// resuelto de ahí: la geometría no se recalcula aquí.
+
+export type DiagramLayer = "investigation" | "filesystem";
+
+export interface DiagramTick {
+  t_s: number;
+  etiqueta: string;
+  // Fecha, solo en la primera marca y en cada cambio de día (con etiquetas de
+  // hora, sin esto un dibujo de tres días se lee como si fuera de uno).
+  sub: string;
+  ts: string;
+}
+export interface DiagramAxis {
+  t0: string;
+  t1: string;
+  span_s: number;
+  paso_s: number;
+  marcas: DiagramTick[];
+  duracion: string;
+}
+// Una ejecución de herramienta: barra de su duración MEDIDA. `dur_s` null = sin
+// cierre registrado, se pinta como trazo, nunca como barra de ancho cero.
+export interface DiagramBar {
+  t_s: number;
+  dur_s: number | null;
+  ts: string | null;
+  ts_fin: string | null;
+  tool_id: string;
+  run_id: string;
+  estado: string;
+  exit: number | null;
+  ok: boolean;
+  artefactos: number | null;
+  duracion: string;
+  // Lo que se rotula al lado de la barra, y a qué LADO. Los escribe el backend
+  // porque son lo que decide cuánto sitio reserva al empaquetarse en su fila:
+  // voltear una etiqueta aquí la dejaría encima de la anterior.
+  etiqueta: string;
+  lado: "derecha" | "izquierda";
+  fila: number;
+}
+// Un hallazgo: marca vertical. `fase` null = su técnica no está situada en la
+// semilla, así que se pinta la técnica pero no se le inventa una fase (RULE 2).
+export interface DiagramMark {
+  t_s: number;
+  ts: string | null;
+  finding_id: string;
+  titulo: string;
+  severidad: string;
+  etiqueta_severidad: string;
+  tool_id: string;
+  tecnicas: string[];
+  fase: string | null;
+  // La técnica si el hallazgo propone alguna, y si no su título recortado. La
+  // severidad no se rotula: se lee en el grosor de la marca.
+  etiqueta: string;
+  lado: "derecha" | "izquierda";
+  fila: number;
+}
+export interface DiagramLane {
+  clave: string;
+  evidence_id: string | null;
+  etiqueta: string;
+  barras: DiagramBar[];
+  marcas: DiagramMark[];
+  filas_barras: number;
+  filas_marcas: number;
+}
+export interface DiagramPhase {
+  clave: string;
+  etiqueta: string;
+  t0_s: number;
+  t1_s: number;
+  tecnicas: string[];
+  hallazgos: number;
+}
+export interface DiagramLegendEntry {
+  clave: string;
+  etiqueta: string;
+}
+interface DiagramCommon {
+  kind: string;
+  titulo: string;
+  case_id: string;
+  case_name: string;
+  timezone: string;
+  generated_at: string;
+  // Nombre del fichero (sin extensión) con el que se descarga la figura: lleva el
+  // caso y la marca temporal, transcritos a ASCII, igual que las hojas de cálculo.
+  basename: string;
+  eje: DiagramAxis;
+  leyenda: DiagramLegendEntry[];
+  // Bloque de procedencia, pares (campo, valor): se pinta bajo la figura para que
+  // el fichero que acabe en un anexo diga de qué caso y de qué ventana es.
+  procedencia: [string, string][];
+  // Lo que no se pudo situar en el eje, dicho en voz alta (RULE 2).
+  avisos: string[];
+}
+export interface InvestigationDiagram extends DiagramCommon {
+  layer: "investigation";
+  carriles: DiagramLane[];
+  fases: DiagramPhase[];
+  resumen: {
+    ejecuciones: number;
+    fallidas: number;
+    en_curso: number;
+    hallazgos: number;
+    carriles: number;
+    fases: number;
+  };
+}
+export interface DensityBucket {
+  indice: number;
+  t_s: number;
+  dur_s: number;
+  inicio: string;
+  total: number;
+  letras: Record<string, number>;
+  relevantes: number;
+}
+export interface DensityMark {
+  cubeta: number;
+  t_s: number;
+  dur_s: number;
+  total: number;
+  categorias: { clave: string; total: number }[];
+  principal: {
+    categoria: string;
+    motivo: string;
+    peso: number;
+    ruta: string;
+    ts: string;
+  };
+}
+export interface FilesystemDiagram extends DiagramCommon {
+  layer: "filesystem";
+  evidence_id: string;
+  evidence_label: string;
+  granularidad: { clave: string; etiqueta: string; bucket_s: number; cubetas: number };
+  cubetas: DensityBucket[];
+  letras: DiagramLegendEntry[];
+  marcas: DensityMark[];
+  categorias: { clave: string; motivo: string; total: number }[];
+  max_total: number;
+  max_letra: number;
+  max_peso: number;
+  resumen: {
+    eventos: number;
+    relevantes: number;
+    cubetas: number;
+    max_total: number;
+    primer_evento: string;
+    ultimo_evento: string;
+  };
+}
+export type TimelineDiagramLayout = InvestigationDiagram | FilesystemDiagram;
+// `diagram` es null con un `message` accionable cuando todavía no hay nada que
+// dibujar: un eje vacío con leyenda sugeriría que se midió algo.
+export interface TimelineDiagramResponse {
+  case_id: string;
+  layer: DiagramLayer;
+  timezone: string;
+  diagram: TimelineDiagramLayout | null;
+  message: string | null;
+}
+
 export interface FsTimelineJob {
   job_id: string;
   case_id: string;
