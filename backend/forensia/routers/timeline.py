@@ -33,6 +33,7 @@ from forensia.cases.manager import (
 )
 from forensia.evidence import evidence_manager
 from forensia.evidence_context import EvidenceContext
+from forensia.export_csv import export_basename
 from forensia.security import require_token
 from forensia.timeline import (
     TIMEZONE,
@@ -67,17 +68,21 @@ def investigation_timeline(case_id: str) -> dict[str, Any]:
     dependencies=[Depends(require_token)],
 )
 def export_investigation_timeline_csv(case_id: str) -> Response:
-    """CSV del timeline de investigación (ejecuciones de herramienta + hallazgos, en
-    orden cronológico UTC). Reusa el mismo builder determinista; un caso sin actividad
-    devuelve sólo la cabecera (0 filas, honesto)."""
+    """Hoja de cálculo del timeline de investigación (ejecuciones de herramienta +
+    hallazgos, en orden cronológico UTC, con su bloque de procedencia). Reusa el
+    mismo builder determinista; un caso sin actividad devuelve la procedencia y la
+    cabecera sin filas (0 filas, honesto)."""
     try:
         events = build_investigation_timeline(case_id)
+        case = case_manager.load(case_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    body = timeline_to_csv(events)
-    filename = f"timeline-{case_id}.csv"
+    body = timeline_to_csv(
+        events, case_id=case_id, case_name=case.name, timezone=TIMEZONE
+    )
+    filename = f"{export_basename(case.name, 'timeline')}.csv"
     return Response(
         content=body,
         media_type="text/csv; charset=utf-8",

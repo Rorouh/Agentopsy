@@ -720,6 +720,65 @@ staging en curso de ESTE proceso, no con fechas. Pinned by
 `test_staging_left_by_a_killed_register_is_discarded_and_audited` y
 `test_the_staging_of_a_register_in_flight_is_never_swept`.
 
+**Un desplegable en tema oscuro ya se lee (2026-08-06, `web/src/index.css`)**: la
+LISTA de un `<select>` la dibuja el navegador, no este CSS, y hereda el color del
+control; el campo del rediseño es un subrayado sobre fondo TRANSPARENTE, así que
+en oscuro salía la tinta clara de `--ink` sobre el blanco del agente de usuario y
+solo se leía la opción bajo el cursor. La causa de fondo era más ancha que ese
+síntoma: faltaba declarar **`color-scheme`**, que es lo que le dice al navegador
+con qué paleta pintar TODO lo que dibuja él y el CSS no alcanza (la lista del
+desplegable, la barra de scroll, el aspa de un `input[type=search]`, el anillo de
+foco de un botón, el resalte del autocompletado). Ahora `:root` declara `light` y
+`[data-theme="dark"]` declara `dark`, con dos refuerzos explícitos para lo que un
+navegador puede seguir pintando a su aire: colores propios de `option`/`optgroup`
+(por ELEMENTO, no por clase, para cubrir también el `select` que se estiliza como
+`.field-input`) y la sombra interior que tapa el fondo del autocompletado. Con
+ello se arregló además el único contraste roto del tema oscuro: el botón que
+confirma borrar un caso pintaba blanco fijo sobre `--danger`, que en oscuro es un
+salmón claro, y pasa a `--invert-fg`, el mismo token que ya usan `.action-accent`
+y `.action-invert`.
+
+**Las dos exportaciones a CSV se abren como una hoja de cálculo (2026-08-06,
+`forensia.export_csv`)**: ni la cobertura ATT&CK ni el timeline se podían
+adjuntar a un informe, y los tres motivos eran del ENVOLTORIO, no de los datos.
+(1) Sin BOM: Excel en Windows abre un `.csv` sin marca con la página de códigos
+del sistema, así que «Exfiltración» se leía «ExfiltraciÃ³n». (2) Separado por
+comas: el separador de listas de un Windows en español es el punto y coma, de
+modo que la fila ENTERA caía en la columna A, sin columnas ni filtros ni orden.
+(3) Sin procedencia: una tabla que no dice de qué caso es, cuándo se exportó ni
+cuántas filas debería traer no vale como anexo. El módulo nuevo es el envoltorio
+compartido (BOM, `sep=;` que Excel y LibreOffice leen para no depender de la
+configuración regional, CRLF de RFC 4180, bloque de procedencia de dos columnas y
+**una línea vacía** antes de la tabla, que es el contrato estable para quien la
+lea con un programa) más `export_basename`, que nombra el fichero con la
+herramienta, el tipo, el caso y la marca temporal (transcrito a ASCII porque
+viaja en `Content-Disposition`), así que dos exportaciones del mismo caso no se
+pisan en la carpeta de descargas. Sobre eso, las cabeceras pasan a castellano
+(la hoja la lee una PERSONA; el canal de máquina sigue siendo el layer del
+Navigator y `GET …/timeline`, que no cambian), cada fila se numera para poder
+citarla, el vocabulario cerrado se etiqueta con la regla de que un valor
+desconocido viaja TAL CUAL y nunca traducido a lo que se le parezca (RULE 2), y
+el `argv` literal auditado se va a la ÚLTIMA columna: pasa de cien caracteres y
+puesto a la izquierda empujaba fuera de pantalla justo las columnas que se leen.
+El timeline gana además tres columnas que antes se tiraban y son las que permiten
+citar un evento en el informe: el identificador (`run_id` o `finding_id`), el
+detalle del hallazgo y el recuento de ficheros de salida. Pinned by
+`test_csv_opens_as_a_spreadsheet_and_declares_its_provenance`,
+`test_sheet_opens_as_a_spreadsheet_and_declares_its_provenance` y
+`test_an_unknown_vocabulary_value_travels_verbatim`.
+
+**Lo pendiente vive en `hoja-de-ruta.md`** (2026-08-06): el dibujo de la línea
+temporal (dos figuras, una franja de trabajos para la capa de investigación y una
+banda de densidad para la capa MACB, con un layout calculado en el backend y dos
+pintores, SVG en el navegador y `fpdf2` en el PDF) y el plan de coste del informe
+pericial, medido sobre la redacción real del caso LoneWolf: **1,0659 USD en una
+llamada** (36.923 tokens de entrada, 26.637 de salida), con el 36,8 % del
+material duplicado (los 16 eventos `tool_run` de `traza` están los 16 en
+`trabajos` y sus 12 `finding` en `hallazgos`; el comando viaja tres veces) y el
+43 % de la salida gastada en transcribir a mano tablas que Agentopsy ya tiene
+exactas. Ahí está también lo que NO hay que hacer, empezando por trocear el
+informe en una llamada por apartado.
+
 **Selector de modelo y de potencia de Codex (2026-07-30)**: Codex deja de ser
 un CLI cuyo catálogo Agentopsy «no puede enumerar». Su propio binario descarga
 la lista con la sesión OAuth del operador y la cachea en

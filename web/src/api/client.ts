@@ -404,23 +404,25 @@ export const api = {
         body,
       ),
     // Export CSV de la cobertura ATT&CK del caso (0 propuestas → cabecera + 0 filas).
+    // El nombre real lo pone el Content-Disposition del backend (lleva el nombre
+    // del caso y la marca temporal); estos son el respaldo si falta la cabecera.
     exportMitreCsv: (caseId: string) =>
       download(
         `/api/cases/${encodeURIComponent(caseId)}/mitre/export.csv`,
-        `mitre-coverage-${caseId}.csv`,
+        `agentopsy-mitre-attack-${caseId}.csv`,
       ),
     // Export del layer del ATT&CK Navigator (formato 4.5) para cargarlo en el
     // Navigator oficial: colorea las técnicas propuestas/adjudicadas del caso.
     exportMitreNavigator: (caseId: string) =>
       download(
         `/api/cases/${encodeURIComponent(caseId)}/mitre/navigator`,
-        `mitre-navigator-${caseId}.json`,
+        `agentopsy-mitre-navigator-${caseId}.json`,
       ),
     // Export CSV del timeline de investigación (tool runs + hallazgos, orden UTC).
     exportTimelineCsv: (caseId: string) =>
       download(
         `/api/cases/${encodeURIComponent(caseId)}/timeline/export.csv`,
-        `timeline-${caseId}.csv`,
+        `agentopsy-timeline-${caseId}.csv`,
       ),
     readChat: (caseId: string, sessionId: string) =>
       request<PersistedChatMessage[]>(

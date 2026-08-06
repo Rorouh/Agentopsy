@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 
 from forensia.cases.manager import case_manager
+from forensia.export_csv import export_basename
 from forensia.mitre import catalog
 from forensia.mitre.coverage import coverage_store
 from forensia.mitre.export import coverage_to_csv, coverage_to_navigator_layer
@@ -52,16 +53,18 @@ def get_coverage(case_id: str) -> list[dict[str, Any]]:
     dependencies=[Depends(require_token)],
 )
 def export_coverage_csv(case_id: str) -> Response:
-    """CSV de la cobertura ATT&CK del caso (una fila por técnica evaluada). Un caso
-    sin propuestas ni dictámenes devuelve sólo la cabecera (0 filas, honesto)."""
+    """Hoja de cálculo de la cobertura ATT&CK del caso (una fila por técnica
+    evaluada, con su bloque de procedencia). Un caso sin propuestas ni dictámenes
+    devuelve la procedencia y la cabecera sin filas (0 filas, honesto)."""
     try:
         entries = coverage_store.coverage(case_id)
+        case = case_manager.load(case_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    body = coverage_to_csv(entries)
-    filename = f"mitre-coverage-{case_id}.csv"
+    body = coverage_to_csv(entries, case_id=case_id, case_name=case.name)
+    filename = f"{export_basename(case.name, 'mitre-attack')}.csv"
     return Response(
         content=body,
         media_type="text/csv; charset=utf-8",
@@ -85,7 +88,7 @@ def export_navigator_layer(case_id: str) -> Response:
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     layer = coverage_to_navigator_layer(entries, case_id=case_id, case_name=case.name)
-    filename = f"mitre-navigator-{case_id}.json"
+    filename = f"{export_basename(case.name, 'mitre-navigator')}.json"
     return Response(
         content=json.dumps(layer, ensure_ascii=False, indent=2),
         media_type="application/json; charset=utf-8",

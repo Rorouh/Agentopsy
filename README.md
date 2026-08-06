@@ -101,6 +101,7 @@ Documentación técnica:
 - [Maletín contenedorizado](docker/README.md) — los dos toolkits, uso y seguridad del contenedor.
 - Comportamiento del agente: [`agentes/README.md`](agentes/README.md) y [`agentes/agent.md`](agentes/agent.md).
 - Invariantes de arquitectura, forenses y de seguridad: [`CLAUDE.md`](CLAUDE.md).
+- Lo pendiente, medido: [`hoja-de-ruta.md`](hoja-de-ruta.md) — el dibujo de la línea temporal y el plan de coste del informe pericial.
 
 ## Desarrollo local
 

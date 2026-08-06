@@ -3,8 +3,11 @@
 Los gates que importan:
 - El CSV se DERIVA de la cobertura real (propuestas del agente + dictámenes del
   perito), con nombres/tácticas del catálogo Enterprise — nunca inventados.
-- Un caso con **cero** técnicas evaluadas da un CSV con sólo la cabecera (0 filas,
-  honesto) y un layer válido sin celdas — nunca un error.
+- Un caso con **cero** técnicas evaluadas da una hoja con su procedencia y la
+  cabecera, 0 filas — nunca un error; y un layer válido sin celdas.
+- La hoja se ABRE bien en una hoja de cálculo: BOM (o Excel lee UTF-8 como ANSI y
+  «Exfiltración» sale «ExfiltraciÃ³n»), punto y coma (o la fila entera cae en la
+  columna A) y un bloque de procedencia que dice de qué caso es.
 - El layer del Navigator es válido: formato 4.5, dominio enterprise-attack, colores
   por eje (dictamen del perito vs propuesta del agente), que no se funden.
 """
@@ -18,11 +21,13 @@ import json
 import pytest
 
 from forensia.cases import CaseManager
+from forensia.export_csv import BOM, DELIMITADOR, filas_de_preambulo
 from forensia.findings.store import FindingStore
 from forensia.mitre.coverage import CoverageStore
 from forensia.mitre.export import (
     CSV_HEADER,
     NAVIGATOR_LAYER_VERSION,
+    SIN_DICTAMEN,
     coverage_to_csv,
     coverage_to_navigator_layer,
 )
@@ -40,11 +45,57 @@ def tmp_case(tmp_path) -> tuple[CaseManager, str]:
     return cases, case.id
 
 
+#: El bloque de procedencia de la hoja de cobertura (lo que hay antes de la tabla).
+_PROCEDENCIA_FILAS = 8
+
+
+def _sheet(csv_text: str) -> list[list[str]]:
+    """Todas las líneas de la hoja, incluida la declaración del separador y el
+    bloque de procedencia."""
+    assert csv_text.startswith(BOM), "sin BOM, Excel abre el fichero como ANSI"
+    body = csv_text[len(BOM) :]
+    assert body.startswith(f"sep={DELIMITADOR}\r\n")
+    return list(
+        csv.reader(io.StringIO(body.split("\r\n", 1)[1]), delimiter=DELIMITADOR)
+    )
+
+
 def _rows(csv_text: str) -> list[list[str]]:
-    return list(csv.reader(io.StringIO(csv_text)))
+    """Sólo la TABLA: la cabecera y sus filas, ya sin el preámbulo. `_sheet` se ha
+    comido la línea del separador, así que la cabecera va tras la procedencia y su
+    línea vacía."""
+    assert filas_de_preambulo([("x", "y")] * _PROCEDENCIA_FILAS) == (
+        _PROCEDENCIA_FILAS + 2
+    )
+    return [r for r in _sheet(csv_text)[_PROCEDENCIA_FILAS + 1 :] if r]
 
 
 # ── CSV ──────────────────────────────────────────────────────────────────────
+
+
+def test_csv_opens_as_a_spreadsheet_and_declares_its_provenance(tmp_case) -> None:
+    """BOM + `sep=;` + procedencia: los tres motivos por los que la hoja anterior
+    se abría en una sola columna y con los acentos roto."""
+    cases, case_id = tmp_case
+    coverage = CoverageStore(cases, FindingStore(cases))
+    coverage.adjudicate(case_id, "T1055", "confirmada", "Motivo con acentuación.")
+    text = coverage_to_csv(
+        coverage.coverage(case_id),
+        case_id=case_id,
+        case_name="Caso export",
+        exported_at="2026-08-06T13:05:42Z",
+    )
+    assert text.startswith(BOM)
+    assert "ó" in text  # el texto viaja en UTF-8, no transliterado
+    procedencia = dict(r[0:2] for r in _sheet(text)[:_PROCEDENCIA_FILAS])
+    assert procedencia["Caso"] == "Caso export"
+    assert procedencia["Identificador del caso"] == case_id
+    assert procedencia["Exportado (UTC)"] == "2026-08-06T13:05:42Z"
+    assert procedencia["Técnicas en la hoja"] == "1"
+    # Una línea vacía separa la procedencia de la tabla: es el contrato para
+    # quien lea la hoja con un programa.
+    assert _sheet(text)[_PROCEDENCIA_FILAS] == []
+    assert _rows(text)[0] == list(CSV_HEADER)
 
 
 def test_csv_empty_case_is_header_only(tmp_case) -> None:
@@ -68,17 +119,20 @@ def test_csv_row_for_an_agent_proposal(tmp_case) -> None:
     })
     rows = _rows(coverage_to_csv(coverage.coverage(case_id)))
     assert rows[0] == list(CSV_HEADER)
-    body = {r[0]: r for r in rows[1:]}
-    row = body["T1055"]
     idx = {name: i for i, name in enumerate(CSV_HEADER)}
+    body = {r[idx["ID de la técnica"]]: r for r in rows[1:]}
+    row = body["T1055"]
+    assert row[idx["N"]] == "1"
     # Nombre y táctica salen del catálogo Enterprise, NO inventados.
-    assert row[idx["technique_name"]] == "Process Injection"
-    assert row[idx["tactic_id"]] == "TA0005"
-    assert row[idx["tactic"]] != ""
-    assert row[idx["agent_proposed"]] == "true"
-    assert row[idx["examiner_verdict"]] == ""  # gris = no evaluada
-    assert row[idx["findings"]] == f.id
-    assert row[idx["enterprise_display_id"]] == "T1055"
+    assert row[idx["Técnica"]] == "Process Injection"
+    assert row[idx["ID de la táctica"]] == "TA0005"
+    assert row[idx["Táctica"]] != ""
+    assert row[idx["Propuesta por el análisis"]] == "Sí"
+    assert row[idx["Hallazgos que la proponen"]] == "1"
+    # Sin dictamen se DICE que está pendiente: en blanco se leería «no aplica».
+    assert row[idx["Veredicto del perito"]] == SIN_DICTAMEN
+    assert row[idx["Identificadores de hallazgo"]] == f.id
+    assert row[idx["Celda de la matriz"]] == "T1055"
 
 
 def test_csv_carries_the_examiner_verdict_and_rationale(tmp_case) -> None:
@@ -95,10 +149,11 @@ def test_csv_carries_the_examiner_verdict_and_rationale(tmp_case) -> None:
     )
     rows = _rows(coverage_to_csv(coverage.coverage(case_id)))
     idx = {name: i for i, name in enumerate(CSV_HEADER)}
-    row = {r[0]: r for r in rows[1:]}["T1055"]
-    assert row[idx["examiner_verdict"]] == "confirmada"
-    assert row[idx["rationale"]] == "RWX + shellcode."
-    assert row[idx["agent_proposed"]] == "true"
+    row = {r[idx["ID de la técnica"]]: r for r in rows[1:]}["T1055"]
+    assert row[idx["Veredicto del perito"]] == "Confirmada"
+    assert row[idx["Motivo del veredicto"]] == "RWX + shellcode."
+    assert row[idx["Propuesta por el análisis"]] == "Sí"
+    assert row[idx["Fecha del veredicto (UTC)"]] != ""
 
 
 def test_csv_row_for_a_verdict_without_an_agent_proposal(tmp_case) -> None:
@@ -108,23 +163,23 @@ def test_csv_row_for_a_verdict_without_an_agent_proposal(tmp_case) -> None:
     coverage.adjudicate(case_id, "T1070", "descartada", "Los logs están intactos.")
     rows = _rows(coverage_to_csv(coverage.coverage(case_id)))
     idx = {name: i for i, name in enumerate(CSV_HEADER)}
-    row = {r[0]: r for r in rows[1:]}["T1070"]
-    assert row[idx["agent_proposed"]] == "false"
-    assert row[idx["examiner_verdict"]] == "descartada"
-    assert row[idx["findings"]] == ""
+    row = {r[idx["ID de la técnica"]]: r for r in rows[1:]}["T1070"]
+    assert row[idx["Propuesta por el análisis"]] == "No"
+    assert row[idx["Veredicto del perito"]] == "Descartada"
+    assert row[idx["Identificadores de hallazgo"]] == ""
 
 
-def test_csv_is_parseable_and_quotes_commas(tmp_case) -> None:
+def test_csv_is_parseable_and_quotes_the_delimiter(tmp_case) -> None:
     cases, case_id = tmp_case
     coverage = CoverageStore(cases, FindingStore(cases))
     coverage.adjudicate(
-        case_id, "T1055", "sospechosa", "Motivo, con coma y \"comillas\"."
+        case_id, "T1055", "sospechosa", 'Motivo; con punto y coma y "comillas".'
     )
     rows = _rows(coverage_to_csv(coverage.coverage(case_id)))
     idx = {name: i for i, name in enumerate(CSV_HEADER)}
-    row = {r[0]: r for r in rows[1:]}["T1055"]
+    row = {r[idx["ID de la técnica"]]: r for r in rows[1:]}["T1055"]
     # csv.reader devuelve el valor original desescapado.
-    assert row[idx["rationale"]] == 'Motivo, con coma y "comillas".'
+    assert row[idx["Motivo del veredicto"]] == 'Motivo; con punto y coma y "comillas".'
 
 
 # ── ATT&CK Navigator layer ───────────────────────────────────────────────────

@@ -54,8 +54,17 @@
   /* El rediseño es de esquinas rectas; el radio solo sobrevive donde el mock lo
      dibuja: el botón «Nuevo caso» y las píldoras de ámbito de los motores. */
   --radius-pill: 999px;
+
+  /* Lo que el NAVEGADOR pinta y el CSS no: el desplegable de un `select`, la
+     barra de scroll, el botón de borrar de un `input[type=search]`, el resalte
+     de autocompletado. El agente de usuario los dibuja con SU paleta, y sin
+     esta declaración usa la clara aunque el tema sea oscuro: eso es lo que
+     dejaba el menú desplegable en blanco sobre blanco. */
+  color-scheme: light;
 }
 [data-theme="dark"] {
+  color-scheme: dark;
+
   --shell:          #101214;
   --surface:        #16191c;
   --inset:          #1d2125;
@@ -597,6 +606,27 @@ html, body, #root {
 .field-input:focus,
 .field-select:focus,
 .field-textarea:focus { border-color: var(--accent); }
+/* La LISTA de un desplegable la dibuja el navegador, no este CSS: hereda el
+   color del control, y el control es transparente (el campo del rediseño es un
+   subrayado, no una caja). En tema oscuro eso daba tinta clara sobre el blanco
+   del agente de usuario. Va por ELEMENTO, no por clase, para que valga también
+   donde el `select` se estiliza como `.field-input`. */
+select option,
+select optgroup {
+  background-color: var(--surface);
+  color: var(--ink);
+}
+select option:disabled { color: var(--ink-5); }
+/* El autocompletado del navegador repinta el fondo del campo con su propio
+   amarillo/blanco y deja el texto ilegible en oscuro. No se puede sobrescribir
+   `background`, sí una sombra interior que lo cubre. */
+.field-input:-webkit-autofill,
+.field-input:-webkit-autofill:hover,
+.field-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--ink);
+  box-shadow: inset 0 0 0 100px var(--surface);
+  caret-color: var(--ink);
+}
 .field-input::placeholder,
 .field-textarea::placeholder { color: var(--ink-5); }
 .field-textarea {
@@ -711,7 +741,11 @@ html, body, #root {
 .modal-action:hover:not(:disabled) { background: var(--ink-2); border-color: var(--ink-2); }
 .modal-action--quiet { background: transparent; border-color: transparent; color: var(--ink-3); }
 .modal-action--quiet:hover:not(:disabled) { background: transparent; border-color: transparent; color: var(--ink); }
-.modal-action--danger { background: var(--danger); border-color: var(--danger); color: #ffffff; }
+/* La tinta sobre un relleno macizo es `--invert-fg`, no blanco fijo: en oscuro
+   `--danger` es un salmón claro y el blanco encima no se leía (el botón que
+   confirma borrar un caso es el último sitio donde se puede dudar de lo que
+   dice). Mismo token que usan `.action-accent` y `.action-invert`. */
+.modal-action--danger { background: var(--danger); border-color: var(--danger); color: var(--invert-fg); }
 .modal-action--danger:hover:not(:disabled) { background: var(--danger); border-color: var(--danger); opacity: 0.88; }
 .modal-action:disabled { background: transparent; color: var(--ink-4); border-color: var(--line); cursor: not-allowed; }
 

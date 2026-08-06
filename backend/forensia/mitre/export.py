@@ -4,11 +4,13 @@ El perito necesita llevarse los datos fuera de Agentopsy. Dos formatos, ambos
 **derivados de la cobertura real** (`CoverageStore.coverage`): las propuestas del
 agente (eje 1) y los dictámenes del perito (eje 2), sin fundirlos.
 
-- ``coverage_to_csv`` — una fila por técnica evaluada (propuesta, dictaminada, o
-  ambas). Los nombres/tácticas salen del catálogo Enterprise
-  (``forensia.mitre.catalog``); NO se inventan. Si el catálogo Enterprise no está
-  montado, la columna del nombre/táctica degrada a vacío y el id queda como única
-  referencia honesta (RULE 2: nunca una lista "por defecto").
+- ``coverage_to_csv`` — una HOJA (``forensia.export_csv``: BOM, ``sep=;``, bloque
+  de procedencia y una línea vacía antes de la tabla) con una fila por técnica
+  evaluada, propuesta, dictaminada o ambas. Los nombres/tácticas salen del
+  catálogo Enterprise (``forensia.mitre.catalog``); NO se inventan. Si el
+  catálogo Enterprise no está montado, la columna del nombre/táctica degrada a
+  vacío y el id queda como única referencia honesta (RULE 2: nunca una lista
+  "por defecto").
 - ``coverage_to_navigator_layer`` — un *layer* del **MITRE ATT&CK Navigator**
   (formato de layer **4.5**, ``domain: "enterprise-attack"``) que colorea las
   técnicas propuestas/adjudicadas para cargarlo en el Navigator oficial. Emitimos
@@ -21,10 +23,9 @@ Puro (CLAUDE.md RULE 3): sin I/O ni acceso a disco. El router pasa las entradas 
 
 from __future__ import annotations
 
-import csv
-import io
 from typing import Any
 
+from forensia.export_csv import build_sheet, iso_utc_ahora, unir
 from forensia.mitre import catalog
 
 #: Versión del formato de *layer* del ATT&CK Navigator que emitimos. Es lo único que
@@ -47,17 +48,29 @@ _VERDICT_LABEL: dict[str, str] = {
     "descartada": "Descartada",
 }
 
-#: Cabecera del CSV de cobertura. Orden estable — un contrato que los tests fijan.
+#: Lo que se escribe en la columna del veredicto cuando el perito no ha
+#: dictaminado. No es lo mismo que «ausente»: la técnica está en la hoja porque
+#: el análisis la propuso, y sigue sin evaluar.
+SIN_DICTAMEN = "No dictaminada"
+
+#: Cabecera de la tabla de cobertura. Orden estable, es un contrato que los tests
+#: fijan. En castellano porque la hoja la lee una persona (el canal de máquina es
+#: el layer del Navigator, que no cambia). Las dos primeras columnas de datos son
+#: las que identifican la técnica; el motivo del veredicto va al final porque es
+#: la única de longitud libre y arrastraría el ancho de las demás.
 CSV_HEADER: tuple[str, ...] = (
-    "technique_id",
-    "technique_name",
-    "tactic_id",
-    "tactic",
-    "agent_proposed",
-    "examiner_verdict",
-    "rationale",
-    "findings",
-    "enterprise_display_id",
+    "N",
+    "ID de la técnica",
+    "Técnica",
+    "ID de la táctica",
+    "Táctica",
+    "Celda de la matriz",
+    "Propuesta por el análisis",
+    "Hallazgos que la proponen",
+    "Veredicto del perito",
+    "Fecha del veredicto (UTC)",
+    "Identificadores de hallazgo",
+    "Motivo del veredicto",
 )
 
 
@@ -87,34 +100,76 @@ def _findings_for(entry: dict[str, Any]) -> list[str]:
     return out
 
 
-def coverage_to_csv(entries: list[dict[str, Any]]) -> str:
-    """Serializa la cobertura del caso a CSV (una fila por técnica evaluada).
+def coverage_to_csv(
+    entries: list[dict[str, Any]],
+    *,
+    case_id: str = "",
+    case_name: str = "",
+    exported_at: str | None = None,
+) -> str:
+    """La hoja de cobertura del caso: una fila por técnica evaluada.
 
     ``entries`` son las entradas de :meth:`CoverageStore.coverage`. Con **cero**
-    técnicas evaluadas devuelve sólo la cabecera (un CSV honesto de 0 filas, nunca un
-    error). ``agent_proposed`` es ``true``/``false``; ``examiner_verdict`` queda vacío
-    si el perito no ha dictaminado (gris = no evaluada, no "ausente").
+    técnicas evaluadas devuelve la procedencia y la cabecera sin filas (una hoja
+    honesta de 0 filas, nunca un error), y el bloque de procedencia lo dice.
+
+    Los dos ejes viajan en columnas SEPARADAS y nunca se funden: «Propuesta por el
+    análisis» es una sugerencia con procedencia, «Veredicto del perito» es lo
+    único pericial. Sin dictamen la columna dice :data:`SIN_DICTAMEN`, no queda
+    vacía: en blanco se leería como «no aplica», y lo que significa es que está
+    pendiente de evaluar.
+
+    ``exported_at`` es inyectable para que los tests fijen la marca temporal; sin
+    él, la de ahora.
     """
     tactic_names = _tactic_names()
-    buf = io.StringIO()
-    writer = csv.writer(buf)
-    writer.writerow(CSV_HEADER)
-    for entry in entries:
+    confirmadas = sum(1 for e in entries if e.get("status") == "confirmada")
+    sospechosas = sum(1 for e in entries if e.get("status") == "sospechosa")
+    descartadas = sum(1 for e in entries if e.get("status") == "descartada")
+    propuestas = sum(1 for e in entries if e.get("proposed_by"))
+
+    procedencia: list[tuple[str, str]] = [
+        ("Agentopsy", "Correlación MITRE ATT&CK Enterprise del caso"),
+        ("Caso", case_name),
+        ("Identificador del caso", case_id),
+        ("Exportado (UTC)", exported_at or iso_utc_ahora()),
+        ("Técnicas en la hoja", str(len(entries))),
+        ("Propuestas por el análisis", str(propuestas)),
+        (
+            "Dictaminadas por el perito",
+            f"{confirmadas} confirmadas, {sospechosas} sospechosas, "
+            f"{descartadas} descartadas",
+        ),
+        (
+            "Cómo se lee",
+            "La propuesta del análisis y el veredicto del perito son ejes "
+            "independientes: una técnica propuesta sin dictamen no está "
+            "confirmada. Una técnica que no figura en esta hoja no ha sido "
+            "evaluada, que no es lo mismo que descartada.",
+        ),
+    ]
+
+    filas: list[list[Any]] = []
+    for n, entry in enumerate(entries, start=1):
         technique_id = str(entry.get("technique_id", ""))
         tactic_id = entry.get("tactic_id") or ""
+        proposed = list(entry.get("proposed_by") or [])
         status = entry.get("status")
-        writer.writerow([
+        filas.append([
+            n,
             technique_id,
             _technique_name(technique_id),
             tactic_id,
             tactic_names.get(tactic_id, "") if tactic_id else "",
-            "true" if entry.get("proposed_by") else "false",
-            status or "",
-            entry.get("rationale") or "",
-            ";".join(_findings_for(entry)),
             catalog.enterprise_display_id(technique_id) if technique_id else "",
+            bool(proposed),
+            len(proposed),
+            _VERDICT_LABEL.get(status, status) if status else SIN_DICTAMEN,
+            entry.get("adjudicated_at") or "",
+            unir(_findings_for(entry)),
+            entry.get("rationale") or "",
         ])
-    return buf.getvalue()
+    return build_sheet(procedencia=procedencia, cabecera=CSV_HEADER, filas=filas)
 
 
 def _navigator_comment(entry: dict[str, Any]) -> str:
