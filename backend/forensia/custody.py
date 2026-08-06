@@ -129,6 +129,13 @@ def build_custody_act(
             "sha256": handle.sha256,
             "size_bytes": handle.size,
             "size_human": human_readable_size(handle.size),
+            # The act has to attest the WHOLE evidence: ``size_bytes`` above is the
+            # first segment, because it is what the baseline ``sha256`` covers. On a
+            # 9-segment EWF set, stating that as the evidence size understates it
+            # ninefold in the most formal artifact the tool emits.
+            "segment_count": handle.segment_count,
+            "total_size_bytes": handle.total_size,
+            "total_size_human": human_readable_size(handle.total_size),
             "registered_at": handle.registered_at,
             "detected_os": handle.detected_os,
             "detected_kind": handle.detected_kind,

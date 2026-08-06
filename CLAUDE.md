@@ -635,6 +635,91 @@ operador, nunca un default). Medido: la misma corrida pasa de 4 s de CPU en 20
 minutos a 100 % de CPU con el `.plaso` creciendo a 72 MB en 100 segundos.
 Pinned by `test_build_argv_never_blocks_waiting_for_a_human`.
 
+**La evidencia recién registrada aparece sin F5 (2026-08-06,
+`web/src/state/caseEvidence.tsx`)**: al terminar el hash-gate, la evidencia no
+salía en ninguna parte hasta recargar la página. Eran dos fallos apilados. (1) El
+sondeo del job **se cancelaba a sí mismo**: la rama `done` hacía
+`setRegisterJobRef(null)` ANTES de `await` la recarga de la lista, y ese
+`setState` cambia las dependencias del efecto que sondea, así que React ejecutaba
+su limpieza (que pone `cancelled = true`) mientras la petición estaba en vuelo;
+el `if (cancelled) return` posterior descartaba TODO lo que venía después:
+`setEvidence(list)`, `upsertCase` y el aviso de éxito. No era una carrera que a
+veces saliera bien, con cualquier respuesta que no sea instantánea perdía
+siempre, y la única señal que sí llegaba a pintarse era que la barra de progreso
+desaparecía, indistinguible de «no ha pasado nada». Ahora la recarga va PRIMERO y
+el job se suelta al final. (2) La lista de evidencias era estado LOCAL duplicado
+en cuatro sitios que la leían una vez al montar (Evidencia, Investigación,
+Timeline y las cifras de `useCaseFacts`, que alimentan la escalera del sidebar y
+la Guía), y `App.tsx` cambia de vista DESTRUYENDO la anterior, así que ni el
+sondeo sobrevivía a irse a otra fase ni el resto de la aplicación se enteraba de
+un registro: el sidebar seguía diciendo «sin evidencia» y el chat mandaba
+`evidence_id` vacío, es decir el agente analizaba sin evidencia. Ahora hay UN
+store compartido, `CaseEvidenceProvider`, mismo patrón que `ActiveCaseProvider`
+con la lista de casos: sirve la evidencia del caso activo a las cuatro vistas y
+gobierna el registro en segundo plano (arrancarlo, sondearlo, re-engancharse al
+que siga vivo), montado en `App.tsx` por encima de las vistas para que cambiar de
+fase no lo desmonte. Las páginas quedan como consumidoras (RULE 3) y los tres
+fallos de la vista de Evidencia dejan de compartir un slot único: leer la lista,
+leer la bandeja y verificar un hash se nombran cada uno por lo que son (un 404 de
+verify aparecía como «No se pudo registrar la evidencia»).
+
+**El SO de un disco GPT ya se determina (2026-08-06, `forensia.triage_deep`)**:
+el pase profundo no enrutaba NINGUNA imagen con tabla GPT, o sea todo Windows
+10/11 y la mayoría de los Linux actuales. TSK escribe el slot de una partición
+en dos formas según la tabla: `000:000` (`tabla:slot`) en MBR y `000` a secas en
+GPT, que no tiene tablas anidadas. `_PARTITION_SLOT_RE` solo reconocía la del
+MBR, así que `_partition_offsets` devolvía CERO particiones, el pase caía a
+«leer el sistema de ficheros en el offset 0» (donde un disco GPT solo tiene el
+MBR de protección), `fls` fallaba y la familia salía `unknown` teniendo la raíz
+de Windows delante. Medido sobre la imagen real del caso: `mmls` devolvía sus
+cuatro particiones correctamente y `fls -o 1259520` la raíz completa
+(`$MFT`, `$MFTMirr`, `$Boot`, `$Recycle.Bin`, `ProgramData`,
+`Documents and Settings`), es decir que el dato estaba ahí y se tiraba al
+parsear. El fallo era invisible porque el fixture de los tests solo traía salida
+de MBR. Tras el arreglo, las cuatro evidencias EWF ya registradas determinan
+`windows` sin intervención. Pinned by
+`test_gpt_disk_reads_its_partitions_instead_of_offset_zero`.
+
+**El tamaño de una evidencia es el del CONJUNTO (2026-08-06)**: un EWF partido se
+registra como UNA evidencia desde su `.E01`, pero `handle.size` es el del PRIMER
+segmento, porque es lo que cubre el hash baseline del acta y del audit (contrato
+de un solo valor, deliberado). La interfaz enseñaba ESE número como el tamaño de
+la evidencia: un set de 9 segmentos aparecía como 1,46 GiB de los 12,62 GiB
+reales, y el perito no tenía forma de comprobar que el conjunto entró completo.
+`EvidenceHandle` gana dos propiedades DERIVADAS, `segment_count` y `total_size`
+(el contrato del baseline no se toca), que viajan en el handle, en la metadata de
+custodia y en el acta de adquisición; la tabla de Evidencia y la cadena de
+custodia pintan el total con «9 segmentos» al lado, el acta enumera cada fichero
+con su propio hash, y el aviso de registro correcto nombra lo que entró
+(«9 segmentos, 12,6 GB en total»). Pinned by
+`test_size_of_the_whole_set_is_the_sum_of_its_segments`.
+
+**Un 502 del proxy dejaba de parecer un registro fallido (2026-08-06)**: al
+registrar un volcado de RAM de 16,72 GiB salía «No se pudo registrar la
+evidencia: `<html><head><title>502 Bad Gateway`…», y la conclusión natural era
+que Agentopsy no admite RAM como evidencia. Medido: la admite, y el registro
+FUNCIONA (el POST responde en 15 ms, el hash-gate recorre los 50 GiB de sus tres
+pasadas en unos 11 minutos con la memoria del api plana en 88 MiB, y la evidencia
+queda `kind=memory` / `os=windows` con el caso enrutado). Lo que fallaba era el
+SONDEO: un 502/503/504 es el proxy diciendo que no alcanzó al api (arrancando o
+reiniciándose), no el api diciendo que el registro falló, y el hash-gate corre en
+el servidor precisamente para sobrevivir a que el navegador pierda contacto.
+Ahora un fallo de transporte se reintenta cada 3 s y, si persiste, se AVISA sin
+llamarlo fallo («el hash-gate sigue su curso en el servidor»); a los 120 s sin
+contacto se deja de sondear diciendo lo único cierto, que no se sabe en qué
+quedó y que volver a la vista retoma el job que siga vivo. Un 404 se nombra por
+lo que es (el api se reinició y perdió el registro en memoria) y recarga la lista
+por si llegó a publicarse. Además el cliente ya no vuelca la página de error de
+nginx en un aviso: la traduce a una frase con su código. Y la consecuencia
+material de ese reinicio se limpia: un registro que el api no termina deja su
+`.registrando-<uuid>` con los GB ya copiados, invisible para `list()` y para la
+interfaz, y ningún `except` puede barrerlo porque el hilo muere con el proceso.
+El siguiente registro del caso lo descarta y lo atestigua en el log encadenado
+(`evidence_staging_discarded`), decidiendo qué está vivo con el conjunto de
+staging en curso de ESTE proceso, no con fechas. Pinned by
+`test_staging_left_by_a_killed_register_is_discarded_and_audited` y
+`test_the_staging_of_a_register_in_flight_is_never_swept`.
+
 **Selector de modelo y de potencia de Codex (2026-07-30)**: Codex deja de ser
 un CLI cuyo catálogo Agentopsy «no puede enumerar». Su propio binario descarga
 la lista con la sesión OAuth del operador y la cachea en

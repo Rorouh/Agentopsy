@@ -96,10 +96,21 @@ _PROBE_TIMEOUT_S = 300
 # or hostile partition table from turning triage into hundreds of exec calls.
 _MAX_PARTITIONS = 8
 
-# A real partition row in ``mmls`` output carries a ``NNN:NNN`` slot in the meta
-# column. ``Meta`` (the table itself) and ``-------`` (unallocated) are not
-# filesystems and are skipped — TSK would fail on them by definition.
-_PARTITION_SLOT_RE = re.compile(r"^\d{3}:\d{3}$")
+# A real partition row in ``mmls`` output carries a SLOT in the meta column, and
+# TSK writes it in TWO shapes depending on the partition table:
+#
+#     DOS/MBR   002:  000:000   0000002048   ...   NTFS / exFAT (0x07)
+#     GPT       004:  000       0000002048   ...   Basic data partition
+#
+# The DOS form is ``table:slot``; GPT has no nested tables and prints the slot
+# alone. Matching only ``NNN:NNN`` meant NO partition was ever recognised on a
+# GPT disk, which is every modern Windows 10/11 install and most current Linux
+# ones: the probe fell through to "read the filesystem at offset 0", where a GPT
+# disk has only the protective MBR, ``fls`` failed, and the family came back
+# ``unknown`` on an image whose root directory says Windows in twenty places.
+# ``Meta`` (the table itself) and ``-------`` (unallocated) are still skipped —
+# they are not filesystems and TSK would fail on them by definition.
+_PARTITION_SLOT_RE = re.compile(r"^(?:\d{3}:)?\d{3}$")
 
 # Root-directory names that identify the OS. Both sets are DISCRIMINATIVE on
 # purpose: ``Users`` is deliberately in neither (Windows and macOS both have it),

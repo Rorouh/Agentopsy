@@ -23,8 +23,12 @@ interface EvidenceInboxProps {
   registerJob: EvidenceRegisterJob | null;
   // Mensaje del último fallo de registro (kind "register"), o null.
   registerError: string | null;
-  // Flash de 2 s tras un registro exitoso (lo gobierna la página).
-  registerSuccess: boolean;
+  // Sin contacto con el api mientras se sondea el registro: AVISO, no fallo. El
+  // hash-gate corre en el servidor y sigue su curso.
+  registerStalled: string | null;
+  // Aviso tras un registro correcto: el texto ya resuelto por la página (nombra
+  // cuántos segmentos y cuánto pesa el conjunto), o null si no hay ninguno.
+  registerSuccess: string | null;
   // Subida (drag-and-drop / examinar): la gobierna la página.
   uploading: boolean;
   uploadProgress: number; // 0..1
@@ -83,6 +87,7 @@ export function EvidenceInbox({
   registering,
   registerJob,
   registerError,
+  registerStalled,
   registerSuccess,
   uploading,
   uploadProgress,
@@ -416,9 +421,15 @@ export function EvidenceInbox({
         </div>
       )}
 
+      {registerStalled && registering && (
+        <div className="inline-note" aria-live="polite">
+          {registerStalled}
+        </div>
+      )}
+
       {registerSuccess && (
         <div className="inline-note inline-note--ok" aria-live="polite">
-          ✓ Evidencia registrada
+          ✓ {registerSuccess}
         </div>
       )}
 

@@ -166,6 +166,110 @@ class TestMultiSegmentRegister:
         ]
         assert meta["sha256"] == handle.segments[0].sha256
 
+    def test_size_of_the_whole_set_is_the_sum_of_its_segments(
+        self, manager, cases, case, tmp_path
+    ):
+        """`size` es el del PRIMER segmento, porque es lo que cubre el hash baseline.
+        Enseñar eso como el tamaño de la evidencia la achicaba a una fracción (un
+        set de 9 segmentos aparecía como 1,46 GiB de 12,62 GiB), y el perito no
+        tenía forma de comprobar que el conjunto entró completo. `total_size` y
+        `segment_count` son la respuesta a «cuánto pesa esta evidencia»."""
+        srcs = _write_ewf_set(tmp_path, "disk", 4)
+        handle = manager.register(case.id, str(srcs[0]))
+        total = sum(s.stat().st_size for s in srcs)
+
+        assert handle.segment_count == 4
+        assert handle.total_size == total
+        assert handle.size == srcs[0].stat().st_size  # el contrato del baseline no cambia
+        assert handle.total_size > handle.size
+
+        # La metadata de custodia y el acta lo declaran con las dos cifras: el acta
+        # es el artefacto más formal que emite la herramienta y no puede infra-decir
+        # el tamaño de la evidencia que atestigua.
+        meta = manager.metadata(case.id, handle.evidence_id)
+        assert meta["segment_count"] == 4
+        assert meta["total_size_bytes"] == total
+        assert meta["size_bytes"] == handle.size
+
+        from forensia.custody import build_custody_act
+
+        act = build_custody_act(case.id, handle.evidence_id, cases=cases, evidence=manager)
+        assert act["evidence"]["segment_count"] == 4
+        assert act["evidence"]["total_size_bytes"] == total
+        assert len(act["evidence"]["segments"]) == 4
+
+    def test_single_file_evidence_reports_one_segment_and_its_own_size(
+        self, manager, case, tmp_path
+    ):
+        """Un fichero único no es un caso especial: cuenta 1 y su total ES su tamaño,
+        así que la interfaz puede leer siempre las mismas dos cifras."""
+        src = tmp_path / "disk.raw"
+        src.write_bytes(b"raw-image-payload")
+        handle = manager.register(case.id, str(src))
+
+        assert handle.segment_count == 1
+        assert handle.total_size == handle.size == len(b"raw-image-payload")
+
+    def test_staging_left_by_a_killed_register_is_discarded_and_audited(
+        self, manager, cases, case, tmp_path
+    ):
+        """Si el api MUERE copiando (un reinicio del contenedor), su hilo se va con
+        el proceso y el directorio temporal sobrevive: invisible para `list()`
+        (su nombre no es un UUID4), inalcanzable desde la interfaz y ocupando los GB
+        que llevara copiados. Ningún `except` puede limpiar eso, así que lo barre el
+        siguiente registro del caso, y lo deja dicho en el log encadenado: se borran
+        bytes de un caso, aunque no sean evidencia registrada."""
+        from forensia.audit.log import AuditLog
+        from forensia.evidence import _STAGING_PREFIX
+
+        # Un registro anterior que el api no terminó: staging con media copia dentro.
+        evidence_root = cases.case_dir(case.id) / "evidence"
+        evidence_root.mkdir(parents=True, exist_ok=True)
+        huerfano = evidence_root / f"{_STAGING_PREFIX}11111111-2222-4333-8444-555555555555"
+        huerfano.mkdir()
+        copia_a_medias = huerfano / "original.E01"
+        copia_a_medias.write_bytes(b"copia cortada a la mitad")
+        os.chmod(copia_a_medias, stat.S_IREAD)  # como la deja el hash-gate
+
+        src = tmp_path / "otra.raw"
+        src.write_bytes(b"evidencia nueva")
+        handle = manager.register(case.id, str(src))
+
+        assert not huerfano.exists()
+        # Y el registro nuevo se publicó con normalidad.
+        assert handle.original_path.exists()
+        assert list(manager.list(case.id))
+
+        audit = AuditLog(cases.case_dir(case.id) / "audit.jsonl")
+        descartes = [
+            e for e in audit.entries() if e.get("action") == "evidence_staging_discarded"
+        ]
+        assert len(descartes) == 1
+        assert descartes[0]["staging_dirs"] == [huerfano.name]
+        assert audit.verify()
+
+    def test_the_staging_of_a_register_in_flight_is_never_swept(
+        self, manager, cases, case, tmp_path
+    ):
+        """El barrido no adivina por fechas: un staging está vivo mientras un hilo de
+        ESTE proceso está dentro de `register`. Registrar en paralelo en el mismo caso
+        no puede llevarse por delante la copia del otro."""
+        from forensia.evidence import _LIVE_STAGING, _STAGING_PREFIX, _sweep_orphan_staging
+
+        evidence_root = cases.case_dir(case.id) / "evidence"
+        evidence_root.mkdir(parents=True, exist_ok=True)
+        en_vuelo = evidence_root / f"{_STAGING_PREFIX}99999999-8888-4777-8666-555555555555"
+        en_vuelo.mkdir()
+        _LIVE_STAGING.add(en_vuelo)
+        try:
+            assert _sweep_orphan_staging(evidence_root) == []
+            assert en_vuelo.exists()
+        finally:
+            _LIVE_STAGING.discard(en_vuelo)
+        # Fuera del conjunto de vivos, el mismo directorio sí se barre.
+        assert _sweep_orphan_staging(evidence_root) == [en_vuelo.name]
+        assert not en_vuelo.exists()
+
     def test_register_event_attests_every_segment(self, manager, cases, case, tmp_path):
         from forensia.audit.log import AuditLog
 

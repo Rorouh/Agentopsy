@@ -1,6 +1,10 @@
 """TSK `mmls` wrapper — list partitions of a raw disk image.
 
-Example TSK output (DOS table over NTFS partition):
+The `Slot` column (parsed as `meta`) carries the row's KIND, and TSK writes a real
+partition's slot in two different shapes depending on the partition table. Anything
+reading `meta` to tell partitions from table metadata has to accept both.
+
+DOS/MBR table over an NTFS partition — the slot is `table:slot`:
 
     DOS Partition Table
     Offset Sector: 0
@@ -10,6 +14,22 @@ Example TSK output (DOS table over NTFS partition):
     000:  Meta      0000000000   0000000000   0000000001   Primary Table (#0)
     001:  -------   0000000000   0000002047   0000002048   Unallocated
     002:  000:000   0000002048   0000206847   0000204800   NTFS / exFAT (0x07)
+
+GPT table (a modern Windows 10/11 or Linux disk) — no nested tables, so the slot
+is printed ALONE:
+
+    GUID Partition Table (EFI)
+    Offset Sector: 0
+    Units are in 512-byte sectors
+
+          Slot      Start        End          Length       Description
+    000:  Meta      0000000000   0000000000   0000000001   Safety Table
+    003:  Meta      0000000002   0000000033   0000000032   Partition Table
+    004:  000       0000002048   0001023999   0001021952   Basic data partition
+    005:  001       0001024000   0001226751   0000202752   EFI system partition
+
+`Meta` rows are the table's own structures and `-------` is unallocated space:
+neither is a filesystem.
 """
 
 from __future__ import annotations

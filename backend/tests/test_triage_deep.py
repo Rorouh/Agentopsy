@@ -52,6 +52,42 @@ Units are in 512-byte sectors
 002:  000:000   0000002048   0000206847   0000204800   NTFS / exFAT (0x07)
 """
 
+# Salida REAL de `mmls` sobre una imagen GPT (Windows 10, la del caso que dejó de
+# enrutarse). En GPT no hay tablas anidadas, así que TSK imprime el slot SOLO
+# (`000`) en vez del `tabla:slot` (`000:000`) del MBR. Reconocer solo la forma del
+# MBR dejaba CERO particiones, se leía el offset 0 (donde un disco GPT solo tiene
+# el MBR de protección), `fls` fallaba y la familia salía `unknown`.
+_MMLS_GPT_WINDOWS = """GUID Partition Table (EFI)
+Offset Sector: 0
+Units are in 512-byte sectors
+
+      Slot      Start        End          Length       Description
+000:  Meta      0000000000   0000000000   0000000001   Safety Table
+001:  -------   0000000000   0000002047   0000002048   Unallocated
+002:  Meta      0000000001   0000000001   0000000001   GPT Header
+003:  Meta      0000000002   0000000033   0000000032   Partition Table
+004:  000       0000002048   0001023999   0001021952   Basic data partition
+005:  001       0001024000   0001226751   0000202752   EFI system partition
+006:  002       0001226752   0001259519   0000032768   Microsoft reserved partition
+007:  003       0001259520   1000214527   0998955008   Basic data partition
+008:  -------   1000214528   1000215215   0000000688   Unallocated
+"""
+
+# Raíz REAL de la partición de sistema de esa misma imagen. Nótese que `Windows`
+# no aparece: los metaficheros NTFS y los directorios de perfil ya sostienen el
+# veredicto, que es lo que hace la determinación robusta.
+_FLS_GPT_WINDOWS_ROOT = """d/d 3-144-5:\tDocuments and Settings
+d/d 4-144-5:\tProgramData
+d/d 5-144-5:\tUsers
+r/r 0-128-1:\t$MFT
+r/r 1-128-1:\t$MFTMirr
+r/r 2-128-1:\t$LogFile
+r/r 7-128-1:\t$Boot
+d/d 6-144-5:\t$Recycle.Bin
+d/d 8-144-5:\tConfig.Msi
+d/d 9-144-5:\tIntel
+"""
+
 _FLS_WINDOWS_ROOT = """d/d 5-144-5:\t$Extend
 r/r 0-128-1:\t$MFT
 r/r 2-128-1:\t$LogFile
@@ -336,6 +372,27 @@ def test_partitioned_image_reads_each_partition_root(monkeypatch):
     fls_call = next(c for c in fake.calls if c["argv"][0] == "fls")
     # Solo la fila con slot `NNN:NNN` es una partición; Meta y Unallocated no.
     assert fls_call["argv"][:3] == ["fls", "-o", "2048"]
+
+
+def test_gpt_disk_reads_its_partitions_instead_of_offset_zero(monkeypatch):
+    """Un disco GPT es hoy el caso NORMAL (todo Windows 10/11), y era justo el que
+    no se determinaba: TSK imprime el slot de GPT solo (`000`), no como el
+    `tabla:slot` del MBR (`000:000`), así que no se reconocía ninguna partición, se
+    caía a leer el offset 0 (donde un GPT solo tiene el MBR de protección) y la
+    imagen salía `unknown` teniendo la raíz de Windows delante."""
+    fake = FakeMaletin(mmls=(0, _MMLS_GPT_WINDOWS), fls=(0, _FLS_GPT_WINDOWS_ROOT))
+    monkeypatch.setattr(maletin, "run_argv_in_maletin", fake)
+
+    result = probe_image("/cases/cases/c/evidence/e/original.E01")
+
+    assert result.family == "windows"
+    offsets = [c["argv"][2] for c in fake.calls if c["argv"][0] == "fls"]
+    # Las CUATRO particiones reales de la tabla, en su orden, y ninguna más:
+    # las filas `Meta` (tabla de particiones, cabecera GPT) y las `-------`
+    # (espacio no asignado) no son sistemas de ficheros.
+    assert offsets == ["2048", "1024000", "1226752", "1259520"]
+    # Y nunca se leyó el offset 0, que es lo que hacía el pase roto.
+    assert all("-o" in c["argv"] for c in fake.calls if c["argv"][0] == "fls")
 
 
 # --------------------------------------------------------------------------- #

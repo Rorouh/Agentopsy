@@ -65,6 +65,12 @@ def _evidence_dict(handle: Any) -> dict[str, Any]:
     # EvidenceHandle.original_path is a pathlib.Path — JSON cannot serialize it.
     if "original_path" in data and data["original_path"] is not None:
         data["original_path"] = str(data["original_path"])
+    # ``asdict`` only copies FIELDS, and the size of the whole evidence is a derived
+    # property (``size`` is the first segment's, paired with the baseline hash). The
+    # UI must be able to say "12,62 GiB in 9 segments" without summing anything
+    # itself: the computation lives in EvidenceHandle, this only copies it out.
+    data["segment_count"] = handle.segment_count
+    data["total_size"] = handle.total_size
     return data
 
 

@@ -10,6 +10,7 @@ import type {
 } from "../api/types";
 import { usePublishShellHeader } from "../layout/shellHeader";
 import { useActiveCase } from "../state/activeCase";
+import { useCaseEvidence } from "../state/caseEvidence";
 
 // FASE 4 · Timeline forense del caso, TRES capas REALES (sin datos inventados,
 // RULE 2):
@@ -125,6 +126,10 @@ function Pager({
 
 export function TimelinePage() {
   const { activeCase, phase: casesPhase, error: casesError } = useActiveCase();
+  // Capa 2: la evidencia elegible sale del store compartido, así una imagen
+  // registrada mientras el perito está en esta vista aparece en el selector sin
+  // recargar la página.
+  const { evidence: evidences } = useCaseEvidence();
   const [layer, setLayer] = useState<Layer>("investigation");
   const [search, setSearch] = useState("");
   // Página actual de las tablas del sistema de ficheros (capas 2 y 3).
@@ -135,8 +140,6 @@ export function TimelinePage() {
 
   // Capa 1
   const [events, setEvents] = useState<TimelineEvent[]>([]);
-  // Capa 2
-  const [evidences, setEvidences] = useState<EvidenceHandle[]>([]);
   // RULE 2: NO se preselecciona «la primera» evidencia. La super-timeline se
   // construye sobre la que el perito elija; adivinarla es exactamente el
   // «coge el único / el más reciente» que la regla prohíbe.
@@ -149,13 +152,13 @@ export function TimelinePage() {
   const [starting, setStarting] = useState(false);
   const pollRef = useRef<number | null>(null);
 
-  // Timeline + evidencias del caso activo. Se recarga al cambiar de caso (desde
-  // el sidebar o cualquier otra vista), limpiando el estado de la capa 2.
+  // Timeline del caso activo. Se recarga al cambiar de caso (desde el sidebar o
+  // cualquier otra vista), limpiando el estado de la capa 2. La lista de
+  // evidencias no se pide aquí, la sirve el store.
   useEffect(() => {
     const caseId = activeCase?.id;
     if (!caseId) {
       setEvents([]);
-      setEvidences([]);
       setSelectedEvidence("");
       return;
     }
@@ -163,13 +166,9 @@ export function TimelinePage() {
     setLoadError("");
     (async () => {
       try {
-        const [tl, evs] = await Promise.all([
-          api.cases.timeline(caseId),
-          api.cases.listEvidence(caseId).catch(() => [] as EvidenceHandle[]),
-        ]);
+        const tl = await api.cases.timeline(caseId);
         if (cancelled) return;
         setEvents(tl.events);
-        setEvidences(evs);
         setSelectedEvidence("");
       } catch (err) {
         if (!cancelled) setLoadError(err instanceof Error ? err.message : String(err));

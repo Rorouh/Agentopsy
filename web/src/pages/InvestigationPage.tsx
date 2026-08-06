@@ -4,12 +4,12 @@ import type {
   AgentFinding,
   Capabilities,
   Case,
-  EvidenceHandle,
   ExecutorCost,
   ToolUsage,
 } from "../api/types";
 import type { ViewId } from "../navigation/navItems";
 import { useActiveCase } from "../state/activeCase";
+import { useCaseEvidence } from "../state/caseEvidence";
 import { usePublishShellHeader } from "../layout/shellHeader";
 import { ChatPage } from "./ChatPage";
 
@@ -34,7 +34,11 @@ const SEVERITY_LABEL: Record<AgentFinding["severity"], string> = {
 // onTurnComplete en su finally).
 export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: InvestigationPageProps) {
   const { activeCase, phase: casesPhase, error: casesError } = useActiveCase();
-  const [activeEvidence, setActiveEvidence] = useState<EvidenceHandle | null>(null);
+  // La evidencia del caso viene del store compartido, no de una lectura propia al
+  // montar: registrar una imagen mientras el perito está en esta vista tiene que
+  // llegar hasta aquí. Con la lectura local, el chat seguía mandando
+  // `evidence_id` vacío hasta que se recargaba la página.
+  const { evidence } = useCaseEvidence();
   const [findings, setFindings] = useState<AgentFinding[]>([]);
   const [toolUsage, setToolUsage] = useState<ToolUsage[]>([]);
   const [executorCost, setExecutorCost] = useState<ExecutorCost[]>([]);
@@ -63,27 +67,19 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
     }
   }, []);
 
-  // Contexto del caso activo: evidencia + hallazgos + tools + coste. Se recarga
-  // al cambiar de caso (desde el sidebar o cualquier otra vista).
+  // Contexto del caso activo: hallazgos + tools + coste. Se recarga al cambiar de
+  // caso (desde el sidebar o cualquier otra vista). La evidencia no se pide aquí,
+  // la sirve el store.
   useEffect(() => {
     const caseId = activeCase?.id;
     if (!caseId) {
-      setActiveEvidence(null);
       setFindings([]);
       setToolUsage([]);
       setExecutorCost([]);
       return;
     }
     let cancelled = false;
-    setActiveEvidence(null);
     (async () => {
-      try {
-        const evidences = await api.cases.listEvidence(caseId);
-        if (!cancelled) setActiveEvidence(evidences.length > 0 ? evidences[0] : null);
-      } catch {
-        if (!cancelled) setActiveEvidence(null);
-      }
-      if (cancelled) return;
       await refreshFindings(caseId);
       if (cancelled) return;
       await refreshToolUsage(caseId);
@@ -92,6 +88,8 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
       cancelled = true;
     };
   }, [activeCase?.id, refreshFindings, refreshToolUsage]);
+
+  const activeEvidence = evidence.length > 0 ? evidence[0] : null;
 
   const onTurnComplete = useCallback(() => {
     if (activeCase) {

@@ -16,6 +16,15 @@ function evidenceFileName(ev: EvidenceHandle): string {
   return ev.original_path.split("/").pop() ?? ev.original_path;
 }
 
+// Cuántos ficheros respaldan la evidencia, cuando es más de uno. Un EWF partido se
+// registra como UNA evidencia a partir del .E01, así que sin esto la tabla enseñaba
+// el nombre y el tamaño del primer segmento y no había forma de comprobar que el
+// conjunto entero entró.
+function segmentNote(ev: EvidenceHandle): string | null {
+  if (ev.segment_count <= 1) return null;
+  return `${ev.segment_count} segmentos`;
+}
+
 interface EvidenceTableProps {
   evidence: EvidenceHandle[];
   verifyingIds: Set<string>;
@@ -116,15 +125,26 @@ export function EvidenceTable({
             <tbody>
               {pageItems.map((ev) => {
                 const fileName = evidenceFileName(ev);
+                const segments = segmentNote(ev);
                 const verifying = verifyingIds.has(ev.evidence_id);
                 const lv = ev.last_verification;
                 return (
                   <tr key={ev.evidence_id}>
                     <td className="cell-mono" title={fileName}>
                       {fileName}
+                      {segments && <span className="cell-note">{segments}</span>}
                     </td>
                     <td className="cell-text">{DETECTED_KIND_LABEL[ev.detected_kind]}</td>
-                    <td className="cell-mono">{formatBytes(ev.size)}</td>
+                    {/* El tamaño del CONJUNTO. En un set EWF, `size` es solo el
+                        primer segmento (es lo que cubre el hash baseline). */}
+                    <td className="cell-mono">
+                      {formatBytes(ev.total_size)}
+                      {segments && (
+                        <span className="cell-note">
+                          {formatBytes(ev.size)} el primer segmento
+                        </span>
+                      )}
+                    </td>
                     <td className="cell-dim">
                       <button
                         type="button"

@@ -53,6 +53,7 @@ import os
 import re
 import shutil
 import stat
+import threading
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -190,6 +191,25 @@ class EvidenceHandle:
     # the single ``original_basename`` from ``baseline.json``.
     segments: tuple[EvidenceSegment, ...] = ()
 
+    @property
+    def segment_count(self) -> int:
+        """How many FILES back this evidence: 1 for a single-file one, N for an EWF
+        set. Legacy evidence (no ``segments`` recorded) counts as its one file."""
+        return len(self.segments) or 1
+
+    @property
+    def total_size(self) -> int:
+        """Bytes of the WHOLE evidence, i.e. every segment summed.
+
+        ``size`` is the FIRST segment's size, because it pairs with ``sha256`` as
+        the baseline the audit log and the acquisition act key on (a single-value
+        contract deliberately preserved). For a 9-segment EWF set that is one
+        ninth of the evidence, so anything ANSWERING "how big is this evidence"
+        has to ask here: the examiner needs to see that the whole set was
+        ingested, not the first file of it.
+        """
+        return sum(s.size for s in self.segments) if self.segments else self.size
+
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
@@ -279,6 +299,49 @@ def _discard_staging(staging: Path) -> None:
             "no se pudo limpiar el directorio temporal de registro %s: %s, "
             "bórralo a mano (no es evidencia registrada)", staging, exc,
         )
+
+
+#: Staging dirs of the registrations THIS process is running right now. It is what
+#: makes ``_sweep_orphan_staging`` exact instead of a guess: a staging dir is alive
+#: only while the thread that created it is still inside ``register``.
+_LIVE_STAGING: set[Path] = set()
+_LIVE_STAGING_LOCK = threading.Lock()
+
+
+def _sweep_orphan_staging(evidence_root: Path) -> list[str]:
+    """Discard staging dirs left by registrations that are no longer running.
+
+    A registration builds in a hidden ``.registrando-<uuid>`` dir and publishes it
+    with a single rename; ANY exception discards it. What no exception handler can
+    clean is the api process being KILLED mid-copy — a container restart, a
+    ``docker compose up``, the machine going down. The thread dies with the process
+    and the staging dir survives: invisible to ``list()`` (its name is not a UUID4),
+    unreachable from the UI, and holding as many GB as had been copied. Registering
+    a 16 GiB memory dump twice that way silently parks 32 GiB inside the case.
+
+    Which dirs are dead is not inferred from timestamps: a staging dir is alive only
+    while it is in ``_LIVE_STAGING``, i.e. while a thread of THIS process is inside
+    ``register`` building it. Anything else belongs to a process that no longer
+    exists. Returns the names discarded, so the caller can attest the cleanup in the
+    audit log instead of removing bytes from a case in silence.
+    """
+    orphans: list[str] = []
+    for staging in sorted(evidence_root.glob(f"{_STAGING_PREFIX}*")):
+        if not staging.is_dir():
+            continue
+        with _LIVE_STAGING_LOCK:
+            if staging in _LIVE_STAGING:
+                continue
+        logger.warning(
+            "descartando el directorio temporal %s: quedó de un registro que el "
+            "api no terminó (reinicio del servicio). No es evidencia registrada: "
+            "la publicación es un rename atómico que nunca llegó a ocurrir",
+            staging,
+        )
+        _discard_staging(staging)
+        if not staging.exists():
+            orphans.append(staging.name)
+    return orphans
 
 
 # ── EWF multi-segment sets ───────────────────────────────────────────────────
@@ -512,8 +575,24 @@ class EvidenceManager:
         #    ``evidence/<uuid>`` (no baseline.json, half a segment set) is worse than
         #    no evidence at all. ``list()`` never sees this dir: its name is not a
         #    UUID4. The hash gate below is byte-for-byte the same as before.
+        #    Y antes de crear el nuevo, se descartan los que dejó un registro que el
+        #    api no llegó a terminar (un reinicio del servicio mata el hilo, y ese es
+        #    el único caso que ningún `except` puede limpiar). Queda atestiguado en el
+        #    log encadenado: se borran bytes de un caso, aunque no sean evidencia.
+        orphan_staging = _sweep_orphan_staging(evidence_root)
+        if orphan_staging:
+            AuditLog(case_dir / "audit.jsonl").append({
+                "action": "evidence_staging_discarded",
+                "case_id": case_dir.name,
+                "staging_dirs": orphan_staging,
+                "reason": "registro interrumpido por un reinicio del api: la "
+                          "publicación (rename atómico) nunca ocurrió",
+            })
+
         staging_dir = evidence_root / f"{_STAGING_PREFIX}{evidence_id}"
         staging_dir.mkdir(parents=True, exist_ok=False)
+        with _LIVE_STAGING_LOCK:
+            _LIVE_STAGING.add(staging_dir)
 
         # Observational progress accounting (see the module docstring). Every byte is
         # walked three times (hash source → copy → re-hash copy), so the total work is
@@ -620,6 +699,12 @@ class EvidenceManager:
             # must not leave a half-copied image behind either.
             _discard_staging(staging_dir)
             raise
+        finally:
+            # Publicado o descartado, este staging ya no está vivo. Dejarlo en el
+            # conjunto haría que un registro posterior lo considerase de un hilo en
+            # marcha y no lo barriese nunca.
+            with _LIVE_STAGING_LOCK:
+                _LIVE_STAGING.discard(staging_dir)
 
         dest = evidence_dir / primary.name
 
@@ -881,6 +966,13 @@ class EvidenceManager:
             "sha256": handle.sha256,
             "size_bytes": handle.size,
             "size_human": human_readable_size(handle.size),
+            # The WHOLE evidence: every segment summed, and how many files it took.
+            # ``size_bytes`` above is the FIRST segment (it pairs with the baseline
+            # ``sha256``), so on an EWF set it is a fraction of the evidence and
+            # must never be shown as its size.
+            "segment_count": handle.segment_count,
+            "total_size_bytes": handle.total_size,
+            "total_size_human": human_readable_size(handle.total_size),
             "registered_at": handle.registered_at,
             "read_only_level": READ_ONLY_LEVEL,
             "read_only_label": READ_ONLY_LEVEL_LABELS[READ_ONLY_LEVEL],

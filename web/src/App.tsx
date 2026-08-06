@@ -3,6 +3,7 @@ import { api } from "./api/client";
 import type { Capabilities } from "./api/types";
 import { ThemeProvider } from "./ThemeProvider";
 import { ActiveCaseProvider } from "./state/activeCase";
+import { CaseEvidenceProvider } from "./state/caseEvidence";
 import { AppShell } from "./layout/AppShell";
 import { ShellHeaderProvider } from "./layout/shellHeader";
 import { DEFAULT_VIEW, NAV_ITEMS, type ViewId } from "./navigation/navItems";
@@ -68,11 +69,15 @@ export function App() {
   return (
     <ThemeProvider>
       <ActiveCaseProvider>
+      <CaseEvidenceProvider>
       <ShellHeaderProvider>
       <AppShell activeView={activeView} onViewChange={setActiveView} error={error}>
         {/* Las siete vistas llaman al backend real (forensia/routers/*). El caso
-            activo y su lista los sirve ActiveCaseProvider; la cabecera de cada
-            vista se publica en el armazón con usePublishShellHeader. */}
+            activo y su lista los sirve ActiveCaseProvider, y la evidencia de ese
+            caso CaseEvidenceProvider, que además gobierna el registro en segundo
+            plano: por eso vive aquí arriba y no en la vista de Evidencia, que se
+            destruye al cambiar de vista. La cabecera de cada vista se publica en
+            el armazón con usePublishShellHeader. */}
         {activeView === "guide" && <GuidePage onNavigate={setActiveView} />}
         {activeView === "repository" && <RepositoryPage onNavigate={setActiveView} />}
         {activeView === "document-viewer" && <DocumentsPage />}
@@ -94,6 +99,7 @@ export function App() {
         )}
       </AppShell>
       </ShellHeaderProvider>
+      </CaseEvidenceProvider>
       </ActiveCaseProvider>
     </ThemeProvider>
   );

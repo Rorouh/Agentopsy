@@ -60,14 +60,40 @@ export class ApiError extends Error {
   }
 }
 
+// Estados que NO vienen del api sino del proxy que tiene delante: nginx no pudo
+// hablar con el servicio api (arrancando, reiniciándose, caído) o se le agotó la
+// espera. Es un fallo de TRANSPORTE, no una respuesta del backend, y distinguirlo
+// importa: un trabajo en segundo plano puede seguir vivo al otro lado.
+export const GATEWAY_STATUS: ReadonlySet<number> = new Set([502, 503, 504]);
+
+// Texto de un fallo de pasarela. El cuerpo que devuelve nginx es una página HTML
+// entera, y volcarla en un aviso de la interfaz deja al perito leyendo markup
+// («<html><head><title>502 Bad Gateway...») en vez de saber qué pasó.
+function gatewayDetail(status: number): string {
+  if (status === 504) {
+    return `HTTP 504: el api no respondió a tiempo a través del proxy.`;
+  }
+  return (
+    `HTTP ${status}: el proxy no pudo hablar con el servicio api. ` +
+    `Puede estar arrancando o reiniciándose (docker compose ps api).`
+  );
+}
+
 async function readDetail(res: Response): Promise<string> {
+  if (GATEWAY_STATUS.has(res.status)) return gatewayDetail(res.status);
   try {
     const body = await res.clone().json();
     if (body && typeof body.detail === "string") return body.detail;
     return JSON.stringify(body);
   } catch {
     try {
-      return await res.text();
+      const text = await res.text();
+      // Cualquier otra respuesta HTML tampoco es del api: nombra el estado en vez
+      // de pintar la página de error de quien la haya generado.
+      if (text.trimStart().toLowerCase().startsWith("<")) {
+        return `HTTP ${res.status}: respuesta no-JSON desde ${res.url || "el api"}.`;
+      }
+      return text;
     } catch {
       return res.statusText;
     }

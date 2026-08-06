@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { useActiveCase } from "./activeCase";
+import { useCaseEvidence } from "./caseEvidence";
 
 // Cifras del caso que alimentan el estado de las fases: la escalera del sidebar
 // y los pasos de la Guía leen LAS MISMAS, para que no puedan contradecirse.
@@ -26,29 +27,33 @@ export const EMPTY_FACTS: CaseFacts = {
 
 export function useCaseFacts(): CaseFacts {
   const { activeCaseId } = useActiveCase();
-  const [facts, setFacts] = useState<CaseFacts>(EMPTY_FACTS);
+  // La evidencia sale del store COMPARTIDO, no de una lectura propia: es lo que
+  // hace que registrar una imagen actualice la escalera del sidebar en el momento
+  // en que el registro termina, sin recargar la página. El sidebar nunca se
+  // desmonta, así que su lectura propia se quedaba vieja para siempre.
+  const { evidence, phase: evidencePhase } = useCaseEvidence();
+  const [counts, setCounts] = useState<{ findings: number; documents: number }>({
+    findings: 0,
+    documents: 0,
+  });
 
   useEffect(() => {
     let cancelled = false;
     if (!activeCaseId) {
-      setFacts(EMPTY_FACTS);
+      setCounts({ findings: 0, documents: 0 });
       return;
     }
     (async () => {
-      // Cualquier fallo deja la cifra a cero y `loaded` en true solo si las tres
-      // lecturas respondieron: media verdad es peor que ninguna.
-      const [evidence, findings, documents] = await Promise.all([
-        api.cases.listEvidence(activeCaseId).catch(() => null),
+      // Un fallo de estas dos deja su cifra a cero: `loaded` lo gobierna la
+      // evidencia, que es la lectura que decide si hay caso que enseñar.
+      const [findings, documents] = await Promise.all([
         api.cases.listFindings(activeCaseId).catch(() => null),
         api.cases.listDocuments(activeCaseId).catch(() => null),
       ]);
       if (cancelled) return;
-      setFacts({
-        evidenceTotal: evidence?.length ?? 0,
-        evidenceVerified: evidence?.filter((e) => e.last_verification !== null).length ?? 0,
+      setCounts({
         findings: findings?.length ?? 0,
         documents: documents?.length ?? 0,
-        loaded: evidence !== null,
       });
     })();
     return () => {
@@ -56,5 +61,14 @@ export function useCaseFacts(): CaseFacts {
     };
   }, [activeCaseId]);
 
-  return facts;
+  return useMemo(() => {
+    if (!activeCaseId) return EMPTY_FACTS;
+    return {
+      evidenceTotal: evidence.length,
+      evidenceVerified: evidence.filter((e) => e.last_verification !== null).length,
+      findings: counts.findings,
+      documents: counts.documents,
+      loaded: evidencePhase === "ready",
+    };
+  }, [activeCaseId, evidence, evidencePhase, counts]);
 }

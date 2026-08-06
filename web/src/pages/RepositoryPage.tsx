@@ -4,11 +4,11 @@ import type {
   CustodyAct,
   EvidenceHandle,
   EvidenceMetadata,
-  EvidenceRegisterJob,
   EvidenceSource,
 } from "../api/types";
 import type { ViewId } from "../navigation/navItems";
 import { useActiveCase } from "../state/activeCase";
+import { useCaseEvidence } from "../state/caseEvidence";
 import { EvidenceInbox } from "../components/EvidenceInbox";
 import { EvidenceTable } from "../components/EvidenceTable";
 import { ErrorState } from "../ui/ErrorState";
@@ -45,20 +45,27 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
     reload: reloadCases,
     upsertCase,
   } = useActiveCase();
-  const [evidence, setEvidence] = useState<EvidenceHandle[]>([]);
+  // La evidencia del caso y el registro en SEGUNDO PLANO los gobierna el store
+  // compartido (state/caseEvidence): esta vista se destruye al cambiar de vista,
+  // así que ni la lista ni el sondeo del job pueden vivir aquí. Lo que queda en
+  // la página es lo suyo: la bandeja, la selección, el acta y la verificación.
+  const {
+    evidence,
+    error: evidenceListError,
+    replaceEvidence,
+    registering,
+    registerJob,
+    registerError,
+    registerStalled,
+    startRegister,
+    registeredSeq,
+    lastRegisteredId,
+  } = useCaseEvidence();
 
-  const [registering, setRegistering] = useState(false);
-  // Registro en SEGUNDO PLANO: el hash-gate de una imagen grande tarda minutos,
-  // así que no vive dentro de la petición HTTP (504 del proxy + copia cortada a
-  // medias). `registerJob` es el último estado sondeado (fase + bytes, para la
-  // barra); `registerJobRef` ata el sondeo a SU caso, cambiar de caso no debe
-  // sondear el job del anterior contra el nuevo (daría 404).
-  const [registerJob, setRegisterJob] = useState<EvidenceRegisterJob | null>(null);
-  const [registerJobRef, setRegisterJobRef] = useState<
-    { caseId: string; jobId: string } | null
-  >(null);
-  // Flash de éxito de registro (2 s), aria-live en EvidenceInbox.
-  const [registerSuccess, setRegisterSuccess] = useState(false);
+  // Aviso de registro correcto: el TEXTO que se pinta (aria-live en
+  // EvidenceInbox), null mientras no hay ninguno. Nombra lo que entró, que en un
+  // EWF partido es lo único que confirma que el conjunto está completo.
+  const [registerSuccess, setRegisterSuccess] = useState<string | null>(null);
   const successTimer = useRef<number | undefined>(undefined);
   // Bandeja de entrada de evidencias (/api/evidence/sources./evidence del
   // host): el operador copia el fichero a la bandeja y lo ELIGE aquí
@@ -84,57 +91,49 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
   const [acta, setActa] = useState<CustodyAct | null>(null);
   const [actaLoading, setActaLoading] = useState(false);
   const [actaError, setActaError] = useState<string | null>(null);
-  // Etiquetado para que el aviso nombre el fallo con honestidad: mezclar ambos
-  // en un mismo slot hacía que un 404 de verify apareciera como «No se pudo
-  // registrar la evidencia: …», que era falso por los dos lados.
-  const [evidenceError, setEvidenceError] = useState<
-    { kind: "register" | "verify"; message: string } | null
-  >(null);
-
-  // Espejo de activeCaseId en un ref. El registro es asíncrono (hashear una
-  // imagen de varios GB tarda) y el operador puede cambiar de caso mientras
-  // corre; el closure anclaría la evidencia a un case_id viejo.
-  const activeCaseIdRef = useRef<string | null>(null);
-  useEffect(() => {
-    activeCaseIdRef.current = activeCaseId;
-  }, [activeCaseId]);
+  // Los tres fallos de esta vista van cada uno a su sitio, con su nombre: el de
+  // REGISTRO y el de la LISTA los da el store, y el de VERIFICAR es local.
+  // Mezclarlos en un slot único hacía que un 404 de verify apareciera como «No se
+  // pudo registrar la evidencia: …», que era falso por los dos lados.
+  const [verifyError, setVerifyError] = useState<string | null>(null);
+  // Fallo al leer la BANDEJA (./evidence), que no es la lista de evidencias
+  // registradas ni el registro.
+  const [sourcesError, setSourcesError] = useState<string | null>(null);
 
   useEffect(() => {
     return () => window.clearTimeout(successTimer.current);
   }, []);
 
-  // Única fuente de verdad de la lista de evidencias: sigue a activeCaseId. Se
-  // limpia de inmediato para que la UI no pinte filas zombi del caso anterior.
+  // Un registro que TERMINA BIEN lo anuncia el store (registeredSeq), ya con la
+  // lista recargada. Aquí solo queda lo presentacional: soltar la selección de la
+  // bandeja y el aviso de 2 s. El ref arranca en el valor actual para que volver a
+  // esta vista no reviva el aviso de un registro que ya pasó.
+  const seenRegisteredSeq = useRef(registeredSeq);
   useEffect(() => {
-    if (!activeCaseId) {
-      setEvidence([]);
-      return;
-    }
-    let cancelled = false;
-    setEvidence([]);
-    (async () => {
-      try {
-        const ev = await api.cases.listEvidence(activeCaseId);
-        if (!cancelled) setEvidence(ev);
-      } catch (err) {
-        if (!cancelled) {
-          setEvidenceError({
-            kind: "register",
-            message: String(err instanceof Error ? err.message : err),
-          });
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeCaseId]);
+    if (registeredSeq === seenRegisteredSeq.current) return;
+    seenRegisteredSeq.current = registeredSeq;
+    setSelectedSourcePath("");
+    // El aviso NOMBRA lo que se registró. Un EWF partido entra como una sola
+    // evidencia desde su .E01, así que sin decir cuántos segmentos y cuánto pesa
+    // el conjunto no hay forma de ver desde aquí que entró completo.
+    const done = evidence.find((ev) => ev.evidence_id === lastRegisteredId);
+    setRegisterSuccess(
+      done
+        ? done.segment_count > 1
+          ? `Evidencia registrada: ${done.segment_count} segmentos, ${formatBytes(done.total_size)} en total`
+          : `Evidencia registrada: ${formatBytes(done.total_size)}`
+        : "Evidencia registrada",
+    );
+    window.clearTimeout(successTimer.current);
+    // Nombrar el conjunto es un dato que se lee, no un destello: 6 s, no 2.
+    successTimer.current = window.setTimeout(() => setRegisterSuccess(null), 6000);
+  }, [registeredSeq, evidence, lastRegisteredId]);
 
   // Devuelve la bandeja recién leída (además de fijarla en el estado) para que
   // quien la refresca pueda decidir sobre la lista NUEVA sin esperar al render.
   const loadSources = useCallback(async (): Promise<EvidenceSource[] | null> => {
     setLoadingSources(true);
-    setEvidenceError(null);
+    setSourcesError(null);
     try {
       const res = await api.evidence.listSources();
       setSources(res.sources);
@@ -144,10 +143,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
       return res.sources;
     } catch (err) {
       setSources(null);
-      setEvidenceError({
-        kind: "register",
-        message: String(err instanceof Error ? err.message : err),
-      });
+      setSourcesError(String(err instanceof Error ? err.message : err));
       return null;
     } finally {
       setLoadingSources(false);
@@ -223,147 +219,21 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
     [loadSources],
   );
 
-  // Arranca el registro en SEGUNDO PLANO y devuelve al instante: el hash-gate
-  // (hash del origen → copia inmutable → re-hash) recorre todos los bytes tres
-  // veces y tarda minutos en una imagen grande. El avance llega por sondeo del
-  // job; el registro sobrevive a cerrar la pestaña.
-  const registerSelectedSource = useCallback(async () => {
-    // Instantánea del caso en el momento del clic: el job queda anclado a él y
-    // el operador puede cambiar de caso mientras corre.
-    const intendedCaseId = activeCase?.id;
-    if (!intendedCaseId || !selectedSourcePath) return;
-    setEvidenceError(null);
-    setRegistering(true);
-    setRegisterJob(null);
-    try {
-      const job = await api.evidence.registerAsync(intendedCaseId, selectedSourcePath);
-      setRegisterJob(job);
-      setRegisterJobRef({ caseId: intendedCaseId, jobId: job.job_id });
-    } catch (err) {
-      setRegistering(false);
-      setEvidenceError({
-        kind: "register",
-        message: String(err instanceof Error ? err.message : err),
-      });
-    }
-  }, [activeCase, selectedSourcePath]);
-
-  // Sondeo del job de registro (~1 s). Solo sondea el job de SU caso: si el
-  // operador cambia de caso, el job sigue vivo en el servidor y se re-engancha
-  // al volver (efecto siguiente).
-  useEffect(() => {
-    if (!registerJobRef || registerJobRef.caseId !== activeCaseId) return;
-    const { caseId, jobId } = registerJobRef;
-    let cancelled = false;
-    let timer: number | undefined;
-
-    const poll = async () => {
-      let job: EvidenceRegisterJob;
-      try {
-        job = await api.evidence.registerJob(caseId, jobId);
-      } catch (err) {
-        if (cancelled) return;
-        setRegisterJobRef(null);
-        setRegistering(false);
-        setEvidenceError({
-          kind: "register",
-          message: String(err instanceof Error ? err.message : err),
-        });
-        return;
-      }
-      if (cancelled) return;
-      setRegisterJob(job);
-      if (job.state === "pending" || job.state === "running") {
-        timer = window.setTimeout(() => void poll(), 1000);
-        return;
-      }
-
-      setRegisterJobRef(null);
-      setRegistering(false);
-      if (job.state === "error") {
-        // RULE 2: el mensaje del backend nombra la dependencia/guarda que falló.
-        setEvidenceError({
-          kind: "register",
-          message: job.error ?? "el registro terminó en error sin detalle",
-        });
-        return;
-      }
-
-      // done: la evidencia ya está publicada (registro atómico). Refresca la
-      // lista y la ficha del caso (el triage puede haber derivado os_profile).
-      setSelectedSourcePath("");
-      try {
-        const [list, refreshed] = await Promise.all([
-          api.cases.listEvidence(caseId),
-          api.cases.get(caseId),
-        ]);
-        if (cancelled) return;
-        if (activeCaseIdRef.current === caseId) setEvidence(list);
-        upsertCase(refreshed);
-      } catch {
-        /* refresco best-effort; la evidencia ya quedó registrada */
-      }
-      if (cancelled) return;
-      setRegisterSuccess(true);
-      window.clearTimeout(successTimer.current);
-      successTimer.current = window.setTimeout(() => setRegisterSuccess(false), 2000);
-    };
-
-    void poll();
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [activeCaseId, registerJobRef, upsertCase]);
-
-  // Re-enganche: al montar (o al cambiar de caso) pregunta si ese caso tiene un
-  // registro VIVO y retoma su sondeo. Cerrar/reabrir la ventana no aborta nada
-  // el job corre en el api.
-  useEffect(() => {
-    setRegisterJob(null);
-    setRegisterJobRef(null);
-    setRegistering(false);
-    if (!activeCaseId) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const jobs = await api.evidence.listRegisterJobs(activeCaseId);
-        if (cancelled) return;
-        const live = jobs.find((j) => j.state === "pending" || j.state === "running");
-        if (!live) return;
-        setRegisterJob(live);
-        setRegisterJobRef({ caseId: activeCaseId, jobId: live.job_id });
-        setRegistering(true);
-      } catch {
-        /* sin re-enganche: no es un fallo del caso, solo no hay job que retomar */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeCaseId]);
-
   const verifyOne = useCallback(
     async (evidenceId: string) => {
       const intendedCaseId = activeCase?.id;
       if (!intendedCaseId) return;
-      setEvidenceError(null);
+      setVerifyError(null);
       setVerifyingIds((prev) => new Set(prev).add(evidenceId));
       try {
         const updated = await api.cases.verifyEvidence(intendedCaseId, evidenceId);
         // El router devuelve el handle completo con last_verification recién
-        // persistida (verification.json + audit.jsonl). Sustituye la fila en
-        // sitio, pero solo si el caso activo no ha cambiado por debajo.
-        if (activeCaseIdRef.current === intendedCaseId) {
-          setEvidence((prev) =>
-            prev.map((ev) => (ev.evidence_id === evidenceId ? { ...ev, ...updated } : ev)),
-          );
-        }
+        // persistida (verification.json + audit.jsonl). El store sustituye la
+        // fila en sitio; si el caso ya cambió por debajo, ese id no está en su
+        // lista y la actualización no hace nada.
+        replaceEvidence(evidenceId, updated);
       } catch (err) {
-        setEvidenceError({
-          kind: "verify",
-          message: String(err instanceof Error ? err.message : err),
-        });
+        setVerifyError(String(err instanceof Error ? err.message : err));
       } finally {
         setVerifyingIds((prev) => {
           const next = new Set(prev);
@@ -372,7 +242,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
         });
       }
     },
-    [activeCase],
+    [activeCase, replaceEvidence],
   );
 
   // ── Determinación del sistema operativo ───────────────────────────────────
@@ -392,16 +262,13 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
 
   const redetectOs = useCallback(
     async (evidenceId: string) => {
-      const caseId = activeCaseIdRef.current;
+      const caseId = activeCaseId;
       if (!caseId || redetecting) return;
       setRedetecting(evidenceId);
       setOsError(null);
       try {
         const res = await api.cases.redetectEvidenceOs(caseId, evidenceId);
-        if (activeCaseIdRef.current !== caseId) return;
-        setEvidence((prev) =>
-          prev.map((ev) => (ev.evidence_id === evidenceId ? res.evidence : ev)),
-        );
+        replaceEvidence(evidenceId, res.evidence);
         upsertCase(res.case);
       } catch (err) {
         setOsError(
@@ -411,7 +278,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
         setRedetecting(null);
       }
     },
-    [redetecting, upsertCase],
+    [activeCaseId, redetecting, replaceEvidence, upsertCase],
   );
 
   // Reintento AUTOMÁTICO, una vez por evidencia y sesión: si el caso no tiene
@@ -443,7 +310,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
 
   const anchorProfile = useCallback(
     async (profile: "unix" | "windows") => {
-      const caseId = activeCaseIdRef.current;
+      const caseId = activeCaseId;
       if (!caseId || anchoring) return;
       setAnchoring(profile);
       setOsError(null);
@@ -457,7 +324,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
         setAnchoring(null);
       }
     },
-    [anchoring, upsertCase],
+    [activeCaseId, anchoring, upsertCase],
   );
 
   const openActa = useCallback(
@@ -534,13 +401,26 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
               ? undefined
               : "Elige primero el punto de entrada en la bandeja (un formato soportado o el .E01 del set)."
           }
-          onClick={() => void registerSelectedSource()}
+          onClick={() => void startRegister(selectedSourcePath)}
         >
           {registering ? "Registrando…" : "Registrar evidencia"}
         </button>
       ) : undefined,
     },
-    [activeCase?.id, activeCase?.examiner, caseClosed, canRegister, registering],
+    // `selectedSourcePath` va en los disparadores porque el nodo de la acción se
+    // publica UNA vez por cambio de dependencias y se queda con el cierre de ese
+    // render: cambiar de fichero elegido no movía `canRegister` (seguía habiendo
+    // uno seleccionado), así que el botón de la cabecera conservaba la ruta
+    // ANTERIOR y registraba la evidencia equivocada.
+    [
+      activeCase?.id,
+      activeCase?.examiner,
+      caseClosed,
+      canRegister,
+      registering,
+      selectedSourcePath,
+      startRegister,
+    ],
   );
 
   if (casesPhase === "loading") {
@@ -616,7 +496,8 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
             selectedSourcePath={selectedSourcePath}
             registering={registering}
             registerJob={registerJob}
-            registerError={evidenceError?.kind === "register" ? evidenceError.message : null}
+            registerError={registerError}
+            registerStalled={registerStalled}
             registerSuccess={registerSuccess}
             uploading={uploading}
             uploadProgress={uploadProgress}
@@ -624,9 +505,12 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
             uploadNotice={uploadNotice}
             onSelectSource={setSelectedSourcePath}
             onLoadSources={() => void loadSources()}
-            onRegister={() => void registerSelectedSource()}
+            onRegister={() => void startRegister(selectedSourcePath)}
             onUploadFiles={uploadSources}
           />
+          {sourcesError && (
+            <ErrorState message={`No se pudo leer la bandeja: ${sourcesError}`} />
+          )}
         </div>
 
         {/* 3 · Evidencias del caso */}
@@ -636,11 +520,19 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
             <span className="rule" />
             <span className="rule-count">{evidence.length}</span>
           </div>
+          {/* El fallo de la LECTURA de la lista se nombra como lo que es: antes
+              se pintaba como «No se pudo registrar la evidencia», que confundía
+              un caso sin leer con un registro fallido. */}
+          {evidenceListError && (
+            <ErrorState
+              message={`No se pudo listar la evidencia del caso: ${evidenceListError}`}
+            />
+          )}
           <EvidenceTable
             evidence={evidence}
             verifyingIds={verifyingIds}
             onVerify={verifyOne}
-            verifyError={evidenceError?.kind === "verify" ? evidenceError.message : null}
+            verifyError={verifyError}
           />
         </div>
 
@@ -740,7 +632,12 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
               {evidence.map((ev) => (
                 <div className="custody-row" key={ev.evidence_id}>
                   <span className="custody-name">{evidenceFileName(ev)}</span>
-                  <span className="custody-meta">{formatBytes(ev.size)}</span>
+                  {/* Tamaño del CONJUNTO y cuántos ficheros lo forman: en un EWF
+                      partido, `size` es solo el primer segmento. */}
+                  <span className="custody-meta">
+                    {formatBytes(ev.total_size)}
+                    {ev.segment_count > 1 && ` en ${ev.segment_count} segmentos`}
+                  </span>
                   <span className="custody-meta" title={ev.sha256}>
                     sha256 {shortHash(ev.sha256)}
                   </span>
@@ -819,15 +716,51 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
             </div>
             <div className="acta-row">
               <div className="eyebrow">SHA-256 (baseline)</div>
-              <div className="acta-value acta-value--mono">{acta.evidence.sha256}</div>
+              <div className="acta-value acta-value--mono">
+                {acta.evidence.sha256}
+                {acta.evidence.segment_count > 1 && (
+                  <span className="acta-note">
+                    cubre el primer segmento; cada uno tiene el suyo, abajo
+                  </span>
+                )}
+              </div>
             </div>
             <div className="acta-row">
               <div className="eyebrow">Tamaño</div>
               <div className="acta-value acta-value--mono">
-                {acta.evidence.size_human} (
-                {acta.evidence.size_bytes.toLocaleString("es-ES")} bytes)
+                {acta.evidence.total_size_human} (
+                {acta.evidence.total_size_bytes.toLocaleString("es-ES")} bytes)
+                {acta.evidence.segment_count > 1 && (
+                  <span className="acta-note">
+                    {acta.evidence.segment_count} segmentos ingeridos como una sola
+                    evidencia; el primero pesa {acta.evidence.size_human}
+                  </span>
+                )}
               </div>
             </div>
+            {/* Un EWF partido se registra desde el .E01 y arrastra todo su conjunto.
+                Enumerarlo aquí es lo que permite comprobar que entró COMPLETO: cada
+                fichero con su propio hash baseline, en orden de segmento. */}
+            {acta.evidence.segments.length > 1 && (
+              <div className="acta-row">
+                <div className="eyebrow">
+                  Segmentos ({acta.evidence.segments.length})
+                </div>
+                <div className="acta-value">
+                  <div className="segment-rows">
+                    {acta.evidence.segments.map((s) => (
+                      <div className="segment-row" key={s.name}>
+                        <span className="segment-name">{s.name}</span>
+                        <span className="segment-size">{s.size_human}</span>
+                        <span className="segment-hash" title={s.sha256}>
+                          sha256 {shortHash(s.sha256)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="acta-row">
               <div className="eyebrow">Registrada</div>
               <div className="acta-value acta-value--mono">

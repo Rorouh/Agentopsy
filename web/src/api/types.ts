@@ -243,6 +243,21 @@ export interface EvidenceHandle {
   // valor lo determina el pase PROFUNDO, que abre la imagen por el maletín.
   detected_os: "unix" | "windows" | "unknown";
   detected_kind: "disk" | "memory" | "container_disk" | "unknown";
+  // Ficheros que respaldan la evidencia: 1 para un fichero unico, N para un set
+  // EWF (.E01 ... .E0N), cada uno con su propio hash baseline.
+  segment_count: number;
+  // Bytes de TODA la evidencia (todos los segmentos sumados). `size` de arriba es
+  // el del PRIMER segmento, porque es lo que cubre el hash baseline: en un set de
+  // 9 segmentos es una novena parte, asi que el tamano que se ENSENA es este.
+  total_size: number;
+  segments: EvidenceSegmentRef[];
+}
+
+// Un fichero del conjunto, con su propio hash baseline y su tamano.
+export interface EvidenceSegmentRef {
+  name: string;
+  sha256: string;
+  size: number;
 }
 
 // Respuesta de POST …/evidence/{id}/redetect-os: la evidencia con su huella
@@ -311,6 +326,9 @@ export interface EvidenceMetadata {
   sha256: string;
   size_bytes: number;
   size_human: string;
+  segment_count: number;
+  total_size_bytes: number;
+  total_size_human: string;
   registered_at: string;
   read_only_level: "fs";
   read_only_label: string;
@@ -341,9 +359,20 @@ export interface CustodyAct {
     sha256: string;
     size_bytes: number;
     size_human: string;
+    // El acta atestigua la evidencia COMPLETA: `size_bytes` es el primer segmento
+    // (lo que cubre el hash baseline), estos tres son el conjunto entero.
+    segment_count: number;
+    total_size_bytes: number;
+    total_size_human: string;
     registered_at: string;
     detected_os: "unix" | "windows" | "unknown";
     detected_kind: "disk" | "memory" | "container_disk" | "unknown";
+    segments: {
+      name: string;
+      sha256: string;
+      size_bytes: number;
+      size_human: string;
+    }[];
   };
   read_only: { level: "fs"; label: string };
   chain_of_custody: {
