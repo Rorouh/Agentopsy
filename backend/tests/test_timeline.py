@@ -118,8 +118,8 @@ def test_tool_run_event_pairs_start_with_finish() -> None:
 
 def test_tool_run_event_carries_its_audited_end_and_duration() -> None:
     """El log encadenado registra el inicio Y el fin de cada ejecución, así que la
-    duración es un dato MEDIDO. El evento la lleva porque es lo que convierte una
-    ejecución en una barra en el dibujo de la línea temporal."""
+    duración de un trabajo es un dato MEDIDO, no una estimación, y el evento la
+    lleva junto al instante de cierre que la justifica."""
     audit = [
         {
             "action": "tool_run_start",

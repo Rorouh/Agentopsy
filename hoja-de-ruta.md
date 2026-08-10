@@ -9,11 +9,10 @@ allí y se borra de aquí.
 
 ---
 
-## 0. Contexto: de dónde vienen los dos apartados siguientes
+## 0. Contexto: los arreglos del 2026-08-06
 
-Los arreglos del 2026-08-06 y el dibujo de la línea temporal, ya
-implementados (el detalle está en `CLAUDE.md`), son la razón de que existan los
-dos apartados que siguen.
+Los arreglos del 2026-08-06, ya implementados (el detalle está en `CLAUDE.md`),
+quedan aquí resumidos porque son el estado sobre el que se mide lo que falta.
 
 **Los desplegables en tema oscuro.** La lista de un `<select>` la dibuja el
 navegador, no el CSS de la aplicación, y hereda el color del control: el campo
@@ -36,50 +35,15 @@ a un informe). Ahora las dos salen por `forensia.export_csv`: BOM, `sep=;`,
 procedencia de dos columnas, una línea vacía y la tabla, con cabeceras en
 castellano y el `argv` literal en la última columna, que es el dato más ancho.
 
-**El dibujo de la línea temporal.** Las dos figuras (la franja de trabajos de la
-investigación y la banda de densidad MACB) se calculan como un layout en
-unidades de dominio en `forensia.timeline.diagram` y las pinta en SVG
-`web/src/components/TimelineDiagram.tsx`. El bloque de procedencia que estrenaron
-las hojas de cálculo viaja también en la figura, y el nombre del SVG descargado
-sale del mismo `export_basename`. Lo que queda de esto es el apartado 1.
-
 ---
 
-## 1. La figura del timeline DENTRO del informe pericial
-
-El dibujo de la línea temporal está implementado y se usa desde la vista de
-Timeline (conmutador *Lista | Dibujo*, con su SVG descargable); el detalle vive
-en `CLAUDE.md`. Lo que queda es meterlo en el informe, y no está pendiente por
-falta de código sino por una decisión de contrato:
-
-- El pintor del PDF (`reports/pdf.py` con las primitivas vectoriales de `fpdf2`,
-  que ya es dependencia) consume el MISMO layout que el SVG del navegador
-  (`forensia.timeline.diagram`, en unidades de dominio), así que no hay lógica
-  que duplicar: son las mismas cifras, otro lienzo.
-- Pero **el informe lo redacta el modelo de principio a fin** y el índice es lo
-  único común, así que la figura tiene que entrar como un bloque que el modelo
-  PIDE en el apartado 3, *Línea de tiempo del incidente*, nunca como algo que el
-  backend inyecta a espaldas de la redacción. Ese mecanismo es exactamente el
-  bloque `ref` de la **Fase B** del apartado siguiente: un tipo de bloque nuevo
-  que el modelo referencia y el `writer` expande en el servidor.
-
-Por eso el orden importa: la figura del informe va DESPUÉS de la Fase B, y
-reutiliza su contrato en vez de inventarse un segundo camino para lo mismo.
-
-Lo que este dibujo NO es, y conviene que siga sin ser: una vista interactiva de
-análisis (zoom, *brushing*, selección de rango). Es una FIGURA: se lee de un
-golpe, se imprime, se adjunta. Si más adelante hace falta interacción, el layout
-ya está en el backend y la decisión será solo del pintor del navegador.
-
----
-
-## 2. El coste del informe pericial
+## 1. El coste del informe pericial
 
 El encargo dice que el informe lo redacta el modelo de principio a fin y que
 solo el índice es común. Eso no está en discusión aquí: lo que sigue es cómo
 pagar menos por el MISMO informe, o por uno mejor.
 
-### 2.1 La medición
+### 1.1 La medición
 
 Informe v0.1 del caso LoneWolf, `claude-code` con Opus, 2026-08-06, entrada
 `report_written` + `executor_run_finish` del log encadenado del caso:
@@ -104,7 +68,7 @@ hexadecimal tokeniza a razón de un token cada dos o tres caracteres. Contar
 caracteres subestima el coste por más del doble; el ahorro hay que medirlo en
 IDENTIFICADORES y en tablas, no en prosa.
 
-### 2.2 Hallazgo 1: el material lleva la misma cosa dos y tres veces
+### 1.2 Hallazgo 1: el material lleva la misma cosa dos y tres veces
 
 Desglose del material del caso LoneWolf (55.548 caracteres):
 
@@ -138,7 +102,7 @@ Efecto de segundo orden que importa tanto como el ahorro: el modelo deja de leer
 la misma ejecución tres veces con tres formas distintas. Menos material
 redundante es también menos ocasión de citarlo mal.
 
-### 2.3 Hallazgo 2: el 43 % de la salida es transcripción
+### 1.3 Hallazgo 2: el 43 % de la salida es transcripción
 
 Del informe real, por tipo de bloque:
 
@@ -184,7 +148,7 @@ nada que validar en esos bloques porque su contenido ES el argv auditado.
 
 Estimado: la salida baja de 26.637 a unos 15.500 tokens.
 
-### 2.4 Hallazgo 3: la entrada se factura al doble, y eso cambia la prioridad
+### 1.4 Hallazgo 3: la entrada se factura al doble, y eso cambia la prioridad
 
 `cache_creation_input_tokens` = 36.923 y `cache_read_input_tokens` = 0: la
 redacción es UNA llamada, así que el CLI escribe una caché de una hora (10
@@ -203,7 +167,7 @@ del chat. Lo que sí cambia son dos cosas:
    otro argumento para la Fase B: cuanto menos transcriba el modelo, menos
    probable es la corrección, y cuando ocurra saldrá barata.
 
-### 2.5 Estimación conjunta y cómo comprobarla
+### 1.5 Estimación conjunta y cómo comprobarla
 
 | | Ahora (medido) | Con A + B (estimado) |
 |---|---|---|
@@ -223,7 +187,7 @@ el número de bloques de prosa (`p`, `h3`, `list`) no debe bajar, y el número d
 apartados que pasan las cuatro puertas en el PRIMER intento
 (`report_written.attempts == 1`) no debe empeorar.
 
-### 2.6 Lo que NO hay que hacer
+### 1.6 Lo que NO hay que hacer
 
 - **No trocear el informe en una llamada por apartado.** Parece la optimización
   obvia y es una regresión de un orden de magnitud: cada llamada volvería a
@@ -242,13 +206,10 @@ apartados que pasan las cuatro puertas en el PRIMER intento
 
 ---
 
-## 3. Orden sugerido
+## 2. Orden sugerido
 
 1. **Fase A del informe** (material sin duplicados). Es la más barata de
    implementar, no toca el contrato de respuesta y se puede medir sola.
 2. **Fase B del informe** (bloque `ref` expandido en el servidor). Es la que más
    ahorra y la que toca el contrato, así que va después de tener la medición
    limpia de A.
-3. **La figura del timeline en el informe** (apartado 1), que necesita el bloque
-   `ref` de la Fase B para entrar sin que el backend inyecte nada a espaldas de
-   la redacción, y el pintor de `fpdf2` sobre el layout que ya existe.

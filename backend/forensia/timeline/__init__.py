@@ -22,9 +22,7 @@ All timestamps are UTC and normalized to an explicit ``…Z`` ISO-8601 string, s
 surface can label the timezone unambiguously (never a silent local-time render).
 
 Las tres capas se LEEN como lista y se exportan como hoja
-(``forensia.timeline.export``); ``forensia.timeline.diagram`` las DIBUJA, con un
-layout en unidades de dominio que pintan el navegador y el PDF sin duplicar
-lógica.
+(``forensia.timeline.export``).
 
 Pure logic lives here (CLAUDE.md RULE 3); ``forensia.routers.timeline`` is a thin
 adapter over it.
@@ -37,27 +35,17 @@ from forensia.timeline.builder import (
     assemble_investigation_timeline,
     bodyfile_to_fs_events,
     build_investigation_timeline,
-    full_filesystem_events,
     load_filesystem_timeline,
-    persisted_fls_run_ids,
     query_filesystem_timeline,
     run_filesystem_timeline,
-)
-from forensia.timeline.diagram import (
-    build_filesystem_diagram,
-    build_investigation_diagram,
 )
 
 __all__ = [
     "TIMEZONE",
     "assemble_investigation_timeline",
     "bodyfile_to_fs_events",
-    "build_filesystem_diagram",
-    "build_investigation_diagram",
     "build_investigation_timeline",
-    "full_filesystem_events",
     "load_filesystem_timeline",
-    "persisted_fls_run_ids",
     "query_filesystem_timeline",
     "run_filesystem_timeline",
 ]

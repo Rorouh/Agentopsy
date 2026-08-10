@@ -92,7 +92,7 @@ export function GuidePage({ onNavigate }: GuidePageProps) {
     {
       n: "05",
       title: "Revisar el timeline",
-      desc: "Reconstruye la secuencia de eventos detectados por las distintas herramientas, ordenados cronológicamente. Cada capa se puede leer como lista o ver como dibujo, y el dibujo se descarga en SVG para adjuntarlo.",
+      desc: "Reconstruye la secuencia de eventos detectados por las distintas herramientas, ordenados cronológicamente. Cada capa se lee como lista y se exporta como hoja de cálculo para adjuntarla.",
       state: has(facts.findings) ? "now" : "todo",
       view: "timeline",
     },

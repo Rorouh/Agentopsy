@@ -1,7 +1,6 @@
 """Las etiquetas en castellano del vocabulario CERRADO del timeline.
 
-Una sola fuente para las tres superficies que enseñan un evento a una persona (la
-hoja de cálculo, el dibujo y, cuando la figura entre en el informe, el PDF): dos
+Una sola fuente para toda superficie que enseñe un evento a una persona: dos
 tablas distintas para el mismo valor serían dos nombres para el mismo hecho en
 dos anexos del mismo informe.
 
@@ -37,16 +36,6 @@ SEVERITY_LABEL: dict[str, str] = {
     "critical": "Crítica",
 }
 
-#: Las cuatro marcas temporales de un evento del sistema de ficheros, en el orden
-#: en que ``mactime`` escribe las letras. El nombre lleva la letra porque es la
-#: forma en que el perito las lee en la super-timeline.
-MACB_LABEL: tuple[tuple[str, str], ...] = (
-    ("m", "Modificado (m)"),
-    ("a", "Accedido (a)"),
-    ("c", "Cambiado en metadatos (c)"),
-    ("b", "Creado (b)"),
-)
-
 
 def etiqueta(tabla: dict[str, str], valor: Any) -> str:
     """La etiqueta en castellano de un valor de vocabulario cerrado.
@@ -60,7 +49,6 @@ def etiqueta(tabla: dict[str, str], valor: Any) -> str:
 
 __all__ = [
     "KIND_LABEL",
-    "MACB_LABEL",
     "SEVERITY_LABEL",
     "STATUS_LABEL",
     "etiqueta",
