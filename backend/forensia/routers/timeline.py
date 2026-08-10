@@ -1,7 +1,10 @@
 """Timeline HTTP surface. Thin adapter over ``forensia.timeline`` (CLAUDE.md RULE 3).
 
-Two layers:
+Layers:
 
+- ``GET /api/cases/{case_id}/timeline/findings`` — the *incident* timeline: one event
+  per finding with an ``observed_at``, i.e. what happened on the investigated device.
+  What cannot be placed on the axis travels counted and declared, never dropped.
 - ``GET /api/cases/{case_id}/timeline`` — the deterministic *investigation* timeline
   (audit tool runs + findings), always available, no tool executed.
 - ``POST /api/cases/{case_id}/timeline/filesystem`` — start the on-demand *filesystem
@@ -37,6 +40,7 @@ from forensia.export_csv import export_basename
 from forensia.security import require_token
 from forensia.timeline import (
     TIMEZONE,
+    build_findings_timeline,
     build_investigation_timeline,
     load_filesystem_timeline,
     run_filesystem_timeline,
@@ -44,6 +48,27 @@ from forensia.timeline import (
 from forensia.timeline.export import timeline_to_csv
 
 router = APIRouter()
+
+
+@router.get(
+    "/api/cases/{case_id}/timeline/findings",
+    dependencies=[Depends(require_token)],
+)
+def findings_timeline(case_id: str) -> dict[str, Any]:
+    """Línea de tiempo del INCIDENTE: qué pasó en el dispositivo investigado.
+
+    Un evento por hallazgo con ``observed_at`` (la marca del artefacto), en orden
+    cronológico ascendente. Lo que no se puede situar en el eje viaja contado y
+    declarado (``sin_observed_at`` / ``no_parseable``), y un caso sin eventos trae un
+    ``message`` que dice POR QUÉ (RULE 2: nunca un eje vacío que sugiera que se midió
+    algo)."""
+    try:
+        timeline = build_findings_timeline(case_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"case_id": case_id, "timezone": TIMEZONE, **timeline}
 
 
 @router.get(

@@ -6,23 +6,31 @@ import type {
   FsTimelineEvent,
   FsTimelineJob,
   FsTimelineResult,
+  IncidentTimeline,
   TimelineEvent,
 } from "../api/types";
 import { usePublishShellHeader } from "../layout/shellHeader";
 import { useActiveCase } from "../state/activeCase";
 import { useCaseEvidence } from "../state/caseEvidence";
+import { IncidentRail, exportRailPng } from "./timeline/IncidentRail";
+import { useThemePalette } from "./timeline/themePalette";
 
-// FASE 4 · Timeline forense del caso, TRES capas REALES (sin datos inventados,
+// FASE 4 · Timeline forense del caso, CUATRO capas REALES (sin datos inventados,
 // RULE 2):
+//   0) Hallazgos: la línea de tiempo del INCIDENTE, lo que pasó en el
+//      dispositivo investigado, un evento por hallazgo con `observed_at`. Es la
+//      capa de entrada porque es la que se lleva al informe y la primera que
+//      lee un tercero, y se lee como FIGURA, no como tabla.
 //   1) Investigación: cada ejecución de herramienta del audit log + cada
-//      hallazgo, en orden cronológico. Determinista, siempre disponible.
+//      hallazgo, en orden cronológico. Determinista, siempre disponible. Es la
+//      cronología del TRABAJO DEL AGENTE, otro objeto que la capa 0.
 //   2) Sistema de ficheros: la super-timeline MACB (tsk_fls -m) sobre la
 //      evidencia seleccionada, bajo demanda y asíncrona (job).
 //   3) Eventos relevantes: el triage forense determinista sobre (2).
 // Todas las marcas de tiempo son UTC y se muestran con la zona explícita:
 // NUNCA se convierten a la hora local del navegador.
 
-type Layer = "investigation" | "filesystem" | "relevant";
+type Layer = "findings" | "investigation" | "filesystem" | "relevant";
 
 const SEV_LABEL: Record<string, string> = {
   low: "Baja",
@@ -130,7 +138,8 @@ export function TimelinePage() {
   // registrada mientras el perito está en esta vista aparece en el selector sin
   // recargar la página.
   const { evidence: evidences } = useCaseEvidence();
-  const [layer, setLayer] = useState<Layer>("investigation");
+  // La capa del INCIDENTE es la de entrada: es lo que se lleva al informe.
+  const [layer, setLayer] = useState<Layer>("findings");
   const [search, setSearch] = useState("");
   // Página actual de las tablas del sistema de ficheros (capas 2 y 3).
   const [fsPage, setFsPage] = useState(0);
@@ -138,6 +147,10 @@ export function TimelinePage() {
   const [exportError, setExportError] = useState("");
   const [loadError, setLoadError] = useState("");
 
+  // Capa 0, la línea de tiempo del incidente (figura + su procedencia).
+  const [incident, setIncident] = useState<IncidentTimeline | null>(null);
+  const railRef = useRef<SVGSVGElement | null>(null);
+  const palette = useThemePalette();
   // Capa 1
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   // RULE 2: NO se preselecciona «la primera» evidencia. La super-timeline se
@@ -159,6 +172,7 @@ export function TimelinePage() {
     const caseId = activeCase?.id;
     if (!caseId) {
       setEvents([]);
+      setIncident(null);
       setSelectedEvidence("");
       return;
     }
@@ -166,9 +180,13 @@ export function TimelinePage() {
     setLoadError("");
     (async () => {
       try {
-        const tl = await api.cases.timeline(caseId);
+        const [tl, inc] = await Promise.all([
+          api.cases.timeline(caseId),
+          api.cases.incidentTimeline(caseId),
+        ]);
         if (cancelled) return;
         setEvents(tl.events);
+        setIncident(inc);
         setSelectedEvidence("");
       } catch (err) {
         if (!cancelled) setLoadError(err instanceof Error ? err.message : String(err));
@@ -263,6 +281,29 @@ export function TimelinePage() {
     }
   }, [activeCase]);
 
+  // Export PNG de la figura del incidente. Se vuelve a pedir la capa ANTES de dibujar:
+  // la imagen lleva dentro su instante de exportación y su nombre de fichero, los dos
+  // resueltos por el backend, y una figura que dice cuándo se exportó tiene que decir
+  // la verdad, no la hora en que se abrió la vista.
+  const exportIncidentPng = useCallback(async () => {
+    if (!activeCase) return;
+    setExporting(true);
+    setExportError("");
+    try {
+      const fresh = await api.cases.incidentTimeline(activeCase.id);
+      setIncident(fresh);
+      // Un ciclo de pintado para que el SVG del ref sea ya el de los datos frescos.
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+      const svg = railRef.current;
+      if (!svg) throw new Error("la figura todavía no está dibujada");
+      await exportRailPng(svg, `${fresh.export_basename}.png`, palette["--surface"]);
+    } catch (err) {
+      setExportError(err instanceof ApiError ? err.detail : String(err));
+    } finally {
+      setExporting(false);
+    }
+  }, [activeCase, palette]);
+
   const invMatches = useCallback(
     (e: TimelineEvent) => {
       const q = search.trim().toLowerCase();
@@ -323,7 +364,10 @@ export function TimelinePage() {
 
   const fsProgress = fsJob?.events ?? [];
   const lastProgress = fsProgress[fsProgress.length - 1]?.message ?? "";
+  const isIncident = layer === "findings";
   const isInvestigation = layer === "investigation";
+  // Sin ningún evento situable no se ofrece exportar: una imagen vacía no es un anexo.
+  const canExportIncident = !!incident && incident.eventos.length > 0;
   const canGenerate =
     !!selectedEvidence && !starting && fsJob?.status !== "running" && evidences.length > 0;
 
@@ -335,12 +379,23 @@ export function TimelinePage() {
       title: "Timeline forense",
       meta: !activeCase
         ? "sin caso seleccionado"
-        : isInvestigation
-          ? `UTC · ${counts.toolRuns} ejecuciones · ${counts.findings} hallazgos`
-          : fsResult
-            ? `UTC · ${fsResult.total_events} eventos MACB`
-            : "UTC · super-timeline sin generar",
-      action: !activeCase ? undefined : isInvestigation ? (
+        : isIncident
+          ? incident
+            ? `UTC · ${incident.eventos.length} eventos del incidente de ${incident.total_hallazgos} ` +
+              `${incident.total_hallazgos === 1 ? "hallazgo" : "hallazgos"}`
+            : "UTC · cargando"
+          : isInvestigation
+            ? `UTC · ${counts.toolRuns} ejecuciones · ${counts.findings} hallazgos`
+            : fsResult
+              ? `UTC · ${fsResult.total_events} eventos MACB`
+              : "UTC · super-timeline sin generar",
+      action: !activeCase ? undefined : isIncident ? (
+        canExportIncident ? (
+          <button type="button" disabled={exporting} onClick={() => void exportIncidentPng()}>
+            {exporting ? "Exportando…" : "Exportar PNG"}
+          </button>
+        ) : undefined
+      ) : isInvestigation ? (
         <button type="button" disabled={exporting} onClick={() => void exportInvestigationCsv()}>
           {exporting ? "Exportando…" : "Exportar CSV"}
         </button>
@@ -357,7 +412,11 @@ export function TimelinePage() {
     },
     [
       activeCase?.id,
+      isIncident,
       isInvestigation,
+      incident?.eventos.length,
+      incident?.total_hallazgos,
+      canExportIncident,
       counts.toolRuns,
       counts.findings,
       fsResult?.total_events,
@@ -409,6 +468,15 @@ export function TimelinePage() {
         <div className="tab-row">
           <button
             type="button"
+            className={`tab${layer === "findings" ? " is-active" : ""}`}
+            onClick={() => setLayer("findings")}
+            title="Qué pasó en el dispositivo investigado, según los hallazgos con marca temporal del artefacto."
+          >
+            Hallazgos
+            <span className="tab-count">{incident ? incident.eventos.length : "n/d"}</span>
+          </button>
+          <button
+            type="button"
             className={`tab${layer === "investigation" ? " is-active" : ""}`}
             onClick={() => setLayer("investigation")}
           >
@@ -438,60 +506,82 @@ export function TimelinePage() {
         <span className="bar-note">Todas las horas en UTC</span>
       </div>
 
-      <div className="tl-toolbar">
-        <label className="visually-hidden" htmlFor="tl-search">
-          Buscar en la línea de tiempo
-        </label>
-        <input
-          id="tl-search"
-          className="field-input tl-search"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder={
-            isInvestigation
-              ? "Buscar por herramienta, argv, hallazgo o técnica…"
-              : layer === "relevant"
-                ? "Buscar por ruta, motivo, categoría, MACB o inode…"
-                : "Buscar por ruta, MACB o inode…"
-          }
-        />
-        {isInvestigation ? (
-          <div className="tl-meta">
-            {counts.toolRuns} ejecuciones · {counts.findings} hallazgos
-          </div>
-        ) : (
-          <div className="tl-evidence">
-            <span className="eyebrow">Evidencia</span>
-            <label className="visually-hidden" htmlFor="tl-evidence-select">
-              Evidencia de la super-timeline
-            </label>
-            <select
-              id="tl-evidence-select"
-              className="field-select"
-              value={selectedEvidence}
-              onChange={(e) => setSelectedEvidence(e.target.value)}
-              disabled={evidences.length === 0 || fsJob?.status === "running"}
-            >
-              <option value="">
-                {evidences.length === 0 ? "Sin evidencia registrada" : "Elige la evidencia…"}
-              </option>
-              {evidences.map((e) => (
-                <option key={e.evidence_id} value={e.evidence_id}>
-                  {evidenceName(e)}
+      {/* La capa del incidente es una FIGURA: no lleva barra de herramientas. Un
+          buscador que no filtra la imagen sería un control que promete lo que no hace. */}
+      {!isIncident && (
+        <div className="tl-toolbar">
+          <label className="visually-hidden" htmlFor="tl-search">
+            Buscar en la línea de tiempo
+          </label>
+          <input
+            id="tl-search"
+            className="field-input tl-search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={
+              isInvestigation
+                ? "Buscar por herramienta, argv, hallazgo o técnica…"
+                : layer === "relevant"
+                  ? "Buscar por ruta, motivo, categoría, MACB o inode…"
+                  : "Buscar por ruta, MACB o inode…"
+            }
+          />
+          {isInvestigation ? (
+            <div className="tl-meta">
+              {counts.toolRuns} ejecuciones · {counts.findings} hallazgos
+            </div>
+          ) : (
+            <div className="tl-evidence">
+              <span className="eyebrow">Evidencia</span>
+              <label className="visually-hidden" htmlFor="tl-evidence-select">
+                Evidencia de la super-timeline
+              </label>
+              <select
+                id="tl-evidence-select"
+                className="field-select"
+                value={selectedEvidence}
+                onChange={(e) => setSelectedEvidence(e.target.value)}
+                disabled={evidences.length === 0 || fsJob?.status === "running"}
+              >
+                <option value="">
+                  {evidences.length === 0 ? "Sin evidencia registrada" : "Elige la evidencia…"}
                 </option>
-              ))}
-            </select>
-          </div>
-        )}
-      </div>
+                {evidences.map((e) => (
+                  <option key={e.evidence_id} value={e.evidence_id}>
+                    {evidenceName(e)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="tl-scroll">
         <div className="view-stack view-stack--1000 tl-stack">
-          {exportError && isInvestigation && (
+          {exportError && (isInvestigation || isIncident) && (
             <div className="error-state">No se pudo exportar: {exportError}</div>
           )}
 
-          {isInvestigation ? (
+          {isIncident ? (
+            !incident ? (
+              <div className="loading-state">
+                <span className="spinner" aria-hidden="true" />
+                <span>Cargando la línea de tiempo del incidente…</span>
+              </div>
+            ) : incident.eventos.length === 0 ? (
+              <div className="empty-rail">
+                <div className="empty-rail-title">Sin eventos que situar en el tiempo</div>
+                {/* El backend dice POR QUÉ: no hay hallazgos, o los hay y ninguno
+                    tiene marca temporal del artefacto. Son dos cosas distintas. */}
+                <div className="empty-rail-body">{incident.message}</div>
+              </div>
+            ) : (
+              <div className="tl-figure">
+                <IncidentRail ref={railRef} timeline={incident} />
+              </div>
+            )
+          ) : isInvestigation ? (
             events.length === 0 ? (
               <div className="empty-rail">
                 <div className="empty-rail-title">Sin actividad todavía</div>

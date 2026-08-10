@@ -83,7 +83,7 @@ la «telaraña» de documentos de un caso: se entra por uno y se salta a los dem
 | Papel (analogía) | Dónde vive en Agentopsy | Con qué lo escribes / lees |
 |---|---|---|
 | **FICHA / REGISTRO del caso**: perfil, husos, cuentas, hitos, `run_id` que citarás luego, qué queda abierto | grafo de conocimiento del caso (`knowledge/`) | `anotar_conocimiento(doc_id, section, content)` · `consultar_conocimiento(doc_id)` |
-| **HALLAZGOS con evidencia**: la cadena de custodia de conclusiones | `findings.jsonl` + audit encadenado | `record_finding(title, summary, severity, tool_id?, run_id?, mitre_hints?)` |
+| **HALLAZGOS con evidencia**: la cadena de custodia de conclusiones | `findings.jsonl` + audit encadenado | `record_finding(title, summary, severity, tool_id?, run_id?, mitre_hints?, observed_at?)` |
 | **Salida CRUDA de cada herramienta**: el `output/` inviolable | artefactos del caso (cada corrida guarda su salida entera + hash) | se crea sola al ejecutar; la relees con `leer_artefacto(run_id, fichero?, buscar?)` |
 | **ENTREGABLES**: el informe pericial | subsistema de documentos | lo redacta el modelo al FINALIZAR la investigación, a partir de tus hallazgos y de la evidencia registrada; cuanto mejor sea tu `summary` y tu procedencia, mejor será el informe |
 
@@ -99,6 +99,30 @@ que citar más tarde. Nodos sugeridos (créalos tú, no vienen dados):
 
 Un **nodo del grafo no es un hallazgo**: es para navegar y no recargar. La custodia son
 los `record_finding` + el audit. **Un hallazgo sin registrar todavía no cuenta.**
+
+### `observed_at`: cuándo pasó EN EL DISPOSITIVO
+
+Es lo que sitúa el hallazgo en la línea de tiempo del incidente, la que lee primero un
+tercero y la que va al apartado 3 del informe. **Un hallazgo sin `observed_at` no entra en
+esa línea de tiempo**, así que perderlo es perder el hecho de la cronología. Cuatro reglas,
+y las cuatro cuentan:
+
+1. **Rellénalo siempre que el artefacto tenga marca temporal.** El `$MFT`, el registro, los
+   EVTX, un Prefetch o un `$I` de papelera la traen; úsala.
+2. **Es la hora del HECHO en el dispositivo investigado, nunca la de tu análisis.** Esa
+   segunda la pone Agentopsy sola.
+3. **Si el artefacto da hora LOCAL, conviértela a UTC** y declara de dónde sacas la zona del
+   sistema investigado (la determinas tú: hive `SYSTEM`, `TimeZoneInformation`, y la anotas
+   en `ficha`). **Si no puedes determinar la zona, deja el campo VACÍO**: un hallazgo sin
+   fecha es un hueco declarado, uno con la fecha mal convertida es una afirmación falsa con
+   aspecto de dato verificado.
+4. **No la inventes ni la aproximes nunca.**
+
+Formato: ISO-8601 con la zona EXPLÍCITA, offset o `Z` (`2021-03-23T19:24:35Z`). Sin zona se
+rechaza el hallazgo entero, porque una marca sin zona no es UTC salvo que lo diga. Y cuando
+hayas convertido, **dilo en el `summary`** ("el artefacto marca 11:24:35 hora local del
+sistema, PST/UTC-8"): una conversión que un tercero no puede rehacer no es verificable, y
+todo lo que entra en el informe tiene que pasar esa prueba.
 
 ---
 

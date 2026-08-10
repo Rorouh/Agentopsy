@@ -711,10 +711,16 @@ _INTERNAL_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "observed_at": {
                 "type": "string",
                 "description": (
-                    "Marca temporal del ARTEFACTO que sostiene el hallazgo (cuándo "
-                    "ocurrió el hecho en la evidencia), ISO-8601 con offset/UTC "
-                    "(p. ej. 2026-07-15T13:42:00Z). Distinta de cuándo registras el "
-                    "hallazgo. Opcional."
+                    "Marca temporal del ARTEFACTO que sostiene el hallazgo: cuándo "
+                    "ocurrió el HECHO en el dispositivo investigado, nunca cuándo lo "
+                    "analizas. ISO-8601 con la zona EXPLÍCITA, offset o Z "
+                    "(p. ej. 2026-07-15T13:42:00Z); sin zona se rechaza el hallazgo "
+                    "entero. Rellénalo SIEMPRE que el artefacto tenga marca temporal: "
+                    "es lo que sitúa el hallazgo en la línea de tiempo del incidente, "
+                    "y sin él no entra en ella. Si el artefacto da hora LOCAL (MFT, "
+                    "registro, logs de Windows), conviértela a UTC y di en el summary "
+                    "de qué zona venía. Si no puedes determinar la zona del sistema "
+                    "investigado, déjalo VACÍO: no la inventes ni la aproximes."
                 ),
             },
             "artifact_sha256": {
@@ -924,9 +930,12 @@ _INTERNAL_DESCRIPTIONS: dict[str, str] = {
         "AFFIRMATIVE finding (something you assert about the evidence) REQUIRES "
         "run_id (the ArtifactRun that backs it), it is rejected without it; set "
         "finding_kind=\"descarte\" when you document a ruled-out lead instead. Attach "
-        "confidence (0..1), observed_at (when it happened in the evidence) and "
-        "artifact_sha256 when you have them, and mitre_hints when the finding "
-        "supports an ATT&CK technique from the seed."
+        "confidence (0..1) and artifact_sha256 when you have them, and mitre_hints "
+        "when the finding supports an ATT&CK technique from the seed. Attach "
+        "observed_at WHENEVER the artifact carries a timestamp: it is when the fact "
+        "happened ON THE INVESTIGATED DEVICE (never when you analysed it), ISO-8601 "
+        "with an EXPLICIT zone, converted to UTC if the artifact reports local time, "
+        "and left empty rather than guessed when the system's zone is undetermined."
     ),
     "annotate_mitre": (
         "ANCHOR ATT&CK techniques to an ALREADY-recorded finding so they show up as "

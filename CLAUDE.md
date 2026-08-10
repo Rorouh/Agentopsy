@@ -767,6 +767,59 @@ detalle del hallazgo y el recuento de ficheros de salida. Pinned by
 `test_sheet_opens_as_a_spreadsheet_and_declares_its_provenance` y
 `test_an_unknown_vocabulary_value_travels_verbatim`.
 
+**La línea de tiempo del INCIDENTE, y `observed_at` deja de ser opcional de
+hecho (2026-08-10, `forensia.timeline.hallazgos`)**: el Timeline tenía tres capas
+y las tres contaban la investigación o el disco, ninguna contaba **qué pasó en el
+dispositivo investigado**, que es lo que se lleva al informe (apartado 3) y lo
+primero que lee un tercero. La capa nueva es esa cronología y es la de ENTRADA
+(`Hallazgos | Investigación | Sistema de ficheros (MACB) | Eventos relevantes`);
+se lee como FIGURA, no como tabla (raíl vertical, sin zoom ni brushing) y se
+exporta a **PNG**. Su eje es `Finding.observed_at` y SOLO ese: no se cae a
+`created_at`, porque fechar un incidente con la hora del análisis lo falsearía,
+que es la misma regla que `reports.indice` ya enunciaba. Lo que no se puede
+situar viaja CONTADO y declarado (`sin_observed_at`, `no_parseable` con sus
+valores literales), en la vista y DENTRO de la imagen: un hallazgo sin fecha es
+un dato del caso, no un residuo (RULE 2). La táctica de cada técnica sale del
+catálogo semilla (`catalog.technique().tactic_id` → `Tactic.name_es`) y una
+técnica que el catálogo no sitúe conserva su id y se queda sin táctica, ni
+adivinada ni omitida; las técnicas son los `mitre_hints` MÁS las anotaciones de
+`annotate_mitre` (`CoverageStore.annotations_by_finding`), y la fusión no es
+opcional: medido sobre los casos reales, de 39 eventos solo 5 llevan técnica en
+sus hints y 17 la llevan tras fusionar, o sea que sin ella el 87 % de la figura
+saldría sin ATT&CK.
+
+Lo que obligó a tocar el CONTRATO antes que la capa fue la medición: de 67
+hallazgos reales, **39 (58,2 %) tenían `observed_at`**, y los 23 `afirmacion` que
+no lo tenían eran hechos FECHABLES (perfil del sistema, zona horaria, un binario
+en el Escritorio). La causa estaba localizada: `observed_at` no aparecía **ni en
+`agentes/agent.md` ni en las reglas del prompt de `agent.py`**, cuyas dos firmas
+lo omitían literalmente, y su única mención al modelo era la `description` del
+JSON Schema. Ahora las tres superficies lo enseñan con sus cuatro reglas, y la
+cuarta es la que de verdad protege el eje: **el `$MFT`, el registro y los EVTX
+dan hora LOCAL**, así que hay que convertir a UTC declarando de dónde sale la
+zona del sistema investigado y decirlo en el `summary`; si la zona no se puede
+determinar, el campo se deja VACÍO. Un hueco declarado es correcto; una fecha mal
+convertida es una afirmación falsa con aspecto de dato verificado. Por eso el
+store pasa a EXIGIR ISO-8601 con zona explícita (`_validate_observed_at`): una
+marca sin offset no es UTC salvo que lo diga, y darla por UTC es el default
+silencioso que prohíbe RULE 2. El rechazo tira el hallazgo entero, como un id
+ATT&CK alucinado, pero no se pierde, viaja al modelo como cuerpo de error del
+tool result, así que el mensaje trae el formato CON ejemplo y la salida cuando la
+zona no se puede determinar; el coste real es un reintento. `list()` sigue
+reconstruyendo sin revalidar, y por eso la capa mantiene su cuenta
+`no_parseable`: lo escrito antes de la validación sigue en disco. La figura se
+dibuja en el navegador pero su identidad la resuelve el backend (`case_name`,
+`exported_at`, `export_basename` con su propio `kind`, la misma función que
+nombra las dos hojas), y el cliente vuelve a pedir la capa al exportar, porque
+una imagen que dice cuándo se exportó tiene que decir la verdad. Dos detalles del
+PNG que costaron una corrida cada uno: el SVG viaja como `data:` URI y no como
+`blob:` porque la CSP declara `img-src 'self' data:`, y la paleta se relee
+observando el atributo `data-theme` y NO suscribiéndose al `theme` del contexto,
+porque `ThemeProvider` es un ANTECESOR y React ejecuta los efectos de los hijos
+antes que los del padre: con la suscripción obvia, la interfaz pasaba a claro y
+la figura seguía oscura. Pinned by `tests/test_timeline_hallazgos.py` y los
+gates de `observed_at` en `tests/test_findings_contract.py`.
+
 **Lo pendiente vive en `hoja-de-ruta.md`** (2026-08-06): el plan de coste del
 informe pericial, medido sobre la redacción real del caso LoneWolf: **1,0659 USD
 en una llamada** (36.923 tokens de entrada, 26.637 de salida), con el 36,8 % del

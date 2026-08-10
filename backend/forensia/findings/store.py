@@ -35,6 +35,21 @@ _UUID4_RE = re.compile(
 )
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$", re.IGNORECASE)
 
+#: El rechazo de `observed_at` viaja al modelo como cuerpo de error del tool result,
+#: así que tiene que ser ACCIONABLE: el formato esperado con ejemplo, y qué hacer
+#: cuando la zona del sistema investigado no se puede determinar. Un mensaje que solo
+#: dijera "valor inválido" convertiría el reintento en un hallazgo perdido.
+_OBSERVED_AT_ERROR = (
+    "finding.observed_at debe ser ISO-8601 con la zona EXPLÍCITA (offset o Z), "
+    "por ejemplo 2021-03-23T19:24:35Z o 2021-03-23T20:24:35+01:00. "
+    "Recibido: {recibido!r}. Es la hora del HECHO en el dispositivo investigado, "
+    "no la del análisis: si el artefacto da hora LOCAL (MFT, registro, logs de "
+    "Windows), conviértela a UTC y di en el summary en qué zona venía. Si no "
+    "puedes determinar la zona del sistema investigado, omite el campo: un "
+    "hallazgo sin fecha es un hueco declarado, uno con la fecha mal convertida es "
+    "una afirmación falsa."
+)
+
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
@@ -65,8 +80,9 @@ class Finding:
     #: (`additionalProperties: false`) — mismo bug que `mitre_hints`. Opcional.
     confidence: float | None = None
     #: Marca temporal del ARTEFACTO que sostiene el hallazgo (cuándo ocurrió el hecho
-    #: en la evidencia), ISO-8601 — distinta de ``created_at`` (cuándo se registró el
-    #: hallazgo). Opcional; texto libre validado como string.
+    #: en la evidencia), ISO-8601 con offset o ``Z`` EXPLÍCITOS — distinta de
+    #: ``created_at`` (cuándo se registró el hallazgo). Opcional; validada al
+    #: escribirse (ver ``_validate_observed_at``), nunca al releerse.
     observed_at: str | None = None
     #: Procedencia a nivel de artefacto: SHA-256 del output del ``run_id`` que
     #: sostiene el hallazgo (cadena de custodia del derivado, FORENSIC INVARIANT 4).
@@ -110,6 +126,42 @@ def _validate_mitre_hints(raw: Any) -> list[str]:
     return out
 
 
+def _validate_observed_at(raw: Any) -> str | None:
+    """Valida la marca del ARTEFACTO: ISO-8601 con zona EXPLÍCITA, o nada.
+
+    Hace cumplir en el servidor lo que el esquema de la tool ya promete. La zona no
+    se supone: una marca sin offset no es UTC salvo que lo diga, y darla por UTC es
+    el default silencioso que prohíbe RULE 2. Rechaza por tanto tanto el texto que
+    no es una fecha como la fecha sin zona (incluida la fecha suelta ``2021-03-23``,
+    que además no tiene hora que situar en un eje).
+
+    El rechazo tira el hallazgo entero, igual que un id ATT&CK alucinado
+    (:func:`_validate_mitre_hints`), pero no se pierde: viaja al modelo como cuerpo
+    de error del tool result (``agent.py``, "record_finding rejected"). Para que el
+    coste sea un reintento y no un hallazgo perdido, el mensaje dice el formato
+    esperado CON ejemplo y qué hacer cuando la zona no se puede determinar.
+
+    Devuelve el valor LITERAL (recortado), no una forma normalizada: un
+    ``+01:00`` dice de qué zona venía el artefacto, y eso es dato del caso. Quien
+    lo pinte en un eje lo normaliza (``forensia.timeline.hallazgos``).
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, str) or not raw.strip():
+        raise ValueError(_OBSERVED_AT_ERROR.format(recibido=raw))
+    texto = raw.strip()
+    # `fromisoformat` acepta la `Z` desde Python 3.11; se sustituye igualmente para
+    # no depender de esa versión mínima.
+    candidato = texto[:-1] + "+00:00" if texto.endswith(("Z", "z")) else texto
+    try:
+        parsed = datetime.fromisoformat(candidato)
+    except ValueError:
+        raise ValueError(_OBSERVED_AT_ERROR.format(recibido=texto)) from None
+    if parsed.tzinfo is None:
+        raise ValueError(_OBSERVED_AT_ERROR.format(recibido=texto))
+    return texto
+
+
 class FindingStore:
     def __init__(self, cases: CaseManager) -> None:
         if cases is None:
@@ -151,11 +203,7 @@ class FindingStore:
             if not 0.0 <= confidence <= 1.0:
                 raise ValueError("finding.confidence must be within [0, 1]")
 
-        observed_at = data.get("observed_at")
-        if observed_at is not None:
-            if not isinstance(observed_at, str) or not observed_at.strip():
-                raise ValueError("finding.observed_at must be a non-empty ISO-8601 string or null")
-            observed_at = observed_at.strip()
+        observed_at = _validate_observed_at(data.get("observed_at"))
 
         artifact_sha256 = data.get("artifact_sha256")
         if artifact_sha256 is not None:

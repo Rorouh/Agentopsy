@@ -92,7 +92,7 @@ export function GuidePage({ onNavigate }: GuidePageProps) {
     {
       n: "05",
       title: "Revisar el timeline",
-      desc: "Reconstruye la secuencia de eventos detectados por las distintas herramientas, ordenados cronológicamente. Cada capa se lee como lista y se exporta como hoja de cálculo para adjuntarla.",
+      desc: "La capa de entrada, Hallazgos, es la línea de tiempo del incidente: qué pasó en el dispositivo investigado, un evento por hallazgo con la marca temporal del artefacto, y se exporta como imagen PNG para adjuntarla. Las otras tres reconstruyen la actividad de la investigación y del sistema de ficheros, y se leen como lista y se exportan como hoja de cálculo.",
       state: has(facts.findings) ? "now" : "todo",
       view: "timeline",
     },

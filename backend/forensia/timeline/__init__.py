@@ -1,4 +1,12 @@
-"""Forensic timeline of a case — three deterministic layers.
+"""Forensic timeline of a case — four deterministic layers.
+
+0. **Incident timeline** (``forensia.timeline.hallazgos``, the DEFAULT layer): what
+   happened on the INVESTIGATED DEVICE, one event per finding that carries an
+   ``observed_at`` (the artifact's own timestamp), in ascending order. It is the line
+   a third party reads first and the one that becomes section 3 of the report. A
+   finding without ``observed_at`` does not enter it, and is counted and declared
+   rather than dropped (RULE 2). Distinct from layer 1 in object, not in shape: this
+   one is the chronology of the INCIDENT, that one of the INVESTIGATION.
 
 1. **Investigation timeline** (always available): every tool run recorded in the
    case's append-only, hash-chained audit log plus every finding the agent
@@ -21,8 +29,10 @@
 All timestamps are UTC and normalized to an explicit ``…Z`` ISO-8601 string, so the
 surface can label the timezone unambiguously (never a silent local-time render).
 
-Las tres capas se LEEN como lista y se exportan como hoja
-(``forensia.timeline.export``).
+Las capas 1 a 3 se LEEN como lista y se exportan como hoja
+(``forensia.timeline.export``). La capa 0 se lee como FIGURA y se exporta como imagen:
+la dibuja el navegador en SVG y su procedencia (nombre del caso, instante y nombre de
+fichero por ``export_csv.export_basename``) la resuelve ``build_findings_timeline``.
 
 Pure logic lives here (CLAUDE.md RULE 3); ``forensia.routers.timeline`` is a thin
 adapter over it.
@@ -39,11 +49,17 @@ from forensia.timeline.builder import (
     query_filesystem_timeline,
     run_filesystem_timeline,
 )
+from forensia.timeline.hallazgos import (
+    assemble_findings_timeline,
+    build_findings_timeline,
+)
 
 __all__ = [
     "TIMEZONE",
+    "assemble_findings_timeline",
     "assemble_investigation_timeline",
     "bodyfile_to_fs_events",
+    "build_findings_timeline",
     "build_investigation_timeline",
     "load_filesystem_timeline",
     "query_filesystem_timeline",

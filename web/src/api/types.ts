@@ -724,6 +724,51 @@ export interface InvestigationTimeline {
   events: TimelineEvent[];
 }
 
+// Capa 4 (la que se ve al entrar), línea de tiempo del INCIDENTE: qué pasó en el
+// DISPOSITIVO INVESTIGADO, un evento por hallazgo con `observed_at`. No es la
+// cronología del trabajo del agente, que es la capa 1.
+export interface IncidentTechnique {
+  technique_id: string;
+  // Null cuando el catálogo semilla no sitúa la técnica: se enseña con su id y sin
+  // táctica, ni se adivina ni se omite (RULE 2).
+  technique_name: string | null;
+  tactic_id: string | null;
+  tactic: string | null;
+}
+export interface IncidentEvent {
+  finding_id: string;
+  ts: string; // ISO-8601 UTC normalizado, siempre con Z
+  title: string;
+  severity: "low" | "medium" | "high" | "critical";
+  // Etiqueta en castellano resuelta por el BACKEND (fuente única,
+  // forensia.timeline.vocabulario): la UI no tiene una segunda tabla.
+  severity_label: string;
+  evidence_id: string | null;
+  run_id: string | null;
+  mitre: IncidentTechnique[];
+}
+export interface IncidentTimeline {
+  case_id: string;
+  timezone: string; // "UTC"
+  eventos: IncidentEvent[];
+  total_hallazgos: number;
+  // Lo que NO se pudo situar en el eje, contado y declarado: se pinta bajo el raíl y
+  // DENTRO de la imagen exportada. Un hallazgo sin fecha es un dato del caso.
+  sin_observed_at: number;
+  no_parseable: number;
+  no_parseable_valores: string[];
+  no_parseable_truncado: boolean;
+  // Por qué el eje está vacío, cuando lo está. Null si hay eventos.
+  message: string | null;
+  // Procedencia de la figura, resuelta por el BACKEND: la imagen se dibuja aquí pero
+  // su identidad no se reinventa en TypeScript. `export_basename` es la misma función
+  // que nombra las dos hojas de cálculo; `exported_at` es el instante de ESTA
+  // respuesta, por eso se vuelve a pedir al exportar.
+  case_name: string;
+  exported_at: string;
+  export_basename: string;
+}
+
 // Capa 2, super-timeline del SISTEMA DE FICHEROS (tsk_fls -m → eventos MACB),
 // bajo demanda y asíncrona (registro de jobs).
 export interface FsTimelineEvent {

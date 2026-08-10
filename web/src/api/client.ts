@@ -31,6 +31,7 @@ import type {
   ExecutorId,
   FsTimelineJob,
   FsTimelineResult,
+  IncidentTimeline,
   InvestigationTimeline,
   ExecutorLoginCapability,
   ExecutorLoginStart,
@@ -370,6 +371,12 @@ export const api = {
       request<ExecutorCost[]>(`/api/cases/${encodeURIComponent(caseId)}/executor-cost`),
 
     // ── Timeline forense del caso ───────────────────────────────────────────
+    // Capa 4 (la de entrada): línea de tiempo del INCIDENTE, un evento por hallazgo
+    // con `observed_at`. Trae además lo que no se pudo situar en el eje, contado.
+    incidentTimeline: (caseId: string) =>
+      request<IncidentTimeline>(
+        `/api/cases/${encodeURIComponent(caseId)}/timeline/findings`,
+      ),
     // Capa 1: timeline de investigación (determinista), ejecuciones de tool del
     // audit log + hallazgos, en orden cronológico UTC.
     timeline: (caseId: string) =>

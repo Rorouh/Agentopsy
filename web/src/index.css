@@ -49,6 +49,15 @@
   --warning:        #b54708;
   --focus-ring:     var(--accent);
 
+  /* Los cuatro grados de severidad del raíl del incidente. Van en LITERALES y no
+     como `var(--danger)`: la figura se exporta a PNG resolviendo estos tokens a
+     color, y una imagen no lleva variables CSS dentro. El color acompaña, no
+     sustituye: cada marca lleva además su etiqueta escrita. */
+  --sev-low:        #7a736b;
+  --sev-medium:     #b54708;
+  --sev-high:       #8c3a2b;
+  --sev-critical:   #d92d20;
+
   --font-sans: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
   --font-mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
   /* El rediseño es de esquinas rectas; el radio solo sobrevive donde el mock lo
@@ -99,6 +108,14 @@
 
   --danger:         #f97066;
   --warning:        #f79009;
+
+  /* Severidad en oscuro. `high` y `critical` se separan MÁS que en claro: sobre
+     fondo oscuro un terracota y un rojo se acercan, y son los dos grados que un
+     perito distingue de un vistazo. */
+  --sev-low:        #8f8880;
+  --sev-medium:     #f79009;
+  --sev-high:       #d1745c;
+  --sev-critical:   #f97066;
 }
 * { box-sizing: border-box; }
 html, body, #root {
@@ -1560,6 +1577,11 @@ select option:disabled { color: var(--ink-5); }
 .tl-argv { font-family: var(--font-mono); font-size: 14px; color: var(--ink-2); line-height: 1.6; word-break: break-all; }
 .tl-desc { font-size: 16.5px; line-height: 1.6; color: var(--ink); text-wrap: pretty; }
 .tl-techs { display: flex; gap: 12px; flex-wrap: wrap; font-family: var(--font-mono); font-size: 12px; color: var(--ink-4); }
+/* La figura del incidente. El SVG trae su propio fondo y su propia hairline porque se
+   exporta a PNG y tiene que bastarse fuera de la aplicación; aquí solo se le da sitio y
+   se le deja escalar con el ancho de la vista. */
+.tl-figure { border: 1px solid var(--hair); overflow-x: auto; }
+.tl-figure svg { display: block; }
 .cell-path { font-family: var(--font-mono); font-size: 14.5px; color: var(--ink); word-break: break-all; }
 .progress-fill--indeterminate { width: 40%; animation: tl-sweep 1.4s ease-in-out infinite; }
 @keyframes tl-sweep { 0% { margin-left: 0; } 50% { margin-left: 60%; } 100% { margin-left: 0; } }
