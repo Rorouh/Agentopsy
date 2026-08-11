@@ -255,8 +255,7 @@ export function EvidenceInbox({
           </div>
           <div className="dashed-panel-body">
             Agentopsy calcula el SHA-256 baseline y la deja en solo lectura antes de que
-            ninguna herramienta la toque. También puedes copiarla a <code>./evidence</code> en
-            el host. Formatos: {FORMATS_HINT}. {EWF_HINT}
+            ninguna herramienta la toque. Formatos: {FORMATS_HINT}. {EWF_HINT}
           </div>
         </div>
         <div className="cta-row">

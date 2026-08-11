@@ -546,14 +546,6 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
                 {activeCase.os_profile ?? "sin determinar"}
               </span>
             </div>
-            <div className="prose">
-              Agentopsy lo determina del CONTENIDO de la evidencia, nunca de la máquina en la
-              que corre: cabeceras, sectores de arranque y, en una imagen contenedor, el
-              directorio raíz de sus sistemas de ficheros leído a través del maletín (solo
-              lectura a nivel de bloque: la imagen no se monta). El orquestador enruta con
-              ese perfil al sub-agente que corresponde.
-            </div>
-
             <div className="os-rows">
               {evidence.map((ev) => (
                 <div className="os-row" key={ev.evidence_id}>
@@ -624,9 +616,8 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
               <span className="rule" />
             </div>
             <div className="prose">
-              Solo lectura a nivel de sistema de ficheros (<span className="mono">chmod 0444</span>
-              ); el bloqueo a nivel de bloque llega en la Fase 2. El acta de adquisición recoge
-              el hash baseline, el tamaño y el enlace de la cadena encadenada por hash.
+              El acta de adquisición recoge el hash baseline, el tamaño y el enlace de la
+              cadena encadenada por hash.
             </div>
             <div className="custody-rows">
               {evidence.map((ev) => (
