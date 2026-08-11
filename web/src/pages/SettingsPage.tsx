@@ -215,6 +215,9 @@ export function SettingsPage({ caps, version, onCapsRefresh }: SettingsPageProps
                             <span className={`dot${status.available ? " dot--ok" : ""}`} />
                             <span
                               className={`engine-name${status.available ? "" : " is-off"}`}
+                              // La razón completa de por qué está caído ya no ocupa el
+                              // panel, pero sigue consultable aquí sin salir de la vista.
+                              title={status.available ? undefined : status.reason ?? undefined}
                             >
                               {status.name}
                             </span>
@@ -234,30 +237,32 @@ export function SettingsPage({ caps, version, onCapsRefresh }: SettingsPageProps
 
                           {open && (
                             <div className="engine-panel">
-                              {/* RULE 2: un ejecutor no disponible NO se oculta,
-                                  se muestra con la razón accionable que reporta
-                                  capabilities. */}
-                              <div className="engine-note">
-                                {status.available
-                                  ? status.local
+                              {/* RULE 2: un ejecutor no disponible NUNCA se oculta —
+                                  sigue listado, con su punto apagado y el botón de
+                                  conectar. Lo que ya no se vuelca aquí es el texto
+                                  completo de `status.reason`: son varios párrafos con
+                                  los comandos de login, y su sitio es el modal que
+                                  abre «Conectar», no la lista. Queda accesible como
+                                  title del bloque. */}
+                              {status.available && (
+                                <div className="engine-note">
+                                  {status.local
                                     ? "No sale nada de tu máquina."
-                                    : "Usa tu propia suscripción; el prompt sale a ese proveedor."
-                                  : status.reason ?? "No disponible."}
-                              </div>
+                                    : "Usa tu propia suscripción; el prompt sale a ese proveedor."}
+                                </div>
+                              )}
 
                               {status.available && providerModels?.editable && (
                                 <>
-                                  {/* La `note` del backend sólo se pinta cuando NO hay
-                                      modelos que ofrecer. Con los chips delante es
-                                      texto redundante que explica lo que el propio
-                                      control ya enseña; sin ellos (p. ej. Codex
-                                      cuando no se pudo leer su catálogo) es la razón
-                                      accionable de por qué hay que escribir el id a
-                                      mano, y esa no se oculta nunca (RULE 2). */}
-                                  {providerModels.note &&
-                                    (providerModels.models ?? []).length === 0 && (
-                                      <div className="engine-note">{providerModels.note}</div>
-                                    )}
+                                  {/* `note` es un DIAGNÓSTICO, no una explicación de
+                                      uso: sólo llega cuando la lista de modelos vino
+                                      vacía o incompleta y hay que decir por qué (el
+                                      catálogo de Codex que no se pudo leer, Ollama que
+                                      no responde). Por eso se pinta siempre que exista
+                                      — RULE 2, la razón accionable no se oculta. */}
+                                  {providerModels.note && (
+                                    <div className="engine-note">{providerModels.note}</div>
+                                  )}
                                   <div className="engine-models">
                                     {id !== "ollama" && (
                                       <button

@@ -549,14 +549,17 @@ def test_no_api_key_strings_anywhere_in_backend() -> None:
 def test_executor_models_cloud_is_editable_with_suggestions_and_custom() -> None:
     """El operador elige el modelo del CLI cloud (--model); para Claude y Gemini
     Agentopsy no puede ENUMERAR el catálogo sin API key (SECURITY 7), así que
-    ofrece atajos + texto libre y lo dice en la nota. Codex NO entra aquí: su
-    propio CLI cachea el catálogo con la sesión OAuth (ver más abajo)."""
+    ofrece atajos + texto libre. Codex NO entra aquí: su propio CLI cachea el
+    catálogo con la sesión OAuth (ver más abajo)."""
     for cid in ("claude-code", "gemini"):
         res = executor_models(cid)
         assert res["editable"] is True
         assert res["allow_custom"] is True
         assert isinstance(res["models"], list)
-        assert isinstance(res["note"], str) and "API" in res["note"]
+        # `note` es un DIAGNÓSTICO, no una explicación de uso: sólo viaja cuando
+        # la lista vino vacía o incompleta y hay que decir por qué. Aquí la lista
+        # se construye sin consultar nada, así que no hay nada que diagnosticar.
+        assert res["note"] is None
         # Sin fuente real de datos ricos no se inventa ninguna (RULE 2).
         assert res["model_details"] == []
         assert res["reasoning"] is None

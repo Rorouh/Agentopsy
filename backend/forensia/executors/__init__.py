@@ -128,16 +128,17 @@ def executor_models(executor_id: str) -> dict[str, object]:
                 ),
             },
         }
+    # `note` queda RESERVADO para diagnósticos: por qué la lista viene vacía o
+    # incompleta (p. ej. el catálogo de Codex que no se pudo leer, RULE 2). El
+    # texto genérico que ocupaba este hueco explicaba que hay que escribir el id
+    # a mano, cosa que el propio campo de la interfaz ya dice con su placeholder;
+    # no es un diagnóstico y se retiró.
     return {
         "executor": executor_id,
         "editable": True,
         "allow_custom": True,
         "models": executor.suggested_models(),
-        "note": (
-            f"Agentopsy no puede enumerar los modelos de {executor.name} sin una API "
-            "key (SECURITY INVARIANT 7). Escribe el id que aceptes en su CLI, se "
-            "pasa como --model; déjalo vacío para usar el modelo por defecto del CLI."
-        ),
+        "note": None,
         "model_details": [],
         "reasoning": None,
     }
