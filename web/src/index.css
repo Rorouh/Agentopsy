@@ -2109,3 +2109,82 @@ select option:disabled { color: var(--ink-5); }
   .report-metarow { gap: 8px 18px; }
   .settings-inline-label { min-width: 0; }
 }
+
+/* ── Grafos de relaciones (Documentos) ───────────────────────────────────────
+   La figura y su ficha lateral. Mismo sistema que el resto: sin tarjetas, sin
+   esquinas redondeadas, secciones separadas por una etiqueta mono, una regla y
+   espacio. Los colores POR TIPO viven en el SVG como literales, no aquí: el
+   dibujo se serializa y se rasteriza fuera del documento para exportarlo a PNG,
+   y allí una variable CSS no resuelve. */
+.graph-section {
+  max-width: 1180px;
+  margin-inline: auto;
+  margin-bottom: 40px;
+  padding-bottom: 34px;
+  border-bottom: 1px solid var(--hair);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.graph-toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.graph-select { flex: 1 1 340px; min-width: 0; }
+.graph-cost {
+  display: flex;
+  gap: 8px 18px;
+  flex-wrap: wrap;
+  align-items: baseline;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+/* La base de la previsión se lee, pero no compite con la cifra: es lo que
+   permite saber que el número es una estimación y con qué se midió. */
+.graph-cost-base { color: var(--ink-3); font-size: 11.5px; }
+.graph-parte {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--hair);
+  font-size: 12.5px;
+}
+.graph-parte-fallo { display: flex; flex-direction: column; gap: 2px; }
+.graph-parte-motivo { color: var(--ink-3); font-size: 11.5px; }
+.graph-figure { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
+.graph-figure > svg { flex: 1 1 620px; min-width: 0; border: 1px solid var(--hair); }
+.graph-card {
+  flex: 0 1 300px;
+  min-width: 240px;
+  border: 1px solid var(--hair);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 12.5px;
+}
+.graph-card-head { display: flex; flex-direction: column; gap: 4px; }
+.graph-card-type {
+  font-size: 10.5px;
+  letter-spacing: 0.6px;
+  color: var(--ink-3);
+  text-transform: uppercase;
+}
+.graph-card-value { font-weight: 600; word-break: break-all; }
+.graph-card-list { display: grid; grid-template-columns: 1fr; gap: 3px; margin: 0; }
+.graph-card-list dt { color: var(--ink-3); font-size: 11px; }
+.graph-card-list dd { margin: 0 0 8px; word-break: break-word; }
+.graph-card-hash { font-size: 11px; word-break: break-all; }
+.graph-card-rel { padding: 2px 0; }
+/* Un hallazgo que sostiene un nodo es navegable: de la figura del caso a la del
+   hallazgo, que es donde vive la procedencia verificada. */
+.graph-card-link {
+  display: block;
+  background: none;
+  border: 0;
+  padding: 2px 0;
+  text-align: left;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+.graph-card-link:hover { text-decoration: underline; }
+.graph-meta { font-size: 11.5px; color: var(--ink-3); }

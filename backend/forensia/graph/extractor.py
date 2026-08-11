@@ -29,9 +29,11 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Any
 
-from forensia.executors.base import PromptExecutor
+from forensia.executors.base import ExecutorResult, PromptExecutor
+from forensia.executors.session_guard import verify_session
 from forensia.graph.modelo import (
     MAX_CHARS_NOTA,
     TIPOS_NODO,
@@ -202,6 +204,104 @@ def build_prompt(finding: Any) -> str:
     )
 
 
+def build_delta_prompt(finding: Any) -> str:
+    """El encargo de un hallazgo SIGUIENTE dentro de una sesión ya abierta.
+
+    Solo los datos: la identidad, las enums, las reglas y el contrato ya están en
+    el historial de la sesión, que es exactamente lo que abarata encadenar
+    (medido el 2026-08-10 sobre los 19 hallazgos de un caso real: 0,0141 USD por
+    hallazgo encadenando frente a 0,0353 en frío, porque el prefijo estable se
+    LEE de la caché en vez de reescribirse a doble tarifa).
+
+    Este texto solo se envía cuando ``session_guard`` ha podido CONTABILIZAR la
+    sesión. Si no puede, el turno vuelve a mandar el encargo entero: es un
+    fallback de contenido, mandar más y nunca menos, y queda auditado.
+    """
+    datos = {
+        "title": str(getattr(finding, "title", "") or ""),
+        "summary": str(getattr(finding, "summary", "") or ""),
+    }
+    return (
+        "SIGUIENTE HALLAZGO. Mismas reglas, mismas enums y mismo contrato de "
+        "respuesta.\n"
+        + _ABRE
+        + "\n"
+        + json.dumps(datos, ensure_ascii=False)
+        + "\n"
+        + _CIERRA
+    )
+
+
+@dataclass
+class SesionEncadenada:
+    """El estado que hace falta para que ``session_guard`` pueda contabilizar una
+    sesión reutilizada a lo largo de un lote.
+
+    No es una optimización silenciosa: cada campo existe porque el guard lo exige
+    (``expected_prompts`` frente a los prompts que Agentopsy escribió de verdad, y
+    el ``num_turns`` que informó el último envoltorio). Verificado el 2026-08-10
+    encadenando los 19 hallazgos de un caso real: los 19 turnos salieron
+    contabilizables, sin compactación y sin turnos del CLI.
+    """
+
+    session_id: str | None = None
+    prompts_enviados: int = 0
+    ultimo_num_turns: int | None = None
+    #: Motivo por el que el guard obligó a reabrir, si lo hubo en el último turno.
+    reapertura: str | None = None
+
+    def anotar(self, result: ExecutorResult) -> None:
+        self.session_id = result.session_id
+        self.prompts_enviados += 1
+        self.ultimo_num_turns = result.num_turns
+
+    def reiniciar(self, motivo: str | None) -> None:
+        self.session_id = None
+        self.prompts_enviados = 0
+        self.ultimo_num_turns = None
+        self.reapertura = motivo
+
+
+@dataclass
+class _Cuenta:
+    """Lo que gastó la extracción de UN hallazgo, sumando sus intentos."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float = 0.0
+    #: False cuando ningún envoltorio reportó coste (codex no lo reporta), para
+    #: que la vista pueda decir «no informado» en vez de enseñar un cero falso.
+    cost_reported: bool = False
+    fuentes: set[str] = field(default_factory=set)
+
+    def sumar(self, result: ExecutorResult) -> None:
+        usage = result.usage
+        if usage is None:
+            return
+        total_in = usage.total_input_tokens
+        if total_in is not None:
+            self.input_tokens += total_in
+        if usage.output_tokens is not None:
+            self.output_tokens += usage.output_tokens
+        if usage.cost_usd is not None:
+            self.cost_usd += usage.cost_usd
+            self.cost_reported = True
+        if usage.source:
+            self.fuentes.add(usage.source)
+
+    def publico(self) -> dict[str, Any]:
+        out: dict[str, Any] = {
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+        }
+        # El coste REAL solo viaja si un envoltorio lo informó. Nunca se rellena
+        # con la estimación: son campos distintos y no se mezclan (RULE 2).
+        out["cost_usd"] = self.cost_usd if self.cost_reported else None
+        if self.fuentes:
+            out["usage_source"] = ", ".join(sorted(self.fuentes))
+        return out
+
+
 def _parse_reply(text: str) -> dict[str, Any]:
     candidate = (text or "").strip()
     if candidate.startswith("```"):
@@ -253,6 +353,7 @@ def extract_graph(
     audit: Any,
     model: str | None = None,
     reasoning_effort: str | None = None,
+    sesion: SesionEncadenada | None = None,
     on_progress: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """Extrae el grafo de relaciones de UN hallazgo y devuelve lo que el almacén
@@ -263,6 +364,12 @@ def extract_graph(
     ``GraphExtractError`` tras agotar la ronda de corrección, y entonces no hay
     grafo (RULE 2: no existe un grafo de respaldo hecho a mano).
 
+    ``sesion`` ENCADENA el lote: cuando viene con una sesión abierta y
+    ``session_guard`` puede contabilizarla, este hallazgo viaja como delta. Si el
+    guard no la avala, se manda el encargo entero y el motivo queda en el audit.
+    El guard no se relaja ni se sortea: una sesión que no se puede auditar rompe
+    la procedencia de un hallazgo, y eso vale más que la diferencia de coste.
+
     ``on_progress`` es OBSERVACIONAL (el job lo usa para pintar la fase): no altera
     ni el contenido ni la validación.
     """
@@ -271,10 +378,7 @@ def extract_graph(
             on_progress({"type": "graph_phase", "phase": phase, **extra})
 
     texto = texto_del_hallazgo(finding)
-    prompt = build_prompt(finding)
     finding_id = str(getattr(finding, "id", "") or "")
-    _emit("extrayendo", finding_id=finding_id, executor=executor.id,
-          prompt_chars=len(prompt))
 
     context: dict[str, Any] = {"audit": audit, "case_id": case_id}
     if model:
@@ -282,7 +386,48 @@ def extract_graph(
     if reasoning_effort:
         context["reasoning_effort"] = reasoning_effort
 
-    result = executor.run(prompt, context)
+    cuenta = _Cuenta()
+
+    def _run(prompt: str, *, en_sesion: bool) -> ExecutorResult:
+        ctx = dict(context)
+        if en_sesion and sesion is not None and sesion.session_id:
+            ctx["session_id"] = sesion.session_id
+        res = executor.run(prompt, ctx)
+        cuenta.sumar(res)
+        if sesion is not None:
+            sesion.anotar(res)
+        return res
+
+    # ¿Puede este hallazgo viajar como delta? Solo si hay sesión, el ejecutor sabe
+    # reanudar y el guard AVALA la contabilidad del turno anterior.
+    delta = False
+    reapertura: str | None = None
+    if sesion is not None and sesion.session_id and executor.supports_session_resume:
+        veredicto = verify_session(
+            sesion.session_id,
+            expected_prompts=sesion.prompts_enviados,
+            num_turns=sesion.ultimo_num_turns,
+        )
+        if veredicto.can_send_delta:
+            delta = True
+        else:
+            reapertura = veredicto.reason
+            sesion.reiniciar(reapertura)
+            if audit is not None:
+                audit.append({
+                    "action": "graph_session_reopened",
+                    "case_id": case_id,
+                    "finding_id": finding_id,
+                    "executor": executor.id,
+                    "reason": reapertura,
+                    "checks": veredicto.checks,
+                })
+
+    prompt = build_delta_prompt(finding) if delta else build_prompt(finding)
+    _emit("extrayendo", finding_id=finding_id, executor=executor.id,
+          prompt_chars=len(prompt), resume=delta)
+
+    result = _run(prompt, en_sesion=delta)
     intentos = 1
     while True:
         try:
@@ -309,13 +454,18 @@ def extract_graph(
                     "reason": motivo,
                     "resume": reanudable,
                 })
-            retry_ctx = dict(context)
-            if reanudable:
-                retry_ctx["session_id"] = result.session_id
-            result = executor.run(
-                _prompt_de_correccion(motivo, None if reanudable else prompt),
-                retry_ctx,
-            )
+            if reanudable and sesion is not None:
+                result = _run(_prompt_de_correccion(motivo, None), en_sesion=True)
+            else:
+                # Sin sesión que sostenga el borrador hay que reenviar el encargo
+                # entero: el modelo no recuerda ni el texto ni lo que propuso.
+                ctx = dict(context)
+                if reanudable:
+                    ctx["session_id"] = result.session_id
+                result = executor.run(
+                    _prompt_de_correccion(motivo, None if reanudable else prompt), ctx
+                )
+                cuenta.sumar(result)
             intentos += 1
 
     _emit("listo", finding_id=finding_id, nodos=len(grafo["nodos"]),
@@ -327,12 +477,17 @@ def extract_graph(
             "model": model,
             "attempts": intentos,
             "prompt_chars": len(prompt),
+            "resume": delta,
+            "reopen_reason": reapertura,
+            **cuenta.publico(),
         },
     }
 
 
 __all__ = [
     "MAX_REPARACIONES",
+    "SesionEncadenada",
+    "build_delta_prompt",
     "build_prompt",
     "extract_graph",
 ]

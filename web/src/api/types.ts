@@ -824,3 +824,199 @@ export interface FsTimelineJob {
   evidence_id?: string;
   os_profile?: string;
 }
+
+// ── Grafos de relaciones ──────────────────────────────────────────────────────
+// Qué se conecta con qué dentro de un hallazgo (y, fundido, dentro del caso).
+// Es una PROPUESTA del modelo sobre el texto del hallazgo, no un hecho
+// verificado como un hash o un argv auditado, y el backend manda ese aviso con
+// el dato (`aviso`) para que la vista no dependa de recordarlo.
+
+export type GraphNodeType = "ip" | "domain" | "hostname" | "user" | "file";
+
+export type GraphEdgeType =
+  | "connection"
+  | "process_spawn"
+  | "network_connection"
+  | "lateral_move"
+  | "malware"
+  | "c2"
+  | "exfiltration"
+  | "beacon"
+  | "persistence"
+  | "priv_esc"
+  | "rce"
+  | "logon"
+  | "file_transfer";
+
+// Nodo ya COLOCADO: la geometría la resuelve el backend (`forensia.graph.layout`)
+// para que la figura sea reproducible y no dependa del navegador.
+export interface GraphNode {
+  tipo: GraphNodeType;
+  valor: string;
+  x: number;
+  y: number;
+  centro?: boolean;
+  // Solo en el grafo del caso: qué hallazgos sostienen este nodo, y su grado.
+  hallazgos?: string[];
+  grado?: number;
+}
+
+export interface GraphEdge {
+  origen: string;
+  destino: string;
+  tipo: GraphEdgeType;
+  nota?: string;
+  // Solo en el grafo del caso.
+  hallazgos?: string[];
+  notas?: string[];
+}
+
+export interface GraphCanvas {
+  ancho: number;
+  alto: number;
+}
+
+export interface GraphFindingView {
+  case_id: string;
+  case_name: string;
+  // Identidad de la exportación, resuelta por el BACKEND (`export_basename`, la
+  // misma función que nombra las dos hojas de cálculo): una imagen que dice
+  // cuándo se exportó tiene que decir la verdad, así que el cliente vuelve a
+  // pedir la capa al exportar en vez de reinventar el nombre en TypeScript.
+  exported_at: string;
+  export_basename: string;
+  finding_id: string;
+  revision: number;
+  revisiones: number[];
+  created_at: string;
+  sha256: string;
+  extraction: {
+    executor?: string;
+    model?: string | null;
+    attempts?: number;
+    resume?: boolean;
+    reopen_reason?: string | null;
+    input_tokens?: number;
+    output_tokens?: number;
+    cost_usd?: number | null;
+  };
+  aviso: string;
+  nodos: GraphNode[];
+  relaciones: GraphEdge[];
+  lienzo: GraphCanvas;
+  hallazgo: {
+    id: string;
+    title: string;
+    summary: string;
+    severity: string;
+  } | null;
+  // La mitad VERIFICADA de la ficha: sale del hallazgo registrado, no del modelo.
+  procedencia: {
+    run_id: string | null;
+    tool_id: string | null;
+    evidence_id: string | null;
+    artifact_sha256: string | null;
+    observed_at: string | null;
+    created_at: string;
+  } | null;
+}
+
+export interface GraphCaseView {
+  case_id: string;
+  case_name: string;
+  exported_at: string;
+  export_basename: string;
+  aviso: string;
+  nodos: GraphNode[];
+  relaciones: GraphEdge[];
+  hallazgos: { id: string; title: string }[];
+  lienzo: GraphCanvas;
+}
+
+// Previsión de coste, con su base declarada. NUNCA comparte campo con el coste
+// real de un lote ya ejecutado (`GraphJob.result.coste_usd`).
+export interface GraphEstimacion {
+  hallazgos: number;
+  coste_estimado_usd: number;
+  estimado_por_hallazgo_usd: number;
+  base_del_estimado: string;
+}
+
+export interface GraphSummary {
+  finding_id: string;
+  title: string;
+  revision: number;
+  revisiones: number[];
+  created_at: string;
+  sha256: string;
+  n_nodos: number;
+  n_relaciones: number;
+}
+
+export interface GraphIndex {
+  case_id: string;
+  aviso: string;
+  grafos: GraphSummary[];
+  pendientes: string[];
+  hallazgos: { id: string; title: string }[];
+  estimacion: GraphEstimacion;
+}
+
+export interface GraphJobEvent {
+  type:
+    | "graph_finding_start"
+    | "graph_finding_done"
+    | "graph_finding_error"
+    | "graph_phase";
+  finding_id?: string;
+  title?: string;
+  index?: number;
+  total?: number;
+  phase?: string;
+  error?: string;
+  n_nodos?: number;
+  n_relaciones?: number;
+  revision?: number;
+}
+
+// Parte del lote. Un hallazgo que falla NO cancela el resto: cada uno lleva su
+// resultado y el motivo si no salió.
+export interface GraphJobResultRow {
+  finding_id: string;
+  title: string;
+  ok: boolean;
+  error?: string;
+  revision?: number;
+  sha256?: string;
+  n_nodos?: number;
+  n_relaciones?: number;
+}
+
+export interface GraphJob {
+  job_id: string;
+  case_id: string;
+  kind: string;
+  status: "running" | "done" | "error" | "cancelled";
+  created_at: string;
+  finished_at: string | null;
+  error: string | null;
+  event_count: number;
+  events?: GraphJobEvent[];
+  result: {
+    solicitados: number;
+    con_grafo: number;
+    sin_grafo: number;
+    resultados: GraphJobResultRow[];
+    // Coste REAL del audit. `null` cuando el ejecutor no lo informa (codex no
+    // lo hace): un cero ahí sería mentira.
+    coste_usd: number | null;
+    input_tokens: number;
+    output_tokens: number;
+    executor: string;
+    model: string | null;
+  } | null;
+  case_name?: string;
+  solicitados?: number;
+  executor?: { id: ExecutorId; name: string; local: boolean };
+  estimacion?: GraphEstimacion;
+}

@@ -820,6 +820,77 @@ antes que los del padre: con la suscripción obvia, la interfaz pasaba a claro y
 la figura seguía oscura. Pinned by `tests/test_timeline_hallazgos.py` y los
 gates de `observed_at` en `tests/test_findings_contract.py`.
 
+**Grafos de relaciones, en Documentos (2026-08-11, `forensia.graph`)**: donde la
+línea de tiempo responde «cuándo pasó», el grafo responde «qué se conecta con
+qué». La referencia es Nexus (PowerForensics): se copia el MODELO y el lenguaje
+visual, no la marca. Dos enums CERRADAS calcadas de ella, cinco tipos de nodo
+(`ip`, `domain`, `hostname`, `user`, `file`, y **no hay tipo «proceso»**: un
+proceso es su ejecutable, un nodo `file`) y trece de relación, dirigida y con
+nota opcional. Los nodos NO salen de datos estructurados, porque Agentopsy no
+tiene entidades tipadas: viven en el `summary` del hallazgo, en prosa, así que
+los extrae el MODELO, y por eso el módulo entero existe para acotar lo que eso
+significa: **un grafo extraído por un modelo es, por defecto, indistinguible de
+uno inventado**. Tres barreras, en orden: (1) **referentes cerrados**, toda
+entidad tiene que aparecer LITERALMENTE en el título o el resumen (subcadena,
+insensible a mayúsculas), el mismo criterio de la puerta 3 de `reports.writer`,
+y una que no esté escrita tumba el grafo entero; (2) el texto del hallazgo viaja
+DELIMITADO y anunciado como dato, codificado como cadena JSON para que no pueda
+cerrar su propio delimitador, y el contrato de respuesta es cerrado, así que una
+instrucción inyectada por el investigado no tiene campo por el que salir
+(SECURITY INVARIANTS: la evidencia es dato hostil); (3) se pinta como texto,
+nunca como HTML. Cada grafo se persiste con su SHA-256 en
+`graphs/<finding_id>.v<N>.json` y volver a extraerlo escribe una REVISIÓN nueva,
+nunca sobrescribe; la extracción queda en el log encadenado
+(`graph_extracted`, `graph_repair`, `graph_session_reopened`) junto al argv
+literal de la corrida. Una ronda de corrección, como en el informe: el motivo
+del rechazo vuelve al modelo con la lista de valores válidos.
+
+La MEDICIÓN mandó sobre el diseño, y en tres sitios. **Coste**: por hallazgo
+suelto 0,0353 USD y 9 s; encadenando la sesión, 0,0141 USD, o sea 0,268 USD los
+19 hallazgos de un caso real en 115 s. La entrada es irrelevante y la SALIDA es
+todo (un grafo de dos nodos son ~100 tokens de JSON y el modelo emitía entre 600
+y 900), así que el contrato prohíbe cualquier prosa; forzar `--model haiku` fue
+entre tres y seis veces MÁS caro y hasta quince veces más lento, porque se
+enreda razonando, y la potencia de codex (`low` frente a `medium`) mueve 8
+tokens de salida: **la palanca no es el modelo ni la potencia, es no dejar hueco
+donde escribir explicaciones**. **Encadenar es legítimo**: `session_guard` avaló
+los 19 turnos (`num_turns=1`, sin compactación, `authored_prompts` cuadrando 1 a
+19), verificado también dentro del contenedor, donde `cache_read` crece y
+`cache_creation` se desploma; un turno que el guard NO pueda contabilizar manda
+el encargo entero y lo audita, el guard no se relaja. **Recall**: el encargo
+exige EXHAUSTIVIDAD (todo literal que encaje en un tipo entra como nodo, aunque
+quede suelto: omitir una IP escrita es tan grave como inventarla), declara qué NO
+es una entidad del caso (el aparato de análisis: `bulk_extractor`, `tsk_fls`, los
+identificadores de ejecución, los hashes, y las direcciones comodín `0.0.0.0`) y
+resuelve el correo sin un sexto tipo: la dirección entera es `user` y su dominio
+es ADEMÁS un nodo `domain`, con lo que `fineloans.org` deja de perderse dentro de
+`insider2@fineloans.org`. Y las trece relaciones viajan GLOSADAS: sin las glosas
+el modelo devolvía 0 aristas en 19 hallazgos, con ellas 24 (medido, con la misma
+regla de literalidad intacta).
+
+**El grafo del CASO es el que se lleva a un informe**, y no cuesta una llamada
+más: `forensia.graph.fusion` funde los de los hallazgos por el par (TIPO, valor
+normalizado), nunca por el valor solo. Pliega la caja para `hostname`, `user`,
+`domain` e `ip`, donde la equivalencia es propiedad conocida del dominio, y NO
+para `file`: dos `key.exe` en rutas distintas pueden ser dos ficheros, y
+fundirlos es una afirmación que nadie ha verificado. Cada nodo fundido conserva
+la lista de hallazgos que lo sostienen, que es lo que lo mantiene citable y lo
+que hace navegable la ficha lateral hacia la procedencia. La GEOMETRÍA la calcula
+el servidor (`forensia.graph.layout`) y es determinista, sin simulación de
+fuerzas: una figura que se adjunta a un informe pericial tiene que dar la misma
+imagen hoy y dentro de un año. Estrella para un hallazgo (centro, el nodo de
+mayor grado), anillos concéntricos por tipo para el caso, con el desfase angular
+derivado de un hash del identificador. La extracción corre como JOB de fondo
+(`forensia.agent.jobs`, `kind="graph"`) con su sondeo y su listado, así que
+cerrar la pestaña no aborta nada, y **el lote no muere en el primer rechazo**:
+cada hallazgo lleva su resultado y al final se dice cuántos salieron, cuáles no y
+por qué. El coste ESTIMADO (constante declarada con su base medida) y el coste
+REAL del audit viven en campos distintos y nunca se mezclan; un ejecutor que no
+informa coste (codex) dice «no informado», no cero. La figura se exporta a PNG
+por el rasterizador del timeline, con la procedencia dentro de la imagen y el
+nombre resuelto por `export_csv.export_basename`. Pinned by
+`tests/test_graph_relaciones.py`.
+
 **Lo pendiente vive en `hoja-de-ruta.md`** (2026-08-06): el plan de coste del
 informe pericial, medido sobre la redacción real del caso LoneWolf: **1,0659 USD
 en una llamada** (36.923 tokens de entrada, 26.637 de salida), con el 36,8 % del

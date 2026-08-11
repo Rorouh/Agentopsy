@@ -10,6 +10,10 @@ import type {
   AdjudicateRequest,
   AgentFinding,
   AgentJob,
+  GraphCaseView,
+  GraphFindingView,
+  GraphIndex,
+  GraphJob,
   MitreCatalog,
   MitreCoverageEntry,
   ExecutorCost,
@@ -453,6 +457,36 @@ export const api = {
           tool_calls: msg.tool_calls ?? null,
           activity: msg.activity ?? null,
         },
+      ),
+
+    // ── Grafos de relaciones ────────────────────────────────────────────────
+    // Ficha del último grafo de cada hallazgo, más la previsión de coste de
+    // extraer los que faltan (con su base declarada).
+    listGraphs: (caseId: string) =>
+      request<GraphIndex>(`/api/cases/${encodeURIComponent(caseId)}/graphs`),
+    // El grafo del CASO: los de los hallazgos fundidos por entidad. No gasta
+    // ninguna llamada al modelo, funde lo ya extraído.
+    caseGraph: (caseId: string) =>
+      request<GraphCaseView>(`/api/cases/${encodeURIComponent(caseId)}/graphs/case`),
+    graph: (caseId: string, findingId: string) =>
+      request<GraphFindingView>(
+        `/api/cases/${encodeURIComponent(caseId)}/graphs/${encodeURIComponent(findingId)}`,
+      ),
+    // Arranca la extracción en SEGUNDO PLANO. `finding_ids` es explícito: el
+    // servidor no deduce «todos» ni «los que falten» (RULE 2).
+    extractGraphs: (caseId: string, findingIds: string[], executor: ExecutorId) =>
+      post<GraphJob>(`/api/cases/${encodeURIComponent(caseId)}/graphs/extract`, {
+        finding_ids: findingIds,
+        executor,
+      }),
+    graphJob: (caseId: string, jobId: string, since = 0) =>
+      request<GraphJob>(
+        `/api/cases/${encodeURIComponent(caseId)}/graphs/jobs/${encodeURIComponent(jobId)}?since=${since}`,
+      ),
+    // Las extracciones del caso, para reengancharse a una en curso al montar.
+    listGraphJobs: (caseId: string) =>
+      request<{ jobs: GraphJob[] }>(
+        `/api/cases/${encodeURIComponent(caseId)}/graphs/jobs`,
       ),
 
     // ── Documentos / informes del caso ──────────────────────────────────────
