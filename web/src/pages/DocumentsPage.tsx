@@ -13,9 +13,8 @@ import type {
 } from "../api/types";
 import { usePublishShellHeader } from "../layout/shellHeader";
 import { useActiveCase } from "../state/activeCase";
-import { GraphSection } from "./graphs/GraphSection";
 
-// FASE 5 · Informe pericial. Almacén real (forensia.reports): cada documento
+// FASE 7 · Informe pericial. Almacén real (forensia.reports): cada documento
 // lleva su SHA-256 y las acciones del perito (verificar integridad, firmar como
 // final, eliminar borrador) operan sobre ficheros reales y quedan en el audit.
 //
@@ -607,18 +606,6 @@ export function DocumentsPage() {
 
       <div className="report-viewer">
         {notice && <div className="inline-note report-notice">{notice}</div>}
-
-        {/* GRAFOS DE RELACIONES. Va aquí, y no en una página aparte, porque es
-            material del informe: la figura del caso se adjunta igual que la
-            línea de tiempo del incidente. El ejecutor es el MISMO que el perito
-            ya eligió para redactar, no una segunda selección que pudiera
-            contradecirla. */}
-        <GraphSection
-          caseId={activeCase.id}
-          caseName={activeCase.name}
-          executor={executor}
-        />
-
 
         {!selectedDoc ? (
           <div className="empty-rail">

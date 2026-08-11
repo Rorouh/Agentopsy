@@ -2110,18 +2110,38 @@ select option:disabled { color: var(--ink-5); }
   .settings-inline-label { min-width: 0; }
 }
 
-/* ── Grafos de relaciones (Documentos) ───────────────────────────────────────
+/* ── Grafos de relaciones (fase 6) ───────────────────────────────────────────
    La figura y su ficha lateral. Mismo sistema que el resto: sin tarjetas, sin
    esquinas redondeadas, secciones separadas por una etiqueta mono, una regla y
    espacio. Los colores POR TIPO viven en el SVG como literales, no aquí: el
    dibujo se serializa y se rasteriza fuera del documento para exportarlo a PNG,
    y allí una variable CSS no resuelve. */
-.graph-section {
+.graphs-page {
   max-width: 1180px;
   margin-inline: auto;
-  margin-bottom: 40px;
-  padding-bottom: 34px;
+  display: flex;
+  flex-direction: column;
+  gap: 34px;
+}
+/* La explicación de qué es un grafo y el selector de modelo, en una fila: el
+   texto manda y el selector se va al lado, no encima de la figura. */
+.graphs-intro {
+  display: flex;
+  gap: 24px 40px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  padding-bottom: 26px;
   border-bottom: 1px solid var(--hair);
+}
+.graphs-intro-text {
+  flex: 1 1 520px;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+.graphs-intro-field { flex: 0 1 280px; min-width: 220px; }
+.graph-section {
   display: flex;
   flex-direction: column;
   gap: 16px;

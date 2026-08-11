@@ -380,8 +380,8 @@ last Windows tools into the maletín Dockerfiles, and drop the now-unused legacy
 **The web UI is the 2026-07 redesign (applied end to end
 2026-07-27)**: paper palette + terracotta accent, square corners and 1px hairlines — no
 cards, sections separated by a mono label, a rule and space. The sidebar stopped being a
-menu and is now the CASE STATE (active case → «Nuevo caso» → the five-phase ladder →
-utilities → theme), with two independent signals: the DOT says where the CASE is, the ROW
+menu and is now the CASE STATE (active case → «Nuevo caso» → the phase ladder, seven
+phases as of 2026-08-11 → utilities → theme), with two independent signals: the DOT says where the CASE is, the ROW
 says where YOU are. There is ONE contextual header for the whole app, published by each
 page with `usePublishShellHeader` and painted by `AppShell` — it carries data the page
 already resolved, never rules (RULE 3). Case management (search / edit / close / delete
@@ -820,7 +820,7 @@ antes que los del padre: con la suscripción obvia, la interfaz pasaba a claro y
 la figura seguía oscura. Pinned by `tests/test_timeline_hallazgos.py` y los
 gates de `observed_at` en `tests/test_findings_contract.py`.
 
-**Grafos de relaciones, en Documentos (2026-08-11, `forensia.graph`)**: donde la
+**Grafos de relaciones (2026-08-11, `forensia.graph`)**: donde la
 línea de tiempo responde «cuándo pasó», el grafo responde «qué se conecta con
 qué». La referencia es Nexus (PowerForensics): se copia el MODELO y el lenguaje
 visual, no la marca. Dos enums CERRADAS calcadas de ella, cinco tipos de nodo
@@ -890,6 +890,22 @@ informa coste (codex) dice «no informado», no cero. La figura se exporta a PNG
 por el rasterizador del timeline, con la procedencia dentro de la imagen y el
 nombre resuelto por `export_csv.export_basename`. Pinned by
 `tests/test_graph_relaciones.py`.
+
+**Los grafos son una FASE, no un apartado del informe (2026-08-11)**: nacieron
+dentro del Informe pericial y ahí competían con «Finalizar investigación», la
+otra acción de esa pantalla que llama al modelo y cuesta dinero. Son ahora la
+**fase 6 de 7** (`web/src/pages/GraphsPage.tsx`, `ViewId` `graphs`), entre
+Documentos y el informe, que es el orden real de uso: se leen los hallazgos, se
+extraen sus grafos, se redacta. `GraphSection` se queda con lo que es, la vista
+de la figura, y la página aporta lo que antes le prestaba el informe: la
+cabecera, las puertas de caso y el selector de modelo, que escribe en la MISMA
+clave `DEFAULT_EXECUTOR` que el chat y el informe, así que sigue habiendo una
+sola selección explícita del operador y no tres que puedan contradecirse
+(RULE 2). El recuento que pinta la cabecera sale del índice que la vista ya
+había pedido (`onResumen`), no de una segunda llamada. La escalera del sidebar
+gana su peldaño con una cifra propia, `CaseFacts.graphs`, que cuenta los grafos
+YA extraídos: la fase está hecha cuando hay al menos uno, porque el grafo del
+caso funde los que haya.
 
 **Lo pendiente vive en `hoja-de-ruta.md`** (2026-08-06): el plan de coste del
 informe pericial, medido sobre la redacción real del caso LoneWolf: **1,0659 USD

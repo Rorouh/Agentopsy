@@ -14,6 +14,7 @@ import { DocumentsPage } from "./pages/DocumentsPage";
 import { TimelinePage } from "./pages/TimelinePage";
 import { InvestigationPage } from "./pages/InvestigationPage";
 import { FindingsPage } from "./pages/FindingsPage";
+import { GraphsPage } from "./pages/GraphsPage";
 import { MitreAttackPage } from "./pages/MitreAttackPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
@@ -72,7 +73,7 @@ export function App() {
       <CaseEvidenceProvider>
       <ShellHeaderProvider>
       <AppShell activeView={activeView} onViewChange={setActiveView} error={error}>
-        {/* Las siete vistas llaman al backend real (forensia/routers/*). El caso
+        {/* Las ocho vistas llaman al backend real (forensia/routers/*). El caso
             activo y su lista los sirve ActiveCaseProvider, y la evidencia de ese
             caso CaseEvidenceProvider, que además gobierna el registro en segundo
             plano: por eso vive aquí arriba y no en la vista de Evidencia, que se
@@ -86,6 +87,7 @@ export function App() {
           <InvestigationPage caps={caps} onNavigate={setActiveView} onCapsRefresh={refreshCaps} />
         )}
         {activeView === "findings" && <FindingsPage onNavigate={setActiveView} />}
+        {activeView === "graphs" && <GraphsPage />}
         {activeView === "mitre" && (
           <MitreAttackPage />
         )}

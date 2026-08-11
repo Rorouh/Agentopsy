@@ -98,8 +98,15 @@ export function GuidePage({ onNavigate }: GuidePageProps) {
     },
     {
       n: "06",
+      title: "Extraer los grafos de relaciones",
+      desc: "El grafo responde a qué se conecta con qué: el modelo que elijas lee el texto de cada hallazgo y propone qué cuentas, ficheros, equipos, dominios e IP intervienen, y el grafo del caso los funde por entidad para enseñar lo que ata unos hallazgos con otros. Es una propuesta del modelo, no un hecho verificado, y así se etiqueta; la figura se exporta como PNG para adjuntarla al informe.",
+      state: has(facts.graphs) ? "done" : has(facts.findings) ? "now" : "todo",
+      view: "graphs",
+    },
+    {
+      n: "07",
       title: "Finalizar la investigación y firmar el informe",
-      desc: "En esta misma pantalla, «Grafos de relaciones» responde a qué se conecta con qué: el modelo que elijas lee el texto de cada hallazgo y propone qué cuentas, ficheros, equipos, dominios e IP intervienen, y el grafo del caso los funde por entidad para enseñar lo que ata unos hallazgos con otros. Es una propuesta del modelo, no un hecho verificado, y así se etiqueta; la figura se exporta como PNG. Después pulsa «Finalizar investigación» y ese mismo modelo redactará el informe pericial completo desde los hallazgos y las evidencias del caso. Verifica su integridad y fírmalo como versión final.",
+      desc: "Pulsa «Finalizar investigación» y el modelo seleccionado redactará el informe pericial completo desde los hallazgos y las evidencias del caso. Verifica su integridad y fírmalo como versión final.",
       state: has(facts.documents) ? "done" : has(facts.findings) ? "now" : "todo",
       view: "document-viewer",
     },

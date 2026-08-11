@@ -13,7 +13,11 @@ import { useThemePalette } from "../timeline/themePalette";
 import { RelationGraph } from "./RelationGraph";
 import { etiquetaNodo, etiquetaRelacion } from "./vocabulario";
 
-// GRAFOS DE RELACIONES, dentro de Documentos.
+// GRAFOS DE RELACIONES: la figura, su ficha lateral y la extracción.
+//
+// La pinta GraphsPage, que es la fase propia de los grafos. Esto es la vista
+// del grafo, no la página: recibe el caso y el ejecutor ya elegido y devuelve
+// por `onResumen` lo que la cabecera necesita contar.
 //
 // Donde la línea de tiempo del incidente responde «cuándo pasó», el grafo
 // responde «qué se conecta con qué»: qué equipo, qué cuenta, qué fichero, qué
@@ -45,15 +49,21 @@ const usd = (n: number) => `${n.toFixed(4)} USD`;
 
 type Vista = { tipo: "caso" } | { tipo: "hallazgo"; findingId: string };
 
+// Lo que la cabecera de la página necesita contar. Sale de aquí porque es esta
+// vista la que ya pide el índice: pedirlo dos veces para pintar un número sería
+// una llamada de más al api.
+export type GraphResumen = { hallazgos: number; conGrafo: number };
+
 type Props = {
   caseId: string;
   caseName: string;
   // El ejecutor que el perito ya eligió en esta página. Vacío = sin selección:
   // el botón no se pulsa y el motivo se dice (RULE 2).
   executor: ExecutorId | "";
+  onResumen?: (r: GraphResumen) => void;
 };
 
-export function GraphSection({ caseId, caseName, executor }: Props) {
+export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
   const palette = useThemePalette();
   const svgRef = useRef<SVGSVGElement | null>(null);
 
@@ -97,6 +107,12 @@ export function GraphSection({ caseId, caseName, executor }: Props) {
       cancelado = true;
     };
   }, [caseId, recargar]);
+
+  // Lo que la cabecera cuenta sale del índice ya cargado, no de otra petición.
+  useEffect(() => {
+    if (!index || !onResumen) return;
+    onResumen({ hallazgos: index.hallazgos.length, conGrafo: index.grafos.length });
+  }, [index, onResumen]);
 
   // Sondeo del job en curso.
   useEffect(() => {
@@ -196,7 +212,7 @@ export function GraphSection({ caseId, caseName, executor }: Props) {
   if (!index) {
     return (
       <section className="graph-section">
-        <div className="eyebrow eyebrow--section">Grafos de relaciones</div>
+        <div className="eyebrow eyebrow--section">Figura</div>
         <div className="inline-note">{error ?? "Cargando los grafos del caso…"}</div>
       </section>
     );
@@ -218,7 +234,7 @@ export function GraphSection({ caseId, caseName, executor }: Props) {
 
   return (
     <section className="graph-section">
-      <div className="eyebrow eyebrow--section">Grafos de relaciones</div>
+      <div className="eyebrow eyebrow--section">Figura</div>
 
       <div className="graph-toolbar">
         <label className="visually-hidden" htmlFor="graph-vista">
@@ -299,8 +315,8 @@ export function GraphSection({ caseId, caseName, executor }: Props) {
 
       {sinEjecutor && pendientes.length > 0 && (
         <div className="inline-note">
-          El grafo lo extrae el modelo que selecciones. Elige un ejecutor en el panel
-          de la izquierda: Agentopsy no elige uno por ti.
+          El grafo lo extrae el modelo que selecciones. Elige uno en «Modelo que extrae»,
+          aquí arriba: Agentopsy no elige uno por ti.
         </div>
       )}
 

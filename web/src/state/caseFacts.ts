@@ -13,6 +13,10 @@ export interface CaseFacts {
   evidenceTotal: number;
   evidenceVerified: number;
   findings: number;
+  // Hallazgos que YA tienen grafo extraído, no grafos posibles: la fase de
+  // Grafos está hecha cuando hay al menos uno, porque el del caso funde los que
+  // haya.
+  graphs: number;
   documents: number;
   loaded: boolean;
 }
@@ -21,6 +25,7 @@ export const EMPTY_FACTS: CaseFacts = {
   evidenceTotal: 0,
   evidenceVerified: 0,
   findings: 0,
+  graphs: 0,
   documents: 0,
   loaded: false,
 };
@@ -32,27 +37,34 @@ export function useCaseFacts(): CaseFacts {
   // en que el registro termina, sin recargar la página. El sidebar nunca se
   // desmonta, así que su lectura propia se quedaba vieja para siempre.
   const { evidence, phase: evidencePhase } = useCaseEvidence();
-  const [counts, setCounts] = useState<{ findings: number; documents: number }>({
+  const [counts, setCounts] = useState<{
+    findings: number;
+    graphs: number;
+    documents: number;
+  }>({
     findings: 0,
+    graphs: 0,
     documents: 0,
   });
 
   useEffect(() => {
     let cancelled = false;
     if (!activeCaseId) {
-      setCounts({ findings: 0, documents: 0 });
+      setCounts({ findings: 0, graphs: 0, documents: 0 });
       return;
     }
     (async () => {
-      // Un fallo de estas dos deja su cifra a cero: `loaded` lo gobierna la
+      // Un fallo de estas tres deja su cifra a cero: `loaded` lo gobierna la
       // evidencia, que es la lectura que decide si hay caso que enseñar.
-      const [findings, documents] = await Promise.all([
+      const [findings, graphs, documents] = await Promise.all([
         api.cases.listFindings(activeCaseId).catch(() => null),
+        api.cases.listGraphs(activeCaseId).catch(() => null),
         api.cases.listDocuments(activeCaseId).catch(() => null),
       ]);
       if (cancelled) return;
       setCounts({
         findings: findings?.length ?? 0,
+        graphs: graphs?.grafos.length ?? 0,
         documents: documents?.length ?? 0,
       });
     })();
@@ -67,6 +79,7 @@ export function useCaseFacts(): CaseFacts {
       evidenceTotal: evidence.length,
       evidenceVerified: evidence.filter((e) => e.last_verification !== null).length,
       findings: counts.findings,
+      graphs: counts.graphs,
       documents: counts.documents,
       loaded: evidencePhase === "ready",
     };
