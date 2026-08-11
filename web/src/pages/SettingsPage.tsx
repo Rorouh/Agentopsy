@@ -247,9 +247,17 @@ export function SettingsPage({ caps, version, onCapsRefresh }: SettingsPageProps
 
                               {status.available && providerModels?.editable && (
                                 <>
-                                  {providerModels.note && (
-                                    <div className="engine-note">{providerModels.note}</div>
-                                  )}
+                                  {/* La `note` del backend sólo se pinta cuando NO hay
+                                      modelos que ofrecer. Con los chips delante es
+                                      texto redundante que explica lo que el propio
+                                      control ya enseña; sin ellos (p. ej. Codex
+                                      cuando no se pudo leer su catálogo) es la razón
+                                      accionable de por qué hay que escribir el id a
+                                      mano, y esa no se oculta nunca (RULE 2). */}
+                                  {providerModels.note &&
+                                    (providerModels.models ?? []).length === 0 && (
+                                      <div className="engine-note">{providerModels.note}</div>
+                                    )}
                                   <div className="engine-models">
                                     {id !== "ollama" && (
                                       <button
