@@ -32,6 +32,10 @@ interface EvidenceTableProps {
   onVerify: (evidenceId: string) => void;
   // Mensaje del último fallo de verificación (kind "verify"), o null.
   verifyError: string | null;
+  // Fila abierta: su ficha se pinta DEBAJO de la tabla, en la página. La tabla
+  // no sabe qué hay en esa ficha, sólo cuál está elegida (RULE 3).
+  selectedId?: string | null;
+  onSelect?: (evidenceId: string) => void;
 }
 
 // Tabla de evidencias registradas, con búsqueda y paginación client-side. La
@@ -41,6 +45,8 @@ export function EvidenceTable({
   verifyingIds,
   onVerify,
   verifyError,
+  selectedId = null,
+  onSelect,
 }: EvidenceTableProps) {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -130,7 +136,14 @@ export function EvidenceTable({
                 const verifying = verifyingIds.has(ev.evidence_id);
                 const lv = ev.last_verification;
                 return (
-                  <tr key={ev.evidence_id}>
+                  <tr
+                    key={ev.evidence_id}
+                    className={`${onSelect ? "is-selectable" : ""}${
+                      ev.evidence_id === selectedId ? " is-selected" : ""
+                    }`}
+                    aria-selected={onSelect ? ev.evidence_id === selectedId : undefined}
+                    onClick={onSelect ? () => onSelect(ev.evidence_id) : undefined}
+                  >
                     <td className="cell-mono" title={fileName}>
                       {fileName}
                       {segments && <span className="cell-note">{segments}</span>}
@@ -150,7 +163,10 @@ export function EvidenceTable({
                       <button
                         type="button"
                         className={`hash-copy${copiedId === ev.evidence_id ? " is-copied" : ""}`}
-                        onClick={() => copyHash(ev.evidence_id, ev.sha256)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void copyHash(ev.evidence_id, ev.sha256);
+                        }}
                         title={`${ev.sha256}\n\nClic para copiar el SHA-256 completo`}
                         aria-label="Copiar el SHA-256 completo"
                       >
@@ -176,7 +192,10 @@ export function EvidenceTable({
                         type="button"
                         className="link-action"
                         disabled={verifying}
-                        onClick={() => onVerify(ev.evidence_id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onVerify(ev.evidence_id);
+                        }}
                       >
                         {verifying ? "Verificando…" : lv ? "Re-verificar" : "Verificar ahora"}
                       </button>

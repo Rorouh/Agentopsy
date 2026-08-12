@@ -147,14 +147,22 @@ export function FindingsPage({ onNavigate }: FindingsPageProps) {
   usePublishShellHeader(
     {
       title: "Hallazgos",
-      meta: activeCase
-        ? findings.length === 0
-          ? "sin hallazgos todavía"
-          : `${findings.length} ${findings.length === 1 ? "hallazgo" : "hallazgos"} · del caso ${activeCase.name}`
-        : "sin caso seleccionado",
+      // Sin meta con caso abierto: el vacío ya lo dice la columna de la
+      // izquierda, y el recuento vive en la escalera del sidebar.
+      meta: activeCase ? undefined : "sin caso seleccionado",
       action:
         onNavigate && activeCase ? (
-          <button type="button" onClick={() => onNavigate("document-viewer")}>
+          // Apagado sin hallazgos, igual que «Pasar a ATT&CK» en Investigación:
+          // redactar el informe cuesta dinero y sobre cero hallazgos no puede
+          // producir nada.
+          <button
+            type="button"
+            disabled={findings.length === 0}
+            title={
+              findings.length === 0 ? "Todavía no hay hallazgos que informar" : undefined
+            }
+            onClick={() => onNavigate("document-viewer")}
+          >
             Ir al informe pericial →
           </button>
         ) : undefined,

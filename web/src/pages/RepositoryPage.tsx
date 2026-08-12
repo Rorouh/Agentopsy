@@ -17,7 +17,7 @@ import { LoadingState } from "../ui/LoadingState";
 import { Modal } from "../ui/Modal";
 import { usePublishShellHeader } from "../layout/shellHeader";
 import { formatBytes, formatDate, shortHash } from "../utils/format";
-import { isEwfFirstSegment, isRegistrableEvidence } from "../utils/evidence";
+import { isEwfFirstSegment } from "../utils/evidence";
 import { Icon } from "../ui/Icon";
 
 function evidenceFileName(ev: EvidenceHandle): string {
@@ -118,6 +118,29 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
   // Fallo al leer la BANDEJA (./evidence), que no es la lista de evidencias
   // registradas ni el registro.
   const [sourcesError, setSourcesError] = useState<string | null>(null);
+
+  // Evidencia cuya FICHA está abierta bajo la tabla. Sin selección explícita se
+  // abre la primera: con una sola evidencia —el caso normal— obligar a un clic
+  // para ver su hash y su acta sería un paso de más.
+  const [selectedEvidenceId, setSelectedEvidenceId] = useState<string | null>(null);
+  // Acuse de copia del SHA-256 de la ficha, 1,5 s.
+  const [hashCopied, setHashCopied] = useState(false);
+
+  const copySha = useCallback(async (sha256: string) => {
+    try {
+      await navigator.clipboard.writeText(sha256);
+      setHashCopied(true);
+      window.setTimeout(() => setHashCopied(false), 1500);
+    } catch {
+      /* portapapeles bloqueado: el hash está delante, se puede seleccionar */
+    }
+  }, []);
+
+  const selectedEvidence = useMemo(
+    () =>
+      evidence.find((ev) => ev.evidence_id === selectedEvidenceId) ?? evidence[0] ?? null,
+    [evidence, selectedEvidenceId],
+  );
 
   useEffect(() => {
     return () => window.clearTimeout(successTimer.current);
@@ -403,53 +426,45 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
     [evidence],
   );
 
-  // La acción de la cabecera es la del mock, «Registrar evidencia», y solo
-  // procede con un punto de entrada elegido: sin selección no se adivina cuál
-  // registrar (RULE 2).
-  const selectedSource = sources?.find((s) => s.path === selectedSourcePath) ?? null;
-  const canRegister =
-    !caseClosed &&
-    !registering &&
-    !uploading &&
-    selectedSource !== null &&
-    isRegistrableEvidence(selectedSource.name);
+  // Quién puede registrar y cuál lo decide EvidenceInbox, que es donde vive el
+  // botón y la lista de la bandeja. La página ya no duplica ese cálculo.
 
   // La cabecera se publica ANTES de cualquier return temprano: es un hook y
   // tiene que ejecutarse en todos los renders.
   usePublishShellHeader(
     {
       title: "Evidencia",
-      meta: activeCase
-        ? `bandeja ./evidence · solo lectura${caseClosed ? " · caso cerrado" : ""}`
-        : "sin caso seleccionado",
-      action: activeCase ? (
-        <button
-          type="button"
-          disabled={!canRegister}
-          title={
-            canRegister
-              ? undefined
-              : "Elige primero el punto de entrada en la bandeja (un formato soportado o el .E01 del set)."
-          }
-          onClick={() => void startRegister(selectedSourcePath)}
-        >
-          {registering ? "Registrando…" : "Registrar evidencia"}
-        </button>
-      ) : undefined,
+      // Sin meta con un caso abierto o cerrado: «bandeja ./evidence · solo
+      // lectura» describía el funcionamiento interno, y el caso cerrado ya lo
+      // enuncia la zona de registro, que además dice qué hacer al respecto
+      // («Reabre el caso para registrar más evidencia»).
+      meta: activeCase ? undefined : "sin caso seleccionado",
+      // La cabecera lleva el AVANCE DE FASE, como las otras seis. «Registrar
+      // evidencia» estaba aquí duplicando el botón que ya vive al pie de la
+      // bandeja, a unos 600px de la fila que lo activa: se elegía el fichero
+      // abajo y había que subir a la esquina opuesta para registrarlo.
+      action:
+        onNavigate && activeCase ? (
+          <button
+            type="button"
+            disabled={evidence.length === 0}
+            title={
+              evidence.length === 0
+                ? "Registra primero una evidencia: el agente solo trabaja sobre un handle hash-verificado"
+                : undefined
+            }
+            onClick={() => onNavigate("investigation")}
+          >
+            Pasar a Investigación →
+          </button>
+        ) : undefined,
     },
-    // `selectedSourcePath` va en los disparadores porque el nodo de la acción se
-    // publica UNA vez por cambio de dependencias y se queda con el cierre de ese
-    // render: cambiar de fichero elegido no movía `canRegister` (seguía habiendo
-    // uno seleccionado), así que el botón de la cabecera conservaba la ruta
-    // ANTERIOR y registraba la evidencia equivocada.
     [
       activeCase?.id,
       activeCase?.examiner,
       caseClosed,
-      canRegister,
-      registering,
-      selectedSourcePath,
-      startRegister,
+      evidence.length,
+      onNavigate,
     ],
   );
 
@@ -543,68 +558,171 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
           )}
         </div>
 
-        {/* 3 · Evidencias del caso */}
-        <div className="section-stack">
-          <div className="rule-label">
-            <span className="eyebrow eyebrow--section">Evidencias del caso</span>
-            <span className="rule" />
-            <span className="rule-count">{evidence.length}</span>
-          </div>
-          {/* El fallo de la LECTURA de la lista se nombra como lo que es: antes
-              se pintaba como «No se pudo registrar la evidencia», que confundía
-              un caso sin leer con un registro fallido. */}
-          {evidenceListError && (
-            <ErrorState
-              message={`No se pudo listar la evidencia del caso: ${evidenceListError}`}
-            />
-          )}
-          <EvidenceTable
-            evidence={evidence}
-            verifyingIds={verifyingIds}
-            onVerify={verifyOne}
-            verifyError={verifyError}
-          />
-        </div>
-
-        {/* 3.bis · Sistema operativo determinado */}
-        {evidence.length > 0 && (
+        {/* 3 · Evidencias del caso.
+            La TABLA sirve para comparar y elegir, así que solo aparece cuando
+            hay más de una. Con una sola no compara nada y repite campo por
+            campo lo que la ficha de abajo dice mejor (allí el SHA-256 va
+            entero). Con cero se pinta igualmente: su estado vacío es el que
+            explica que no hay evidencia registrada. */}
+        {evidence.length !== 1 && (
           <div className="section-stack">
             <div className="rule-label">
-              <span className="eyebrow eyebrow--section">Sistema operativo</span>
+              <span className="eyebrow eyebrow--section">Evidencias del caso</span>
+              <span className="rule" />
+              <span className="rule-count">{evidence.length}</span>
+            </div>
+            {/* El fallo de la LECTURA de la lista se nombra como lo que es: antes
+                se pintaba como «No se pudo registrar la evidencia», que confundía
+                un caso sin leer con un registro fallido. */}
+            {evidenceListError && (
+              <ErrorState
+                message={`No se pudo listar la evidencia del caso: ${evidenceListError}`}
+              />
+            )}
+            <EvidenceTable
+              evidence={evidence}
+              verifyingIds={verifyingIds}
+              onVerify={verifyOne}
+              verifyError={verifyError}
+              selectedId={selectedEvidence?.evidence_id ?? null}
+              onSelect={setSelectedEvidenceId}
+            />
+          </div>
+        )}
+
+        {/* Con una sola evidencia no hay tabla, así que sus dos fallos —leer la
+            lista y verificar— se pintan aquí o se perderían. */}
+        {evidence.length === 1 && evidenceListError && (
+          <ErrorState
+            message={`No se pudo listar la evidencia del caso: ${evidenceListError}`}
+          />
+        )}
+        {evidence.length === 1 && verifyError && (
+          <ErrorState message={`No se pudo verificar la evidencia: ${verifyError}`} />
+        )}
+
+        {/* 3.bis · FICHA de la evidencia elegida.
+            «Sistema operativo» y «Cadena de custodia» eran dos secciones que
+            listaban SIEMPRE todas las evidencias: con tres imágenes había nueve
+            filas repartidas en tres tablas y había que cruzarlas a mano para
+            saber qué le pasaba a cada una. Ahora son apartados de UNA ficha, la
+            de la fila abierta. */}
+        {selectedEvidence && (
+          <div className="section-stack evidence-card">
+            <div className="rule-label">
+              {/* El nombre va LITERAL, no por `.eyebrow`: esa clase fuerza
+                  mayúsculas y en forense un nombre de fichero las distingue —
+                  pintar «ORIGINAL.RAW» donde el disco dice «original.raw» es
+                  afirmar algo que no es. */}
+              <span className="evidence-card-name">
+                {evidenceFileName(selectedEvidence)}
+              </span>
               <span className="rule" />
               <span className="rule-count">
-                {activeCase.os_profile ?? "sin determinar"}
+                {KIND_LABEL[selectedEvidence.detected_kind]}
               </span>
             </div>
-            <div className="os-rows">
-              {evidence.map((ev) => (
-                <div className="os-row" key={ev.evidence_id}>
-                  <span className="os-name">{evidenceFileName(ev)}</span>
-                  <span className="os-meta">{KIND_LABEL[ev.detected_kind]}</span>
-                  <span
-                    className={`os-verdict${
-                      hasOperatingSystem(ev) && ev.detected_os === "unknown" ? " is-open" : ""
-                    }`}
-                  >
-                    {!hasOperatingSystem(ev)
-                      ? "no aplica"
-                      : ev.detected_os === "unknown"
-                        ? "SO sin determinar"
-                        : ev.detected_os}
+
+            <div className="evidence-card-grid">
+              <span className="evidence-card-k">sha-256</span>
+              {/* El hash es lo que se cita en un informe y lo que se compara
+                  contra el acta: tiene que poder copiarse. El control vivía en
+                  la fila de la tabla, que ya no se pinta con una sola
+                  evidencia. */}
+              <button
+                type="button"
+                className={`hash-copy evidence-card-v is-mono${
+                  hashCopied ? " is-copied" : ""
+                }`}
+                onClick={() => void copySha(selectedEvidence.sha256)}
+                title="Copiar el SHA-256 completo"
+                aria-label="Copiar el SHA-256 completo"
+              >
+                <span>{selectedEvidence.sha256}</span>
+                <span className="hash-copy-icon" aria-hidden="true">
+                  <Icon name={hashCopied ? "check" : "copy"} size={13} />
+                </span>
+              </button>
+
+              <span className="evidence-card-k">tamaño</span>
+              <span className="evidence-card-v is-mono">
+                {formatBytes(selectedEvidence.total_size)}
+                {selectedEvidence.segment_count > 1 &&
+                  ` en ${selectedEvidence.segment_count} segmentos`}
+              </span>
+
+              <span className="evidence-card-k">integridad</span>
+              <span className="evidence-card-v is-mono">
+                {selectedEvidence.last_verification === null ? (
+                  "sin re-verificar"
+                ) : selectedEvidence.last_verification.verified ? (
+                  <span className="custody-meta--ok">hash re-verificado</span>
+                ) : (
+                  <span className="custody-meta--danger">
+                    <Icon name="alert" size={12} /> hash mismatch
                   </span>
-                  {hasOperatingSystem(ev) && ev.detected_os === "unknown" && (
+                )}
+              </span>
+
+              <span className="evidence-card-k">sistema operativo</span>
+              <span className="evidence-card-v is-mono">
+                {!hasOperatingSystem(selectedEvidence) ? (
+                  <>
+                    no aplica
+                    <span className="evidence-card-note">
+                      un fichero aportado es material sobre el sistema investigado, no el
+                      sistema; aquí el perfil elige el maletín, no el SO
+                    </span>
+                  </>
+                ) : selectedEvidence.detected_os === "unknown" ? (
+                  <>
+                    sin determinar
                     <button
                       type="button"
                       className="link-action os-action"
                       disabled={redetecting !== null}
                       title="Volver a abrir la imagen y determinar su sistema operativo"
-                      onClick={() => void redetectOs(ev.evidence_id)}
+                      onClick={() => void redetectOs(selectedEvidence.evidence_id)}
                     >
-                      {redetecting === ev.evidence_id ? "Determinando…" : "Reintentar"}
+                      {redetecting === selectedEvidence.evidence_id
+                        ? "Determinando…"
+                        : "Reintentar"}
                     </button>
-                  )}
-                </div>
-              ))}
+                  </>
+                ) : (
+                  <>
+                    {selectedEvidence.detected_os}
+                    <span className="evidence-card-note">
+                      determinado del contenido de la imagen, no del equipo anfitrión
+                    </span>
+                  </>
+                )}
+              </span>
+            </div>
+
+            <div className="evidence-card-actions">
+              {/* Con una sola evidencia no hay tabla donde pulsar «Re-verificar»,
+                  así que la acción vive aquí. Con varias también: actúa sobre la
+                  ficha abierta, que es lo que estás mirando. */}
+              <button
+                type="button"
+                className="link-action"
+                disabled={verifyingIds.has(selectedEvidence.evidence_id)}
+                onClick={() => verifyOne(selectedEvidence.evidence_id)}
+              >
+                {verifyingIds.has(selectedEvidence.evidence_id)
+                  ? "Verificando…"
+                  : selectedEvidence.last_verification
+                    ? "Re-verificar"
+                    : "Verificar ahora"}
+              </button>
+              <button
+                type="button"
+                className="link-action"
+                onClick={() => void openActa(selectedEvidence)}
+              >
+                Acta de adquisición
+              </button>
             </div>
 
             {/* Último recurso, y sólo cuando la determinación automática no ha
@@ -658,57 +776,8 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
           </div>
         )}
 
-        {/* 4 · Cadena de custodia */}
-        {evidence.length > 0 && (
-          <div className="section-stack">
-            <div className="rule-label">
-              <span className="eyebrow eyebrow--section">Cadena de custodia</span>
-              <span className="rule" />
-            </div>
-            <div className="prose">
-              El acta de adquisición recoge el hash baseline, el tamaño y el enlace de la
-              cadena encadenada por hash.
-            </div>
-            <div className="custody-rows">
-              {evidence.map((ev) => (
-                <div className="custody-row" key={ev.evidence_id}>
-                  <span className="custody-name">{evidenceFileName(ev)}</span>
-                  {/* Tamaño del CONJUNTO y cuántos ficheros lo forman: en un EWF
-                      partido, `size` es solo el primer segmento. */}
-                  <span className="custody-meta">
-                    {formatBytes(ev.total_size)}
-                    {ev.segment_count > 1 && ` en ${ev.segment_count} segmentos`}
-                  </span>
-                  <span className="custody-meta" title={ev.sha256}>
-                    sha256 {shortHash(ev.sha256)}
-                  </span>
-                  {/* Estado REAL del handle. La verificación de la cadena la
-                      calcula el backend al emitir el acta: no se afirma aquí. */}
-                  {ev.last_verification === null ? (
-                    <span className="custody-meta">sin re-verificar</span>
-                  ) : ev.last_verification.verified ? (
-                    <span className="custody-meta custody-meta--ok">hash re-verificado</span>
-                  ) : (
-                    <span className="custody-meta custody-meta--danger">
-                      <Icon name="alert" size={12} /> hash mismatch
-                    </span>
-                  )}
-                  <button type="button" className="link-action custody-action" onClick={() => void openActa(ev)}>
-                    Acta de adquisición
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {onNavigate && evidence.length > 0 && (
-          <div className="cta-row">
-            <button type="button" className="link-action" onClick={() => onNavigate("investigation")}>
-              Pasar a Investigación →
-            </button>
-          </div>
-        )}
+        {/* «Pasar a Investigación» vive ahora en la cabecera, como en las otras
+            seis fases. Aquí abajo era la única excepción del patrón. */}
       </div>
 
       <Modal

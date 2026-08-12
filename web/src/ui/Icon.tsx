@@ -21,6 +21,11 @@ export type IconName =
   | "selector"
   | "plus"
   | "copy"
+  | "folder"
+  | "inbox"
+  | "file-upload"
+  | "panel-collapse"
+  | "panel-expand"
   | "dot-filled"
   | "dot-empty";
 
@@ -61,6 +66,46 @@ const PATHS: Record<IconName, ReactNode> = {
     <>
       <rect x="9" y="9" width="13" height="13" rx="1" />
       <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" />
+    </>
+  ),
+  // Fichero entrando: ancla la zona de arrastre. Va grande y centrado, así que
+  // es el único que se usa como ilustración y no como marca junto a un texto.
+  "file-upload": (
+    <>
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 3 14 8 19 8" />
+      <line x1="12" y1="18" x2="12" y2="12" />
+      <polyline points="9 15 12 12 15 15" />
+    </>
+  ),
+  // Plegar y desplegar el panel lateral. El marco con la barra a la derecha
+  // dibuja el propio panel, así que se entiende sin leer el tooltip — un `›`
+  // suelto no dice a qué se refiere ni hacia dónde va.
+  "panel-collapse": (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="1" />
+      <line x1="15" y1="4" x2="15" y2="20" />
+      <polyline points="10 10 12 12 10 14" />
+    </>
+  ),
+  "panel-expand": (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="1" />
+      <line x1="15" y1="4" x2="15" y2="20" />
+      <polyline points="12 10 10 12 12 14" />
+    </>
+  ),
+  // Carpeta: examinar ficheros del equipo del perito.
+  folder: (
+    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+  ),
+  // Bandeja: la carpeta ./evidence del host, donde se depositan las imágenes
+  // antes de registrarlas. La forma de bandeja de entrada es lo que distingue
+  // «mirar lo que ya hay depositado» de «buscar en mi ordenador».
+  inbox: (
+    <>
+      <polyline points="22 12 16 12 14 15 10 15 8 12 2 12" />
+      <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
     </>
   ),
   "dot-filled": <circle cx="12" cy="12" r="5" fill="currentColor" stroke="none" />,

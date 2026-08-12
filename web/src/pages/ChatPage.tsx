@@ -188,12 +188,13 @@ function formatMessageContent(content: string) {
   return out;
 }
 
-// Instrucciones de arranque del mock: verbos del oficio, no botones de demo.
+// Instrucciones de arranque: verbos del oficio, no botones de demo. Son todas de
+// ESTA fase — «redactar informe» estaba aquí y se saltaba cinco: con cero
+// hallazgos le pedía al modelo un informe sobre nada, y cuesta dinero.
 const QUICK_PROMPTS = [
   "buscar persistencia",
   "analizar conexiones de red",
   "generar timeline del sistema de ficheros",
-  "redactar informe",
 ];
 
 const SEVERITY_LABEL: Record<string, string> = {
@@ -837,7 +838,11 @@ export function ChatPage({
     }
   };
 
-  const sendDisabled = !input.trim() || busy;
+  // Sin evidencia el agente no tiene sobre qué correr: enviar sólo puede acabar
+  // en un error del backend, así que se corta antes (RULE 2: se dice el motivo,
+  // no se intenta a ciegas).
+  const hasEvidence = activeEvidence != null;
+  const sendDisabled = !input.trim() || busy || !hasEvidence;
   const agentLabel = activeAgent?.id ?? (activeProfile ? `forensia-${activeProfile}` : "agentopsy");
 
   const providerLabel = executor ? executorStatus?.name ?? executor : "Elige ejecutor";
@@ -846,9 +851,6 @@ export function ChatPage({
   const configuredModel = executor ? modelByProvider[executor] ?? "" : "";
   const effectiveModel = configuredModel || (executor === "ollama" ? recommendedModel : "");
   const modelEditable = providerModels?.editable ?? false;
-  const modelLabel = !executor
-    ? ""
-    : effectiveModel || (executor === "ollama" ? "modelo" : "por defecto");
   // Potencia: los niveles los declara el catálogo POR MODELO, así que sin
   // modelo elegido no hay lista que ofrecer (no existe una global correcta).
   const reasoning = providerModels?.reasoning ?? null;
@@ -862,19 +864,46 @@ export function ChatPage({
     <div className="chat-column">
       <div className="transcript" ref={logRef} onScroll={onTranscriptScroll}>
         <div className="transcript-inner">
+          {/* Arranque. Los atajos viven AQUÍ y no bajo el compositor: son la
+              rampa de entrada — le dicen al perito qué se le puede pedir a esto
+              — y ahí abajo quedaban al final del orden de lectura, pasado el
+              punto en el que ya has decidido que no sabes qué escribir.
+              Sin evidencia no se ofrece ninguno: no hay nada sobre lo que
+              correr, y una instrucción enviada ahora sólo puede fallar. */}
           {msgs.length === 0 && (
-            <div className="turn">
-              <div className="turn-time" />
-              <div className="turn-body">
-                <div className="empty-rail">
-                  <div className="empty-rail-title">La investigación empieza aquí</div>
-                  <div className="empty-rail-body">
-                    Escribe una instrucción para el agente. Ejecutará el maletín forense sobre
-                    la evidencia verificada y dejará cada comando en el log de auditoría
-                    encadenado.
+            <div className="chat-start">
+              {hasEvidence ? (
+                <div className="chat-start-inner">
+                  <div className="chat-start-title">¿Qué le pedimos al agente?</div>
+                  <div className="chat-start-body">
+                    Ejecuta el maletín forense sobre la evidencia verificada y deja cada
+                    comando en el log de auditoría encadenado.
+                  </div>
+                  <div className="chat-start-prompts">
+                    {QUICK_PROMPTS.map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        className="chat-start-prompt"
+                        onClick={() => {
+                          setInput(p);
+                          inputRef.current?.focus();
+                        }}
+                      >
+                        {p}
+                      </button>
+                    ))}
                   </div>
                 </div>
-              </div>
+              ) : (
+                <div className="chat-start-inner">
+                  <div className="chat-start-title">Este caso todavía no tiene evidencia</div>
+                  <div className="chat-start-body">
+                    El agente analiza una imagen forense verificada, así que primero hay que
+                    registrarla. Su hash baseline se calcula al hacerlo.
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -966,7 +995,7 @@ export function ChatPage({
           <textarea
             ref={inputRef}
             className="composer-input"
-            placeholder="Escribe una instrucción para el agente…"
+            placeholder="Pide algo al agente"
             rows={1}
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -986,7 +1015,7 @@ export function ChatPage({
               >
                 {providerLabel}
                 {executorStatus?.local ? " · local" : ""}
-                {modelLabel ? ` · ${modelLabel}` : ""}
+                <Icon name="chevron-down" size={12} />
               </button>
               {openMenu === "provider" && (
                 <div className="composer-popover">
@@ -1049,6 +1078,7 @@ export function ChatPage({
                 }}
               >
                 modelo
+                <Icon name="chevron-down" size={12} />
               </button>
               {openMenu === "model" && (
                 <div className="composer-popover">
@@ -1173,7 +1203,10 @@ export function ChatPage({
               )}
             </div>
 
-            <span className="composer-tip">Enter envía · Shift+Enter salta línea</span>
+            {/* Sólo el atajo que se usa. «Shift+Enter salta línea» es la
+                convención por defecto de cualquier campo multilínea: enunciarla
+                doblaba la pista sin enseñar nada. */}
+            <span className="composer-tip">Enter envía</span>
 
             {busy ? (
               <button
@@ -1197,21 +1230,6 @@ export function ChatPage({
             )}
           </div>
 
-          <div className="quick-prompts">
-            {QUICK_PROMPTS.map((q) => (
-              <button
-                key={q}
-                type="button"
-                className="quick-prompt"
-                onClick={() => {
-                  setInput(q);
-                  inputRef.current?.focus();
-                }}
-              >
-                {q}
-              </button>
-            ))}
-          </div>
         </div>
       </div>
 

@@ -583,7 +583,11 @@ export function TimelinePage() {
         </div>
       )}
 
-      <div className="tl-scroll">
+      {/* Sin barra de herramientas —la capa del incidente es una figura, no una
+          lista— el contenido quedaba pegado a las pestañas: en las otras capas
+          ese hueco lo crea el buscador. Se repone aquí para que las cuatro
+          arranquen a la misma altura. */}
+      <div className={`tl-scroll${isIncident ? " tl-scroll--bare" : ""}`}>
         <div className="view-stack view-stack--1000 tl-stack">
           {exportError && (isInvestigation || isIncident) && (
             <div className="error-state">No se pudo exportar: {exportError}</div>

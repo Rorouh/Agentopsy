@@ -6,6 +6,7 @@ import { useActiveCase } from "../state/activeCase";
 import { useCaseEvidence } from "../state/caseEvidence";
 import { useCaseStream } from "../state/casePulse";
 import { usePublishShellHeader } from "../layout/shellHeader";
+import { Icon } from "../ui/Icon";
 import { ChatPage } from "./ChatPage";
 
 interface InvestigationPageProps {
@@ -96,19 +97,30 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
   usePublishShellHeader(
     {
       title: "Investigación",
-      meta: activeCase
-        ? evidenceName
-          ? `${evidenceName} · ${activeEvidence?.sha256.slice(0, 8)}`
-          : "sin evidencia registrada todavía"
-        : "sin caso seleccionado",
+      // La evidencia ya no viaja aquí: vive en el panel derecho, donde cabe
+      // entera y puede decir además si está verificada. La cabecera se queda
+      // con el título y la salida de fase.
+      meta: activeCase ? undefined : "sin caso seleccionado",
       action:
         onNavigate && activeCase ? (
-          <button type="button" onClick={() => onNavigate("mitre")}>
+          // Apagada mientras no haya nada que correlacionar: siendo la única
+          // superficie llena de la vista, invitaba a salir de la pantalla antes
+          // de haber hecho nada en ella.
+          <button
+            type="button"
+            disabled={findings.length === 0}
+            title={
+              findings.length === 0
+                ? "Todavía no hay hallazgos que correlacionar"
+                : undefined
+            }
+            onClick={() => onNavigate("mitre")}
+          >
             Pasar a ATT&amp;CK →
           </button>
         ) : undefined,
     },
-    [activeCase?.id, evidenceName, activeEvidence?.sha256],
+    [activeCase?.id, findings.length],
   );
 
   if (casesPhase === "loading") {
@@ -196,28 +208,53 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
           <button
             type="button"
             className="inv-aside-toggle"
-            title="Colapsar o expandir el panel de contexto"
+            title={panelOpen ? "Plegar el panel de contexto" : "Desplegar el panel de contexto"}
+            aria-label={
+              panelOpen ? "Plegar el panel de contexto" : "Desplegar el panel de contexto"
+            }
             aria-expanded={panelOpen}
             onClick={() => setPanelOpen((o) => !o)}
           >
-            {panelOpen ? "›" : "‹"}
+            <Icon name={panelOpen ? "panel-collapse" : "panel-expand"} size={15} />
           </button>
 
           {panelOpen && (
             <div className="inv-panel">
+              {/* La evidencia encabeza el panel: es el estado de ESTA
+                  investigación, igual que los contadores. Bajó de la cabecera
+                  porque allí se cortaba y no cabía decir si está verificada,
+                  que es el dato que autoriza a empezar. */}
+              <section className="inv-evidence">
+                <div className="eyebrow">Evidencia</div>
+                {evidenceName ? (
+                  <>
+                    <div className="inv-evidence-name">{evidenceName}</div>
+                    <div className="inv-evidence-meta">
+                      sha {activeEvidence?.sha256.slice(0, 8)}
+                      {activeEvidence?.last_verification?.verified && (
+                        <>
+                          {" · "}
+                          <span className="inv-evidence-ok">verificada</span>
+                        </>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="inv-evidence-meta">ninguna registrada</div>
+                )}
+              </section>
+
               {/* Los dos bloques se reparten la altura del raíl y cada uno
                   scrollea POR DENTRO: el encabezado siempre visible, y una
                   lista larga de hallazgos ya no empuja Herramientas fuera de
                   la pantalla. */}
               <section className="inv-block">
-                <div className="eyebrow">
-                  Hallazgos · {String(findings.length).padStart(2, "0")}
-                </div>
+                {/* Sin relleno de ceros: «00» se lee como un reloj, no como un
+                    contador a cero. */}
+                <div className="eyebrow">Hallazgos · {findings.length}</div>
                 <div className="inv-block-scroll">
                   {findings.length === 0 ? (
-                    <div className="inv-empty">
-                      Aún no hay hallazgos. El agente los irá apilando aquí a medida que analice.
-                    </div>
+                    <div className="inv-empty">Sin hallazgos.</div>
                   ) : (
                     findings.map((f) => (
                       <div
@@ -239,15 +276,10 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
               </section>
 
               <section className="inv-block">
-                <div className="eyebrow">
-                  Herramientas · {String(toolTotal).padStart(2, "0")}
-                </div>
+                <div className="eyebrow">Herramientas · {toolTotal}</div>
                 <div className="inv-block-scroll">
                   {toolUsage.length === 0 ? (
-                    <div className="inv-empty">
-                      Aún no se ha ejecutado ninguna herramienta. Aparecerán aquí con su número de
-                      usos cuando el agente las invoque.
-                    </div>
+                    <div className="inv-empty">Ninguna ejecutada.</div>
                   ) : (
                     toolUsage.map((t) => (
                       <div className="usage-row" key={t.tool_id}>

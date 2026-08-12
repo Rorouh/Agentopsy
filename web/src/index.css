@@ -160,6 +160,21 @@ html, body, #root {
    Va en `:where()` a propósito: especificidad CERO, así cualquier componente que
    quiera su propio anillo lo sobreescribe sin pelear. Los campos de texto se
    quedan fuera: ya señalan el foco con el color del borde. */
+/* Reset de <button>. Sin esto, cualquier botón cuya clase olvide declarar fondo
+   hereda el control CRUDO del agente de usuario: relleno gris, borde en relieve
+   y su propia tipografía. En tema claro pasa casi desapercibido; en oscuro el
+   relleno tapaba la × de cerrar los diálogos.
+   Va en `:where()` — especificidad CERO — así que toda regla de clase existente
+   sigue mandando y esto sólo cubre lo que nadie ha vestido. */
+:where(button) {
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+}
+
 :where(button, a, summary, [role="option"], [role="tab"]):focus { outline: none; }
 :where(button, a, summary, [role="option"], [role="tab"]):focus-visible {
   outline: 2px solid var(--focus-ring);
@@ -261,23 +276,35 @@ html, body, #root {
 }
 .case-picker-icon { flex-shrink: 0; color: var(--ink-4); }
 .case-picker-row:hover:not(:disabled) .case-picker-icon { color: var(--accent); }
+/* Píldora rellena y AJUSTADA AL TEXTO, no a todo el ancho: se lee como una
+   acción y no como un enlace suelto, pero sin pesar más que el propio caso —
+   crear uno ocurre una vez, cambiar de caso muchas.
+   Nota: es la única esquina redondeada del sidebar. Excepción deliberada al
+   lenguaje de esquina viva del resto de la interfaz, no un descuido. */
 .case-new-action {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 7px;
-  width: 100%;
-  margin-top: 11px;
-  padding: 11px 0 0;
-  border: none;
-  border-top: 1px solid var(--hair-2);
-  background: none;
+  margin-top: 13px;
+  padding: 6px 13px;
+  /* El relleno solo no basta: en claro `--inset` (#faf7f3) y el fondo del
+     sidebar (#fbf9f6) son casi el mismo color, así que el botón desaparecía.
+     En oscuro sí contrastaban, de ahí que pasara inadvertido. El filete es lo
+     que garantiza que se lea como control en los DOS temas. */
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
   cursor: pointer;
   font-family: var(--font-mono);
   font-size: var(--fs-1);
-  color: var(--accent);
+  color: var(--ink);
   text-align: left;
 }
-.case-new-action:hover { color: var(--accent-hover); }
+.case-new-action:hover {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+  color: var(--accent);
+}
 .case-new-action:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .sidebar-phases { padding: 20px 24px 0; }
 .sidebar-phases .eyebrow { margin-bottom: 16px; }
@@ -390,13 +417,17 @@ html, body, #root {
   text-transform: uppercase;
   padding: 10px 18px;
 }
-.shell-header-action .btn:hover,
-.shell-header-action button:hover { background: var(--ink-2); border-color: var(--ink-2); }
+.shell-header-action .btn:hover:not(:disabled),
+.shell-header-action button:hover:not(:disabled) { background: var(--ink-2); border-color: var(--ink-2); }
+/* Apagada: sigue visible, para que se sepa hacia dónde va el flujo, pero deja
+   de ser la superficie más pesada de la pantalla mientras no haya nada que
+   llevarse a la fase siguiente. */
 .shell-header-action .btn:disabled,
 .shell-header-action button:disabled {
   background: transparent;
   color: var(--ink-4);
   border-color: var(--line);
+  cursor: default;
 }
 
 .main-content {
@@ -455,6 +486,32 @@ html, body, #root {
 }
 .dashed-panel.is-dragging { border-color: var(--accent); border-style: solid; }
 .dashed-panel-main { flex: 1; min-width: 260px; }
+/* Centrado SOLO en la zona de arrastre: `.dashed-panel` lo comparten el panel
+   de «Finalizar investigación» y el de caso cerrado, que son texto corrido y se
+   leen alineados a la izquierda. El patrón que la gente reconoce como zona de
+   soltar ficheros pone el icono y la instrucción en el eje. */
+.dashed-panel--drop { justify-content: center; }
+.dashed-panel--drop .dashed-panel-main { text-align: center; }
+.dashed-panel-icon { color: var(--ink-4); margin-bottom: 9px; }
+.dashed-panel-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 18px;
+}
+/* Los formatos, fuera del párrafo: doce extensiones dentro de una frase
+   partían en tres líneas el texto que sí se lee. Aquí siguen consultables sin
+   estorbar. */
+.dashed-panel-formats {
+  font-family: var(--font-mono);
+  font-size: var(--fs-1);
+  color: var(--ink-4);
+  line-height: 1.6;
+  margin-top: 12px;
+  text-wrap: pretty;
+}
+.dashed-panel-formats + .dashed-panel-formats { margin-top: 5px; }
 .dashed-panel-title { font-size: var(--fs-4); font-weight: 600; color: var(--ink); }
 .dashed-panel-body { font-size: var(--fs-3); color: var(--ink-3); margin-top: 5px; line-height: 1.5; }
 .empty-rail {
@@ -477,6 +534,11 @@ html, body, #root {
 .action-outline,
 .action-accent,
 .action-stop {
+  /* inline-flex para que un <Icon> dentro se asiente con el texto en vez de
+     apoyarse en la línea base y descolgarse. */
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-family: var(--font-mono);
   font-size: var(--fs-1);
   letter-spacing: 0.1em;
@@ -767,15 +829,28 @@ select option:disabled { color: var(--ink-5); }
   margin-top: 6px;
   overflow-wrap: anywhere;
 }
+/* Este botón NUNCA declaró fondo ni borde, y no hay reset global de <button>:
+   heredaba el control crudo del agente de usuario, que pinta su propio relleno
+   gris. En claro apenas se notaba; en oscuro el relleno tapaba la ×. */
 .modal-close {
   flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  cursor: pointer;
   font-family: var(--font-mono);
   /* Glifo de icono (×): se dimensiona por el control, no por la escala. */
   font-size: 20px;
   line-height: 1;
   color: var(--ink-4);
 }
-.modal-close:hover { background: none; color: var(--ink); }
+.modal-close:hover { background: var(--inset); color: var(--ink); }
 /* El cuerpo es lo único que scrollea: cabecera y pie quedan fijos. */
 .modal-body { flex: 1; min-height: 0; overflow-y: auto; padding: 24px 30px 8px; }
 .modal-footer {
@@ -936,18 +1011,19 @@ select option:disabled { color: var(--ink-5); }
 .hash-copy:focus-visible .hash-copy-icon { opacity: 1; }
 .hash-copy.is-copied { color: var(--ok); }
 .hash-copy.is-copied .hash-copy-icon { opacity: 1; }
+/* En la FICHA el hash es un valor más, no un dato de apoyo de una celda: se lee
+   con la misma tinta que el resto, alineado a la izquierda y sin recortar.
+   `.hash-copy` gana por orden en cascada, así que hay que reponerlo aquí. */
+.hash-copy.evidence-card-v {
+  color: var(--ink);
+  align-items: baseline;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.hash-copy.evidence-card-v:hover { color: var(--accent); }
+.hash-copy.evidence-card-v.is-copied { color: var(--ok); }
 
 /* Cadena de custodia: una línea por evidencia, con el acta al final. */
-.custody-rows { display: flex; flex-direction: column; }
-.custody-row {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  padding: 15px 0;
-  border-bottom: 1px solid var(--hair-2);
-  flex-wrap: wrap;
-}
-.custody-name { font-family: var(--font-mono); font-size: var(--fs-3); font-weight: 500; color: var(--ink); overflow-wrap: anywhere; }
 .custody-meta { font-family: var(--font-mono); font-size: var(--fs-2); color: var(--ink-3); }
 .custody-meta--ok { color: var(--ok); }
 .custody-meta--danger { color: var(--danger); }
@@ -956,24 +1032,7 @@ select option:disabled { color: var(--ink-5); }
 /* Determinación de SO: misma forma de fila que la custodia, es el mismo tipo
    de dato (un hecho por evidencia), no una tarjeta aparte. El veredicto es la
    columna que importa, así que va al final y en acento cuando queda abierto. */
-.os-rows { display: flex; flex-direction: column; }
-.os-row {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  padding: 15px 0;
-  border-bottom: 1px solid var(--hair-2);
-  flex-wrap: wrap;
-}
-.os-name { font-family: var(--font-mono); font-size: var(--fs-3); font-weight: 500; color: var(--ink); overflow-wrap: anywhere; }
 .os-meta { font-family: var(--font-mono); font-size: var(--fs-2); color: var(--ink-3); }
-.os-verdict {
-  margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: var(--fs-2);
-  color: var(--ok);
-}
-.os-verdict.is-open { color: var(--accent); }
 /* Con el veredicto ya empujado a la derecha por `margin-left: auto`, la acción
    se pega a él en vez de saltar de línea. */
 .os-action { margin-left: 0; }
@@ -1058,7 +1117,17 @@ select option:disabled { color: var(--ink-5); }
 /* Ancho de MEDIDA, no del contenedor: 880px se fijaron con la letra del
    mock; al subirla un 15% la línea se quedó corta y el aire sobraba a la
    derecha. Escalado en la misma proporción y centrado en la columna. */
-.transcript-inner { max-width: 1010px; margin: 0 auto; display: flex; flex-direction: column; gap: 34px; }
+/* `min-height: 100%` es lo que permite que el arranque se centre en vertical
+   cuando la transcripción está vacía; con altura automática el bloque se
+   pegaría arriba. Con turnos dentro no cambia nada: el contenido ya desborda. */
+.transcript-inner {
+  max-width: 1010px;
+  margin: 0 auto;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 34px;
+}
 /* «Ir al final»: sólo se pinta cuando el perito se ha despegado del fondo. Va
    `sticky` DENTRO del scroller, así que flota sobre la conversación sin sacar
    al composer de su sitio ni depender de su alto (que crece con el prompt). */
@@ -1231,23 +1300,34 @@ select option:disabled { color: var(--ink-5); }
   overflow-y: auto;
 }
 .composer-input::placeholder { color: var(--ink-5); }
-.composer-row { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+/* 20px separaban texto suelto; con los selectores ya recuadrados, ese hueco los
+   desliga de más. 10px los lee como un grupo de controles. */
+.composer-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .composer-menu-wrap { position: relative; }
+/* Estos dos ABREN un menú, y como texto suelto no lo parecían: nada distinguía
+   «Codex CLI · por defecto» de una etiqueta informativa. Recuadro fino más
+   chevron, que es el dibujo convencional de «esto se despliega». */
 .composer-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-family: var(--font-mono);
   font-size: var(--fs-2);
-  color: var(--ink-2);
-  border: none;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 0;
   background: none;
-  padding: 0;
+  padding: 5px 10px;
   cursor: pointer;
 }
-.composer-pick:hover:not(:disabled) { color: var(--accent); }
+.composer-pick:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 /* Sin ejecutor elegido NO se preselecciona ninguno: el hueco es deliberado
    (RULE 2) y se marca en acento para que se lea como un paso pendiente. */
-.composer-pick.is-empty { color: var(--accent); }
-.composer-pick--quiet { color: var(--ink-6); }
-.composer-pick:disabled { color: var(--ink-6); cursor: not-allowed; }
+.composer-pick.is-empty { color: var(--accent); border-color: var(--accent-soft); }
+/* El modelo pesa menos que el ejecutor: es un ajuste dentro de la elección
+   anterior, no una decisión al mismo nivel. */
+.composer-pick--quiet { color: var(--ink-3); }
+.composer-pick:disabled { color: var(--ink-6); border-color: var(--hair); cursor: not-allowed; }
 .composer-tip { margin-left: auto; font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-5); }
 .composer-send { padding: 10px 20px; }
 .composer-popover {
@@ -1296,17 +1376,40 @@ select option:disabled { color: var(--ink-5); }
 .composer-popover-item.is-disabled { color: var(--ink-4); cursor: default; }
 .composer-popover-tag { font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-4); }
 .composer-popover-input { display: flex; align-items: center; gap: 10px; padding: 8px 14px 4px; }
-.quick-prompts { display: flex; gap: 22px; flex-wrap: wrap; }
-.quick-prompt {
+/* Arranque de la investigación. Centrado en el espacio disponible en vez de
+   pegado arriba a la izquierda: con la transcripción vacía, media pantalla en
+   blanco hacía parecer la vista a medio cargar. */
+.chat-start {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 0;
+}
+.chat-start-inner { max-width: 420px; text-align: center; }
+.chat-start-title { font-size: var(--fs-4); font-weight: 600; color: var(--ink); }
+.chat-start-body {
+  font-size: var(--fs-2);
+  line-height: 1.6;
+  color: var(--ink-2);
+  margin: 7px 0 18px;
+  text-wrap: pretty;
+}
+/* Apilados y alineados a la izquierda: en fila se leían como etiquetas; así se
+   leen como la lista de opciones que son. */
+.chat-start-prompts { display: flex; flex-direction: column; gap: 7px; text-align: left; }
+.chat-start-prompt {
   font-family: var(--font-mono);
   font-size: var(--fs-2);
   color: var(--accent);
-  border: none;
+  border: 1px solid var(--hair);
+  border-radius: 0;
   background: none;
-  padding: 0;
+  padding: 9px 13px;
   cursor: pointer;
+  text-align: left;
 }
-.quick-prompt:hover { color: var(--accent-hover); text-decoration: underline; }
+.chat-start-prompt:hover { border-color: var(--accent); background: var(--accent-wash); }
 
 /* Panel de contexto */
 .inv-aside {
@@ -1321,7 +1424,9 @@ select option:disabled { color: var(--ink-5); }
   flex-shrink: 0;
   padding: 14px 10px;
   display: flex;
-  justify-content: center;
+  /* A la derecha, alineado con el borde del panel que pliega. Centrado quedaba
+     flotando sin relación con nada. */
+  justify-content: flex-end;
   border: none;
   background: none;
   cursor: pointer;
@@ -1339,6 +1444,80 @@ select option:disabled { color: var(--ink-5); }
   display: flex;
   flex-direction: column;
 }
+/* ── Ficha de la evidencia elegida (Fase 1) ──────────────────────────────────
+   Sustituye a las secciones «Sistema operativo» y «Cadena de custodia», que
+   listaban SIEMPRE todas las evidencias: con tres imágenes eran nueve filas en
+   tres tablas que había que cruzar a mano. */
+/* Sin `text-transform`: un nombre de fichero se enseña como es. */
+.evidence-card-name {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2);
+  font-weight: 500;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.evidence-card-grid {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  row-gap: 9px;
+  column-gap: 16px;
+  align-items: baseline;
+}
+.evidence-card-k {
+  font-family: var(--font-mono);
+  font-size: var(--fs-1);
+  color: var(--ink-4);
+}
+.evidence-card-v { font-size: var(--fs-2); color: var(--ink); }
+/* El SHA-256 tiene una línea para él: en la tabla salía recortado porque
+   competía con cinco columnas, y en una herramienta forense el hash completo no
+   debería exigir un tooltip. */
+.evidence-card-v.is-mono {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2);
+  overflow-wrap: anywhere;
+}
+.evidence-card-note {
+  display: block;
+  font-family: var(--font-sans);
+  font-size: var(--fs-1);
+  color: var(--ink-4);
+  margin-top: 3px;
+}
+.evidence-card-actions { display: flex; gap: 20px; flex-wrap: wrap; }
+
+/* Fila de la tabla que abre su ficha. El resalte va en las CELDAS, no en el
+   <tr>: un `background` sobre la fila no cubre el ancho real cuando la tabla
+   desborda su contenedor, y dejaba la última columna fuera del lavado. */
+.data-table tr.is-selectable { cursor: pointer; }
+.data-table tr.is-selectable:hover td { background: var(--accent-wash); }
+.data-table tr.is-selected td { background: var(--accent-wash); }
+.data-table tr.is-selected td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
+
+/* Ficha de evidencia, al frente del panel. No encoge: es la referencia de todo
+   lo que hay debajo y siempre tiene que estar visible. */
+.inv-evidence {
+  flex: 0 0 auto;
+  /* Mismo sangrado lateral que .inv-block: si no, la ficha se pega al filete
+     izquierdo y queda desalineada con los tres bloques de debajo. */
+  padding: 4px 22px 16px;
+}
+.inv-evidence-name {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2);
+  color: var(--ink);
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+}
+.inv-evidence-meta {
+  font-family: var(--font-mono);
+  font-size: var(--fs-1);
+  color: var(--ink-4);
+  margin-top: 2px;
+}
+/* El único dato que autoriza a empezar: se lee de un vistazo. */
+.inv-evidence-ok { color: var(--ok); }
+
 .inv-block {
   /* Encogen a prorrata de su contenido: el bloque más largo (hallazgos) cede
      altura antes que Herramientas o Coste, que suelen caber enteros. */
@@ -1351,7 +1530,9 @@ select option:disabled { color: var(--ink-5); }
   padding: 18px 22px;
   border-top: 1px solid var(--hair);
 }
-.inv-block:first-child { border-top: none; padding-top: 4px; }
+/* Antes había una excepción que le quitaba el filete superior al primer bloque,
+   porque no tenía nada encima. Ahora sí lo tiene —la ficha de evidencia— y ese
+   filete es justo lo que los separa, así que la excepción se retira. */
 .inv-block-scroll {
   flex: 1;
   min-height: 0;
@@ -1597,6 +1778,9 @@ select option:disabled { color: var(--ink-5); }
 .tl-evidence { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .tl-evidence .field-select { width: auto; min-width: 200px; font-size: var(--fs-2); }
 .tl-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 44px 48px; }
+/* Capa sin barra de herramientas: repone el hueco que en las otras crea el
+   buscador, para que las cuatro pestañas arranquen a la misma altura. */
+.tl-scroll--bare { padding-top: 34px; }
 .tl-stack { gap: 34px; max-width: 1180px; }
 .tl-day { display: flex; flex-direction: column; gap: 4px; }
 .tl-day-head { display: flex; align-items: center; gap: 14px; padding-bottom: 12px; }

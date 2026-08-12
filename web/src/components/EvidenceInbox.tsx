@@ -208,7 +208,7 @@ export function EvidenceInbox({
   return (
     <>
       <div
-        className={`dashed-panel${dragActive ? " is-dragging" : ""}`}
+        className={`dashed-panel dashed-panel--drop${dragActive ? " is-dragging" : ""}`}
         onDragEnter={(e) => {
           if (!carriesFiles(e)) return;
           e.preventDefault();
@@ -263,34 +263,55 @@ export function EvidenceInbox({
           }}
         />
 
+        {/* Zona de arrastre centrada. El icono ancla la acción; los botones van
+            debajo, que es el orden de lectura real: primero qué se puede
+            soltar, después las dos alternativas a arrastrar. */}
         <div className="dashed-panel-main">
+          <Icon name="file-upload" size={26} className="dashed-panel-icon" />
           <div className="dashed-panel-title">
             Arrastra aquí la evidencia del caso
           </div>
           <div className="dashed-panel-body">
             Agentopsy calcula el SHA-256 baseline y la deja en solo lectura antes de que
             ninguna herramienta la toque, sea una imagen de un sistema entero o un fichero
-            que te han entregado. Imágenes y volcados: {IMAGE_FORMATS_HINT}. Material
-            aportado: {MATERIAL_FORMATS_HINT}. {EWF_HINT}
+            que te han entregado.
           </div>
-        </div>
-        <div className="cta-row">
-          <button
-            type="button"
-            className="action-outline"
-            disabled={uploading}
-            onClick={openFileDialog}
-          >
-            Examinar…
-          </button>
-          <button
-            type="button"
-            className="action-outline"
-            disabled={loadingSources || uploading}
-            onClick={onLoadSources}
-          >
-            {loadingSources ? "Buscando…" : "Examinar bandeja"}
-          </button>
+          <div className="dashed-panel-actions">
+            {/* Los iconos separan dos cosas que el texto solo no distinguía:
+                buscar en TU equipo frente a mirar lo que ya está depositado en
+                la bandeja del host. */}
+            <button
+              type="button"
+              className="action-outline"
+              disabled={uploading}
+              onClick={openFileDialog}
+            >
+              <Icon name="folder" size={14} />
+              Examinar…
+            </button>
+            <button
+              type="button"
+              className="action-outline"
+              disabled={loadingSources || uploading}
+              onClick={onLoadSources}
+            >
+              <Icon name="inbox" size={14} />
+              {loadingSources ? "Buscando…" : "Examinar bandeja"}
+            </button>
+          </div>
+          {/* Los formatos salen del párrafo: son decenas de extensiones metidas
+              en mitad de una frase, y ahí abajo siguen consultables sin partir
+              en cuatro líneas el texto que sí se lee. Las dos familias van por
+              separado porque no son lo mismo: una imagen de un sistema entero y
+              un fichero que te entregan entran por el mismo hash-gate pero se
+              analizan distinto. */}
+          <div className="dashed-panel-formats">
+            Imágenes y volcados: {IMAGE_FORMATS_HINT}
+          </div>
+          <div className="dashed-panel-formats">
+            Material aportado: {MATERIAL_FORMATS_HINT}
+          </div>
+          <div className="dashed-panel-formats">{EWF_HINT}</div>
         </div>
       </div>
 
@@ -401,13 +422,20 @@ export function EvidenceInbox({
             })}
           </div>
           <div className="cta-row">
+            {/* NOMBRA lo que va a registrar. Pegado a la fila elegida puede
+                hacerlo, y en un EWF partido eso confirma que entra el .E01 y no
+                un segmento suelto. */}
             <button
               type="button"
               className="action-invert"
               disabled={!canRegister}
               onClick={onRegister}
             >
-              Registrar evidencia
+              {registering
+                ? "Registrando…"
+                : selectedSource && selectedRegistrable
+                  ? `Registrar ${selectedSource.name}`
+                  : "Registrar evidencia"}
             </button>
             <button
               type="button"

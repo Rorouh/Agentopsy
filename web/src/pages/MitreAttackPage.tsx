@@ -219,7 +219,10 @@ export function MitreAttackPage() {
   usePublishShellHeader(
     {
       title: "Correlación ATT&CK",
-      meta: caseMode ? "dictamen del perito · auditado" : "exploración del catálogo · sin caso",
+      // Con caso no hay meta: «dictamen del perito · auditado» describía la
+      // naturaleza de la vista, no su estado. Sin caso sí, porque entonces
+      // cambia lo que puedes hacer: se explora el catálogo, no se adjudica.
+      meta: caseMode ? undefined : "exploración del catálogo · sin caso",
       action: caseMode ? (
         <button type="button" disabled={exporting} onClick={() => void onExport("navigator")}>
           {exporting ? "Exportando…" : "Exportar layer"}

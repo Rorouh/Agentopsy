@@ -81,13 +81,13 @@ export function GraphsPage() {
   usePublishShellHeader(
     {
       title: "Grafos de relaciones",
+      // Sin hallazgos no se enuncia nada: la propia figura ya dice «0 nodos ·
+      // 0 aristas» y explica debajo que aparecerá en cuanto haya uno.
       meta: !activeCase
         ? "sin caso seleccionado"
-        : resumen
-          ? resumen.hallazgos === 0
-            ? "sin hallazgos que analizar"
-            : `${resumen.conGrafo} de ${resumen.hallazgos} hallazgos con grafo`
-          : "cargando",
+        : resumen && resumen.hallazgos > 0
+          ? `${resumen.conGrafo} de ${resumen.hallazgos} hallazgos con grafo`
+          : undefined,
     },
     [activeCase?.id, resumen?.conGrafo, resumen?.hallazgos],
   );

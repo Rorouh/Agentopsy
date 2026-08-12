@@ -410,9 +410,15 @@ export function DocumentsPage() {
   usePublishShellHeader(
     {
       title: "Informe pericial",
-      meta: activeCase
-        ? `${documents.length} documento${documents.length === 1 ? "" : "s"} · ${finals} firmado${finals === 1 ? "" : "s"}`
-        : "sin caso seleccionado",
+      // Con cero documentos la cuenta no informa: el vacío ya lo dicen la
+      // columna de la izquierda y el centro de la vista. Con documentos reales
+      // sí es progreso, y cuántos están firmados es lo que separa un borrador
+      // de un entregable.
+      meta: !activeCase
+        ? "sin caso seleccionado"
+        : documents.length === 0
+          ? undefined
+          : `${documents.length} documento${documents.length === 1 ? "" : "s"} · ${finals} firmado${finals === 1 ? "" : "s"}`,
       action: selectedDoc ? (
         <button type="button" disabled={busy} onClick={() => void onDownload()}>
           Descargar PDF
