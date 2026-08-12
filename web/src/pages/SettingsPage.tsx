@@ -8,7 +8,7 @@ import type {
   ExecutorStatus,
 } from "../api/types";
 import type { ViewId } from "../navigation/navItems";
-import { useTheme } from "../ThemeProvider";
+import { PALETTES, useTheme } from "../ThemeProvider";
 import { usePublishShellHeader } from "../layout/shellHeader";
 import { ExecutorLoginModal } from "../components/ExecutorLoginModal";
 import { Icon } from "../ui/Icon";
@@ -40,7 +40,7 @@ const TIMEOUT_OPTIONS = [60, 120, 300];
 const SAVED_MS = 2000;
 
 export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, palette, setPalette } = useTheme();
   const [activeTab, setActiveTab] = useState<TabId>("executors");
   const [config, setConfig] = useState<ConfigSnapshot | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
@@ -566,12 +566,53 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
               aria-labelledby="settings-tab-appearance"
               className="view-stack settings-stack"
             >
+              {/* PALETA y MODO son ejes independientes: la paleta elige el
+                  temperamento, el modo elige claro u oscuro. Cada paleta trae
+                  sus dos modos, así que trabajar de noche no obliga a renunciar
+                  a la identidad que prefieras. */}
               <div className="section-stack">
                 <div className="rule-label">
-                  <span className="eyebrow eyebrow--section">Tema</span>
+                  <span className="eyebrow eyebrow--section">Paleta</span>
                   <span className="rule" />
                 </div>
-                <div className="theme-choices" role="group" aria-label="Tema de la interfaz">
+                <div className="palette-choices" role="group" aria-label="Paleta de la interfaz">
+                  {PALETTES.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className={`palette-choice${palette === p.id ? " is-active" : ""}`}
+                      aria-pressed={palette === p.id}
+                      onClick={() => setPalette(p.id)}
+                    >
+                      {/* Muestra de la paleta REAL, no un icono: se elige por
+                          cómo se ve, así que hay que verla. Los cuatro tonos son
+                          los que de verdad cargan el peso — fondo, tinta, acento
+                          y el verde de «verificada». */}
+                      <span
+                        className="palette-swatch"
+                        data-palette={p.id}
+                        aria-hidden="true"
+                      >
+                        <span className="palette-swatch-shell" />
+                        <span className="palette-swatch-ink" />
+                        <span className="palette-swatch-accent" />
+                        <span className="palette-swatch-ok" />
+                      </span>
+                      <span className="palette-choice-text">
+                        <span className="palette-choice-name">{p.name}</span>
+                        <span className="palette-choice-desc">{p.description}</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="section-stack">
+                <div className="rule-label">
+                  <span className="eyebrow eyebrow--section">Modo</span>
+                  <span className="rule" />
+                </div>
+                <div className="theme-choices" role="group" aria-label="Modo de la interfaz">
                   {(["light", "dark"] as const).map((t) => (
                     <button
                       key={t}
@@ -585,7 +626,7 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
                   ))}
                 </div>
                 <div className="field-hint">
-                  Se guarda en este navegador y se aplica a toda la aplicación.
+                  Paleta y modo se guardan en este navegador y se aplican a toda la aplicación.
                 </div>
               </div>
             </div>

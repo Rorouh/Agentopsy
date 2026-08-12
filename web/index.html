@@ -1,5 +1,8 @@
 <!doctype html>
-<html lang="es">
+<!-- Paleta y modo de partida en el propio <html>: los tokens de color viven en
+     `[data-palette]`, no en `:root`, así que sin esto el primer pintado se haría
+     sin ninguno hasta que React monta y ThemeProvider los fija. -->
+<html lang="es" data-palette="papel" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <meta

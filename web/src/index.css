@@ -7,58 +7,27 @@
    se construye con peso tipográfico y espacio, no con relleno de color. */
 :root {
   /* Superficies: armazón → panel de contenido → hueco/relleno */
-  --shell:          #fbf9f6;
-  --surface:        #ffffff;
-  --inset:          #faf7f3;
 
   /* Tinta, de más a menos contraste */
-  --ink:            #1b1815;
-  --ink-2:          #55504a;
-  --ink-3:          #7a736b;
-  --ink-4:          #a39a90;
-  --ink-5:          #b8b0a6;
-  --ink-6:          #c3bbb1;
 
   /* Filetes: hair = separador estructural, line = borde de control */
-  --hair:           #e5dfd6;
-  --hair-2:         #f0ebe4;
-  --line:           #d8d2c9;
-  --track:          #ece6de;
 
-  --accent:         #8c3a2b;
-  --accent-hover:   #6d2b1f;
-  --accent-soft:    #d8c4bd;
-  --accent-wash:    #f4eeea;
 
   /* Estados de la escalera de fases del sidebar */
-  --ok:             #4a7c59;
-  --pending:        #ddd6cc;
-  --next:           #c0a49c;
 
   /* Acción única de la cabecera contextual y conmutadores */
-  --invert-bg:      #1b1815;
-  --invert-fg:      #ffffff;
 
   /* Bloques de comando: oscuros en AMBOS temas */
-  --code-bg:        #12100e;
-  --code-fg:        #f4f1ec;
-  --code-dim:       #8a827a;
 
   /* Severidad de hallazgo: NO son alias de la paleta, tienen semántica propia.
      Se separan del acento a propósito, «crítico» no puede confundirse con
      «acción disponible». */
-  --danger:         #8f1116;
-  --warning:        #9a5c05;
   --focus-ring:     var(--accent);
 
   /* Los cuatro grados de severidad del raíl del incidente. Van en LITERALES y no
      como `var(--danger)`: la figura se exporta a PNG resolviendo estos tokens a
      color, y una imagen no lleva variables CSS dentro. El color acompaña, no
      sustituye: cada marca lleva además su etiqueta escrita. */
-  --sev-low:        #7a736b;
-  --sev-medium:     #9a5c05;
-  --sev-high:       #8c3a2b;
-  --sev-critical:   #8f1116;
 
   --font-sans: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
   --font-mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
@@ -84,8 +53,53 @@
      dejaba el menú desplegable en blanco sobre blanco. */
   color-scheme: light;
 }
-[data-theme="dark"] {
-  color-scheme: dark;
+
+/* El esquema que el navegador usa para lo que pinta ÉL (desplegables, barras de
+   scroll, autocompletado) depende del MODO, no de la paleta: las cuatro
+   combinaciones comparten estas dos reglas. */
+[data-theme="dark"] { color-scheme: dark; }
+
+/* ── Paleta «papel» ──────────────────────────────────────────────────────────
+   La identidad original y la de partida. Vive en su propio bloque, no en
+   `:root`, para que la muestra de la tarjeta de Configuración pueda pintarse
+   con `data-palette="papel"` y enseñar SUS colores aunque la activa sea otra.
+   `index.html` la declara en el <html> para que el primer pintado tenga tokens
+   antes de que arranque el JavaScript. */
+[data-palette="papel"] {
+  --shell:          #fbf9f6;
+  --surface:        #ffffff;
+  --inset:          #faf7f3;
+  --ink:            #1b1815;
+  --ink-2:          #55504a;
+  --ink-3:          #7a736b;
+  --ink-4:          #a39a90;
+  --ink-5:          #b8b0a6;
+  --ink-6:          #c3bbb1;
+  --hair:           #e5dfd6;
+  --hair-2:         #f0ebe4;
+  --line:           #d8d2c9;
+  --track:          #ece6de;
+  --accent:         #8c3a2b;
+  --accent-hover:   #6d2b1f;
+  --accent-soft:    #d8c4bd;
+  --accent-wash:    #f4eeea;
+  --ok:             #4a7c59;
+  --pending:        #ddd6cc;
+  --next:           #c0a49c;
+  --invert-bg:      #1b1815;
+  --invert-fg:      #ffffff;
+  --code-bg:        #12100e;
+  --code-fg:        #f4f1ec;
+  --code-dim:       #8a827a;
+  --danger:         #8f1116;
+  --warning:        #9a5c05;
+  --sev-low:        #7a736b;
+  --sev-medium:     #9a5c05;
+  --sev-high:       #8c3a2b;
+  --sev-critical:   #8f1116;
+}
+
+[data-palette="papel"][data-theme="dark"] {
 
   --shell:          #101214;
   --surface:        #16191c;
@@ -130,6 +144,103 @@
   --sev-high:       #d1745c;
   --sev-critical:   #ff7d74;
 }
+
+/* ── Paleta «acero» ──────────────────────────────────────────────────────────
+   Segunda identidad, gris frío y azul de instrumento. La paleta es un eje
+   INDEPENDIENTE del claro/oscuro: `data-palette` elige el temperamento y
+   `data-theme` elige el modo, así que hay cuatro combinaciones y ninguna
+   duplica reglas de componente — todo pasa por los mismos tokens.
+
+   Va DESPUÉS del bloque oscuro a propósito: `[data-palette]` y `[data-theme]`
+   tienen la misma especificidad, así que el orden de aparición es lo que
+   decide, y la combinación de los dos (0,2,0) gana a ambos.
+
+   Ningún valor coincide con la paleta de Tailwind; se comprobó uno a uno contra
+   sus rampas de grises, azules, verdes, rojos y ámbares. */
+[data-palette="acero"] {
+  --shell:          #f7f8f9;
+  --surface:        #ffffff;
+  --inset:          #f1f3f5;
+
+  --ink:            #16191c;
+  --ink-2:          #434c53;
+  --ink-3:          #69737b;
+  --ink-4:          #98a1a8;
+  --ink-5:          #b0b8be;
+  --ink-6:          #c2c8cd;
+
+  --hair:           #e2e6ea;
+  --hair-2:         #eef1f3;
+  --line:           #ced4d9;
+  --track:          #e6eaee;
+
+  --accent:         #2e5f8a;
+  --accent-hover:   #224a6d;
+  --accent-soft:    #b9cbdb;
+  --accent-wash:    #eef3f8;
+
+  --ok:             #3d7a5a;
+  --pending:        #d5dbe0;
+  --next:           #a9bccc;
+
+  --invert-bg:      #16191c;
+  --invert-fg:      #ffffff;
+
+  --code-bg:        #0d1013;
+  --code-fg:        #eef1f3;
+  --code-dim:       #7d868d;
+
+  --danger:         #9b1c22;
+  --warning:        #8a5709;
+
+  --sev-low:        #69737b;
+  --sev-medium:     #8a5709;
+  --sev-high:       #2e5f8a;
+  --sev-critical:   #9b1c22;
+}
+
+[data-palette="acero"][data-theme="dark"] {
+  --shell:          #0e1115;
+  --surface:        #151a1f;
+  --inset:          #1c232a;
+
+  --ink:            #e6e9ec;
+  --ink-2:          #aab3ba;
+  --ink-3:          #838d95;
+  --ink-4:          #69737b;
+  --ink-5:          #555e65;
+  --ink-6:          #464e55;
+
+  --hair:           #242c33;
+  --hair-2:         #1e252b;
+  --line:           #323b43;
+  --track:          #2a333a;
+
+  --accent:         #78a9d4;
+  --accent-hover:   #93bde2;
+  --accent-soft:    #3a5570;
+  --accent-wash:    #152230;
+
+  --ok:             #6bab86;
+  --pending:        #373f46;
+  --next:           #4c6c8a;
+
+  --invert-bg:      #e6e9ec;
+  --invert-fg:      #151a1f;
+
+  --code-bg:        #080a0c;
+  --code-fg:        #eef1f3;
+  --code-dim:       #7d868d;
+
+  --danger:         #f08a8a;
+  --warning:        #d99114;
+
+  --sev-low:        #838d95;
+  --sev-medium:     #d99114;
+  --sev-high:       #78a9d4;
+  --sev-critical:   #f08a8a;
+}
+
 * { box-sizing: border-box; }
 html, body, #root {
   height: 100%;
@@ -2115,6 +2226,36 @@ select option:disabled { color: var(--ink-5); }
 }
 .kv-k { color: var(--ink-2); }
 .kv-v { font-family: var(--font-mono); font-size: var(--fs-2); color: var(--ink); text-align: right; }
+/* ── Elección de paleta ──────────────────────────────────────────────────────
+   Se elige por cómo se ve, así que la tarjeta enseña la paleta REAL en vez de
+   un icono o un nombre. La muestra se pinta con los tokens de esa paleta
+   —`data-palette` en el propio elemento— así que si mañana se retoca un color,
+   la muestra se retoca sola: no hay una copia de los hexes aquí. */
+.palette-choices { display: flex; gap: 12px; flex-wrap: wrap; }
+.palette-choice {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  min-width: 260px;
+  padding: 13px 15px;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+.palette-choice:hover { border-color: var(--accent); }
+.palette-choice.is-active { border-color: var(--accent); background: var(--accent-wash); }
+.palette-swatch { display: flex; flex-shrink: 0; border: 1px solid var(--hair); }
+.palette-swatch > span { width: 15px; height: 30px; }
+.palette-swatch-shell { background: var(--shell); }
+.palette-swatch-ink { background: var(--ink); }
+.palette-swatch-accent { background: var(--accent); }
+.palette-swatch-ok { background: var(--ok); }
+.palette-choice-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.palette-choice-name { font-size: var(--fs-2); font-weight: 600; color: var(--ink); }
+.palette-choice-desc { font-size: var(--fs-1); color: var(--ink-3); line-height: 1.45; }
+
 .theme-choices { display: flex; gap: 10px; }
 .theme-choice {
   font-family: var(--font-mono);
