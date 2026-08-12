@@ -42,7 +42,7 @@ function fmtDate(iso: string | null | undefined): string {
   });
 }
 
-// FASE 5 · Documentos. La lectura de los HALLAZGOS que el agente persiste vía
+// FASE 5 · Hallazgos. La lectura de los HALLAZGOS que el agente persiste vía
 // `record_finding`: cada uno una tarjeta; al abrirla, el detalle completo con su
 // procedencia (run que lo sostiene, evidencia, hash del artefacto) y su
 // correlación ATT&CK. Es una fase SEPARADA del «Informe pericial» (el
@@ -116,7 +116,7 @@ export function FindingsPage({ onNavigate }: FindingsPageProps) {
 
   usePublishShellHeader(
     {
-      title: "Documentos",
+      title: "Hallazgos",
       meta: activeCase
         ? findings.length === 0
           ? "sin hallazgos todavía"

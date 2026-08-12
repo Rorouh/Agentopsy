@@ -107,7 +107,7 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
       title: "Investigación",
       meta: activeCase
         ? evidenceName
-          ? `${evidenceName} · ✓ ${activeEvidence?.sha256.slice(0, 8)}`
+          ? `${evidenceName} · ${activeEvidence?.sha256.slice(0, 8)}`
           : "sin evidencia registrada todavía"
         : "sin caso seleccionado",
       action:

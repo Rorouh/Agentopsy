@@ -31,8 +31,8 @@ export interface NavItem {
 
 // Las siete fases del caso, en el orden del flujo pericial: registrar la
 // evidencia → investigarla → correlacionar → reconstruir la cronología →
-// consultar los hallazgos (Documentos) → extraer los grafos de relaciones →
-// redactar el informe.
+// consultar los hallazgos → extraer los grafos de relaciones → redactar el
+// informe.
 export interface PhaseItem {
   id: ViewId;
   label: string;
@@ -40,10 +40,9 @@ export interface PhaseItem {
   index: number;
 }
 
-// «Documentos» (galería de hallazgos con detalle) e «Informe pericial» (el
-// informe final firmable, con sus borradores) son fases SEPARADAS: la primera
-// es la lectura de los hallazgos que persiste el agente; la segunda, el
-// entregable definitivo. «Grafos» va entre las dos porque es material del
+// «Hallazgos» (la galería con su detalle) e «Informe pericial» (el informe final
+// firmable, con sus borradores) son fases SEPARADAS: la primera es la lectura de
+// lo que persiste el agente; la segunda, el entregable definitivo. «Grafos» va entre las dos porque es material del
 // informe que se elabora a partir de los hallazgos ya leídos, y porque cuesta
 // dinero: se decide y se lanza aparte, no de paso mientras se redacta.
 export const PHASES: PhaseItem[] = [
@@ -51,7 +50,7 @@ export const PHASES: PhaseItem[] = [
   { id: "investigation", label: "Investigación", index: 2 },
   { id: "mitre", label: "Correlación ATT&CK", index: 3 },
   { id: "timeline", label: "Timeline", index: 4 },
-  { id: "findings", label: "Documentos", index: 5 },
+  { id: "findings", label: "Hallazgos", index: 5 },
   { id: "graphs", label: "Grafos", index: 6 },
   { id: "document-viewer", label: "Informe pericial", index: 7 },
 ];
@@ -68,9 +67,14 @@ export const NAV_ITEMS: NavItem[] = [
 
 // Eyebrow y título que pinta la cabecera contextual del armazón cuando la
 // página no publica los suyos.
+//
+// El eyebrow sitúa la vista DENTRO del flujo pericial, así que sólo tiene algo
+// que decir en una fase. Las utilidades (Configuración, Guía) devuelven cadena
+// vacía y el armazón no pinta la línea: rotularlas «Servicio» no informaba de
+// nada que el propio título no dijera ya.
 export function viewEyebrow(view: ViewId): string {
   const phase = PHASES.find((p) => p.id === view);
-  return phase ? `Fase ${phase.index} de ${PHASES.length}` : "Servicio";
+  return phase ? `Fase ${phase.index} de ${PHASES.length}` : "";
 }
 
 export function viewLabel(view: ViewId): string {

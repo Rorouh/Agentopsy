@@ -3,6 +3,7 @@ import type { EvidenceHandle } from "../api/types";
 import { formatBytes, shortHash } from "../utils/format";
 import { DETECTED_KIND_LABEL } from "../utils/evidence";
 import { Pagination } from "./Pagination";
+import { Icon } from "../ui/Icon";
 
 const EVIDENCE_PAGE_SIZE = 10;
 // El buscador solo aparece con listas donde de verdad ayuda.
@@ -155,7 +156,7 @@ export function EvidenceTable({
                       >
                         <span>{shortHash(ev.sha256)}</span>
                         <span className="hash-copy-icon" aria-hidden="true">
-                          {copiedId === ev.evidence_id ? "✓" : "⧉"}
+                          <Icon name={copiedId === ev.evidence_id ? "check" : "copy"} size={13} />
                         </span>
                       </button>
                     </td>
@@ -165,9 +166,9 @@ export function EvidenceTable({
                       ) : lv === null ? (
                         <span className="tag tag--accent">sin verificar</span>
                       ) : lv.verified ? (
-                        <span className="tag tag--ok">✓ verificada</span>
+                        <span className="tag tag--ok"><Icon name="check" size={12} /> verificada</span>
                       ) : (
-                        <span className="tag tag--danger">⚠ hash mismatch</span>
+                        <span className="tag tag--danger"><Icon name="alert" size={12} /> hash mismatch</span>
                       )}
                     </td>
                     <td>

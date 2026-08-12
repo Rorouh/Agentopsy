@@ -47,7 +47,6 @@ export function GuidePage({ onNavigate }: GuidePageProps) {
   usePublishShellHeader(
     {
       title: "Guía de uso",
-      meta: "de la ingesta al informe final",
       action: onNavigate ? (
         <button type="button" onClick={() => onNavigate("repository")}>
           {activeCase ? "Ir a Evidencia →" : "Empezar: crear caso →"}

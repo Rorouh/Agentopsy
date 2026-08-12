@@ -11,6 +11,7 @@ import type { ViewId } from "../navigation/navItems";
 import { useTheme } from "../ThemeProvider";
 import { usePublishShellHeader } from "../layout/shellHeader";
 import { ExecutorLoginModal } from "../components/ExecutorLoginModal";
+import { Icon } from "../ui/Icon";
 
 interface SettingsPageProps {
   caps: Capabilities | null;
@@ -117,14 +118,15 @@ export function SettingsPage({ caps, version, onCapsRefresh }: SettingsPageProps
   usePublishShellHeader(
     {
       title: "Configuración",
-      meta: version ? `api v${version} · sin secretos guardados` : "sin secretos guardados",
+      // Sin meta: la versión del api y el «sin secretos» seguían visibles en la
+      // pestaña Sistema / Maletín, que es donde se consultan a propósito.
       action: onCapsRefresh ? (
         <button type="button" disabled={refreshingCaps} onClick={() => void refreshCaps()}>
           {refreshingCaps ? "Actualizando…" : "Actualizar estado"}
         </button>
       ) : undefined,
     },
-    [version, refreshingCaps, onCapsRefresh],
+    [refreshingCaps, onCapsRefresh],
   );
 
   const executors: [ExecutorId, ExecutorStatus][] = caps
@@ -319,7 +321,7 @@ export function SettingsPage({ caps, version, onCapsRefresh }: SettingsPageProps
                                       </button>
                                       {savedKey === MODEL_CONFIG_KEY[id] && (
                                         <span className="tag tag--ok" aria-live="polite">
-                                          ✓ guardado
+                                          <Icon name="check" size={12} /> guardado
                                         </span>
                                       )}
                                     </div>

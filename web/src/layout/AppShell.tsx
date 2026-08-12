@@ -46,7 +46,11 @@ export function AppShell({ activeView, onViewChange, error, children }: AppShell
       <main className="main-content">
         <header className="shell-header">
           <div className="shell-header-titles">
-            <div className="eyebrow">{viewEyebrow(activeView)}</div>
+            {/* Sin fase no hay eyebrow: la línea no se pinta vacía, que dejaría
+                el título descolgado respecto al de las demás vistas. */}
+            {viewEyebrow(activeView) && (
+              <div className="eyebrow">{viewEyebrow(activeView)}</div>
+            )}
             <h1 className="shell-header-title">{payload?.title ?? viewLabel(activeView)}</h1>
           </div>
           <div className="shell-header-right">

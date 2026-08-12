@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import type { ExecutorId, ExecutorLoginCapability, ExecutorLoginStart } from "../api/types";
 import { Modal } from "../ui/Modal";
+import { Icon } from "../ui/Icon";
 
 // Conecta un ejecutor CLI cloud (Codex/Claude) DESDE LA WEB, sin abrir terminal.
 // El backend relaya el flujo device/OAuth del propio CLI; este modal muestra la
@@ -208,8 +209,9 @@ export function ExecutorLoginModal({
                   style={{
                     flex: 1,
                     padding: "8px 10px",
-                    background: "var(--surface-2, rgba(127,127,127,0.12))",
-                    borderRadius: 6,
+                    background: "var(--code-bg)",
+                    color: "var(--code-fg)",
+                    borderRadius: 0,
                     overflowX: "auto",
                     whiteSpace: "nowrap",
                   }}
@@ -217,7 +219,7 @@ export function ExecutorLoginModal({
                   {capability.manual_command}
                 </code>
                 <button type="button" className="link-action" onClick={() => copy("url", capability.manual_command)}>
-                  {copied === "url" ? "✓" : "Copiar"}
+                  {copied === "url" ? <Icon name="check" size={12} /> : "Copiar"}
                 </button>
               </div>
             </div>
@@ -257,7 +259,7 @@ export function ExecutorLoginModal({
                   {start.url}
                 </a>
                 <button type="button" className="link-action" onClick={() => copy("url", start.url)}>
-                  {copied === "url" ? "✓" : "Copiar"}
+                  {copied === "url" ? <Icon name="check" size={12} /> : "Copiar"}
                 </button>
               </div>
             </div>
@@ -269,17 +271,20 @@ export function ExecutorLoginModal({
                   <code
                     style={{
                       flex: 1,
-                      fontSize: 23,
+                      fontSize: "var(--fs-5)",
                       letterSpacing: 2,
                       padding: "8px 10px",
-                      background: "var(--surface-2, rgba(127,127,127,0.12))",
-                      borderRadius: 6,
+                      // --surface-2 nunca existió: sobrevivía por su fallback
+                      // gris. Es un bloque de código, y para eso están estos.
+                      background: "var(--code-bg)",
+                      color: "var(--code-fg)",
+                      borderRadius: 0,
                     }}
                   >
                     {start.code}
                   </code>
                   <button type="button" className="link-action" onClick={() => copy("code", start.code!)}>
-                    {copied === "code" ? "✓" : "Copiar"}
+                    {copied === "code" ? <Icon name="check" size={12} /> : "Copiar"}
                   </button>
                 </div>
                 <span className="field-hint">
@@ -349,7 +354,7 @@ export function ExecutorLoginModal({
 
         {phase === "logged_in" && (
           <div className="exec-login-ok" role="status" aria-live="polite">
-            ✓ {executorName} conectado. La sesión persiste en el volumen{" "}
+            <Icon name="check" size={13} /> {executorName} conectado. La sesión persiste en el volumen{" "}
             <code>forensia-cli-auth</code>.
           </div>
         )}

@@ -1,8 +1,8 @@
 import type { Case } from "../api/types";
 import { useActiveCase } from "../state/activeCase";
 import { useCaseFacts } from "../state/caseFacts";
-import { useTheme } from "../ThemeProvider";
 import { PHASES, UTILITIES, type ViewId } from "../navigation/navItems";
+import { Icon } from "../ui/Icon";
 
 interface SidebarProps {
   activeView: ViewId;
@@ -31,7 +31,6 @@ export function Sidebar({
   // api ni mantiene una copia que pueda quedarse vieja tras editar el caso. Las
   // cifras salen del MISMO hook que la Guía, para que no se contradigan.
   const { activeCase } = useActiveCase();
-  const { theme, toggle } = useTheme();
   const facts = useCaseFacts();
 
   // Estado del CASO por fase. Sin caso, todo pendiente: no hay nada que
@@ -91,49 +90,66 @@ export function Sidebar({
     <aside className="sidebar">
       <div className="brand-section">
         <div className="brand-name">AGENTOPSY</div>
-        <div className="brand-tagline">Análisis post-mortem</div>
       </div>
 
+      {/* Elegir caso y crear caso son el MISMO momento, así que viven juntos y
+          en un solo control. El nombre es el selector: la posición más el icono
+          ya dicen «esto se cambia», de modo que la etiqueta «Caso» sobraba. El
+          perfil (unix/windows) tampoco se repite aquí — su sitio es Evidencia,
+          junto a la huella de triage que lo justifica. Y el estado sólo se
+          enuncia cuando es CERRADO: abierto es lo normal y no explica nada,
+          cerrado es lo que explica que no te deje registrar evidencia. */}
       <div className="sidebar-case">
-        <div className="eyebrow">Caso</div>
-        {activeCase ? (
-          <>
-            <div className="sidebar-case-name">{activeCase.name}</div>
-            <div className="sidebar-case-meta">
-              {activeCase.os_profile ?? "perfil sin determinar"}
-              {" · "}
-              {STATUS_LABEL[activeCase.status]}
-            </div>
-          </>
-        ) : (
-          <div className="sidebar-case-meta">Sin caso seleccionado</div>
-        )}
-        {onOpenCaseSearch && (
-          <button type="button" className="sidebar-case-action" onClick={onOpenCaseSearch}>
-            {activeCase ? "cambiar caso" : "seleccionar caso"}
-          </button>
-        )}
-      </div>
+        <button
+          type="button"
+          className="case-picker-row"
+          onClick={onOpenCaseSearch}
+          disabled={!onOpenCaseSearch}
+          // El nombre completo, por si ni con dos renglones cabe.
+          title={activeCase ? `${activeCase.name} — cambiar de caso` : "Elegir un caso"}
+        >
+          <span className={`case-picker-name${activeCase ? "" : " is-empty"}`}>
+            {activeCase ? activeCase.name : "Elige un caso"}
+          </span>
+          {activeCase?.status === "closed" && (
+            <span className="case-picker-closed">{STATUS_LABEL.closed}</span>
+          )}
+          <svg
+            className="case-picker-icon"
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <polyline points="8 9 12 5 16 9" />
+            <polyline points="16 15 12 19 8 15" />
+          </svg>
+        </button>
 
-      {onOpenNewCase && (
-        <div className="sidebar-newcase">
-          <button type="button" className="btn-newcase" onClick={onOpenNewCase}>
+        {onOpenNewCase && (
+          <button type="button" className="case-new-action" onClick={onOpenNewCase}>
             <svg
-              width="15"
-              height="15"
+              width="13"
+              height="13"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              strokeWidth="1.8"
+              strokeWidth="2"
               strokeLinecap="round"
+              aria-hidden="true"
             >
               <line x1="12" y1="5" x2="12" y2="19" />
               <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
-            Nuevo caso
+            crear caso
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       <div className="sidebar-phases">
         <div className="eyebrow">Fases del caso</div>
@@ -149,7 +165,7 @@ export function Sidebar({
               <div className="phase-row" key={p.id}>
                 <div className="phase-marker">
                   <span className={`phase-dot phase-dot--${state}`}>
-                    {state === "done" ? "✓" : ""}
+                    {state === "done" && <Icon name="check" size={10} />}
                   </span>
                   {i < PHASES.length - 1 && (
                     <span className={`phase-line ${state === "done" ? "is-done" : ""}`} />
@@ -184,11 +200,6 @@ export function Sidebar({
         ))}
       </div>
 
-      <div className="sidebar-theme">
-        <button type="button" className="theme-toggle" onClick={toggle} title="Cambiar el tema">
-          {theme === "dark" ? "○ claro" : "● oscuro"}
-        </button>
-      </div>
     </aside>
   );
 }

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent } from "react";
 import { api } from "../api/client";
 import type { Case } from "../api/types";
 import { Modal } from "../ui/Modal";
@@ -117,9 +118,52 @@ export function CaseSearchModal({
   const safePage = Math.min(page, pageCount);
   const pageItems = visible.slice((safePage - 1) * CASE_PAGE_SIZE, safePage * CASE_PAGE_SIZE);
 
+  // Pulsar una fila SELECCIONA y el diálogo SIGUE ABIERTO. Es a la vez buscador
+  // y administración: si cerrase al primer clic, editar o cerrar el caso que
+  // acabas de elegir obligaría a reabrirlo. Cerrar es explícito — Esc, la ×, o
+  // Intro sobre la fila del cursor, que es lo que el pie viene anunciando.
   const pick = (caseId: string) => {
     onSelect(caseId);
+  };
+
+  const pickAndClose = (caseId: string) => {
+    onSelect(caseId);
     onClose();
+  };
+
+  // Cursor de teclado. Vive sobre `visible` (la lista filtrada y ordenada), no
+  // sobre la página, para que bajar más allá del último de la página avance de
+  // página en vez de topar contra un muro.
+  const [cursor, setCursor] = useState(0);
+  // El cursor SÓLO se pinta si estás navegando con el teclado. Si no, la primera
+  // fila aparecería resaltada nada más abrir, indistinguible de un hover pegado
+  // o de una selección que nadie ha hecho.
+  const [keyboardNav, setKeyboardNav] = useState(false);
+  useEffect(() => {
+    setCursor(0);
+    setKeyboardNav(false);
+  }, [query, filter, sort, open]);
+  // Mantener el cursor dentro de la página que se está viendo.
+  useEffect(() => {
+    const target = Math.floor(cursor / CASE_PAGE_SIZE) + 1;
+    setPage((p) => (p === target ? p : target));
+  }, [cursor]);
+
+  const onListKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (pane !== "search" || visible.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setKeyboardNav(true);
+      setCursor((i) => Math.min(i + 1, visible.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setKeyboardNav(true);
+      setCursor((i) => Math.max(i - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const target = visible[cursor];
+      if (target) pickAndClose(target.id);
+    }
   };
 
   const startEdit = () => {
@@ -252,7 +296,9 @@ export function CaseSearchModal({
       }
     >
       {pane === "search" && (
-        <>
+        // El teclado se escucha en TODO el panel, no sólo en el input: bajar por
+        // la lista tiene que seguir funcionando después de pulsar un filtro.
+        <div onKeyDown={onListKeyDown}>
           <div className="case-search-field">
             <label className="visually-hidden" htmlFor="case-search-input">
               Buscar casos
@@ -327,72 +373,93 @@ export function CaseSearchModal({
               </div>
             ) : (
               <div className="case-rows">
-                {pageItems.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    className={`case-row${c.id === activeCaseId ? " is-active" : ""}`}
-                    aria-current={c.id === activeCaseId ? "true" : undefined}
-                    onClick={() => pick(c.id)}
-                  >
-                    <span className="case-row-main">
-                      <span className="case-row-name">{c.name}</span>
-                      <span className="case-row-meta">
-                        {c.examiner} · {formatDate(c.created_at)}
-                      </span>
-                    </span>
-                    <span
-                      className={`tag${c.status === "active" ? " tag--ok" : " tag--muted"}`}
+                {pageItems.map((c, i) => {
+                  const isActive = c.id === activeCaseId;
+                  const isCursor = (safePage - 1) * CASE_PAGE_SIZE + i === cursor;
+                  return (
+                    // La fila NO es un <button>: la del caso activo contiene sus
+                    // propias acciones, y anidar botones es HTML inválido.
+                    <div
+                      key={c.id}
+                      role="option"
+                      aria-selected={isActive}
+                      tabIndex={-1}
+                      className={`case-row${isActive ? " is-active" : ""}${
+                        isCursor && keyboardNav ? " is-cursor" : ""
+                      }${c.status === "closed" ? " is-closed" : ""}`}
+                      // Tocar la lista con el ratón devuelve el mando al puntero:
+                      // el hover pasa a ser la única marca de «dónde estoy».
+                      onMouseEnter={() => keyboardNav && setKeyboardNav(false)}
+                      onClick={() => pick(c.id)}
                     >
-                      {c.status === "active" ? "abierto" : "cerrado"}
-                    </span>
-                  </button>
-                ))}
+                      <span className="case-row-main">
+                        <span className="case-row-name">{c.name}</span>
+                        <span className="case-row-meta">
+                          {c.examiner} · {formatDate(c.created_at)}
+                        </span>
+                      </span>
+
+                      {isActive ? (
+                        // Las acciones del caso viven EN su fila: actúan sobre lo
+                        // que estás mirando, y no hay que bajar a un bloque al pie
+                        // que repite el nombre.
+                        <span
+                          className="case-row-actions"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            type="button"
+                            className="link-action"
+                            disabled={busy}
+                            onClick={startEdit}
+                          >
+                            Editar
+                          </button>
+                          <button
+                            type="button"
+                            className="link-action"
+                            disabled={busy}
+                            onClick={() => void toggleClosed()}
+                          >
+                            {c.status === "active" ? "Cerrar" : "Reabrir"}
+                          </button>
+                          <button
+                            type="button"
+                            className="link-action link-action--danger"
+                            disabled={busy}
+                            onClick={() => {
+                              setDeleteConfirmName("");
+                              setActionError(null);
+                              setPane("delete");
+                            }}
+                          >
+                            Borrar
+                          </button>
+                        </span>
+                      ) : (
+                        <span
+                          className={`tag${c.status === "active" ? " tag--ok" : " tag--muted"}`}
+                        >
+                          {c.status === "active" ? "abierto" : "cerrado"}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
             {!error && <Pagination page={safePage} pageCount={pageCount} onPage={setPage} />}
           </div>
 
-          {activeCase && (
-            <div className="case-admin">
-              <div className="rule-label">
-                <span className="eyebrow">Caso activo</span>
-                <span className="rule" />
-              </div>
-              <div className="case-admin-name">{activeCase.name}</div>
-              <div className="case-admin-actions">
-                <button type="button" className="link-action" disabled={busy} onClick={startEdit}>
-                  Editar
-                </button>
-                <button
-                  type="button"
-                  className="link-action"
-                  disabled={busy}
-                  onClick={() => void toggleClosed()}
-                >
-                  {activeCase.status === "active" ? "Cerrar caso" : "Reabrir caso"}
-                </button>
-                <button
-                  type="button"
-                  className="link-action link-action--danger"
-                  disabled={busy}
-                  onClick={() => {
-                    setDeleteConfirmName("");
-                    setActionError(null);
-                    setPane("delete");
-                  }}
-                >
-                  Eliminar
-                </button>
-              </div>
-              {actionError && (
-                <div className="error-state">
-                  <strong>No se pudo completar la acción:</strong> {actionError}
-                </div>
-              )}
+          {/* El bloque «Caso activo» que vivía aquí repetía el nombre y dejaba
+              sus acciones bajo el pliegue. Ahora están en la propia fila; sólo
+              queda el error, que no pertenece a ninguna fila concreta. */}
+          {activeCase && actionError && (
+            <div className="error-state">
+              <strong>No se pudo completar la acción:</strong> {actionError}
             </div>
           )}
-        </>
+        </div>
       )}
 
       {pane === "edit" && activeCase && (

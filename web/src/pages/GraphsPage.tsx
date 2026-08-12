@@ -12,7 +12,7 @@ import { GraphSection, type GraphResumen } from "./graphs/GraphSection";
 // es un acto propio, con su modelo, su coste y su parte de resultados, no un
 // paso de la redacción. Al compartir pantalla con «Finalizar investigación»,
 // dos acciones que llaman al modelo y cuestan dinero competían por la misma
-// mirada. Aquí es la fase que separa leer los hallazgos (Documentos) de
+// mirada. Aquí es la fase que separa leer los hallazgos de
 // redactar el informe, que es justo el orden en que se usa.
 //
 // El ejecutor se elige aquí, y se guarda en la MISMA clave que el chat y el

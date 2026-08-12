@@ -1,4 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+/* IBM Plex se carga desde `src/main.tsx` (paquetes @fontsource), NO desde Google
+   Fonts: la aplicación no contacta con ningún dominio externo. No reintroducir
+   un @import remoto aquí. */
 
 /* Sistema visual del rediseño 2026-07 (docs/diseno/rediseno-2026-07/).
    Papel cálido + acento terracota, esquinas rectas y filete de 1px. La jerarquía
@@ -45,8 +47,8 @@
   /* Severidad de hallazgo: NO son alias de la paleta, tienen semántica propia.
      Se separan del acento a propósito, «crítico» no puede confundirse con
      «acción disponible». */
-  --danger:         #d92d20;
-  --warning:        #b54708;
+  --danger:         #8f1116;
+  --warning:        #9a5c05;
   --focus-ring:     var(--accent);
 
   /* Los cuatro grados de severidad del raíl del incidente. Van en LITERALES y no
@@ -54,12 +56,23 @@
      color, y una imagen no lleva variables CSS dentro. El color acompaña, no
      sustituye: cada marca lleva además su etiqueta escrita. */
   --sev-low:        #7a736b;
-  --sev-medium:     #b54708;
+  --sev-medium:     #9a5c05;
   --sev-high:       #8c3a2b;
-  --sev-critical:   #d92d20;
+  --sev-critical:   #8f1116;
 
   --font-sans: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
   --font-mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+
+  /* Escala tipográfica: CINCO pasos, sin medios píxeles. Cualquier `font-size`
+     literal en este fichero es un bug — si un tamaño no encaja, el problema es
+     la jerarquía, no la escala. Dos excepciones legítimas, ambas comentadas
+     donde aparecen: el tamaño raíz de html/body, y los glifos que se dimensionan
+     como ICONO y no como texto (la × de cerrar, el caret de un desplegable). */
+  --fs-1: 12px;   /* versalitas monoespaciadas, contadores, metadatos, chips */
+  --fs-2: 14px;   /* texto secundario, celdas de tabla, ayuda contextual     */
+  --fs-3: 16px;   /* cuerpo de lectura: informe, chat, hallazgos             */
+  --fs-4: 19px;   /* títulos de página y de sección                          */
+  --fs-5: 26px;   /* cifras de métrica: el único display de la interfaz      */
   /* El rediseño es de esquinas rectas; el radio solo sobrevive donde el mock lo
      dibuja: el botón «Nuevo caso» y las píldoras de ámbito de los motores. */
   --radius-pill: 999px;
@@ -106,16 +119,16 @@
   --code-fg:        #f4f1ec;
   --code-dim:       #8a827a;
 
-  --danger:         #f97066;
-  --warning:        #f79009;
+  --danger:         #ff7d74;
+  --warning:        #d99114;
 
   /* Severidad en oscuro. `high` y `critical` se separan MÁS que en claro: sobre
      fondo oscuro un terracota y un rojo se acercan, y son los dos grados que un
      perito distingue de un vistazo. */
   --sev-low:        #8f8880;
-  --sev-medium:     #f79009;
+  --sev-medium:     #d99114;
   --sev-high:       #d1745c;
-  --sev-critical:   #f97066;
+  --sev-critical:   #ff7d74;
 }
 * { box-sizing: border-box; }
 html, body, #root {
@@ -125,7 +138,9 @@ html, body, #root {
   background-color: var(--shell);
   color: var(--ink);
   font-family: var(--font-sans);
-  font-size: 18.5px;
+  /* Tamaño RAÍZ, no un paso de la escala: es la referencia de `em`/`rem` y el
+     valor que el usuario ajusta desde su navegador. No sustituir por --fs-*. */
+  font-size: 18px;
   -webkit-font-smoothing: antialiased;
 }
 .app {
@@ -135,6 +150,20 @@ html, body, #root {
   width: 100vw;
   overflow: hidden;
   background: var(--shell);
+}
+
+/* Anillo de foco de TODA la interfaz. Sin esto el navegador pinta el suyo —
+   azul, ajeno a la paleta — y además lo deja puesto después de un clic de ratón,
+   que es lo que dejaba «TODOS» enmarcado sin motivo. `:focus-visible` lo reserva
+   a la navegación por teclado, que es donde hace falta: quitar el anillo sin
+   reponerlo dejaría la app inusable sin ratón.
+   Va en `:where()` a propósito: especificidad CERO, así cualquier componente que
+   quiera su propio anillo lo sobreescribe sin pelear. Los campos de texto se
+   quedan fuera: ya señalan el foco con el color del borde. */
+:where(button, a, summary, [role="option"], [role="tab"]):focus { outline: none; }
+:where(button, a, summary, [role="option"], [role="tab"]):focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
 /* ── Sidebar: el ESTADO DEL CASO, no un menú ─────────────────────────────── */
@@ -151,78 +180,105 @@ html, body, #root {
    todo el rediseño. */
 .eyebrow {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-1);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--ink-4);
 }
+/* El hueco hasta el filete iguala al que hay debajo (15px de .sidebar-case), y
+   no 22 como cuando la línea «ANÁLISIS POST-MORTEM» ocupaba el espacio. */
 .brand-section {
-  padding: 0 24px 22px;
+  padding: 0 24px 15px;
 }
 .brand-name {
   font-family: var(--font-mono);
-  font-size: 17px;
+  font-size: var(--fs-4);
   font-weight: 600;
   letter-spacing: 0.26em;
+  /* Sin interlineado el filete se apoya en las mayúsculas, no en la holgura
+     que el monoespaciado reserva para descendentes que este texto no tiene. */
+  line-height: 1;
   color: var(--ink);
 }
-.brand-tagline {
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--ink-4);
-  margin-top: 6px;
-}
+/* Bloque de caso: UN control para elegir/cambiar y una acción secundaria para
+   crear. El botón grande de píldora que había aquí era la única esquina
+   redondeada de la interfaz y competía con el propio caso por la atención. */
 .sidebar-case {
   margin: 0 24px;
   padding: 15px 0;
   border-top: 1px solid var(--hair);
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
 }
-.sidebar-case-name {
-  font-size: 16px;
+.case-picker-row {
+  width: 100%;
+  display: flex;
+  /* Arriba, no al centro: con un nombre de dos renglones el icono quedaría
+     flotando a media altura, lejos de la primera línea que se lee. */
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  /* Compensa el padding para que el nombre siga alineado con el resto del
+     sidebar: el recuadro crece hacia fuera, el texto no se mueve. */
+  margin: 0 -10px;
+  border: 1px solid var(--hair);
+  border-radius: 0;
+  background: var(--surface);
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.case-picker-row:hover:not(:disabled) { border-color: var(--accent); }
+.case-picker-row:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.case-picker-row:disabled { cursor: default; }
+.case-picker-name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-3);
   font-weight: 600;
   line-height: 1.35;
   color: var(--ink);
+  /* Hasta DOS renglones. Un nombre corto sigue ocupando uno y el bloque no
+     crece; sólo los largos usan el segundo. Sin esto, «Exfiltración RRHH sede
+     Barcelona» se cortaba y el sidebar dejaba de decir en qué caso estás. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
 }
-.sidebar-case-meta {
+/* Sin caso el control es el MISMO: elegir el primero y cambiar de caso no son
+   dos flujos distintos, así que no merecen dos sitios. */
+.case-picker-name.is-empty { font-weight: 400; color: var(--ink-4); }
+/* «abierto» no se enuncia: es el estado normal y no explica nada. «cerrado» sí,
+   porque es lo que explica que la vista de Evidencia no deje registrar. */
+.case-picker-closed {
+  flex-shrink: 0;
   font-family: var(--font-mono);
-  font-size: 13px;
-  color: var(--ink-3);
+  font-size: var(--fs-1);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--ink-4);
 }
-.sidebar-case-action {
-  align-self: flex-start;
-  margin-top: 4px;
-  padding: 0;
+.case-picker-icon { flex-shrink: 0; color: var(--ink-4); }
+.case-picker-row:hover:not(:disabled) .case-picker-icon { color: var(--accent); }
+.case-new-action {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  margin-top: 11px;
+  padding: 11px 0 0;
   border: none;
+  border-top: 1px solid var(--hair-2);
   background: none;
   cursor: pointer;
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: var(--fs-1);
   color: var(--accent);
-}
-.sidebar-case-action:hover { color: var(--accent-hover); text-decoration: underline; }
-.sidebar-newcase { padding: 16px 24px 0; }
-.btn-newcase {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--line);
-  background: var(--inset);
-  color: var(--ink);
-  font-family: var(--font-sans);
-  font-size: 16px;
-  font-weight: 500;
-  cursor: pointer;
   text-align: left;
 }
-.btn-newcase:hover { border-color: var(--accent); color: var(--accent); }
+.case-new-action:hover { color: var(--accent-hover); }
+.case-new-action:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .sidebar-phases { padding: 20px 24px 0; }
 .sidebar-phases .eyebrow { margin-bottom: 16px; }
 .phase-rail { display: flex; flex-direction: column; }
@@ -237,7 +293,7 @@ html, body, #root {
   display: grid;
   place-items: center;
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: var(--fs-1);
   color: var(--invert-fg);
   background: transparent;
 }
@@ -267,11 +323,11 @@ html, body, #root {
 /* Dónde estás TÚ se dice con COLOR, no con una barra: el filete vertical
    competía visualmente con el punto de estado del caso, que va justo al lado.
    Mismo criterio que `.utility-item.is-active`. */
-.phase-label { font-size: 15.5px; line-height: 1.3; font-weight: 400; color: var(--ink-3); }
+.phase-label { font-size: var(--fs-3); line-height: 1.3; font-weight: 400; color: var(--ink-3); }
 .phase-button--done .phase-label { font-weight: 500; color: var(--ink-2); }
 .phase-button--current .phase-label { font-weight: 600; color: var(--accent); }
 .phase-button.is-selected .phase-label { font-weight: 600; color: var(--ink); }
-.phase-meta { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-4); }
+.phase-meta { font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-4); }
 .phase-button.is-selected .phase-meta { color: var(--ink-2); }
 .phase-button:hover .phase-label { color: var(--accent); }
 .phase-button--current .phase-meta { color: var(--accent); }
@@ -290,25 +346,13 @@ html, body, #root {
   text-align: left;
   padding: 7px 0;
   font-family: var(--font-sans);
-  font-size: 15.5px;
+  font-size: var(--fs-3);
   color: var(--ink-3);
 }
 .utility-item:hover { color: var(--accent); }
 .utility-item.is-active { color: var(--ink); font-weight: 600; }
-.sidebar-theme {
-  margin: 16px 24px 0;
-  padding-top: 15px;
-  border-top: 1px solid var(--hair);
-}
-.theme-toggle {
-  border: none;
-  background: none;
-  padding: 0;
-  cursor: pointer;
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  color: var(--accent);
-}
+/* El tema se cambia SOLO desde Configuración → Apariencia (.theme-choices). El
+   conmutador que había al pie del sidebar duplicaba ese control. */
 
 /* ── Cabecera contextual: una sola para toda la app ──────────────────────── */
 .shell-header {
@@ -323,14 +367,14 @@ html, body, #root {
 }
 .shell-header-titles { min-width: 0; }
 .shell-header-title {
-  font-size: 24px;
+  font-size: var(--fs-5);
   font-weight: 600;
   letter-spacing: -0.015em;
   margin: 7px 0 0;
   color: var(--ink);
 }
 .shell-header-right { display: flex; align-items: center; gap: 22px; }
-.shell-header-meta { font-family: var(--font-mono); font-size: 13px; color: var(--ink-3); }
+.shell-header-meta { font-family: var(--font-mono); font-size: var(--fs-2); color: var(--ink-3); }
 .shell-header-action { display: flex; gap: 10px; }
 /* La acción de cabecera es única e invertida: el elemento de mayor peso visual
    de la pantalla. */
@@ -341,7 +385,7 @@ html, body, #root {
   background: var(--invert-bg);
   color: var(--invert-fg);
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: var(--fs-1);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   padding: 10px 18px;
@@ -373,12 +417,12 @@ html, body, #root {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* ── Rótulos y filetes ───────────────────────────────────────────────────── */
-.eyebrow--section { font-size: 11.5px; }
+.eyebrow--section { font-size: var(--fs-1); }
 /* «Etiqueta + filete que recorre lo que queda de ancho»: el patrón que el mock
    repite en todas las vistas para abrir una sección. */
 .rule-label { display: flex; align-items: baseline; gap: 12px; }
 .rule { flex: 1; height: 1px; background: var(--hair); }
-.rule-count { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-4); }
+.rule-count { font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-4); }
 .mono { font-family: var(--font-mono); }
 
 /* ── Contenedor de vista ─────────────────────────────────────────────────── */
@@ -394,10 +438,10 @@ html, body, #root {
 /* ── Cifras del caso ─────────────────────────────────────────────────────── */
 .stat-row { display: flex; gap: 56px; flex-wrap: wrap; }
 .stat { display: flex; flex-direction: column; gap: 5px; }
-.stat-value { font-family: var(--font-mono); font-size: 30px; font-weight: 500; color: var(--ink); }
+.stat-value { font-family: var(--font-mono); font-size: var(--fs-5); font-weight: 500; color: var(--ink); }
 .stat-value--ok { color: var(--ok); }
 .stat-value--accent { color: var(--accent); }
-.stat-text { font-size: 17px; font-weight: 500; padding-top: 7px; color: var(--ink); }
+.stat-text { font-size: var(--fs-4); font-weight: 500; padding-top: 7px; color: var(--ink); }
 
 /* ── Paneles punteados: alta de evidencia y vacíos EXPLICATIVOS ──────────── */
 .dashed-panel {
@@ -411,17 +455,17 @@ html, body, #root {
 }
 .dashed-panel.is-dragging { border-color: var(--accent); border-style: solid; }
 .dashed-panel-main { flex: 1; min-width: 260px; }
-.dashed-panel-title { font-size: 17px; font-weight: 600; color: var(--ink); }
-.dashed-panel-body { font-size: 15px; color: var(--ink-3); margin-top: 5px; line-height: 1.5; }
+.dashed-panel-title { font-size: var(--fs-4); font-weight: 600; color: var(--ink); }
+.dashed-panel-body { font-size: var(--fs-3); color: var(--ink-3); margin-top: 5px; line-height: 1.5; }
 .empty-rail {
   border: 1px dashed var(--line);
   background: var(--inset);
   padding: 40px 32px;
   max-width: 620px;
 }
-.empty-rail-title { font-size: 17px; font-weight: 600; color: var(--ink); }
+.empty-rail-title { font-size: var(--fs-4); font-weight: 600; color: var(--ink); }
 .empty-rail-body {
-  font-size: 15.5px;
+  font-size: var(--fs-3);
   line-height: 1.6;
   color: var(--ink-3);
   margin-top: 7px;
@@ -434,7 +478,7 @@ html, body, #root {
 .action-accent,
 .action-stop {
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: var(--fs-1);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   padding: 10px 18px;
@@ -463,7 +507,7 @@ html, body, #root {
 }
 .link-action {
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: var(--fs-1);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--accent);
@@ -477,7 +521,7 @@ html, body, #root {
 .link-action--danger { color: var(--danger); }
 .link-quiet {
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--fs-2);
   color: var(--ink-3);
   border: none;
   background: none;
@@ -487,7 +531,7 @@ html, body, #root {
 .link-quiet:disabled { color: var(--ink-6); cursor: not-allowed; }
 .toggle-link {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-1);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink-4);
@@ -500,7 +544,7 @@ html, body, #root {
 .toggle-link.is-on { color: var(--accent); border-bottom-color: var(--accent); }
 .chip-option {
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--fs-2);
   padding: 7px 13px;
   border: 1px solid var(--line);
   border-radius: 0;
@@ -517,7 +561,7 @@ html, body, #root {
 .tab-row--inline { gap: 18px; }
 .tab {
   font-family: var(--font-sans);
-  font-size: 16px;
+  font-size: var(--fs-3);
   padding: 0 0 11px;
   color: var(--ink-3);
   border: none;
@@ -526,12 +570,12 @@ html, body, #root {
   box-shadow: inset 0 -2px 0 transparent;
 }
 .tab.is-active { font-weight: 600; color: var(--ink); box-shadow: inset 0 -2px 0 var(--accent); }
-.tab-count { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-4); margin-left: 6px; }
+.tab-count { font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-4); margin-left: 6px; }
 .tab.is-active .tab-count { color: var(--accent); }
 .bar-note {
   margin-left: auto;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-1);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--ink-4);
@@ -543,7 +587,7 @@ html, body, #root {
 .data-table th {
   text-align: left;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-1);
   font-weight: 500;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -559,15 +603,15 @@ html, body, #root {
 }
 .data-table th:last-child,
 .data-table td:last-child { padding-right: 0; text-align: right; }
-.data-table .cell-mono { font-family: var(--font-mono); font-size: 15px; color: var(--ink); white-space: nowrap; }
-.data-table .cell-text { font-size: 15.5px; color: var(--ink-2); white-space: nowrap; }
-.data-table .cell-dim { font-family: var(--font-mono); font-size: 14.5px; color: var(--ink-3); white-space: nowrap; }
+.data-table .cell-mono { font-family: var(--font-mono); font-size: var(--fs-3); color: var(--ink); white-space: nowrap; }
+.data-table .cell-text { font-size: var(--fs-3); color: var(--ink-2); white-space: nowrap; }
+.data-table .cell-dim { font-family: var(--font-mono); font-size: var(--fs-2); color: var(--ink-3); white-space: nowrap; }
 /* Segunda línea de una celda: el dato de apoyo (cuántos segmentos respaldan la
    evidencia, cuánto pesa el primero) sin robarle el sitio al dato principal. */
 .data-table .cell-note {
   display: block;
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: var(--fs-1);
   color: var(--ink-3);
   margin-top: 3px;
   white-space: nowrap;
@@ -576,7 +620,7 @@ html, body, #root {
 /* ── Etiquetas de estado ─────────────────────────────────────────────────── */
 .tag {
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: var(--fs-1);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink-3);
@@ -615,11 +659,11 @@ html, body, #root {
   border-radius: 0;
   padding: 0 0 9px;
   font-family: var(--font-sans);
-  font-size: 18.5px;
+  font-size: var(--fs-4);
   color: var(--ink);
   outline: none;
 }
-.field-select { font-size: 16px; padding-bottom: 7px; cursor: pointer; }
+.field-select { font-size: var(--fs-3); padding-bottom: 7px; cursor: pointer; }
 .field-input:focus,
 .field-select:focus,
 .field-textarea:focus { border-color: var(--accent); }
@@ -654,23 +698,23 @@ select option:disabled { color: var(--ink-5); }
   padding: 11px 13px;
   resize: vertical;
   font-family: var(--font-sans);
-  font-size: 16.5px;
+  font-size: var(--fs-3);
   line-height: 1.6;
   color: var(--ink);
   outline: none;
 }
-.field-hint { font-size: 14px; color: var(--ink-3); line-height: 1.5; }
+.field-hint { font-size: var(--fs-2); color: var(--ink-3); line-height: 1.5; }
 .field-optional { color: var(--ink-5); }
 /* Nota al margen: la voz con la que Agentopsy explica una regla al perito. */
 .note-rail {
   border-left: 2px solid var(--accent-soft);
   padding: 2px 0 2px 14px;
-  font-size: 15px;
+  font-size: var(--fs-3);
   line-height: 1.6;
   color: var(--ink-2);
   text-wrap: pretty;
 }
-.prose { font-size: 15.5px; line-height: 1.6; color: var(--ink-2); max-width: 680px; text-wrap: pretty; }
+.prose { font-size: var(--fs-3); line-height: 1.6; color: var(--ink-2); max-width: 680px; text-wrap: pretty; }
 
 /* ── Modal con la forma del mock ─────────────────────────────────────────── */
 /* El diálogo se monta como hijo de `.app`, que es un grid de dos columnas: sin
@@ -711,14 +755,14 @@ select option:disabled { color: var(--ink-5); }
 .modal-header h3 {
   margin: 7px 0 0;
   font-family: var(--font-sans);
-  font-size: 22px;
+  font-size: var(--fs-5);
   font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--ink);
 }
 .modal-subtitle {
   font-family: var(--font-mono);
-  font-size: 14.5px;
+  font-size: var(--fs-2);
   color: var(--ink-2);
   margin-top: 6px;
   overflow-wrap: anywhere;
@@ -726,7 +770,8 @@ select option:disabled { color: var(--ink-5); }
 .modal-close {
   flex: 0 0 auto;
   font-family: var(--font-mono);
-  font-size: 20.5px;
+  /* Glifo de icono (×): se dimensiona por el control, no por la escala. */
+  font-size: 20px;
   line-height: 1;
   color: var(--ink-4);
 }
@@ -741,11 +786,11 @@ select option:disabled { color: var(--ink-5); }
   gap: 20px;
   flex-wrap: wrap;
 }
-.modal-footer-hint { margin-left: auto; font-family: var(--font-mono); font-size: 12px; color: var(--ink-4); }
-.modal-footer-count { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-4); }
+.modal-footer-hint { margin-left: auto; font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-4); }
+.modal-footer-count { font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-4); }
 .modal-action {
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: var(--fs-1);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--invert-fg);
@@ -793,18 +838,26 @@ select option:disabled { color: var(--ink-5); }
   background: none;
   cursor: pointer;
 }
+/* DOS señales que no significan lo mismo y no pueden confundirse: la barra de
+   acento marca el caso ACTIVO (el que gobierna toda la app), y el lavado marca
+   dónde está el CURSOR del teclado, que es sólo dónde caería un Intro. */
 .case-row.is-active { box-shadow: inset 2px 0 0 var(--accent); padding-left: 14px; }
+.case-row.is-cursor { background: var(--accent-wash); }
+.case-row:hover { background: var(--accent-wash); }
+/* Un caso cerrado se atenúa ENTERO: con la etiqueta sola había que leerlas una
+   a una para distinguirlo de uno abierto. */
+.case-row.is-closed .case-row-name,
+.case-row.is-closed .case-row-meta { color: var(--ink-4); }
 .case-row-main { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
-.case-row-name { font-size: 15.5px; font-weight: 600; line-height: 1.35; color: var(--ink); }
+.case-row-name { font-size: var(--fs-3); font-weight: 600; line-height: 1.35; color: var(--ink); }
 .case-row.is-active .case-row-name { color: var(--accent); }
-.case-row-meta { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-4); }
-.case-admin { margin-top: 26px; display: flex; flex-direction: column; gap: 12px; }
-.case-admin-name { font-size: 15.5px; font-weight: 600; color: var(--ink); }
-.case-admin-actions { display: flex; gap: 22px; flex-wrap: wrap; }
+.case-row-meta { font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-4); }
+/* Acciones del caso activo, dentro de su propia fila. */
+.case-row-actions { display: flex; align-items: center; gap: 16px; flex-shrink: 0; }
 .danger-notice {
   border-left: 2px solid var(--danger);
   padding: 2px 0 2px 14px;
-  font-size: 15px;
+  font-size: var(--fs-3);
   line-height: 1.6;
   color: var(--ink-2);
   text-wrap: pretty;
@@ -825,8 +878,8 @@ select option:disabled { color: var(--ink-5); }
 }
 .source-row.is-selectable { cursor: pointer; }
 .source-row.is-selected { box-shadow: inset 2px 0 0 var(--accent); padding-left: 12px; }
-.source-row-name { font-family: var(--font-mono); font-size: 15px; color: var(--ink); overflow-wrap: anywhere; }
-.source-row-meta { font-family: var(--font-mono); font-size: 13px; color: var(--ink-3); }
+.source-row-name { font-family: var(--font-mono); font-size: var(--fs-3); color: var(--ink); overflow-wrap: anywhere; }
+.source-row-meta { font-family: var(--font-mono); font-size: var(--fs-2); color: var(--ink-3); }
 .source-row-side { margin-left: auto; }
 
 /* Progreso REAL: subida a la bandeja y hash-gate del registro son dos barras
@@ -839,18 +892,18 @@ select option:disabled { color: var(--ink-5); }
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
-  font-size: 15.5px;
+  font-size: var(--fs-3);
   color: var(--ink);
 }
-.progress-head .mono { font-size: 13px; color: var(--ink-3); }
+.progress-head .mono { font-size: var(--fs-2); color: var(--ink-3); }
 .progress-track { height: 3px; background: var(--track); }
 .progress-fill { height: 3px; background: var(--accent); transition: width 0.2s ease; }
-.progress-note { font-size: 14.5px; line-height: 1.55; color: var(--ink-3); text-wrap: pretty; }
+.progress-note { font-size: var(--fs-2); line-height: 1.55; color: var(--ink-3); text-wrap: pretty; }
 
 /* Aviso inline: informativo, NUNCA rojo. Un 409 «ya está en la bandeja» es el
    caso normal de un set EWF re-soltado, no un fallo. */
 .inline-note {
-  font-size: 14.5px;
+  font-size: var(--fs-2);
   line-height: 1.55;
   color: var(--ink-3);
   text-wrap: pretty;
@@ -858,11 +911,11 @@ select option:disabled { color: var(--ink-5); }
 .inline-note--ok { color: var(--ok); font-family: var(--font-mono); }
 .inline-note code {
   font-family: var(--font-mono);
-  font-size: 14px;
+  font-size: var(--fs-2);
   color: var(--ink-2);
 }
 
-.field-input--sm { font-size: 16px; padding-bottom: 7px; max-width: 340px; }
+.field-input--sm { font-size: var(--fs-3); padding-bottom: 7px; max-width: 340px; }
 
 /* SHA-256: copiar al hacer clic. El icono solo aparece en hover/focus. */
 .hash-copy {
@@ -874,11 +927,11 @@ select option:disabled { color: var(--ink-5); }
   padding: 0;
   cursor: pointer;
   font-family: var(--font-mono);
-  font-size: 14.5px;
+  font-size: var(--fs-2);
   color: var(--ink-3);
 }
 .hash-copy:hover { color: var(--accent); }
-.hash-copy-icon { opacity: 0; font-size: 12.5px; }
+.hash-copy-icon { opacity: 0; font-size: var(--fs-1); }
 .hash-copy:hover .hash-copy-icon,
 .hash-copy:focus-visible .hash-copy-icon { opacity: 1; }
 .hash-copy.is-copied { color: var(--ok); }
@@ -894,8 +947,8 @@ select option:disabled { color: var(--ink-5); }
   border-bottom: 1px solid var(--hair-2);
   flex-wrap: wrap;
 }
-.custody-name { font-family: var(--font-mono); font-size: 15px; font-weight: 500; color: var(--ink); overflow-wrap: anywhere; }
-.custody-meta { font-family: var(--font-mono); font-size: 13px; color: var(--ink-3); }
+.custody-name { font-family: var(--font-mono); font-size: var(--fs-3); font-weight: 500; color: var(--ink); overflow-wrap: anywhere; }
+.custody-meta { font-family: var(--font-mono); font-size: var(--fs-2); color: var(--ink-3); }
 .custody-meta--ok { color: var(--ok); }
 .custody-meta--danger { color: var(--danger); }
 .custody-action { margin-left: auto; }
@@ -912,12 +965,12 @@ select option:disabled { color: var(--ink-5); }
   border-bottom: 1px solid var(--hair-2);
   flex-wrap: wrap;
 }
-.os-name { font-family: var(--font-mono); font-size: 15px; font-weight: 500; color: var(--ink); overflow-wrap: anywhere; }
-.os-meta { font-family: var(--font-mono); font-size: 13px; color: var(--ink-3); }
+.os-name { font-family: var(--font-mono); font-size: var(--fs-3); font-weight: 500; color: var(--ink); overflow-wrap: anywhere; }
+.os-meta { font-family: var(--font-mono); font-size: var(--fs-2); color: var(--ink-3); }
 .os-verdict {
   margin-left: auto;
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--fs-2);
   color: var(--ok);
 }
 .os-verdict.is-open { color: var(--accent); }
@@ -936,10 +989,10 @@ select option:disabled { color: var(--ink-5); }
   border-bottom: 1px solid var(--hair-2);
   align-items: baseline;
 }
-.acta-value { font-size: 15.5px; line-height: 1.6; color: var(--ink); }
+.acta-value { font-size: var(--fs-3); line-height: 1.6; color: var(--ink); }
 .acta-value--mono {
   font-family: var(--font-mono);
-  font-size: 14.5px;
+  font-size: var(--fs-2);
   line-height: 1.55;
   overflow-wrap: anywhere;
 }
@@ -950,7 +1003,7 @@ select option:disabled { color: var(--ink-5); }
 .acta-note {
   display: block;
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: var(--fs-2);
   line-height: 1.5;
   color: var(--ink-3);
   margin-top: 5px;
@@ -964,7 +1017,7 @@ select option:disabled { color: var(--ink-5); }
   gap: 12px;
   align-items: baseline;
   font-family: var(--font-mono);
-  font-size: 13.5px;
+  font-size: var(--fs-2);
 }
 .segment-name { color: var(--ink); overflow-wrap: anywhere; }
 .segment-size { color: var(--ink-2); white-space: nowrap; }
@@ -982,14 +1035,14 @@ select option:disabled { color: var(--ink-5); }
   border-left: 2px solid var(--warning);
   margin: 0;
   padding: 14px 44px;
-  font-size: 15px;
+  font-size: var(--fs-3);
   line-height: 1.6;
   color: var(--ink-2);
   background: var(--inset);
   text-wrap: pretty;
 }
 .mismatch-banner strong { color: var(--warning); font-weight: 600; }
-.mismatch-banner code { font-family: var(--font-mono); font-size: 14px; color: var(--ink); }
+.mismatch-banner code { font-family: var(--font-mono); font-size: var(--fs-2); color: var(--ink); }
 
 /* El panel de contexto es colapsable; minmax(0,1fr) evita que un argv largo
    desborde la rejilla. */
@@ -1020,7 +1073,7 @@ select option:disabled { color: var(--ink-5); }
   border: 1px solid var(--line);
   background: var(--surface);
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: var(--fs-1);
   color: var(--ink-2);
   cursor: pointer;
   box-shadow: 0 2px 10px rgb(0 0 0 / 0.08);
@@ -1030,24 +1083,24 @@ select option:disabled { color: var(--ink-5); }
 /* Un turno = hora + cuerpo. La hora en columna propia deja el cuerpo alineado
    como un acta, no como burbujas de chat. */
 .turn { display: grid; grid-template-columns: 74px 1fr; gap: 20px; }
-.turn-time { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-4); padding-top: 3px; }
+.turn-time { font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-4); padding-top: 3px; }
 .turn-body { min-width: 0; }
 .turn-body--user { border-left: 2px solid var(--ink); padding-left: 18px; }
 .turn-body--agent { display: flex; flex-direction: column; gap: 18px; }
 .turn-role {
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: var(--fs-1);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-4);
 }
 .turn-body--user .turn-role { margin-bottom: 8px; }
-.turn-said { font-size: 18px; line-height: 1.6; color: var(--ink); }
-.turn-prose { font-size: 18px; line-height: 1.7; color: var(--ink); text-wrap: pretty; }
+.turn-said { font-size: var(--fs-4); line-height: 1.6; color: var(--ink); }
+.turn-prose { font-size: var(--fs-4); line-height: 1.7; color: var(--ink); text-wrap: pretty; }
 .turn-prose.is-pending { color: var(--ink-3); }
 .turn-prose p { margin: 0 0 10px; }
 .turn-prose h3,
-.turn-prose h4 { font-size: 17px; font-weight: 600; margin: 14px 0 8px; color: var(--ink); }
+.turn-prose h4 { font-size: var(--fs-4); font-weight: 600; margin: 14px 0 8px; color: var(--ink); }
 .turn-prose strong { font-weight: 600; }
 .turn-gap { height: 8px; }
 .turn-list { margin: 0 0 10px; padding-left: 22px; }
@@ -1060,7 +1113,7 @@ select option:disabled { color: var(--ink-5); }
   background: var(--inset);
   border: 1px solid var(--hair);
   font-family: var(--font-mono);
-  font-size: 14px;
+  font-size: var(--fs-2);
   line-height: 1.6;
   color: var(--ink-2);
   overflow-x: auto;
@@ -1069,12 +1122,12 @@ select option:disabled { color: var(--ink-5); }
 /* La tabla scrollea DENTRO de su caja: una correlación ATT&CK ancha no puede
    arrastrar el chat entero a scroll horizontal. */
 .turn-table-wrap { margin: 4px 0 14px; overflow-x: auto; }
-.turn-table { border-collapse: collapse; width: 100%; font-size: 15px; line-height: 1.5; }
+.turn-table { border-collapse: collapse; width: 100%; font-size: var(--fs-3); line-height: 1.5; }
 .turn-table th,
 .turn-table td { padding: 9px 16px 9px 0; vertical-align: top; text-align: left; }
 .turn-table th {
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: var(--fs-1);
   font-weight: 500;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -1093,7 +1146,7 @@ select option:disabled { color: var(--ink-5); }
   align-items: center;
   gap: 9px;
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: var(--fs-1);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--accent);
@@ -1118,7 +1171,7 @@ select option:disabled { color: var(--ink-5); }
   flex-direction: column;
   gap: 8px;
   font-family: var(--font-mono);
-  font-size: 14px;
+  font-size: var(--fs-2);
   line-height: 1.6;
   overflow-x: auto;
 }
@@ -1129,7 +1182,7 @@ select option:disabled { color: var(--ink-5); }
   justify-content: space-between;
   gap: 4px 12px;
   color: var(--ink-3);
-  font-size: 11.5px;
+  font-size: var(--fs-1);
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
@@ -1149,11 +1202,11 @@ select option:disabled { color: var(--ink-5); }
   gap: 14px;
   flex-wrap: wrap;
 }
-.finding-strip-title { font-size: 16.5px; font-weight: 600; color: var(--ink); }
-.finding-strip-meta { margin-left: auto; font-family: var(--font-mono); font-size: 13px; color: var(--ink-4); }
+.finding-strip-title { font-size: var(--fs-3); font-weight: 600; color: var(--ink); }
+.finding-strip-meta { margin-left: auto; font-family: var(--font-mono); font-size: var(--fs-2); color: var(--ink-4); }
 
 .anchor-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-.anchor-error { margin-top: 8px; color: var(--danger); font-size: 14.5px; }
+.anchor-error { margin-top: 8px; color: var(--danger); font-size: var(--fs-2); }
 
 /* Compositor */
 .composer-bar { border-top: 1px solid var(--hair); padding: 20px 44px 26px; flex-shrink: 0; }
@@ -1166,7 +1219,7 @@ select option:disabled { color: var(--ink-5); }
   outline: none;
   padding: 0;
   font-family: var(--font-sans);
-  font-size: 18px;
+  font-size: var(--fs-4);
   line-height: 1.6;
   color: var(--ink);
   min-height: 26px;
@@ -1182,7 +1235,7 @@ select option:disabled { color: var(--ink-5); }
 .composer-menu-wrap { position: relative; }
 .composer-pick {
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--fs-2);
   color: var(--ink-2);
   border: none;
   background: none;
@@ -1195,7 +1248,7 @@ select option:disabled { color: var(--ink-5); }
 .composer-pick.is-empty { color: var(--accent); }
 .composer-pick--quiet { color: var(--ink-6); }
 .composer-pick:disabled { color: var(--ink-6); cursor: not-allowed; }
-.composer-tip { margin-left: auto; font-family: var(--font-mono); font-size: 12px; color: var(--ink-5); }
+.composer-tip { margin-left: auto; font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-5); }
 .composer-send { padding: 10px 20px; }
 .composer-popover {
   position: absolute;
@@ -1213,14 +1266,14 @@ select option:disabled { color: var(--ink-5); }
 }
 .composer-popover-title {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-1);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--ink-4);
   padding: 0 14px 10px;
 }
-.composer-popover-note { font-size: 14px; line-height: 1.5; color: var(--ink-3); padding: 6px 14px; }
-.composer-popover-note code { font-family: var(--font-mono); font-size: 12.5px; }
+.composer-popover-note { font-size: var(--fs-2); line-height: 1.5; color: var(--ink-3); padding: 6px 14px; }
+.composer-popover-note code { font-family: var(--font-mono); font-size: var(--fs-1); }
 .composer-popover-item {
   display: flex;
   align-items: center;
@@ -1233,7 +1286,7 @@ select option:disabled { color: var(--ink-5); }
   cursor: pointer;
   padding: 9px 14px;
   font-family: var(--font-sans);
-  font-size: 15px;
+  font-size: var(--fs-3);
   color: var(--ink);
 }
 .composer-popover-item:hover:not(.is-disabled) { background: var(--inset); }
@@ -1241,12 +1294,12 @@ select option:disabled { color: var(--ink-5); }
 /* Un ejecutor no disponible se MUESTRA, no se oculta: deshabilitado, con la
    razón accionable en el tooltip y su acción de conexión (RULE 2). */
 .composer-popover-item.is-disabled { color: var(--ink-4); cursor: default; }
-.composer-popover-tag { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-4); }
+.composer-popover-tag { font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-4); }
 .composer-popover-input { display: flex; align-items: center; gap: 10px; padding: 8px 14px 4px; }
 .quick-prompts { display: flex; gap: 22px; flex-wrap: wrap; }
 .quick-prompt {
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--fs-2);
   color: var(--accent);
   border: none;
   background: none;
@@ -1273,7 +1326,7 @@ select option:disabled { color: var(--ink-5); }
   background: none;
   cursor: pointer;
   font-family: var(--font-mono);
-  font-size: 16px;
+  font-size: var(--fs-3);
   color: var(--ink-4);
 }
 .inv-aside-toggle:hover { color: var(--ink); }
@@ -1309,14 +1362,14 @@ select option:disabled { color: var(--ink-5); }
   /* Hueco para la barra de scroll: el texto no se pega al filete. */
   padding-right: 4px;
 }
-.inv-empty { font-size: 14.5px; line-height: 1.55; color: var(--ink-4); text-wrap: pretty; }
+.inv-empty { font-size: var(--fs-2); line-height: 1.55; color: var(--ink-4); text-wrap: pretty; }
 .finding-rail { border-left: 2px solid var(--line); padding-left: 13px; display: flex; flex-direction: column; gap: 5px; }
 .finding-rail.is-hot { border-left-color: var(--accent); }
-.finding-rail-title { font-size: 15.5px; font-weight: 600; line-height: 1.35; color: var(--ink); }
+.finding-rail-title { font-size: var(--fs-3); font-weight: 600; line-height: 1.35; color: var(--ink); }
 /* Versión CORTA en el rail del chat: el hallazgo completo vive en la fase
    «Documentos». Aquí se recorta a dos líneas para que la lista quepa. */
 .finding-rail-summary {
-  font-size: 14.5px;
+  font-size: var(--fs-2);
   line-height: 1.5;
   color: var(--ink-3);
   display: -webkit-box;
@@ -1324,7 +1377,7 @@ select option:disabled { color: var(--ink-5); }
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.finding-rail-meta { font-family: var(--font-mono); font-size: 12px; color: var(--ink-3); }
+.finding-rail-meta { font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-3); }
 .finding-rail.is-hot .finding-rail-meta { color: var(--accent); }
 .usage-row {
   display: flex;
@@ -1333,16 +1386,16 @@ select option:disabled { color: var(--ink-5); }
   padding-bottom: 8px;
   border-bottom: 1px solid var(--hair-2);
   font-family: var(--font-mono);
-  font-size: 14px;
+  font-size: var(--fs-2);
   color: var(--ink-2);
 }
 .usage-count { color: var(--ink-4); }
 .cost-row { display: flex; flex-direction: column; gap: 6px; }
 .cost-row-head { display: flex; justify-content: space-between; gap: 8px; }
-.cost-row-name { font-size: 14.5px; font-weight: 600; color: var(--ink); }
-.cost-row-value { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-3); }
+.cost-row-name { font-size: var(--fs-2); font-weight: 600; color: var(--ink); }
+.cost-row-value { font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-3); }
 .cost-bar { height: 3px; background: var(--invert-bg); }
-.cost-row-sub { font-family: var(--font-mono); font-size: 12px; color: var(--ink-4); }
+.cost-row-sub { font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-4); }
 
 /* ── Fase 3 · Correlación ATT&CK ─────────────────────────────────────────── */
 .mitre { flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -1355,8 +1408,8 @@ select option:disabled { color: var(--ink-5); }
   flex-shrink: 0;
 }
 .mitre-bar-right { margin-left: auto; display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
-.mitre-search { min-width: 210px; width: auto; font-size: 15.5px; padding-bottom: 6px; }
-.mitre-inline-error { padding: 10px 44px 0; color: var(--danger); font-size: 15px; }
+.mitre-search { min-width: 210px; width: auto; font-size: var(--fs-3); padding-bottom: 6px; }
+.mitre-inline-error { padding: 10px 44px 0; color: var(--danger); font-size: var(--fs-3); }
 .mitre-ribbon-row {
   padding: 22px 44px 0;
   display: flex;
@@ -1374,19 +1427,19 @@ select option:disabled { color: var(--ink-5); }
 .mitre-phase-dot { width: 8px; height: 8px; transform: rotate(45deg); flex-shrink: 0; }
 .mitre-phase-label {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-1);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-2);
 }
-.mitre-phase-stat { margin-left: auto; font-family: var(--font-mono); font-size: 12px; color: var(--ink-4); }
+.mitre-phase-stat { margin-left: auto; font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-4); }
 .mitre-phase-fill { height: 3px; }
-.mitre-phase-arrow { color: var(--ink-4); font-size: 15px; padding: 0 6px; }
+.mitre-phase-arrow { color: var(--ink-4); font-size: var(--fs-3); padding: 0 6px; }
 .mitre-phase-wrap:last-child .mitre-phase-arrow { visibility: hidden; }
 .mitre-summary { display: flex; gap: 34px; }
-.mitre-summary-value { font-family: var(--font-mono); font-size: 23px; font-weight: 500; color: var(--ink); }
+.mitre-summary-value { font-family: var(--font-mono); font-size: var(--fs-5); font-weight: 500; color: var(--ink); }
 .mitre-summary-value--accent { color: var(--accent); }
-.mitre-summary-of { font-size: 15px; color: var(--ink-4); }
+.mitre-summary-of { font-size: var(--fs-3); color: var(--ink-4); }
 
 .mitre-scroll { flex: 1; min-height: 0; overflow: auto; padding: 24px 44px 16px; }
 .mitre-matrix { display: flex; align-items: flex-start; gap: 14px; width: max-content; }
@@ -1400,18 +1453,18 @@ select option:disabled { color: var(--ink-5); }
   border-bottom: 1px solid var(--hair);
 }
 .mitre-col-accent { height: 3px; }
-.mitre-col-title { font-size: 15px; font-weight: 600; line-height: 1.3; margin-top: 9px; color: var(--ink); }
+.mitre-col-title { font-size: var(--fs-3); font-weight: 600; line-height: 1.3; margin-top: 9px; color: var(--ink); }
 .mitre-col-meta {
   display: flex;
   justify-content: space-between;
   gap: 8px;
   margin-top: 4px;
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: var(--fs-1);
   color: var(--ink-4);
 }
 .mitre-col-en { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mitre-col-cov { margin-top: 6px; font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-4); }
+.mitre-col-cov { margin-top: 6px; font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-4); }
 .mitre-cells { display: flex; flex-direction: column; gap: 5px; }
 .mitre-cell {
   display: flex;
@@ -1437,12 +1490,12 @@ select option:disabled { color: var(--ink-5); }
 .mitre-cell--sospechosa .mitre-cell-dot { background: var(--accent-soft); box-shadow: none; }
 .mitre-cell--descartada .mitre-cell-dot { background: var(--ink-5); box-shadow: none; }
 .mitre-cell--propuesta .mitre-cell-dot { box-shadow: inset 0 0 0 1px var(--next); }
-.mitre-cell-name { flex: 1; min-width: 0; font-size: 13px; line-height: 1.25; color: var(--ink); }
+.mitre-cell-name { flex: 1; min-width: 0; font-size: var(--fs-2); line-height: 1.25; color: var(--ink); }
 .mitre-cell--confirmada .mitre-cell-name { color: var(--accent); }
 .mitre-cell--none .mitre-cell-name { color: var(--ink-3); }
 .mitre-cell--descartada .mitre-cell-name { color: var(--ink-4); text-decoration: line-through; }
 .mitre-cell-sub,
-.mitre-cell-badge { flex: 0 0 auto; font-family: var(--font-mono); font-size: 11px; color: var(--ink-4); }
+.mitre-cell-badge { flex: 0 0 auto; font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-4); }
 .mitre-cell-badge { color: var(--accent); }
 
 .mitre-legend {
@@ -1458,10 +1511,10 @@ select option:disabled { color: var(--ink-5); }
   align-items: center;
   gap: 8px;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-1);
   color: var(--ink-3);
 }
-.mitre-legend-note { margin-left: auto; font-family: var(--font-mono); font-size: 12px; color: var(--ink-4); }
+.mitre-legend-note { margin-left: auto; font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-4); }
 .mitre-swatch { width: 9px; height: 9px; flex-shrink: 0; border: 1px solid var(--hair); }
 .mitre-swatch--confirmada { background: var(--accent); border-color: var(--accent); }
 .mitre-swatch--sospechosa { border: 1px solid var(--accent); }
@@ -1478,17 +1531,17 @@ select option:disabled { color: var(--ink-5); }
   border-bottom: 1px solid var(--hair-2);
   align-items: start;
 }
-.mitre-tl-time { font-family: var(--font-mono); font-size: 13px; color: var(--ink-4); }
+.mitre-tl-time { font-family: var(--font-mono); font-size: var(--fs-2); color: var(--ink-4); }
 .mitre-tl-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .mitre-tl-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.mitre-tl-title { font-size: 16.5px; font-weight: 600; color: var(--ink); }
-.mitre-tl-summary { font-size: 15.5px; line-height: 1.6; color: var(--ink-2); }
+.mitre-tl-title { font-size: var(--fs-3); font-weight: 600; color: var(--ink); }
+.mitre-tl-summary { font-size: var(--fs-3); line-height: 1.6; color: var(--ink-2); }
 .mitre-tl-foot {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: var(--fs-1);
   color: var(--ink-4);
 }
 .mitre-tl-tech { color: var(--ink-3); }
@@ -1517,18 +1570,18 @@ select option:disabled { color: var(--ink-5); }
   align-items: center;
   gap: 9px;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-1);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--ink-4);
 }
-.mitre-detail-title { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; margin-top: 10px; color: var(--ink); }
+.mitre-detail-title { font-size: var(--fs-5); font-weight: 600; letter-spacing: -0.01em; margin-top: 10px; color: var(--ink); }
 .mitre-detail-idrow {
   display: flex;
   gap: 14px;
   margin-top: 6px;
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--fs-2);
   color: var(--ink-3);
 }
 .mitre-detail-body { display: flex; flex-direction: column; gap: 28px; margin-top: 26px; }
@@ -1545,15 +1598,15 @@ select option:disabled { color: var(--ink-5); }
   flex-wrap: wrap;
   flex-shrink: 0;
 }
-.tl-search { flex: 1; min-width: 260px; font-size: 16px; padding-bottom: 9px; }
-.tl-meta { font-family: var(--font-mono); font-size: 13px; color: var(--ink-3); }
+.tl-search { flex: 1; min-width: 260px; font-size: var(--fs-3); padding-bottom: 9px; }
+.tl-meta { font-family: var(--font-mono); font-size: var(--fs-2); color: var(--ink-3); }
 .tl-evidence { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-.tl-evidence .field-select { width: auto; min-width: 200px; font-size: 14.5px; }
+.tl-evidence .field-select { width: auto; min-width: 200px; font-size: var(--fs-2); }
 .tl-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 44px 48px; }
 .tl-stack { gap: 34px; max-width: 1180px; }
 .tl-day { display: flex; flex-direction: column; gap: 4px; }
 .tl-day-head { display: flex; align-items: center; gap: 14px; padding-bottom: 12px; }
-.tl-day-label { font-family: var(--font-mono); font-size: 14px; font-weight: 600; letter-spacing: 0.1em; color: var(--ink); }
+.tl-day-label { font-family: var(--font-mono); font-size: var(--fs-2); font-weight: 600; letter-spacing: 0.1em; color: var(--ink); }
 .tl-row {
   display: grid;
   grid-template-columns: 74px 104px 1fr;
@@ -1562,27 +1615,27 @@ select option:disabled { color: var(--ink-5); }
   padding: 14px 0;
   border-bottom: 1px solid var(--hair-2);
 }
-.tl-time { font-family: var(--font-mono); font-size: 13px; color: var(--ink-4); }
+.tl-time { font-family: var(--font-mono); font-size: var(--fs-2); color: var(--ink-4); }
 .tl-kindcol { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .tl-kind {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-1);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--ink-3);
 }
 .tl-kind--finding { color: var(--accent); }
-.tl-src { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-3); }
+.tl-src { font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-3); }
 .tl-body { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
-.tl-argv { font-family: var(--font-mono); font-size: 14px; color: var(--ink-2); line-height: 1.6; word-break: break-all; }
-.tl-desc { font-size: 16.5px; line-height: 1.6; color: var(--ink); text-wrap: pretty; }
-.tl-techs { display: flex; gap: 12px; flex-wrap: wrap; font-family: var(--font-mono); font-size: 12px; color: var(--ink-4); }
+.tl-argv { font-family: var(--font-mono); font-size: var(--fs-2); color: var(--ink-2); line-height: 1.6; word-break: break-all; }
+.tl-desc { font-size: var(--fs-3); line-height: 1.6; color: var(--ink); text-wrap: pretty; }
+.tl-techs { display: flex; gap: 12px; flex-wrap: wrap; font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-4); }
 /* La figura del incidente. El SVG trae su propio fondo y su propia hairline porque se
    exporta a PNG y tiene que bastarse fuera de la aplicación; aquí solo se le da sitio y
    se le deja escalar con el ancho de la vista. */
 .tl-figure { border: 1px solid var(--hair); overflow-x: auto; }
 .tl-figure svg { display: block; }
-.cell-path { font-family: var(--font-mono); font-size: 14.5px; color: var(--ink); word-break: break-all; }
+.cell-path { font-family: var(--font-mono); font-size: var(--fs-2); color: var(--ink); word-break: break-all; }
 .progress-fill--indeterminate { width: 40%; animation: tl-sweep 1.4s ease-in-out infinite; }
 @keyframes tl-sweep { 0% { margin-left: 0; } 50% { margin-left: 60%; } 100% { margin-left: 0; } }
 
@@ -1590,7 +1643,7 @@ select option:disabled { color: var(--ink-5); }
 .pager { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 16px 0 4px; flex-wrap: wrap; }
 .pager-btn {
   font-family: var(--font-mono);
-  font-size: 16px;
+  font-size: var(--fs-3);
   line-height: 1;
   min-width: 30px;
   padding: 5px 9px;
@@ -1602,7 +1655,7 @@ select option:disabled { color: var(--ink-5); }
 }
 .pager-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .pager-btn:disabled { color: var(--ink-5); cursor: default; }
-.pager-info { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-4); padding: 0 6px; white-space: nowrap; }
+.pager-info { font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-4); padding: 0 6px; white-space: nowrap; }
 
 /* ── Fase 5 · Informe pericial ───────────────────────────────────────────── */
 .report { flex: 1; min-height: 0; display: grid; grid-template-columns: 296px 1fr; }
@@ -1616,7 +1669,7 @@ select option:disabled { color: var(--ink-5); }
   gap: 20px;
 }
 .report-filters { display: flex; gap: 18px; flex-wrap: wrap; align-items: baseline; }
-.report-group { margin-left: auto; width: auto; font-size: 12.5px; font-family: var(--font-mono); }
+.report-group { margin-left: auto; width: auto; font-size: var(--fs-1); font-family: var(--font-mono); }
 .report-docs { display: flex; flex-direction: column; gap: 18px; }
 .report-group-block { display: flex; flex-direction: column; }
 .report-doc {
@@ -1632,15 +1685,15 @@ select option:disabled { color: var(--ink-5); }
   cursor: pointer;
 }
 .report-doc.is-active { box-shadow: inset 2px 0 0 var(--accent); padding-left: 14px; }
-.report-doc-title { font-size: 15.5px; font-weight: 500; line-height: 1.35; color: var(--ink); }
+.report-doc-title { font-size: var(--fs-3); font-weight: 500; line-height: 1.35; color: var(--ink); }
 .report-doc.is-active .report-doc-title { font-weight: 600; color: var(--accent); }
-.report-doc-meta { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-4); }
+.report-doc-meta { font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-4); }
 /* El panel vive en el raíl de 296px: su bloque de texto NO puede reclamar los
    260px del panel ancho de evidencia, desbordaba la columna (scroll horizontal). */
 .report-gen { flex-direction: column; align-items: stretch; gap: 12px; padding: 16px; }
 .report-gen .dashed-panel-main { min-width: 0; }
 .report-gen-fields { display: flex; flex-direction: column; gap: 10px; }
-.report-gen-fields .field-input { font-size: 15px; max-width: none; }
+.report-gen-fields .field-input { font-size: var(--fs-3); max-width: none; }
 /* El botón ocupa el ancho del raíl (296px): con el `nowrap` de `.action-accent`
    la etiqueta en versalitas + tracking no cabe y el botón la RECORTABA
    («FINALIZAR INVESTIGACI»). Aquí envuelve en dos líneas antes que perder una
@@ -1655,7 +1708,7 @@ select option:disabled { color: var(--ink-5); }
 /* Una redacción rechazada NO deja informe: el motivo tiene que quedarse a la
    vista (un aviso que se desvanece se lee como «no ha pasado nada»). */
 .report-failure { display: flex; flex-direction: column; gap: 6px; }
-.report-failure-reason { font-size: 14.5px; line-height: 1.55; color: var(--ink-2); text-wrap: pretty; }
+.report-failure-reason { font-size: var(--fs-2); line-height: 1.55; color: var(--ink-2); text-wrap: pretty; }
 
 .report-viewer { overflow-y: auto; padding: 34px 48px 56px; }
 .report-notice { margin-bottom: 20px; }
@@ -1670,15 +1723,15 @@ select option:disabled { color: var(--ink-5); }
   padding-bottom: 16px;
   border-bottom: 1px solid var(--hair);
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--fs-2);
   color: var(--ink-3);
 }
 .report-actions { display: flex; gap: 22px; flex-wrap: wrap; }
-.verify-line { font-family: var(--font-mono); font-size: 14px; line-height: 1.6; }
+.verify-line { font-family: var(--font-mono); font-size: var(--fs-2); line-height: 1.6; }
 .verify-line.is-ok { color: var(--ok); }
 .verify-line.is-bad { color: var(--danger); }
-.report-title { font-size: 27.5px; font-weight: 600; letter-spacing: -0.015em; line-height: 1.25; margin: 0; color: var(--ink); }
-.report-summary { font-size: 18px; line-height: 1.7; color: var(--ink-2); margin: 14px 0 0; text-wrap: pretty; }
+.report-title { font-size: var(--fs-5); font-weight: 600; letter-spacing: -0.015em; line-height: 1.25; margin: 0; color: var(--ink); }
+.report-summary { font-size: var(--fs-4); line-height: 1.7; color: var(--ink-2); margin: 14px 0 0; text-wrap: pretty; }
 .report-section { display: flex; flex-direction: column; gap: 12px; }
 .report-section-head {
   display: flex;
@@ -1687,18 +1740,18 @@ select option:disabled { color: var(--ink-5); }
   border-bottom: 1px solid var(--hair);
   padding-bottom: 8px;
 }
-.report-section-num { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-4); }
-.report-p { font-size: 16.5px; line-height: 1.75; margin: 0; color: var(--ink); text-wrap: pretty; }
-.report-h3 { font-size: 17px; font-weight: 600; margin: 8px 0 0; color: var(--ink); }
-.report-quote { border-left: 2px solid var(--accent-soft); padding-left: 14px; font-size: 16px; line-height: 1.7; color: var(--ink-2); }
-.report-list-block { margin: 0; padding-left: 20px; font-size: 16.5px; line-height: 1.75; color: var(--ink); }
+.report-section-num { font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-4); }
+.report-p { font-size: var(--fs-3); line-height: 1.75; margin: 0; color: var(--ink); text-wrap: pretty; }
+.report-h3 { font-size: var(--fs-4); font-weight: 600; margin: 8px 0 0; color: var(--ink); }
+.report-quote { border-left: 2px solid var(--accent-soft); padding-left: 14px; font-size: var(--fs-3); line-height: 1.7; color: var(--ink-2); }
+.report-list-block { margin: 0; padding-left: 20px; font-size: var(--fs-3); line-height: 1.75; color: var(--ink); }
 .report-code {
   background: var(--code-bg);
   color: var(--code-fg);
   padding: 14px 16px;
   overflow-x: auto;
   font-family: var(--font-mono);
-  font-size: 14px;
+  font-size: var(--fs-2);
   line-height: 1.6;
   margin: 0;
 }
@@ -1709,19 +1762,19 @@ select option:disabled { color: var(--ink-5); }
   gap: 20px;
   padding: 10px 0;
   border-bottom: 1px solid var(--hair-2);
-  font-size: 15.5px;
+  font-size: var(--fs-3);
 }
 .report-kv-k { color: var(--ink-2); }
-.report-kv-v { font-family: var(--font-mono); font-size: 14.5px; text-align: right; color: var(--ink); }
+.report-kv-v { font-family: var(--font-mono); font-size: var(--fs-2); text-align: right; color: var(--ink); }
 .report-finding { border-left: 2px solid var(--line); padding-left: 16px; }
 .report-finding.is-hot { border-left-color: var(--accent); }
 .report-finding-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.report-finding-title { font-size: 16.5px; font-weight: 600; color: var(--ink); }
-.report-finding-tags { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-4); }
-.report-finding-text { font-size: 16px; line-height: 1.7; color: var(--ink-2); margin: 7px 0 0; }
+.report-finding-title { font-size: var(--fs-3); font-weight: 600; color: var(--ink); }
+.report-finding-tags { font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-4); }
+.report-finding-text { font-size: var(--fs-3); line-height: 1.7; color: var(--ink-2); margin: 7px 0 0; }
 /* Procedencia del hallazgo (run, confianza, hash): el PDF ya la imprime y la
    pantalla también debe, es lo que hace reejecutable el informe. */
-.report-finding-meta { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-4); margin-top: 6px; word-break: break-all; }
+.report-finding-meta { font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-4); margin-top: 6px; word-break: break-all; }
 .report-foot {
   display: flex;
   justify-content: space-between;
@@ -1730,7 +1783,7 @@ select option:disabled { color: var(--ink-5); }
   padding-top: 16px;
   border-top: 1px solid var(--hair);
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: var(--fs-1);
   color: var(--ink-4);
 }
 
@@ -1753,10 +1806,10 @@ select option:disabled { color: var(--ink-5); }
 .hallazgo-card:last-child { border-bottom: none; }
 .hallazgo-card.is-hot { border-left-color: var(--accent); }
 .hallazgo-card.is-active { box-shadow: inset 2px 0 0 var(--accent); }
-.hallazgo-card-title { font-size: 15.5px; font-weight: 600; line-height: 1.35; color: var(--ink); }
+.hallazgo-card-title { font-size: var(--fs-3); font-weight: 600; line-height: 1.35; color: var(--ink); }
 .hallazgo-card.is-active .hallazgo-card-title { color: var(--accent); }
 .hallazgo-card-summary {
-  font-size: 14px;
+  font-size: var(--fs-2);
   line-height: 1.5;
   color: var(--ink-3);
   display: -webkit-box;
@@ -1764,12 +1817,12 @@ select option:disabled { color: var(--ink-5); }
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.hallazgo-card-meta { font-family: var(--font-mono); font-size: 12px; color: var(--ink-4); }
+.hallazgo-card-meta { font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-4); }
 .hallazgo-card.is-hot .hallazgo-card-meta { color: var(--accent); }
 
 .sev-badge {
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: var(--fs-1);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   padding: 2px 9px;
@@ -1783,7 +1836,7 @@ select option:disabled { color: var(--ink-5); }
 .hallazgo-mitre { display: flex; flex-wrap: wrap; gap: 10px; }
 .hallazgo-mitre-tag {
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--fs-2);
   padding: 3px 11px;
   border: 1px solid var(--accent-soft);
   color: var(--ink);
@@ -1794,10 +1847,10 @@ select option:disabled { color: var(--ink-5); }
 .settings-bar { padding: 22px 44px 0; flex-shrink: 0; }
 .settings-scroll { padding-top: 32px; }
 .settings-stack { max-width: 780px; gap: 36px; }
-.settings-lede { font-size: 16.5px; line-height: 1.6; color: var(--ink-2); max-width: 46em; }
+.settings-lede { font-size: var(--fs-3); line-height: 1.6; color: var(--ink-2); max-width: 46em; }
 .settings-inline { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
 .settings-inline-label { min-width: 148px; }
-.settings-foot { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-4); }
+.settings-foot { font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-4); }
 
 /* Un motor por fila: disponibilidad, ámbito, por-defecto y modelo en la misma
    línea; el detalle se despliega debajo. */
@@ -1816,12 +1869,12 @@ select option:disabled { color: var(--ink-5); }
   flex-wrap: wrap;
 }
 .engine-row.is-open { border-bottom-color: transparent; }
-.engine-name { font-size: 16.5px; font-weight: 600; color: var(--ink); }
+.engine-name { font-size: var(--fs-3); font-weight: 600; color: var(--ink); }
 .engine-name.is-off { color: var(--ink-3); }
 .engine-scope,
 .engine-default {
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: var(--fs-1);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   padding: 3px 8px;
@@ -1831,8 +1884,9 @@ select option:disabled { color: var(--ink-5); }
 .engine-scope { color: var(--ink-3); border: 1px solid var(--line); }
 .engine-scope.is-local { color: var(--ok); border-color: var(--ok); }
 .engine-default { color: var(--invert-fg); background: var(--invert-bg); }
-.engine-model { margin-left: auto; font-family: var(--font-mono); font-size: 14px; color: var(--ink-2); }
+.engine-model { margin-left: auto; font-family: var(--font-mono); font-size: var(--fs-2); color: var(--ink-2); }
 .engine-model.is-off { color: var(--ink-4); }
+/* Glifo de icono (+ / –), no texto. */
 .engine-caret { font-family: var(--font-mono); font-size: 16px; color: var(--ink-4); width: 14px; text-align: center; flex-shrink: 0; }
 .engine-panel {
   border-bottom: 1px solid var(--hair-2);
@@ -1842,7 +1896,7 @@ select option:disabled { color: var(--ink-5); }
   gap: 14px;
   align-items: flex-start;
 }
-.engine-note { font-size: 15px; line-height: 1.55; color: var(--ink-3); }
+.engine-note { font-size: var(--fs-3); line-height: 1.55; color: var(--ink-3); }
 .engine-models { display: flex; flex-wrap: wrap; gap: 8px; }
 /* Separa «Potencia» del bloque de modelo: la fila del motor ya tiene gap, así
    que basta un poco de aire arriba para que se lea como otro apartado. */
@@ -1851,7 +1905,7 @@ select option:disabled { color: var(--ink-5); }
 
 .toolkit-rows { display: flex; flex-direction: column; }
 .toolkit-row { display: flex; align-items: center; gap: 16px; padding: 15px 0; border-bottom: 1px solid var(--hair-2); }
-.toolkit-name { font-family: var(--font-mono); font-size: 15px; font-weight: 500; flex: 1; color: var(--ink); }
+.toolkit-name { font-family: var(--font-mono); font-size: var(--fs-3); font-weight: 500; flex: 1; color: var(--ink); }
 /* Rejilla, no flex-wrap: los nombres tienen anchos muy dispares y en flujo
    quedaban desalineados fila a fila. Columnas fijas → puntos en vertical. */
 .tool-chips {
@@ -1865,7 +1919,7 @@ select option:disabled { color: var(--ink-5); }
   align-items: center;
   gap: 9px;
   font-family: var(--font-mono);
-  font-size: 14.5px;
+  font-size: var(--fs-2);
   color: var(--ink);
 }
 .tool-chip.is-off { color: var(--ink-4); }
@@ -1876,14 +1930,14 @@ select option:disabled { color: var(--ink-5); }
   gap: 20px;
   padding: 12px 0;
   border-bottom: 1px solid var(--hair-2);
-  font-size: 15.5px;
+  font-size: var(--fs-3);
 }
 .kv-k { color: var(--ink-2); }
-.kv-v { font-family: var(--font-mono); font-size: 14.5px; color: var(--ink); text-align: right; }
+.kv-v { font-family: var(--font-mono); font-size: var(--fs-2); color: var(--ink); text-align: right; }
 .theme-choices { display: flex; gap: 10px; }
 .theme-choice {
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: var(--fs-1);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   padding: 10px 20px;
@@ -1905,10 +1959,10 @@ select option:disabled { color: var(--ink-5); }
   border-bottom: 1px solid var(--hair-2);
   align-items: baseline;
 }
-.guide-step-num { font-family: var(--font-mono); font-size: 14px; padding-top: 2px; color: var(--ink-4); }
+.guide-step-num { font-family: var(--font-mono); font-size: var(--fs-2); padding-top: 2px; color: var(--ink-4); }
 .guide-step-num.is-done { color: var(--ok); }
 .guide-step-num.is-now { color: var(--accent); }
-.guide-step-title { font-size: 18px; font-weight: 600; color: var(--ink); text-align: left; }
+.guide-step-title { font-size: var(--fs-4); font-weight: 600; color: var(--ink); text-align: left; }
 .guide-step-title.is-link { border: none; background: none; padding: 0; cursor: pointer; font-family: var(--font-sans); }
 .guide-step-title.is-link:hover { color: var(--accent); }
 .guide-step-state.is-done { color: var(--ok); }
@@ -1916,23 +1970,23 @@ select option:disabled { color: var(--ink-5); }
 .guide-step-state.is-todo { color: var(--ink-4); }
 .guide-step-desc {
   grid-column: 2 / -1;
-  font-size: 16px;
+  font-size: var(--fs-3);
   line-height: 1.6;
   color: var(--ink-3);
   text-wrap: pretty;
 }
-.guide-prose { font-size: 16px; line-height: 1.7; color: var(--ink-2); max-width: 62em; text-wrap: pretty; }
-.guide-prose--sm { font-size: 15.5px; line-height: 1.6; color: var(--ink-3); }
+.guide-prose { font-size: var(--fs-3); line-height: 1.7; color: var(--ink-2); max-width: 62em; text-wrap: pretty; }
+.guide-prose--sm { font-size: var(--fs-3); line-height: 1.6; color: var(--ink-3); }
 .guide-prose strong { font-weight: 600; color: var(--ink); }
 /* Terminal: oscura en AMBOS temas. */
 .code-block { background: var(--code-bg); padding: 20px 22px; display: flex; flex-direction: column; gap: 12px; }
-.code-line { display: flex; flex-direction: column; gap: 3px; font-family: var(--font-mono); font-size: 14.5px; line-height: 1.6; }
-.code-note { color: var(--code-dim); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; }
+.code-line { display: flex; flex-direction: column; gap: 3px; font-family: var(--font-mono); font-size: var(--fs-2); line-height: 1.6; }
+.code-note { color: var(--code-dim); font-size: var(--fs-1); letter-spacing: 0.12em; text-transform: uppercase; }
 .code-cmd { color: var(--code-fg); word-break: break-all; }
 .guide-notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 30px 44px; }
 .guide-note { display: flex; flex-direction: column; gap: 8px; }
-.guide-note-title { font-size: 17px; font-weight: 600; line-height: 1.35; color: var(--ink); }
-.guide-note-body { font-size: 15.5px; line-height: 1.7; color: var(--ink-2); text-wrap: pretty; }
+.guide-note-title { font-size: var(--fs-4); font-weight: 600; line-height: 1.35; color: var(--ink); }
+.guide-note-body { font-size: var(--fs-3); line-height: 1.7; color: var(--ink-2); text-wrap: pretty; }
 
 /* ── Utilidades transversales ────────────────────────────────────────────── */
 .visually-hidden {
@@ -1952,7 +2006,7 @@ select option:disabled { color: var(--ink-5); }
   gap: 10px;
   padding: 20px 0;
   color: var(--ink-3);
-  font-size: 15.5px;
+  font-size: var(--fs-3);
 }
 .spinner {
   width: 14px;
@@ -1968,7 +2022,7 @@ select option:disabled { color: var(--ink-5); }
 .error-state {
   border-left: 2px solid var(--danger);
   padding: 2px 0 2px 14px;
-  font-size: 15px;
+  font-size: var(--fs-3);
   line-height: 1.6;
   color: var(--ink-2);
   text-wrap: pretty;
@@ -1977,13 +2031,13 @@ select option:disabled { color: var(--ink-5); }
 
 /* Login web de un ejecutor CLI cloud (ExecutorLoginModal). */
 .exec-login { display: flex; flex-direction: column; gap: 14px; }
-.exec-login-ok { color: var(--ok); font-size: 15px; line-height: 1.5; }
+.exec-login-ok { color: var(--ok); font-size: var(--fs-3); line-height: 1.5; }
 .exec-login-loading,
 .exec-login-status {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 15px;
+  font-size: var(--fs-3);
   color: var(--ink-3);
 }
 
@@ -2058,7 +2112,7 @@ select option:disabled { color: var(--ink-5); }
     padding: 18px 0 14px;
   }
   .shell-header { padding: 18px 22px 15px; }
-  .shell-header-title { font-size: 21px; }
+  .shell-header-title { font-size: var(--fs-4); }
   .view-scroll,
   .transcript,
   .composer-bar,
@@ -2136,7 +2190,7 @@ select option:disabled { color: var(--ink-5); }
 .graphs-intro-text {
   flex: 1 1 520px;
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--fs-2);
   line-height: 1.6;
   color: var(--ink-2);
 }
@@ -2153,22 +2207,22 @@ select option:disabled { color: var(--ink-5); }
   gap: 8px 18px;
   flex-wrap: wrap;
   align-items: baseline;
-  font-size: 12.5px;
+  font-size: var(--fs-1);
   color: var(--ink-2);
 }
 /* La base de la previsión se lee, pero no compite con la cifra: es lo que
    permite saber que el número es una estimación y con qué se midió. */
-.graph-cost-base { color: var(--ink-3); font-size: 11.5px; }
+.graph-cost-base { color: var(--ink-3); font-size: var(--fs-1); }
 .graph-parte {
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 14px 16px;
   border: 1px solid var(--hair);
-  font-size: 12.5px;
+  font-size: var(--fs-1);
 }
 .graph-parte-fallo { display: flex; flex-direction: column; gap: 2px; }
-.graph-parte-motivo { color: var(--ink-3); font-size: 11.5px; }
+.graph-parte-motivo { color: var(--ink-3); font-size: var(--fs-1); }
 .graph-figure { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
 .graph-figure > svg { flex: 1 1 620px; min-width: 0; border: 1px solid var(--hair); }
 .graph-card {
@@ -2179,20 +2233,20 @@ select option:disabled { color: var(--ink-5); }
   display: flex;
   flex-direction: column;
   gap: 12px;
-  font-size: 12.5px;
+  font-size: var(--fs-1);
 }
 .graph-card-head { display: flex; flex-direction: column; gap: 4px; }
 .graph-card-type {
-  font-size: 10.5px;
+  font-size: var(--fs-1);
   letter-spacing: 0.6px;
   color: var(--ink-3);
   text-transform: uppercase;
 }
 .graph-card-value { font-weight: 600; word-break: break-all; }
 .graph-card-list { display: grid; grid-template-columns: 1fr; gap: 3px; margin: 0; }
-.graph-card-list dt { color: var(--ink-3); font-size: 11px; }
+.graph-card-list dt { color: var(--ink-3); font-size: var(--fs-1); }
 .graph-card-list dd { margin: 0 0 8px; word-break: break-word; }
-.graph-card-hash { font-size: 11px; word-break: break-all; }
+.graph-card-hash { font-size: var(--fs-1); word-break: break-all; }
 .graph-card-rel { padding: 2px 0; }
 /* Un hallazgo que sostiene un nodo es navegable: de la figura del caso a la del
    hallazgo, que es donde vive la procedencia verificada. */
@@ -2207,4 +2261,4 @@ select option:disabled { color: var(--ink-5); }
   cursor: pointer;
 }
 .graph-card-link:hover { text-decoration: underline; }
-.graph-meta { font-size: 11.5px; color: var(--ink-3); }
+.graph-meta { font-size: var(--fs-1); color: var(--ink-3); }

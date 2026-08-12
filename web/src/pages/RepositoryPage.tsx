@@ -17,6 +17,7 @@ import { Modal } from "../ui/Modal";
 import { usePublishShellHeader } from "../layout/shellHeader";
 import { formatBytes, formatDate, shortHash } from "../utils/format";
 import { isEwfFirstSegment, isRegistrableEvidence } from "../utils/evidence";
+import { Icon } from "../ui/Icon";
 
 function evidenceFileName(ev: EvidenceHandle): string {
   return ev.original_path.split("/").pop() ?? ev.original_path;
@@ -639,7 +640,9 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
                   ) : ev.last_verification.verified ? (
                     <span className="custody-meta custody-meta--ok">hash re-verificado</span>
                   ) : (
-                    <span className="custody-meta custody-meta--danger">⚠ hash mismatch</span>
+                    <span className="custody-meta custody-meta--danger">
+                      <Icon name="alert" size={12} /> hash mismatch
+                    </span>
                   )}
                   <button type="button" className="link-action custody-action" onClick={() => void openActa(ev)}>
                     Acta de adquisición
@@ -772,7 +775,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
                 entry_hash {acta.chain_of_custody.register_entry_hash ?? "n/d"} ·{" "}
                 {acta.chain_of_custody.hash_chain_verified
                   ? "cadena verificada"
-                  : "⚠ la cadena NO verifica"}
+                  : "la cadena NO verifica"}
               </div>
             </div>
             <div className="acta-row">
@@ -785,7 +788,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
                 {acta.verification
                   ? acta.verification.verified
                     ? `Verificada ${formatDate(acta.verification.verified_at)}`
-                    : "⚠ Hash MISMATCH"
+                    : "Hash MISMATCH"
                   : "Sin verificar"}
               </div>
             </div>

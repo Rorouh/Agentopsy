@@ -10,6 +10,7 @@ import {
   isRegistrableEvidence,
   isUploadableEvidence,
 } from "../utils/evidence";
+import { Icon } from "../ui/Icon";
 
 interface EvidenceInboxProps {
   caseClosed: boolean;
@@ -428,7 +429,7 @@ export function EvidenceInbox({
 
       {registerSuccess && (
         <div className="inline-note inline-note--ok" aria-live="polite">
-          ✓ {registerSuccess}
+          <Icon name="check" size={13} /> {registerSuccess}
         </div>
       )}
 

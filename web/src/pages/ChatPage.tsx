@@ -12,6 +12,7 @@ import type {
   StreamEvent,
 } from "../api/types";
 import { ExecutorLoginModal } from "../components/ExecutorLoginModal";
+import { Icon } from "../ui/Icon";
 
 // Markdown mínimo del turno del agente. SEC INV 8: se pinta como TEXTO, en
 // todo web/src no hay un solo dangerouslySetInnerHTML, y esta pantalla es la
@@ -1005,7 +1006,7 @@ export function ChatPage({
                           {status.name}
                           {status.local ? " · local" : " · nube"}
                         </span>
-                        {id === executor && <span aria-hidden>✓</span>}
+                        {id === executor && <Icon name="check" size={12} />}
                       </button>
                     ) : (
                       <div
@@ -1073,7 +1074,7 @@ export function ChatPage({
                           onClick={() => void saveModel("")}
                         >
                           <span>Por defecto del CLI</span>
-                          {!configuredModel && <span aria-hidden>✓</span>}
+                          {!configuredModel && <Icon name="check" size={12} />}
                         </button>
                       )}
                       {(providerModels?.models ?? []).map((m) => (
@@ -1140,7 +1141,7 @@ export function ChatPage({
                                 onClick={() => void saveEffort("")}
                               >
                                 <span>Por defecto del CLI</span>
-                                {!configuredEffort && <span aria-hidden>✓</span>}
+                                {!configuredEffort && <Icon name="check" size={12} />}
                               </button>
                               {efforts.map((eff) => (
                                 <button
@@ -1152,7 +1153,7 @@ export function ChatPage({
                                   onClick={() => void saveEffort(eff.id)}
                                 >
                                   <span>{eff.id}</span>
-                                  {eff.id === configuredEffort && <span aria-hidden>✓</span>}
+                                  {eff.id === configuredEffort && <Icon name="check" size={12} />}
                                 </button>
                               ))}
                               {effortMismatch && (

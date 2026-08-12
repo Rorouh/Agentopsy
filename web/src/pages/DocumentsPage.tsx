@@ -13,6 +13,7 @@ import type {
 } from "../api/types";
 import { usePublishShellHeader } from "../layout/shellHeader";
 import { useActiveCase } from "../state/activeCase";
+import { Icon } from "../ui/Icon";
 
 // FASE 7 · Informe pericial. Almacén real (forensia.reports): cada documento
 // lleva su SHA-256 y las acciones del perito (verificar integridad, firmar como
@@ -657,9 +658,10 @@ export function DocumentsPage() {
                 en un icono. */}
             {verify && (
               <div className={`verify-line${verify.ok ? " is-ok" : " is-bad"}`}>
+                <Icon name={verify.ok ? "check" : "cross"} size={13} />{" "}
                 {verify.ok
-                  ? `✓ Integridad verificada · el SHA-256 recalculado coincide con el de registro (${shortHash(verify.registered_sha256)})`
-                  : `✗ El SHA-256 recalculado (${shortHash(verify.recomputed_sha256)}) NO coincide con el de registro (${shortHash(verify.registered_sha256)}). El documento ha cambiado desde que se registró.`}
+                  ? `Integridad verificada · el SHA-256 recalculado coincide con el de registro (${shortHash(verify.registered_sha256)})`
+                  : `El SHA-256 recalculado (${shortHash(verify.recomputed_sha256)}) NO coincide con el de registro (${shortHash(verify.registered_sha256)}). El documento ha cambiado desde que se registró.`}
               </div>
             )}
 
