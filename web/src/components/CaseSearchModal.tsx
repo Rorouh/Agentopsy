@@ -120,7 +120,7 @@ export function CaseSearchModal({
 
   // Pulsar una fila SELECCIONA y el diálogo SIGUE ABIERTO. Es a la vez buscador
   // y administración: si cerrase al primer clic, editar o cerrar el caso que
-  // acabas de elegir obligaría a reabrirlo. Cerrar es explícito — Esc, la ×, o
+  // acabas de elegir obligaría a reabrirlo. Cerrar es explícito: Esc, la ×, o
   // Intro sobre la fila del cursor, que es lo que el pie viene anunciando.
   const pick = (caseId: string) => {
     onSelect(caseId);

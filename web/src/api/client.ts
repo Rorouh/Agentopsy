@@ -16,10 +16,10 @@ import type {
   GraphJob,
   MitreCatalog,
   MitreCoverageEntry,
-  ExecutorCost,
   AgentSummary,
   Capabilities,
   Case,
+  CasePulse,
   ConfigSnapshot,
   CreateCaseRequest,
   CustodyAct,
@@ -311,6 +311,11 @@ export const api = {
     create: (body: CreateCaseRequest) => post<Case>("/api/cases", body),
     list: () => request<Case[]>("/api/cases"),
     get: (caseId: string) => request<Case>(`/api/cases/${encodeURIComponent(caseId)}`),
+    // El PULSO: una firma por flujo del caso, para que la interfaz se refresque
+    // sola. Es la petición más frecuente de la aplicación y por eso es la más
+    // barata del backend (un `stat` por flujo, sin leer contenido).
+    pulse: (caseId: string) =>
+      request<CasePulse>(`/api/cases/${encodeURIComponent(caseId)}/pulse`),
     close: (caseId: string) =>
       post<Case>(`/api/cases/${encodeURIComponent(caseId)}/close`, {}),
     reopen: (caseId: string) =>
@@ -371,8 +376,6 @@ export const api = {
       request<AgentFinding[]>(`/api/cases/${encodeURIComponent(caseId)}/findings`),
     listToolUsage: (caseId: string) =>
       request<ToolUsage[]>(`/api/cases/${encodeURIComponent(caseId)}/tool-usage`),
-    listExecutorCost: (caseId: string) =>
-      request<ExecutorCost[]>(`/api/cases/${encodeURIComponent(caseId)}/executor-cost`),
 
     // ── Timeline forense del caso ───────────────────────────────────────────
     // Capa 4 (la de entrada): línea de tiempo del INCIDENTE, un evento por hallazgo
@@ -414,13 +417,16 @@ export const api = {
         `/api/cases/${encodeURIComponent(caseId)}/mitre`,
         body,
       ),
-    // Export CSV de la cobertura ATT&CK del caso (0 propuestas → cabecera + 0 filas).
+    // Hoja de cálculo de la cobertura ATT&CK del caso (0 propuestas → cabecera + 0
+    // filas). Es un `.xlsx` real y no un CSV: un CSV obliga a acertar a la vez con
+    // la codificación y con el separador, y en Excel son excluyentes (con la
+    // declaración `sep=;` deja de aplicar el BOM y los acentos salen ilegibles).
     // El nombre real lo pone el Content-Disposition del backend (lleva el nombre
     // del caso y la marca temporal); estos son el respaldo si falta la cabecera.
-    exportMitreCsv: (caseId: string) =>
+    exportMitreHoja: (caseId: string) =>
       download(
-        `/api/cases/${encodeURIComponent(caseId)}/mitre/export.csv`,
-        `agentopsy-mitre-attack-${caseId}.csv`,
+        `/api/cases/${encodeURIComponent(caseId)}/mitre/export.xlsx`,
+        `agentopsy-mitre-attack-${caseId}.xlsx`,
       ),
     // Export del layer del ATT&CK Navigator (formato 4.5) para cargarlo en el
     // Navigator oficial: colorea las técnicas propuestas/adjudicadas del caso.
@@ -429,11 +435,11 @@ export const api = {
         `/api/cases/${encodeURIComponent(caseId)}/mitre/navigator`,
         `agentopsy-mitre-navigator-${caseId}.json`,
       ),
-    // Export CSV del timeline de investigación (tool runs + hallazgos, orden UTC).
-    exportTimelineCsv: (caseId: string) =>
+    // Hoja de cálculo del timeline de investigación (tool runs + hallazgos, orden UTC).
+    exportTimelineHoja: (caseId: string) =>
       download(
-        `/api/cases/${encodeURIComponent(caseId)}/timeline/export.csv`,
-        `agentopsy-timeline-${caseId}.csv`,
+        `/api/cases/${encodeURIComponent(caseId)}/timeline/export.xlsx`,
+        `agentopsy-timeline-${caseId}.xlsx`,
       ),
     readChat: (caseId: string, sessionId: string) =>
       request<PersistedChatMessage[]>(

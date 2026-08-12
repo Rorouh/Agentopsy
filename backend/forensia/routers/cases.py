@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from forensia.cases.manager import case_manager
 from forensia.evidence import evidence_manager
 from forensia.evidence_jobs import register_job_registry
+from forensia.pulse import case_pulse
 from forensia.security import require_token
 
 router = APIRouter()
@@ -105,6 +106,22 @@ def get_case(case_id: str) -> dict[str, Any]:
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return _case_dict(case)
+
+
+@router.get("/api/cases/{case_id}/pulse", dependencies=[Depends(require_token)])
+def get_case_pulse(case_id: str) -> dict[str, Any]:
+    """Firma por flujo del caso, más los trabajos en curso.
+
+    Lo sondea la SPA para refrescarse sola: cuando la firma de un flujo cambia, la
+    vista que lo pinta recarga SUS datos por su endpoint de siempre. Es barato a
+    propósito (``stat``, sin leer contenido) porque se llama cada pocos segundos;
+    la lógica vive en ``forensia.pulse`` (RULE 3)."""
+    try:
+        return case_pulse(case_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/api/cases/{case_id}/os-profile", dependencies=[Depends(require_token)])

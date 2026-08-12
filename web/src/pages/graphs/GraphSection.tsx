@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ApiError, api } from "../../api/client";
+import { useCaseStream } from "../../state/casePulse";
 import type {
   ExecutorId,
   GraphCaseView,
@@ -45,7 +46,6 @@ function elapsed(desde: string, ahora: number): string {
   return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 }
 
-const usd = (n: number) => `${n.toFixed(4)} USD`;
 
 type Vista = { tipo: "caso" } | { tipo: "hallazgo"; findingId: string };
 
@@ -80,6 +80,9 @@ export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
   const pollRef = useRef<number | null>(null);
 
   const running = job?.status === "running";
+  // Un lote de grafos va hallazgo a hallazgo y persiste cada uno según sale, y
+  // los hallazgos que lo alimentan pueden aparecer mientras tanto.
+  const revGrafos = useCaseStream("graphs", "findings");
 
   const recargar = useCallback(async () => {
     const idx = await api.cases.listGraphs(caseId);
@@ -107,6 +110,24 @@ export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
       cancelado = true;
     };
   }, [caseId, recargar]);
+
+  // Reposición EN SILENCIO: el grafo de un hallazgo termina y aparece sin que
+  // haya que recargar la página. No toca la vista ni la selección del perito.
+  useEffect(() => {
+    if (revGrafos === 0) return;
+    let cancelado = false;
+    void (async () => {
+      try {
+        await recargar();
+      } catch {
+        /* el estado de error lo gobierna la carga de arriba */
+      }
+      if (cancelado) return;
+    })();
+    return () => {
+      cancelado = true;
+    };
+  }, [revGrafos, recargar]);
 
   // Lo que la cabecera cuenta sale del índice ya cargado, no de otra petición.
   useEffect(() => {
@@ -299,20 +320,6 @@ export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
         </button>
       </div>
 
-      {/* La previsión, con su base declarada, ANTES de gastar. Nunca comparte
-          campo con el coste real del lote ya ejecutado. */}
-      {pendientes.length > 0 && !running && (
-        <div className="graph-cost">
-          <span className="mono">
-            Coste estimado: {usd(index.estimacion.coste_estimado_usd)} por{" "}
-            {index.estimacion.hallazgos} hallazgos
-          </span>
-          <span className="graph-cost-base">
-            Previsión, {index.estimacion.base_del_estimado}
-          </span>
-        </div>
-      )}
-
       {sinEjecutor && pendientes.length > 0 && (
         <div className="inline-note">
           El grafo lo extrae el modelo que selecciones. Elige uno en «Modelo que extrae»,
@@ -352,13 +359,7 @@ export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
           <strong>
             {job.result.con_grafo} de {job.result.solicitados} hallazgos con grafo
           </strong>
-          <span className="mono">
-            {job.result.coste_usd === null
-              ? `Coste real: no informado por ${job.result.executor}`
-              : `Coste real: ${usd(job.result.coste_usd)}`}
-            {" · "}
-            {job.result.input_tokens} tok entrada, {job.result.output_tokens} tok salida
-          </span>
+          <span className="mono">Extraído con {job.result.executor}</span>
           {job.result.resultados
             .filter((r) => !r.ok)
             .map((r) => (

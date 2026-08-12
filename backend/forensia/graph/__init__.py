@@ -24,7 +24,7 @@ from forensia.graph.extractor import (
 )
 from forensia.graph.fusion import clave_de_nodo, merge_case_graph
 from forensia.graph.layout import layout_caso, layout_hallazgo
-from forensia.graph.lote import estimar_coste, extraer_lote
+from forensia.graph.lote import extraer_lote
 from forensia.graph.modelo import (
     TIPOS_NODO,
     TIPOS_RELACION,
@@ -43,7 +43,6 @@ __all__ = [
     "build_delta_prompt",
     "build_prompt",
     "clave_de_nodo",
-    "estimar_coste",
     "extract_graph",
     "extraer_lote",
     "graph_store",

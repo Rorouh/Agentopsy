@@ -35,11 +35,11 @@ from forensia.executors import (
     REASONING_CONFIG_KEY,
     get_executor,
 )
-from forensia.export_csv import export_basename, iso_utc_ahora
+from forensia.export_hoja import export_basename, iso_utc_ahora
 from forensia.findings import finding_store
 from forensia.graph.fusion import merge_case_graph
 from forensia.graph.layout import ALTO, ANCHO, layout_caso, layout_hallazgo
-from forensia.graph.lote import estimar_coste, extraer_lote
+from forensia.graph.lote import extraer_lote
 from forensia.graph.store import graph_store
 from forensia.security import require_token
 
@@ -50,7 +50,7 @@ router = APIRouter()
 GRAPH_JOB_KIND = "graph"
 
 #: ``kind`` con el que se nombra cada figura al exportarla. La misma función que
-#: nombra las dos hojas de cálculo (``export_csv.export_basename``), para que dos
+#: nombra las dos hojas de cálculo (``export_hoja.export_basename``), para que dos
 #: exportaciones del mismo caso no se pisen en la carpeta de descargas y para que
 #: la identidad de la figura la resuelva el servidor, no el navegador.
 EXPORT_KIND_CASO = "grafo-caso"
@@ -87,10 +87,7 @@ class ExtractRequest(BaseModel):
 
 @router.get("/api/cases/{case_id}/graphs", dependencies=[Depends(require_token)])
 def list_graphs(case_id: str) -> dict[str, Any]:
-    """Ficha del último grafo de cada hallazgo, más la previsión de coste.
-
-    ``coste_estimado_usd`` es una PREVISIÓN con su base declarada, y nunca ocupa
-    el mismo campo que el coste real de un lote ya ejecutado."""
+    """Ficha del último grafo de cada hallazgo, y los que faltan por extraer."""
     _case_or_404(case_id)
     findings = finding_store.list(case_id)
     grafos = {g.finding_id: g for g in graph_store.list_latest(case_id)}
@@ -109,7 +106,6 @@ def list_graphs(case_id: str) -> dict[str, Any]:
         ],
         "pendientes": pendientes,
         "hallazgos": [{"id": f.id, "title": f.title} for f in findings],
-        "estimacion": estimar_coste(len(pendientes)),
     }
 
 
@@ -221,7 +217,6 @@ def start_extraction(case_id: str, req: ExtractRequest) -> dict[str, Any]:
             "case_name": case.name,
             "solicitados": len(findings),
             "executor": {"id": executor.id, "name": executor.name, "local": executor.is_local},
-            "estimacion": estimar_coste(len(findings)),
         },
     )
     return job.public()

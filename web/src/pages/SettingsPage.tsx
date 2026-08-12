@@ -239,7 +239,7 @@ export function SettingsPage({ caps, version, onCapsRefresh }: SettingsPageProps
 
                           {open && (
                             <div className="engine-panel">
-                              {/* RULE 2: un ejecutor no disponible NUNCA se oculta —
+                              {/* RULE 2: un ejecutor no disponible NUNCA se oculta:
                                   sigue listado, con su punto apagado y el botón de
                                   conectar. Lo que ya no se vuelca aquí es el texto
                                   completo de `status.reason`: son varios párrafos con
@@ -261,7 +261,7 @@ export function SettingsPage({ caps, version, onCapsRefresh }: SettingsPageProps
                                       vacía o incompleta y hay que decir por qué (el
                                       catálogo de Codex que no se pudo leer, Ollama que
                                       no responde). Por eso se pinta siempre que exista
-                                      — RULE 2, la razón accionable no se oculta. */}
+                                      (RULE 2, la razón accionable no se oculta). */}
                                   {providerModels.note && (
                                     <div className="engine-note">{providerModels.note}</div>
                                   )}

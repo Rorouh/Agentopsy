@@ -3,6 +3,7 @@ import { api } from "./api/client";
 import type { Capabilities } from "./api/types";
 import { ThemeProvider } from "./ThemeProvider";
 import { ActiveCaseProvider } from "./state/activeCase";
+import { CasePulseProvider } from "./state/casePulse";
 import { CaseEvidenceProvider } from "./state/caseEvidence";
 import { AppShell } from "./layout/AppShell";
 import { ShellHeaderProvider } from "./layout/shellHeader";
@@ -70,6 +71,7 @@ export function App() {
   return (
     <ThemeProvider>
       <ActiveCaseProvider>
+      <CasePulseProvider>
       <CaseEvidenceProvider>
       <ShellHeaderProvider>
       <AppShell activeView={activeView} onViewChange={setActiveView} error={error}>
@@ -102,6 +104,7 @@ export function App() {
       </AppShell>
       </ShellHeaderProvider>
       </CaseEvidenceProvider>
+      </CasePulseProvider>
       </ActiveCaseProvider>
     </ThemeProvider>
   );

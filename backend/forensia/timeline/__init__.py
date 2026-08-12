@@ -32,7 +32,7 @@ surface can label the timezone unambiguously (never a silent local-time render).
 Las capas 1 a 3 se LEEN como lista y se exportan como hoja
 (``forensia.timeline.export``). La capa 0 se lee como FIGURA y se exporta como imagen:
 la dibuja el navegador en SVG y su procedencia (nombre del caso, instante y nombre de
-fichero por ``export_csv.export_basename``) la resuelve ``build_findings_timeline``.
+fichero por ``export_hoja.export_basename``) la resuelve ``build_findings_timeline``.
 
 Pure logic lives here (CLAUDE.md RULE 3); ``forensia.routers.timeline`` is a thin
 adapter over it.

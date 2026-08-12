@@ -350,7 +350,7 @@ interface ChatPageProps {
   activeCase?: Case | null;
   activeEvidence?: EvidenceHandle | null;
   // Se llama al terminar cada query() (bien o mal) para que la página que
-  // envuelve (Investigación) refresque hallazgos, tools y coste.
+  // envuelve (Investigación) refresque hallazgos y herramientas.
   onTurnComplete?: () => void;
   // Refresca capabilities en App tras conectar un ejecutor CLI desde el selector.
   onCapsRefresh?: () => Promise<void> | void;

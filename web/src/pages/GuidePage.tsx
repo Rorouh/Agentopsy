@@ -27,10 +27,6 @@ const NOTES = [
     body: "Al elegir un ejecutor cloud los prompts incluyen contenido derivado de la evidencia (posibles datos personales reales) y sale a ese proveedor bajo tu propia suscripción. La alternativa 100 % local es Ollama, que nunca envía nada fuera del equipo.",
   },
   {
-    title: "Coste y tiempo del análisis",
-    body: "Iteraciones, tokens, tiempo y coste son orientativos, no un presupuesto: salen del histórico del caso o de una heurística. Agentopsy no inventa tarifas; con una suscripción de CLI el coste marginal puede ser 0.",
-  },
-  {
     title: "Principios forenses",
     body: "La evidencia nunca se toca directamente: todo acceso pasa por un handle hash-verificado y de solo lectura a nivel de bloque. Cada acción queda en un log de auditoría encadenado por hash.",
   },

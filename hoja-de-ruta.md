@@ -9,7 +9,7 @@ allí y se borra de aquí.
 
 ---
 
-## 0. Contexto: los arreglos del 2026-08-06
+## 0. Contexto: los arreglos del 2026-08-06 y del 2026-08-12
 
 Los arreglos del 2026-08-06, ya implementados (el detalle está en `CLAUDE.md`),
 quedan aquí resumidos porque son el estado sobre el que se mide lo que falta.
@@ -25,15 +25,30 @@ autocompletado. Con `color-scheme: light | dark` por tema, más colores
 explícitos para `option`/`optgroup` y para el autocompletado, la familia entera
 queda cubierta, no solo el caso que se vio.
 
-**Las dos exportaciones a CSV.** Ninguna se abría bien en una hoja de cálculo, y
-por tres motivos del envoltorio, no de los datos: sin BOM (Excel en Windows lee
-un `.csv` sin marca con la página de códigos del sistema, y «Exfiltración» salía
-«ExfiltraciÃ³n»), separadas por comas (el separador de listas de un Windows en
-español es el punto y coma, así que la fila entera caía en la columna A) y sin
-bloque de procedencia (una tabla que no dice de qué caso es no se puede adjuntar
-a un informe). Ahora las dos salen por `forensia.export_csv`: BOM, `sep=;`,
-procedencia de dos columnas, una línea vacía y la tabla, con cabeceras en
-castellano y el `argv` literal en la última columna, que es el dato más ancho.
+**Las dos exportaciones.** Ninguna se abría bien en una hoja de cálculo, y el
+arreglo del 2026-08-06 (CSV con BOM, `sep=;` y procedencia) tampoco lo resolvió:
+medido contra Excel real, la declaración `sep=;` hace que Excel deje de aplicar
+el BOM, así que arreglaba las columnas y rompía los acentos. Un CSV obliga a
+acertar a la vez con la codificación y con el separador, y en Windows son
+excluyentes. El 2026-08-12 las dos pasan a ser un `.xlsx` real
+(`forensia.export_hoja`, con `openpyxl`), que no negocia ninguna de las dos y
+además se presenta como anexo: cabecera fijada con filtros, anchos acotados y
+ajuste de impresión. Se conserva lo que era del dominio: procedencia, línea vacía
+antes de la tabla, cabeceras en castellano y el `argv` literal en la última
+columna. El detalle completo, en `CLAUDE.md`.
+
+**El coste en tokens de la interfaz, retirado (2026-08-12).** El conteo no era
+fiable, así que desaparecen el panel «Coste» de Investigación, `executor-cost`,
+`analyze/estimate` y las dos cifras de la fase de Grafos. **Esto no invalida el
+apartado 1 de este documento**: la medición del coste del informe se hace sobre
+el log de auditoría encadenado (`executor_run_finish` + `report_written`), que
+sigue registrando el `usage` intacto. Lo retirado es lo que se le AFIRMABA al
+perito, no la procedencia.
+
+**La interfaz se refresca sola (2026-08-12).** `GET …/pulse` da una firma por
+flujo del caso, sacada de `stat` (6 ms por sondeo sobre un caso real), y un store
+compartido convierte cada cambio en una recarga silenciosa de la vista que pinta
+ese flujo. Se acabó el F5.
 
 ---
 

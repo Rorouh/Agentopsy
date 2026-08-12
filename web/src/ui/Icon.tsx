@@ -6,10 +6,10 @@ import type { ReactNode, SVGProps } from "react";
 // texto (✓ ⚠ ▾ ● ○) incrustados en el JSX del resto de vistas. Los glifos son
 // caracteres Unicode: los resuelve la fuente del sistema, no IBM Plex, así que
 // cambian de forma, de peso y de alineación vertical entre macOS, Windows y
-// Linux — y Agentopsy corre en los tres. Aquí se dibujan, y se ven igual.
+// Linux, y Agentopsy corre en los tres. Aquí se dibujan, y se ven igual.
 //
 // REGLA: en la interfaz, un icono es un <Icon>. Los glifos sólo son legítimos
-// dentro de bloques MONOESPACIADOS donde forman parte del texto — el árbol de
+// dentro de bloques MONOESPACIADOS donde forman parte del texto: el árbol de
 // actividad del agente en ChatPage (`▸ ✓ ✗ ★`), que imita una traza de terminal
 // y se lee como tal.
 

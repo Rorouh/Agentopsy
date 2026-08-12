@@ -5,9 +5,9 @@ del audit log + hallazgos) fuera de Agentopsy para adjuntarla a su informe. Reus
 los eventos que ensambla ``forensia.timeline.builder``: no reconstruye nada, no
 ejecuta herramientas y no reordena.
 
-El envoltorio es el de ``forensia.export_csv`` (BOM, ``sep=;``, procedencia y una
-línea vacía antes de la tabla), y sobre él hay tres decisiones de PRESENTACIÓN
-propias de este dominio:
+El envoltorio es el de ``forensia.export_hoja`` (un `.xlsx` real, con su bloque de
+procedencia y una línea vacía antes de la tabla), y sobre él hay tres decisiones
+de PRESENTACIÓN propias de este dominio:
 
 - **El comando va en la ÚLTIMA columna.** Un ``argv`` auditado ocupa más de cien
   caracteres (lleva la ruta absoluta de la evidencia dentro del maletín) y, puesto
@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from forensia.export_csv import NO_APLICA, build_sheet, iso_utc_ahora, unir
+from forensia.export_hoja import NO_APLICA, build_workbook, iso_utc_ahora, unir
 from forensia.timeline.vocabulario import (
     KIND_LABEL,
     SEVERITY_LABEL,
@@ -40,7 +40,7 @@ from forensia.timeline.vocabulario import (
 #: Cabecera de la tabla del timeline. Orden estable, es un contrato que los tests
 #: fijan. Cubre los dos tipos de evento (``tool_run`` y ``finding``); cada fila
 #: rellena los campos que le aplican y escribe ``n/d`` en los que no.
-CSV_HEADER: tuple[str, ...] = (
+HOJA_HEADER: tuple[str, ...] = (
     "N",
     "Marca temporal (UTC)",
     "Tipo de evento",
@@ -57,14 +57,14 @@ CSV_HEADER: tuple[str, ...] = (
     "Comando ejecutado (argv literal auditado)",
 )
 
-def timeline_to_csv(
+def timeline_to_hoja(
     events: list[dict[str, Any]],
     *,
     case_id: str = "",
     case_name: str = "",
     timezone: str = "UTC",
     exported_at: str | None = None,
-) -> str:
+) -> bytes:
     """La hoja del timeline de investigación: una fila por evento.
 
     ``events`` son los eventos de :func:`build_investigation_timeline`, en el orden
@@ -133,7 +133,12 @@ def timeline_to_csv(
             NO_APLICA if not es_run else ("" if salidas is None else salidas),
             " ".join(argv) if isinstance(argv, list) and argv else NO_APLICA,
         ])
-    return build_sheet(procedencia=procedencia, cabecera=CSV_HEADER, filas=filas)
+    return build_workbook(
+        procedencia=procedencia,
+        cabecera=HOJA_HEADER,
+        filas=filas,
+        titulo="Linea temporal",
+    )
 
 
-__all__ = ["CSV_HEADER", "timeline_to_csv"]
+__all__ = ["HOJA_HEADER", "timeline_to_hoja"]

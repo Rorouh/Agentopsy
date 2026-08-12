@@ -9,10 +9,10 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 
 from forensia.cases.manager import case_manager
-from forensia.export_csv import export_basename
+from forensia.export_hoja import EXTENSION, MEDIA_TYPE, export_basename
 from forensia.mitre import catalog
 from forensia.mitre.coverage import coverage_store
-from forensia.mitre.export import coverage_to_csv, coverage_to_navigator_layer
+from forensia.mitre.export import coverage_to_hoja, coverage_to_navigator_layer
 from forensia.security import require_token
 
 router = APIRouter()
@@ -49,10 +49,10 @@ def get_coverage(case_id: str) -> list[dict[str, Any]]:
 
 
 @router.get(
-    "/api/cases/{case_id}/mitre/export.csv",
+    "/api/cases/{case_id}/mitre/export.xlsx",
     dependencies=[Depends(require_token)],
 )
-def export_coverage_csv(case_id: str) -> Response:
+def export_coverage_hoja(case_id: str) -> Response:
     """Hoja de cálculo de la cobertura ATT&CK del caso (una fila por técnica
     evaluada, con su bloque de procedencia). Un caso sin propuestas ni dictámenes
     devuelve la procedencia y la cabecera sin filas (0 filas, honesto)."""
@@ -63,11 +63,11 @@ def export_coverage_csv(case_id: str) -> Response:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    body = coverage_to_csv(entries, case_id=case_id, case_name=case.name)
-    filename = f"{export_basename(case.name, 'mitre-attack')}.csv"
+    body = coverage_to_hoja(entries, case_id=case_id, case_name=case.name)
+    filename = f"{export_basename(case.name, 'mitre-attack')}.{EXTENSION}"
     return Response(
         content=body,
-        media_type="text/csv; charset=utf-8",
+        media_type=MEDIA_TYPE,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 

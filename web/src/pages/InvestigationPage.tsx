@@ -1,15 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
-import type {
-  AgentFinding,
-  Capabilities,
-  Case,
-  ExecutorCost,
-  ToolUsage,
-} from "../api/types";
+import type { AgentFinding, Capabilities, Case, ToolUsage } from "../api/types";
 import type { ViewId } from "../navigation/navItems";
 import { useActiveCase } from "../state/activeCase";
 import { useCaseEvidence } from "../state/caseEvidence";
+import { useCaseStream } from "../state/casePulse";
 import { usePublishShellHeader } from "../layout/shellHeader";
 import { ChatPage } from "./ChatPage";
 
@@ -28,10 +23,9 @@ const SEVERITY_LABEL: Record<AgentFinding["severity"], string> = {
   critical: "crítica",
 };
 
-// FASE 2 · Investigación. Envuelve el chat con el panel de contexto del mock:
-// hallazgos que el agente persiste vía `record_finding`, herramientas usadas y
-// coste por ejecutor. El panel se refresca tras cada turno (ChatPage llama a
-// onTurnComplete en su finally).
+// FASE 2 · Investigación. Envuelve el chat con el panel de contexto: hallazgos
+// que el agente persiste vía `record_finding` y herramientas usadas. El panel se
+// refresca tras cada turno (ChatPage llama a onTurnComplete en su finally).
 export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: InvestigationPageProps) {
   const { activeCase, phase: casesPhase, error: casesError } = useActiveCase();
   // La evidencia del caso viene del store compartido, no de una lectura propia al
@@ -39,9 +33,12 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
   // llegar hasta aquí. Con la lectura local, el chat seguía mandando
   // `evidence_id` vacío hasta que se recargaba la página.
   const { evidence } = useCaseEvidence();
+  // El panel de contexto se refresca tras cada turno del chat, pero un análisis
+  // en SEGUNDO PLANO sigue corriendo cuando el perito se va a otra sección y
+  // vuelve: el pulso es lo que lo mantiene al día en ese caso.
+  const revPanel = useCaseStream("findings", "audit");
   const [findings, setFindings] = useState<AgentFinding[]>([]);
   const [toolUsage, setToolUsage] = useState<ToolUsage[]>([]);
-  const [executorCost, setExecutorCost] = useState<ExecutorCost[]>([]);
   const [panelOpen, setPanelOpen] = useState(true);
 
   const refreshFindings = useCallback(async (caseId: string) => {
@@ -60,14 +57,9 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
       // Sin audit.jsonl aún → sin herramientas ejecutadas. Vacío, no error.
       setToolUsage([]);
     }
-    try {
-      setExecutorCost(await api.cases.listExecutorCost(caseId));
-    } catch {
-      setExecutorCost([]);
-    }
   }, []);
 
-  // Contexto del caso activo: hallazgos + tools + coste. Se recarga al cambiar de
+  // Contexto del caso activo: hallazgos + herramientas. Se recarga al cambiar de
   // caso (desde el sidebar o cualquier otra vista). La evidencia no se pide aquí,
   // la sirve el store.
   useEffect(() => {
@@ -75,7 +67,6 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
     if (!caseId) {
       setFindings([]);
       setToolUsage([]);
-      setExecutorCost([]);
       return;
     }
     let cancelled = false;
@@ -87,7 +78,7 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
     return () => {
       cancelled = true;
     };
-  }, [activeCase?.id, refreshFindings, refreshToolUsage]);
+  }, [activeCase?.id, revPanel, refreshFindings, refreshToolUsage]);
 
   const activeEvidence = evidence.length > 0 ? evidence[0] : null;
 
@@ -214,10 +205,10 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
 
           {panelOpen && (
             <div className="inv-panel">
-              {/* Los tres bloques se reparten la altura del raíl y cada uno
+              {/* Los dos bloques se reparten la altura del raíl y cada uno
                   scrollea POR DENTRO: el encabezado siempre visible, y una
-                  lista larga de hallazgos ya no empuja Herramientas y Coste
-                  fuera de la pantalla. */}
+                  lista larga de hallazgos ya no empuja Herramientas fuera de
+                  la pantalla. */}
               <section className="inv-block">
                 <div className="eyebrow">
                   Hallazgos · {String(findings.length).padStart(2, "0")}
@@ -270,76 +261,10 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
                   )}
                 </div>
               </section>
-
-              <ExecutorCostBlock rows={executorCost} />
             </div>
           )}
         </aside>
       </div>
     </div>
-  );
-}
-
-// Coste/tokens por ejecutor. Forma: magnitud → barras horizontales; la IDENTIDAD
-// la lleva la etiqueta de fila, así que un solo tono basta. Los valores van
-// direct-labeled; un ejecutor que no reportó tokens se marca como tal, nunca
-// como un cero falso.
-function ExecutorCostBlock({ rows }: { rows: ExecutorCost[] }) {
-  const withTokens = rows.filter((r) => r.runs_with_tokens > 0);
-  const totalTokens = rows.reduce((n, r) => n + r.total_tokens, 0);
-  const totalCost = rows.reduce((n, r) => n + r.cost_usd, 0);
-  const max = Math.max(1, ...withTokens.map((r) => r.total_tokens));
-
-  return (
-    <section className="inv-block">
-      <div className="rule-label">
-        <span className="eyebrow">Coste</span>
-        <span className="rule" />
-        {totalTokens > 0 && (
-          <span className="rule-count">
-            {totalTokens.toLocaleString("es-ES")} tok
-            {totalCost > 0 ? ` · $${totalCost.toFixed(4)}` : ""}
-          </span>
-        )}
-      </div>
-      <div className="inv-block-scroll">
-      {rows.length === 0 ? (
-        <div className="inv-empty">
-          Sin ejecuciones registradas todavía. El coste en tokens aparece por ejecutor cuando el
-          agente corre sobre el caso.
-        </div>
-      ) : (
-        rows.map((r) => {
-          const reported = r.runs_with_tokens > 0;
-          return (
-            <div className="cost-row" key={r.executor}>
-              <div className="cost-row-head">
-                <span className="cost-row-name">{r.executor}</span>
-                <span className="cost-row-value">
-                  {reported
-                    ? `${r.total_tokens.toLocaleString("es-ES")} tok${
-                        r.cost_usd > 0 ? ` · $${r.cost_usd.toFixed(4)}` : ""
-                      }`
-                    : "no reportado"}
-                </span>
-              </div>
-              <div className="progress-track">
-                <div
-                  className="cost-bar"
-                  style={{ width: reported ? `${(r.total_tokens / max) * 100}%` : "0%" }}
-                />
-              </div>
-              <div className="cost-row-sub">
-                {r.runs} {r.runs === 1 ? "ejecución" : "ejecuciones"}
-                {reported
-                  ? ` · ${r.input_tokens.toLocaleString("es-ES")} in / ${r.output_tokens.toLocaleString("es-ES")} out`
-                  : ""}
-              </div>
-            </div>
-          );
-        })
-      )}
-      </div>
-    </section>
   );
 }

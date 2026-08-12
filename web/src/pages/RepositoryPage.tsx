@@ -9,6 +9,7 @@ import type {
 import type { ViewId } from "../navigation/navItems";
 import { useActiveCase } from "../state/activeCase";
 import { useCaseEvidence } from "../state/caseEvidence";
+import { useCaseStream } from "../state/casePulse";
 import { EvidenceInbox } from "../components/EvidenceInbox";
 import { EvidenceTable } from "../components/EvidenceTable";
 import { ErrorState } from "../ui/ErrorState";
@@ -62,6 +63,14 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
     registeredSeq,
     lastRegisteredId,
   } = useCaseEvidence();
+  // La ficha del caso cambia sola: el triage deriva el perfil de SO al registrar
+  // una evidencia, y el caso puede cerrarse desde otra pestaña. La LISTA de
+  // evidencias no se pide aquí, ya la repone el store con su propio flujo.
+  const revCase = useCaseStream("case");
+  useEffect(() => {
+    if (revCase === 0) return;
+    void reloadCases();
+  }, [revCase, reloadCases]);
 
   // Aviso de registro correcto: el TEXTO que se pinta (aria-live en
   // EvidenceInbox), null mientras no hay ninguno. Nombra lo que entró, que en un

@@ -12,9 +12,12 @@ Dos cosas que este módulo garantiza y que no son negociables:
    contabilidad: un turno que el guard no puede verificar se manda con el
    encargo entero y el motivo queda auditado. Nunca al revés.
 
-El coste ESTIMADO y el coste REAL viajan en campos distintos y con nombres
-distintos, la misma regla que ya siguen los turnos que mueren por timeout: una
-medida y una previsión no se mezclan jamás en el mismo número (RULE 2).
+El lote NO publica coste ni conteo de tokens (retirado el 2026-08-12, con el resto
+de la telemetría de coste: el conteo no era fiable y una cifra que no se sostiene
+en un informe pericial es peor que ninguna). Lo que sí se conserva es la
+procedencia de cada extracción: el bloque ``extraction`` que persiste junto a cada
+grafo sigue llevando el usage que informó el ejecutor, igual que el log de
+auditoría encadenado.
 """
 
 from __future__ import annotations
@@ -27,34 +30,6 @@ from forensia.findings import Finding
 from forensia.graph.extractor import SesionEncadenada, extract_graph
 from forensia.graph.modelo import GraphExtractError
 from forensia.graph.store import GraphStore
-
-#: Coste estimado de extraer el grafo de UN hallazgo, en USD.
-#:
-#: BASE DECLARADA: medido el 2026-08-10 sobre los 19 hallazgos del caso
-#: TestCase2 con `claude-code` (modelo por defecto del CLI, claude-sonnet-5),
-#: encadenando la sesión: 0,268 USD en total, 19 llamadas, 115 s. En frío, sin
-#: encadenar, la misma extracción salió a 0,0353 USD de media.
-#:
-#: Es una PREVISIÓN, y la superficie que la enseñe tiene que decir que lo es y
-#: con qué ejecutor se midió: cambiar de ejecutor o de modelo la invalida, y un
-#: hallazgo con mucho texto cuesta más que uno de dos líneas.
-COSTE_ESTIMADO_POR_HALLAZGO_USD = 0.0141
-BASE_DEL_ESTIMADO = (
-    "medido el 2026-08-10 sobre 19 hallazgos reales con claude-code encadenando "
-    "la sesión (0,268 USD en total). Cambiar de ejecutor o de modelo lo invalida."
-)
-
-
-def estimar_coste(n_hallazgos: int) -> dict[str, Any]:
-    """La previsión que se enseña ANTES de lanzar, con su base declarada."""
-    n = max(0, int(n_hallazgos))
-    return {
-        "hallazgos": n,
-        "coste_estimado_usd": round(n * COSTE_ESTIMADO_POR_HALLAZGO_USD, 4),
-        "estimado_por_hallazgo_usd": COSTE_ESTIMADO_POR_HALLAZGO_USD,
-        "base_del_estimado": BASE_DEL_ESTIMADO,
-    }
-
 
 def extraer_lote(
     case_id: str,
@@ -71,9 +46,6 @@ def extraer_lote(
     """Extrae y persiste el grafo de cada hallazgo. Devuelve el parte del lote."""
     sesion = SesionEncadenada() if executor.supports_session_resume else None
     resultados: list[dict[str, Any]] = []
-    coste_real = 0.0
-    coste_informado = False
-    tokens_in = tokens_out = 0
 
     for indice, f in enumerate(findings):
         if should_cancel is not None and should_cancel():
@@ -110,13 +82,6 @@ def extraer_lote(
                 })
             continue
 
-        extraccion = grafo.get("extraction") or {}
-        if extraccion.get("cost_usd") is not None:
-            coste_real += float(extraccion["cost_usd"])
-            coste_informado = True
-        tokens_in += int(extraccion.get("input_tokens") or 0)
-        tokens_out += int(extraccion.get("output_tokens") or 0)
-
         guardado = store.save(case_id, f.id, grafo)
         resultados.append({
             "finding_id": f.id,
@@ -143,19 +108,9 @@ def extraer_lote(
         "con_grafo": len(con_grafo),
         "sin_grafo": len(sin_grafo),
         "resultados": resultados,
-        # El coste REAL, del audit del ejecutor. `None` cuando ningún envoltorio
-        # lo informa (codex no lo hace), para no enseñar un cero que no es cero.
-        "coste_usd": round(coste_real, 6) if coste_informado else None,
-        "input_tokens": tokens_in,
-        "output_tokens": tokens_out,
         "executor": executor.id,
         "model": model,
     }
 
 
-__all__ = [
-    "BASE_DEL_ESTIMADO",
-    "COSTE_ESTIMADO_POR_HALLAZGO_USD",
-    "estimar_coste",
-    "extraer_lote",
-]
+__all__ = ["extraer_lote"]

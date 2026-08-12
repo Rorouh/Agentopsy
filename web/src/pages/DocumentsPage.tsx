@@ -13,6 +13,7 @@ import type {
 } from "../api/types";
 import { usePublishShellHeader } from "../layout/shellHeader";
 import { useActiveCase } from "../state/activeCase";
+import { useCaseStream } from "../state/casePulse";
 import { Icon } from "../ui/Icon";
 
 // FASE 7 · Informe pericial. Almacén real (forensia.reports): cada documento
@@ -73,6 +74,10 @@ function elapsed(fromIso: string, now: number): string {
 
 export function DocumentsPage() {
   const { activeCase, phase: casesPhase, error: casesError } = useActiveCase();
+  // Una redacción corre en el servidor durante minutos: cuando publica el
+  // informe, la lista lo enseña sin que haya que recargar la página. Los
+  // hallazgos porque son la precondición para poder finalizar la investigación.
+  const revDocuments = useCaseStream("documents", "findings");
 
   const [documents, setDocuments] = useState<DocumentMeta[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -182,6 +187,27 @@ export function DocumentsPage() {
       cancelled = true;
     };
   }, [activeCase?.id]);
+
+  // Reposición EN SILENCIO: la redacción termina en el servidor y publica el
+  // informe, o el análisis añade hallazgos. Sin cerrar el documento que el
+  // perito esté leyendo ni soltar el job que se está sondeando.
+  useEffect(() => {
+    const caseId = activeCase?.id;
+    if (!caseId || revDocuments === 0) return;
+    let cancelled = false;
+    (async () => {
+      const [docs, findings] = await Promise.all([
+        api.cases.listDocuments(caseId).catch(() => null),
+        api.cases.listFindings(caseId).catch(() => null),
+      ]);
+      if (cancelled) return;
+      if (docs) setDocuments(docs);
+      if (findings) setFindingCount(findings.length);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeCase?.id, revDocuments]);
 
   // Al seleccionar, trae el documento completo (con secciones).
   useEffect(() => {

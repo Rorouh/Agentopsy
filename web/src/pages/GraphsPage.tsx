@@ -9,7 +9,7 @@ import { GraphSection, type GraphResumen } from "./graphs/GraphSection";
 // FASE 6 · Grafos de relaciones.
 //
 // Vivía dentro del Informe pericial, y ahí estaba mal puesta: extraer los grafos
-// es un acto propio, con su modelo, su coste y su parte de resultados, no un
+// es un acto propio, con su modelo y su parte de resultados, no un
 // paso de la redacción. Al compartir pantalla con «Finalizar investigación»,
 // dos acciones que llaman al modelo y cuestan dinero competían por la misma
 // mirada. Aquí es la fase que separa leer los hallazgos de

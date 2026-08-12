@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { useActiveCase } from "./activeCase";
 import { useCaseEvidence } from "./caseEvidence";
+import { useCaseStream } from "./casePulse";
 
 // Cifras del caso que alimentan el estado de las fases: la escalera del sidebar
 // y los pasos de la Guía leen LAS MISMAS, para que no puedan contradecirse.
@@ -37,6 +38,10 @@ export function useCaseFacts(): CaseFacts {
   // en que el registro termina, sin recargar la página. El sidebar nunca se
   // desmonta, así que su lectura propia se quedaba vieja para siempre.
   const { evidence, phase: evidencePhase } = useCaseEvidence();
+  // La escalera del sidebar vive fuera de las vistas y NUNCA se desmonta, así que
+  // sin esto se quedaba con las cifras del momento en que se cargó el caso: el
+  // perito veía «sin hallazgos» con veinte ya persistidos.
+  const revFacts = useCaseStream("findings", "graphs", "documents");
   const [counts, setCounts] = useState<{
     findings: number;
     graphs: number;
@@ -71,7 +76,7 @@ export function useCaseFacts(): CaseFacts {
     return () => {
       cancelled = true;
     };
-  }, [activeCaseId]);
+  }, [activeCaseId, revFacts]);
 
   return useMemo(() => {
     if (!activeCaseId) return EMPTY_FACTS;

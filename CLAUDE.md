@@ -738,34 +738,82 @@ confirma borrar un caso pintaba blanco fijo sobre `--danger`, que en oscuro es u
 salmón claro, y pasa a `--invert-fg`, el mismo token que ya usan `.action-accent`
 y `.action-invert`.
 
-**Las dos exportaciones a CSV se abren como una hoja de cálculo (2026-08-06,
-`forensia.export_csv`)**: ni la cobertura ATT&CK ni el timeline se podían
-adjuntar a un informe, y los tres motivos eran del ENVOLTORIO, no de los datos.
-(1) Sin BOM: Excel en Windows abre un `.csv` sin marca con la página de códigos
-del sistema, así que «Exfiltración» se leía «ExfiltraciÃ³n». (2) Separado por
-comas: el separador de listas de un Windows en español es el punto y coma, de
-modo que la fila ENTERA caía en la columna A, sin columnas ni filtros ni orden.
-(3) Sin procedencia: una tabla que no dice de qué caso es, cuándo se exportó ni
-cuántas filas debería traer no vale como anexo. El módulo nuevo es el envoltorio
-compartido (BOM, `sep=;` que Excel y LibreOffice leen para no depender de la
-configuración regional, CRLF de RFC 4180, bloque de procedencia de dos columnas y
-**una línea vacía** antes de la tabla, que es el contrato estable para quien la
-lea con un programa) más `export_basename`, que nombra el fichero con la
-herramienta, el tipo, el caso y la marca temporal (transcrito a ASCII porque
-viaja en `Content-Disposition`), así que dos exportaciones del mismo caso no se
-pisan en la carpeta de descargas. Sobre eso, las cabeceras pasan a castellano
-(la hoja la lee una PERSONA; el canal de máquina sigue siendo el layer del
-Navigator y `GET …/timeline`, que no cambian), cada fila se numera para poder
-citarla, el vocabulario cerrado se etiqueta con la regla de que un valor
-desconocido viaja TAL CUAL y nunca traducido a lo que se le parezca (RULE 2), y
-el `argv` literal auditado se va a la ÚLTIMA columna: pasa de cien caracteres y
-puesto a la izquierda empujaba fuera de pantalla justo las columnas que se leen.
-El timeline gana además tres columnas que antes se tiraban y son las que permiten
-citar un evento en el informe: el identificador (`run_id` o `finding_id`), el
-detalle del hallazgo y el recuento de ficheros de salida. Pinned by
-`test_csv_opens_as_a_spreadsheet_and_declares_its_provenance`,
-`test_sheet_opens_as_a_spreadsheet_and_declares_its_provenance` y
-`test_an_unknown_vocabulary_value_travels_verbatim`.
+**Las dos exportaciones se abren como una hoja de cálculo (2026-08-06, revisado
+el 2026-08-12, `forensia.export_hoja`)**: ni la cobertura ATT&CK ni el timeline se
+podían adjuntar a un informe. El primer arreglo las emitió como CSV con BOM,
+`sep=;` y bloque de procedencia, y **el propio arreglo dejaba el fichero
+ilegible**: medido contra Excel 16 en es-ES, un `.csv` que declara `sep=;` deja de
+aplicar el BOM y «Correlación» vuelve a leerse «CorrelaciÃ³n». No es un descuido
+del formato, es que un CSV obliga a acertar a la vez con DOS cosas que en Windows
+se estorban: la codificación (sin BOM, Excel abre con la página de códigos del
+sistema) y el separador (Excel parte por el separador de listas del locale, `;` en
+español y `,` en inglés, así que un fichero correcto en una máquina cae entero en
+la columna A en la otra). Se midieron las seis combinaciones abriéndolas en Excel
+real: sólo dos aciertan las dos cosas, y una es un `.xlsx`. Así que las dos
+exportaciones son ahora un **`.xlsx` de verdad** (`openpyxl`, pure-python, en la
+imagen del api por RULE 1): el texto viaja en XML UTF-8 dentro del paquete y las
+celdas ya vienen separadas, de modo que no hay nada que negociar en Excel,
+LibreOffice, Numbers ni Google Sheets, en cualquier idioma del sistema. Y de paso
+la hoja se PRESENTA: cabecera fijada y con filtros, anchos acotados (un `argv`
+auditado pasa de cien caracteres y sin tope deja la hoja inservible), un entero
+entra como número para que la columna ordene por valor y no alfabéticamente, y el
+ajuste de impresión va en apaisado con la cabecera repetida en cada página, que es
+lo que separa un anexo de un volcado. Se conserva del formato anterior lo que era
+del dominio y no del envoltorio: el bloque de procedencia, la línea vacía antes de
+la tabla (el contrato para leerla con un programa: `pandas.read_excel(f,
+skiprows=len(procedencia) + 1)`), las cabeceras en castellano, la numeración de
+fila, el `argv` en la ÚLTIMA columna y la regla de que un valor de vocabulario
+desconocido viaja TAL CUAL (RULE 2). El canal de MÁQUINA no se toca: el layer del
+Navigator y `GET …/timeline` siguen igual. Un efecto lateral que sí es de
+seguridad: un `summary` o un `argv` salen de la evidencia, que es HOSTIL, y pueden
+empezar por «=»; en un CSV eso es la inyección de fórmulas de toda la vida y
+`openpyxl` lo escribiría como fórmula, así que toda celda de texto se fuerza a
+texto. Pinned by `test_export_hoja.py`,
+`test_sheet_opens_as_a_spreadsheet_and_declares_its_provenance` (los dos dominios)
+y `test_an_unknown_vocabulary_value_travels_verbatim`.
+
+**El coste en tokens se retira de la interfaz (2026-08-12)**: el conteo no era
+fiable y una cifra que no se sostiene es peor que ninguna en una herramienta cuyo
+producto es un informe pericial. Desaparecen el panel «Coste» de Investigación,
+`GET …/executor-cost` con `forensia.executors.cost`, `GET …/analyze/estimate` con
+`forensia.agent.estimate`, y las dos cifras de la fase de Grafos (la previsión
+antes de lanzar el lote y el coste real del parte). Lo que **no** se toca es la
+procedencia: cada ejecutor sigue parseando el `usage` de su envoltorio, que sigue
+viajando al log de auditoría encadenado (`executor_run_finish`) y al bloque
+`extraction` que se persiste junto a cada grafo, junto con el watchdog de caché.
+La distinción es la de siempre: el audit registra lo que ocurrió, la interfaz
+afirma cosas al perito, y sólo lo segundo se retira. Es una retirada temporal
+decidida por el equipo, no una limpieza de código muerto.
+
+**La interfaz se refresca sola, sin F5 (2026-08-12, `forensia.pulse` +
+`web/src/state/casePulse.tsx`)**: Agentopsy trabaja en segundo plano (un análisis
+persiste hallazgos según los concluye, un registro recorre gigabytes, una
+redacción tarda minutos, un lote de grafos va hallazgo a hallazgo), pero cada
+vista leía sus datos UNA vez al montarse y `App` DESTRUYE la anterior al cambiar
+de sección, así que había que recargar la página y no había forma de distinguir
+«aún no ha terminado» de «terminó hace diez minutos y nadie te lo dijo». El
+arreglo de 2026-08-06 resolvió esto para la evidencia con un store compartido;
+esto lo generaliza a todo el caso. `GET …/pulse` devuelve una FIRMA por flujo
+(`case`, `evidence`, `findings`, `audit`, `documents`, `graphs`,
+`mitre_proposals`, `mitre_verdicts`, `timeline`, `knowledge`, `chats`) sacada de
+`stat`, sin leer contenido ni montar ningún store: medido sobre un caso real con
+196 entradas de audit, **6 ms por sondeo**. La firma es OPACA, comparar dos sólo
+responde «igual» o «distinto». `CasePulseProvider` vive por encima de las vistas,
+igual que el store de evidencia, sondea a 2 s mientras hay trabajos en curso y a
+10 s cuando no (el propio pulso los cuenta por tipo, así que la cadencia sale de
+la misma petición), espacia a 15 s tras un fallo de transporte y comprueba de
+inmediato al volver a la pestaña. Cuando una firma cambia sube la REVISIÓN de ese
+flujo y la vista que lo pinta recarga SUS datos por su endpoint de siempre
+(`useCaseStream`), así que el coste no crece con el número de vistas ni con el
+tamaño del caso y cada vista sigue siendo dueña de sus datos (RULE 3). El detalle
+que hace que el refresco no estorbe: cada vista tiene DOS efectos, no uno. Cambiar
+de CASO reinicia la vista (esqueleto de carga, selección a cero, porque lo que
+había abierto es de otro caso); una revisión nueva **repone en silencio**, sin
+parpadeo y sin tocar la selección. Con un solo efecto, cada hallazgo que el agente
+persistiera cerraría la técnica que el perito está dictaminando o movería el
+detalle bajo su cursor, que es peor que no refrescar. La primera vuelta de un caso
+tampoco cuenta como cambio: no había con qué comparar. Pinned by
+`tests/test_pulse.py`.
 
 **La línea de tiempo del INCIDENTE, y `observed_at` deja de ser opcional de
 hecho (2026-08-10, `forensia.timeline.hallazgos`)**: el Timeline tenía tres capas
@@ -884,11 +932,9 @@ derivado de un hash del identificador. La extracción corre como JOB de fondo
 (`forensia.agent.jobs`, `kind="graph"`) con su sondeo y su listado, así que
 cerrar la pestaña no aborta nada, y **el lote no muere en el primer rechazo**:
 cada hallazgo lleva su resultado y al final se dice cuántos salieron, cuáles no y
-por qué. El coste ESTIMADO (constante declarada con su base medida) y el coste
-REAL del audit viven en campos distintos y nunca se mezclan; un ejecutor que no
-informa coste (codex) dice «no informado», no cero. La figura se exporta a PNG
+por qué. La figura se exporta a PNG
 por el rasterizador del timeline, con la procedencia dentro de la imagen y el
-nombre resuelto por `export_csv.export_basename`. Pinned by
+nombre resuelto por `export_hoja.export_basename`. Pinned by
 `tests/test_graph_relaciones.py`.
 
 **Los grafos son una FASE, no un apartado del informe (2026-08-11)**: nacieron

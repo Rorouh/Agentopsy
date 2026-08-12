@@ -21,6 +21,11 @@ dependencies = [
     # Parseo de multipart/form-data: lo exige FastAPI para UploadFile (subida de
     # evidencia a la bandeja, /api/evidence/upload).
     "python-multipart>=0.0.9",
+    # Hoja de cálculo real (.xlsx) de los exports (forensia.export_hoja). Sustituye
+    # al CSV, que no se podía leer: Excel no aplica el BOM cuando el fichero
+    # declara `sep=;`, y sin esa declaración el separador depende del locale.
+    # Pure-python, y además LEE, que es como los tests comprueban lo exportado.
+    "openpyxl>=3.1",
 ]
 
 [project.optional-dependencies]

@@ -31,7 +31,6 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from forensia.agent.agent import ForensicAgent
-from forensia.agent.estimate import estimate_analysis
 from forensia.agent.history import build_replay_messages
 from forensia.agent.jobs import job_registry
 from forensia.agent.registry import agent_registry
@@ -280,26 +279,6 @@ def cancel_job(job_id: str) -> dict:
 def list_case_jobs(case_id: str) -> list[dict]:
     """Los análisis en segundo plano de un caso, más recientes primero."""
     return job_registry.list_for_case(case_id)
-
-
-@router.get(
-    "/api/cases/{case_id}/analyze/estimate", dependencies=[Depends(require_token)]
-)
-def analyze_estimate(case_id: str, executor: str, evidence_id: str | None = None) -> dict:
-    """Estimación HONESTA (rangos + supuestos) del coste de lanzar un análisis:
-    iteraciones, tokens, coste monetario y tiempo — ANTES de lanzarlo.
-
-    `executor` es obligatorio (RULE 2: Agentopsy no elige uno por ti); un id
-    desconocido → 422. `evidence_id` es opcional (enriquece con el tamaño). Toda
-    la lógica y las tarifas viven en `forensia.agent.estimate` (RULE 3)."""
-    try:
-        return estimate_analysis(
-            case_id=case_id, executor_id=executor, evidence_id=evidence_id
-        )
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/api/agent/query/stream", dependencies=[Depends(require_token)])

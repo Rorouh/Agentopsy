@@ -9,6 +9,7 @@ import type {
 } from "../api/types";
 import { usePublishShellHeader } from "../layout/shellHeader";
 import { useActiveCase } from "../state/activeCase";
+import { useCaseStream } from "../state/casePulse";
 
 // FASE 3 · Matriz ATT&CK del caso. Dos ejes que NUNCA se funden:
 //
@@ -69,6 +70,9 @@ export function MitreAttackPage() {
 
   const activeCase = explore ? null : globalCase;
   const activeCaseId = activeCase?.id ?? null;
+  // Los dos ejes de la matriz y los hallazgos que los sostienen. Un análisis en
+  // curso va anclando técnicas, y la matriz tiene que pintarlas al llegar.
+  const revMitre = useCaseStream("mitre_proposals", "mitre_verdicts", "findings");
   const caseMode = activeCase !== null;
 
   const refreshCoverage = useCallback(async (caseId: string) => {
@@ -95,6 +99,7 @@ export function MitreAttackPage() {
   }, []);
 
   // Al cambiar de caso: carga su cobertura + hallazgos (o limpia en exploración).
+  // Cierra la técnica abierta, que es del caso anterior.
   useEffect(() => {
     setSel(null);
     if (!activeCaseId) {
@@ -116,6 +121,25 @@ export function MitreAttackPage() {
       cancelled = true;
     };
   }, [activeCaseId]);
+
+  // Reposición EN SILENCIO cuando el análisis ancla técnicas nuevas: la matriz
+  // se repinta sin cerrar la técnica que el perito tenga abierta dictaminando.
+  useEffect(() => {
+    if (!activeCaseId || revMitre === 0) return;
+    let cancelled = false;
+    (async () => {
+      const [cov, finds] = await Promise.all([
+        api.cases.listMitreCoverage(activeCaseId).catch(() => null),
+        api.cases.listFindings(activeCaseId).catch(() => null),
+      ]);
+      if (cancelled) return;
+      if (cov) setCoverage(cov);
+      if (finds) setFindings(finds);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeCaseId, revMitre]);
 
   // technique_id → entrada de cobertura
   const byTechnique = useMemo(() => {
@@ -164,15 +188,15 @@ export function MitreAttackPage() {
     [activeCase, sel, rationale, byTechnique, refreshCoverage],
   );
 
-  // Export de la cobertura del caso (CSV o layer del Navigator). Se descarga con
+  // Export de la cobertura del caso (hoja de cálculo o layer del Navigator). Se descarga con
   // el token mismo-origen; un caso con 0 propuestas exporta igual (cabecera honesta).
   const onExport = useCallback(
-    async (kind: "csv" | "navigator") => {
+    async (kind: "hoja" | "navigator") => {
       if (!activeCase) return;
       setExporting(true);
       setExportError("");
       try {
-        if (kind === "csv") await api.cases.exportMitreCsv(activeCase.id);
+        if (kind === "hoja") await api.cases.exportMitreHoja(activeCase.id);
         else await api.cases.exportMitreNavigator(activeCase.id);
       } catch (err) {
         setExportError(err instanceof Error ? err.message : String(err));
@@ -366,9 +390,9 @@ export function MitreAttackPage() {
                 type="button"
                 className="action-outline"
                 disabled={exporting}
-                onClick={() => void onExport("csv")}
+                onClick={() => void onExport("hoja")}
               >
-                Exportar CSV
+                Exportar hoja
               </button>
               <button
                 type="button"

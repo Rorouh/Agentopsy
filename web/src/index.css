@@ -64,7 +64,7 @@
   --font-mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
 
   /* Escala tipográfica: CINCO pasos, sin medios píxeles. Cualquier `font-size`
-     literal en este fichero es un bug — si un tamaño no encaja, el problema es
+     literal en este fichero es un bug: si un tamaño no encaja, el problema es
      la jerarquía, no la escala. Dos excepciones legítimas, ambas comentadas
      donde aparecen: el tamaño raíz de html/body, y los glifos que se dimensionan
      como ICONO y no como texto (la × de cerrar, el caret de un desplegable). */
@@ -152,8 +152,8 @@ html, body, #root {
   background: var(--shell);
 }
 
-/* Anillo de foco de TODA la interfaz. Sin esto el navegador pinta el suyo —
-   azul, ajeno a la paleta — y además lo deja puesto después de un clic de ratón,
+/* Anillo de foco de TODA la interfaz. Sin esto el navegador pinta el suyo,
+   azul y ajeno a la paleta, y además lo deja puesto después de un clic de ratón,
    que es lo que dejaba «TODOS» enmarcado sin motivo. `:focus-visible` lo reserva
    a la navegación por teclado, que es donde hace falta: quitar el anillo sin
    reponerlo dejaría la app inusable sin ratón.
@@ -1390,12 +1390,6 @@ select option:disabled { color: var(--ink-5); }
   color: var(--ink-2);
 }
 .usage-count { color: var(--ink-4); }
-.cost-row { display: flex; flex-direction: column; gap: 6px; }
-.cost-row-head { display: flex; justify-content: space-between; gap: 8px; }
-.cost-row-name { font-size: var(--fs-2); font-weight: 600; color: var(--ink); }
-.cost-row-value { font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-3); }
-.cost-bar { height: 3px; background: var(--invert-bg); }
-.cost-row-sub { font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-4); }
 
 /* ── Fase 3 · Correlación ATT&CK ─────────────────────────────────────────── */
 .mitre { flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -2202,17 +2196,6 @@ select option:disabled { color: var(--ink-5); }
 }
 .graph-toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .graph-select { flex: 1 1 340px; min-width: 0; }
-.graph-cost {
-  display: flex;
-  gap: 8px 18px;
-  flex-wrap: wrap;
-  align-items: baseline;
-  font-size: var(--fs-1);
-  color: var(--ink-2);
-}
-/* La base de la previsión se lee, pero no compite con la cifra: es lo que
-   permite saber que el número es una estimación y con qué se midió. */
-.graph-cost-base { color: var(--ink-3); font-size: var(--fs-1); }
 .graph-parte {
   display: flex;
   flex-direction: column;

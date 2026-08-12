@@ -11,6 +11,7 @@ import {
 import { ApiError, GATEWAY_STATUS, api } from "../api/client";
 import type { EvidenceHandle, EvidenceRegisterJob } from "../api/types";
 import { useActiveCase } from "./activeCase";
+import { useCaseStream } from "./casePulse";
 
 // Evidencia del caso activo, UNA sola fuente de verdad para toda la aplicación,
 // mismo patrón que ActiveCaseProvider con la lista de casos.
@@ -84,6 +85,7 @@ export function CaseEvidenceProvider({ children }: { children: ReactNode }) {
   const [evidence, setEvidence] = useState<EvidenceHandle[]>([]);
   const [phase, setPhase] = useState<EvidencePhase>("loading");
   const [error, setError] = useState<string | null>(null);
+  const revEvidence = useCaseStream("evidence");
 
   const [registering, setRegistering] = useState(false);
   const [registerJob, setRegisterJob] = useState<EvidenceRegisterJob | null>(null);
@@ -138,6 +140,15 @@ export function CaseEvidenceProvider({ children }: { children: ReactNode }) {
     }
     void load(activeCaseId, true);
   }, [activeCaseId, load]);
+
+  // Reposición EN SILENCIO cuando el directorio de evidencias del caso cambia.
+  // Cubre lo que el sondeo del registro no ve: una evidencia registrada desde
+  // otra pestaña, o un registro que terminó mientras esta pestaña estaba en
+  // segundo plano. `announceLoading` en false: la tabla no debe parpadear.
+  useEffect(() => {
+    if (!activeCaseId || revEvidence === 0) return;
+    void load(activeCaseId, false);
+  }, [activeCaseId, revEvidence, load]);
 
   const replaceEvidence = useCallback(
     (evidenceId: string, patch: Partial<EvidenceHandle>) => {

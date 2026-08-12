@@ -9,18 +9,22 @@ inservible:
   herramienta, el tipo, el caso y la marca temporal, y **está transcrito a
   ASCII**, porque una cabecera HTTP no admite otra cosa y un caso llamado
   «Análisis Ñandú» reventaría la respuesta entera;
-- que los bytes que salen por el cable son UTF-8 CON BOM, que es lo único que
-  hace que Excel no lea el fichero con la página de códigos del sistema;
+- que los bytes que salen por el cable son un `.xlsx` de verdad y que el
+  ``Content-Type`` lo declara, que es lo que hace que el navegador y el sistema lo
+  ofrezcan a la hoja de cálculo en lugar de a un editor de texto;
 - que un caso inexistente da 404 y no una hoja vacía (RULE 2).
 """
 
 from __future__ import annotations
 
+import io
+
 import pytest
 from fastapi.testclient import TestClient
+from openpyxl import load_workbook
 
 from forensia.cases.manager import CaseManager
-from forensia.export_csv import BOM, DELIMITADOR
+from forensia.export_hoja import MEDIA_TYPE
 from forensia.findings.store import FindingStore
 from forensia.mitre.coverage import CoverageStore
 from forensia.server import create_app
@@ -74,11 +78,21 @@ def _filename(response) -> str:
     return disposition.split('"')[1]
 
 
+def _texto(response) -> str:
+    """Todo el texto de la hoja descargada, para buscar dentro sin saber la
+    posición exacta de cada celda."""
+    ws = load_workbook(io.BytesIO(response.content)).active
+    return "\n".join(
+        "\t".join("" if c.value is None else str(c.value) for c in fila)
+        for fila in ws.iter_rows()
+    )
+
+
 @pytest.mark.parametrize(
     ("ruta", "kind"),
-    [("mitre/export.csv", "mitre-attack"), ("timeline/export.csv", "timeline")],
+    [("mitre/export.xlsx", "mitre-attack"), ("timeline/export.xlsx", "timeline")],
 )
-def test_the_downloaded_sheet_is_named_in_ascii_and_carries_the_bom(
+def test_the_downloaded_sheet_is_named_in_ascii_and_is_a_real_workbook(
     client, auth, cases, ruta, kind
 ) -> None:
     case = cases.create(name=_NOMBRE, examiner="perito", os_profile="windows")
@@ -86,18 +100,16 @@ def test_the_downloaded_sheet_is_named_in_ascii_and_carries_the_bom(
     res = client.get(f"/api/cases/{case.id}/{ruta}", headers=auth)
 
     assert res.status_code == 200, res.text
-    assert res.headers["Content-Type"].startswith("text/csv")
+    assert res.headers["Content-Type"] == MEDIA_TYPE
     nombre = _filename(res)
     assert nombre.isascii(), "una cabecera HTTP no admite otra cosa"
     assert nombre.startswith(f"agentopsy-{kind}-analisis-nandu-2026-exfiltracion-")
-    assert nombre.endswith(".csv")
-    # El BOM viaja en los BYTES, no solo en el `str` de la función que la escribe.
-    assert res.content.startswith(BOM.encode("utf-8"))
-    texto = res.content.decode("utf-8-sig")
-    assert texto.startswith(f"sep={DELIMITADOR}\r\n")
+    assert nombre.endswith(".xlsx")
+    # Lo que sale por el cable se abre como libro, no es texto con otra extensión.
+    assert res.content[:2] == b"PK"
     # El nombre del caso llega íntegro DENTRO de la hoja: lo que se transcribe a
     # ASCII es el nombre del fichero, nunca el dato.
-    assert _NOMBRE in texto
+    assert _NOMBRE in _texto(res)
 
 
 def test_the_navigator_layer_is_named_the_same_way(client, auth, cases) -> None:
@@ -127,17 +139,15 @@ def test_the_sheet_carries_the_real_coverage_of_the_case(client, auth, cases) ->
     })
     assert coverage.coverage(case.id), "precondición: la cobertura existe"
 
-    texto = client.get(
-        f"/api/cases/{case.id}/mitre/export.csv", headers=auth
-    ).content.decode("utf-8-sig")
+    texto = _texto(client.get(f"/api/cases/{case.id}/mitre/export.xlsx", headers=auth))
 
     assert "T1055" in texto
     assert "Process Injection" in texto
-    assert "Técnicas en la hoja;1" in texto
+    assert "Técnicas en la hoja	1" in texto
 
 
 @pytest.mark.parametrize(
-    "ruta", ["mitre/export.csv", "timeline/export.csv", "mitre/navigator"]
+    "ruta", ["mitre/export.xlsx", "timeline/export.xlsx", "mitre/navigator"]
 )
 def test_a_case_that_does_not_exist_is_a_404_not_an_empty_sheet(
     client, auth, ruta

@@ -1,21 +1,23 @@
-"""Telemetría de coste por ejecutor — Bug 008 §2 Nivel 0.
+"""El usage que cada ejecutor reporta, y que acaba en el log de auditoría.
+
+La telemetría de coste que se PINTABA se retiró (2026-08-12): el conteo no era
+fiable y el panel de Investigación daba cifras que no se sostenían. Lo que NO se
+retiró es esto: el usage sigue parseándose y sigue viajando al log encadenado,
+porque es procedencia de la corrida, no una métrica de producto.
 
 Los gates que importan:
-- Cada ejecutor parsea el usage de SU envelope (los datos que hoy se tiraban).
+- Cada ejecutor parsea el usage de SU envelope.
 - Un envelope con forma distinta / sin el dato degrada a None, nunca a un número
   inventado (RULE 2). El texto extraído NUNCA se ve afectado.
 - El evento `executor_run_finish` persiste los tokens/coste cuando existen.
-- La agregación por caso/ejecutor distingue "no reportado" de un cero real.
 """
 
 from __future__ import annotations
 
 import json
 
-from forensia.audit.log import AuditLog
 from forensia.executors.base import Usage
 from forensia.executors.claude_code import ClaudeCodeExecutor
-from forensia.executors.cost import executor_cost
 from forensia.executors.gemini import GeminiExecutor
 from forensia.executors.ollama import OllamaExecutor
 
@@ -113,85 +115,3 @@ def test_as_audit_fields_only_emits_present_data() -> None:
     # Nothing reported → nothing emitted: a real zero stays distinguishable from
     # "the executor did not report it" (RULE 2).
     assert Usage().as_audit_fields() == {}
-
-
-# ── agregación desde el audit log ────────────────────────────────────────────
-
-
-def _finish(executor: str, **extra) -> dict:
-    ev = {
-        "action": "executor_run_finish",
-        "executor": executor,
-        "case_id": "c",
-        "exit_code": None,
-        "duration_ms": 5,
-        "response_sha256": "x",
-        "response_chars": 100,
-    }
-    ev.update(extra)
-    return ev
-
-
-def test_executor_cost_aggregates_tokens_and_cost(tmp_path, monkeypatch) -> None:
-    from forensia.cases import CaseManager
-    from forensia.executors import cost as cost_mod
-    cases = CaseManager(root=tmp_path / "cases")
-    monkeypatch.setattr(cost_mod, "case_manager", cases)
-    case = cases.create(name="c", examiner="e", os_profile="windows")
-    audit = AuditLog(cases.case_dir(case.id) / "audit.jsonl")
-    audit.append(_finish("claude-code", input_tokens=1000, output_tokens=200, cost_usd=0.01))
-    audit.append(_finish("claude-code", input_tokens=1500, output_tokens=300, cost_usd=0.02))
-    audit.append(_finish("ollama", input_tokens=800, output_tokens=100))  # sin coste
-
-    by_exec = {e["executor"]: e for e in executor_cost(case.id)}
-
-    cc = by_exec["claude-code"]
-    assert cc["runs"] == 2
-    assert cc["runs_with_tokens"] == 2
-    assert cc["total_tokens"] == 3000
-    assert cc["cost_usd"] == 0.03
-
-    ol = by_exec["ollama"]
-    assert ol["total_tokens"] == 900
-    assert ol["cost_usd"] == 0.0
-
-
-def test_run_without_reported_tokens_counts_but_does_not_fake_zero(tmp_path, monkeypatch) -> None:
-    """Un run cuyo ejecutor no reportó tokens (p. ej. Codex) cuenta como run
-    pero NO infla los totales de tokens con un cero falso."""
-    from forensia.cases import CaseManager
-    from forensia.executors import cost as cost_mod
-    cases = CaseManager(root=tmp_path / "cases")
-    monkeypatch.setattr(cost_mod, "case_manager", cases)
-    case = cases.create(name="c", examiner="e", os_profile="windows")
-    audit = AuditLog(cases.case_dir(case.id) / "audit.jsonl")
-    audit.append(_finish("codex"))  # sin tokens
-    audit.append(_finish("codex", input_tokens=500, output_tokens=90))
-
-    entry = executor_cost(case.id)[0]
-    assert entry["runs"] == 2
-    assert entry["runs_with_tokens"] == 1  # solo uno reportó
-    assert entry["total_tokens"] == 590
-
-
-def test_error_finishes_are_not_counted(tmp_path, monkeypatch) -> None:
-    from forensia.cases import CaseManager
-    from forensia.executors import cost as cost_mod
-    cases = CaseManager(root=tmp_path / "cases")
-    monkeypatch.setattr(cost_mod, "case_manager", cases)
-    case = cases.create(name="c", examiner="e", os_profile="windows")
-    audit = AuditLog(cases.case_dir(case.id) / "audit.jsonl")
-    audit.append({
-        "action": "executor_run_finish", "executor": "gemini",
-        "case_id": "c", "exit_code": 1, "duration_ms": 5, "error": "boom",
-    })
-    assert executor_cost(case.id) == []
-
-
-def test_no_audit_log_yet_returns_empty(tmp_path, monkeypatch) -> None:
-    from forensia.cases import CaseManager
-    from forensia.executors import cost as cost_mod
-    cases = CaseManager(root=tmp_path / "cases")
-    monkeypatch.setattr(cost_mod, "case_manager", cases)
-    case = cases.create(name="c", examiner="e", os_profile="windows")
-    assert executor_cost(case.id) == []

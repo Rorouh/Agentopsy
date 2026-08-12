@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import type { AgentFinding } from "../api/types";
 import type { ViewId } from "../navigation/navItems";
 import { useActiveCase } from "../state/activeCase";
+import { useCaseStream } from "../state/casePulse";
 import { usePublishShellHeader } from "../layout/shellHeader";
 
 interface FindingsPageProps {
@@ -49,12 +50,21 @@ function fmtDate(iso: string | null | undefined): string {
 // entregable final firmable): aquí se consulta el material, allí se redacta.
 export function FindingsPage({ onNavigate }: FindingsPageProps) {
   const { activeCase, phase: casesPhase, error: casesError } = useActiveCase();
+  // El agente persiste hallazgos mientras analiza: la lista se recarga sola
+  // cuando el flujo cambia, sin que el perito tenga que recargar la página.
+  const revFindings = useCaseStream("findings");
   const [findings, setFindings] = useState<AgentFinding[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [severity, setSeverity] = useState<SeverityFilter>("all");
 
+  // Dos efectos y no uno, y la diferencia importa: cambiar de CASO reinicia la
+  // vista (esqueleto de carga y selección a cero, porque el hallazgo que estaba
+  // abierto es de otro caso), mientras que un hallazgo nuevo en el caso que ya
+  // estás mirando sólo repone la lista. Con un único efecto, cada hallazgo que
+  // el agente persistiera haría parpadear la lista y movería el detalle bajo el
+  // cursor del perito, que es peor que no refrescar.
   useEffect(() => {
     const caseId = activeCase?.id;
     if (!caseId) {
@@ -65,6 +75,7 @@ export function FindingsPage({ onNavigate }: FindingsPageProps) {
     }
     let cancelled = false;
     setLoaded(false);
+    setSelectedId(null);
     (async () => {
       try {
         const list = await api.cases.listFindings(caseId);
@@ -80,6 +91,25 @@ export function FindingsPage({ onNavigate }: FindingsPageProps) {
       cancelled = true;
     };
   }, [activeCase?.id]);
+
+  // Reposición EN SILENCIO: el agente acaba de persistir un hallazgo mientras el
+  // perito lee otro. Sin esqueleto y sin tocar la selección.
+  useEffect(() => {
+    const caseId = activeCase?.id;
+    if (!caseId || revFindings === 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await api.cases.listFindings(caseId);
+        if (!cancelled) setFindings(list);
+      } catch {
+        /* el estado de error lo gobierna la carga de arriba */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeCase?.id, revFindings]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

@@ -1,47 +1,50 @@
-"""Exportación del timeline de investigación como hoja de cálculo (hallazgo D).
+"""Exportación del timeline de investigación como hoja de cálculo.
 
 Reusa el builder existente (``assemble_investigation_timeline``) para producir los
 eventos y verifica dos cosas distintas:
 
-- que la hoja se ABRE bien donde el perito la abre: BOM (sin él Excel lee el UTF-8
-  con la página de códigos del sistema), punto y coma (con la coma la fila entera
-  cae en la columna A de un Windows en español) y un bloque de procedencia que dice
-  de qué caso es la tabla, cuándo se exportó y qué trae;
+- que la hoja se ABRE bien donde el perito la abre: un `.xlsx` real, con acentos
+  intactos y las celdas ya separadas, sin depender del idioma del sistema de quien
+  lo abra (el CSV que había antes dependía de las dos cosas y perdía una: con la
+  declaración ``sep=;`` Excel deja de aplicar el BOM y el texto sale ilegible), y
+  un bloque de procedencia que dice de qué caso es la tabla, cuándo se exportó y
+  qué trae;
 - que los datos siguen siendo honestos: una fila por evento de los dos tipos, el
   argv literal auditado, y un caso sin actividad da la cabecera sin filas.
 """
 
 from __future__ import annotations
 
-import csv
 import io
+from typing import Any
 
-from forensia.export_csv import BOM, DELIMITADOR, NO_APLICA, filas_de_preambulo
+from openpyxl import load_workbook
+
+from forensia.export_hoja import NO_APLICA
 from forensia.findings.store import Finding
 from forensia.timeline.builder import assemble_investigation_timeline
-from forensia.timeline.export import CSV_HEADER, timeline_to_csv
+from forensia.timeline.export import HOJA_HEADER, timeline_to_hoja
 
 #: El bloque de procedencia de la hoja del timeline (lo que hay antes de la tabla).
 _PROCEDENCIA_FILAS = 10
 
-_IDX = {name: i for i, name in enumerate(CSV_HEADER)}
+_IDX = {name: i for i, name in enumerate(HOJA_HEADER)}
 
 
-def _sheet(csv_text: str) -> list[list[str]]:
-    assert csv_text.startswith(BOM), "sin BOM, Excel abre el fichero como ANSI"
-    body = csv_text[len(BOM) :]
-    assert body.startswith(f"sep={DELIMITADOR}\r\n")
-    return list(
-        csv.reader(io.StringIO(body.split("\r\n", 1)[1]), delimiter=DELIMITADOR)
-    )
+def _hoja(blob: bytes) -> list[list[Any]]:
+    """Las celdas tal cual las lee una hoja de cálculo, conservando el tipo."""
+    ws = load_workbook(io.BytesIO(blob)).active
+    return [[c.value for c in fila] for fila in ws.iter_rows()]
 
 
-def _rows(csv_text: str) -> list[list[str]]:
-    """La TABLA sola. `_sheet` ya se comió la línea del separador."""
-    assert filas_de_preambulo([("x", "y")] * _PROCEDENCIA_FILAS) == (
-        _PROCEDENCIA_FILAS + 2
-    )
-    return [r for r in _sheet(csv_text)[_PROCEDENCIA_FILAS + 1 :] if r]
+def _rows(blob: bytes) -> list[list[str]]:
+    """La TABLA sola, en texto, para comparar contra el contrato de la cabecera."""
+    tabla = _hoja(blob)[_PROCEDENCIA_FILAS + 1 :]
+    return [
+        ["" if v is None else str(v) for v in fila]
+        for fila in tabla
+        if any(v is not None for v in fila)
+    ]
 
 
 def _finding(fid: str, created_at: str) -> Finding:
@@ -59,13 +62,8 @@ def _finding(fid: str, created_at: str) -> Finding:
     )
 
 
-def test_empty_timeline_is_header_only() -> None:
-    rows = _rows(timeline_to_csv([]))
-    assert rows == [list(CSV_HEADER)]
-
-
-def test_sheet_opens_as_a_spreadsheet_and_declares_its_provenance() -> None:
-    audit = [
+def _audit_run() -> list[dict[str, Any]]:
+    return [
         {
             "action": "tool_run_start",
             "ts_utc": "2026-07-15T10:00:00+00:00",
@@ -83,19 +81,29 @@ def test_sheet_opens_as_a_spreadsheet_and_declares_its_provenance() -> None:
             "output_files_count": 0,
         },
     ]
+
+
+def test_empty_timeline_is_header_only() -> None:
+    rows = _rows(timeline_to_hoja([]))
+    assert rows == [list(HOJA_HEADER)]
+
+
+def test_sheet_opens_as_a_spreadsheet_and_declares_its_provenance() -> None:
     events = assemble_investigation_timeline(
-        audit, [_finding("f1", "2026-07-15T11:00:00.000Z")]
+        _audit_run(), [_finding("f1", "2026-07-15T11:00:00.000Z")]
     )
-    text = timeline_to_csv(
+    blob = timeline_to_hoja(
         events,
         case_id="c1",
         case_name="Caso Ñandú",
         exported_at="2026-08-06T13:05:42Z",
     )
-    assert text.startswith(BOM)
-    assert "Ñ" in text  # UTF-8 de verdad, no transliterado
-    procedencia = dict(r[0:2] for r in _sheet(text)[:_PROCEDENCIA_FILAS])
-    assert procedencia["Caso"] == "Caso Ñandú"
+    # Un `.xlsx` es un paquete OOXML: empieza por la firma de un zip. Es lo que
+    # hace que el sistema lo abra con la hoja de cálculo y no con un editor.
+    assert blob[:2] == b"PK"
+    hoja = _hoja(blob)
+    procedencia = dict((r[0], r[1]) for r in hoja[:_PROCEDENCIA_FILAS])
+    assert procedencia["Caso"] == "Caso Ñandú"  # UTF-8 de verdad, no transliterado
     assert procedencia["Identificador del caso"] == "c1"
     assert procedencia["Exportado (UTC)"] == "2026-08-06T13:05:42Z"
     assert procedencia["Eventos en la hoja"] == "2"
@@ -103,35 +111,17 @@ def test_sheet_opens_as_a_spreadsheet_and_declares_its_provenance() -> None:
     assert procedencia["Primer evento"].startswith("2026-07-15T10:00:00")
     assert procedencia["Último evento"].startswith("2026-07-15T11:00:00")
     # La línea vacía es el contrato para quien lea la hoja con un programa.
-    assert _sheet(text)[_PROCEDENCIA_FILAS] == []
+    assert all(v is None for v in hoja[_PROCEDENCIA_FILAS])
 
 
-def test_csv_has_one_row_per_event_across_both_kinds() -> None:
-    audit = [
-        {
-            "action": "tool_run_start",
-            "ts_utc": "2026-07-15T10:00:00+00:00",
-            "run_id": "r1",
-            "tool_id": "tsk_fls",
-            "argv": ["fls", "-m", "/", "img.raw"],
-            "evidence_id": "e1",
-        },
-        {
-            "action": "tool_run_finish",
-            "ts_utc": "2026-07-15T10:00:05+00:00",
-            "run_id": "r1",
-            "status": "finished",
-            "exit_code": 0,
-            "stdout_sha256": "a" * 64,
-            "stderr_sha256": "b" * 64,
-            "output_files_count": 0,
-        },
-    ]
+def test_sheet_has_one_row_per_event_across_both_kinds() -> None:
+    audit = _audit_run()
+    audit[1] |= {"stdout_sha256": "a" * 64, "stderr_sha256": "b" * 64}
     events = assemble_investigation_timeline(
         audit, [_finding("f1", "2026-07-15T11:00:00.000Z")]
     )
-    rows = _rows(timeline_to_csv(events))
-    assert rows[0] == list(CSV_HEADER)
+    rows = _rows(timeline_to_hoja(events))
+    assert rows[0] == list(HOJA_HEADER)
     assert len(rows) == 3  # cabecera + tool_run + finding
 
     by_kind = {r[_IDX["Tipo de evento"]]: r for r in rows[1:]}
@@ -162,6 +152,25 @@ def test_csv_has_one_row_per_event_across_both_kinds() -> None:
     assert finding[_IDX["Comando ejecutado (argv literal auditado)"]] == NO_APLICA
 
 
+def test_the_row_number_is_a_number_so_the_sheet_orders_by_value() -> None:
+    """Con la numeración en texto, ordenar por la columna N pone la fila 10 delante
+    de la 9. Entra como número para que ordene como se lee."""
+    audit: list[dict[str, Any]] = []
+    for n in range(12):
+        audit.append(
+            {
+                "action": "tool_run_start",
+                "ts_utc": f"2026-07-15T10:{n:02d}:00+00:00",
+                "run_id": f"r{n}",
+                "tool_id": "tsk_fls",
+                "argv": ["fls", "img.raw"],
+            }
+        )
+    events = assemble_investigation_timeline(audit, [])
+    tabla = _hoja(timeline_to_hoja(events))[_PROCEDENCIA_FILAS + 2 :]
+    assert [f[0] for f in tabla] == list(range(1, 13))
+
+
 def test_running_tool_run_has_empty_exit_but_is_kept() -> None:
     audit = [
         {
@@ -173,7 +182,7 @@ def test_running_tool_run_has_empty_exit_but_is_kept() -> None:
         },
     ]
     events = assemble_investigation_timeline(audit, [])
-    row = _rows(timeline_to_csv(events))[1]
+    row = _rows(timeline_to_hoja(events))[1]
     assert row[_IDX["Código de salida"]] == ""  # sin exit todavía
     assert row[_IDX["Estado"]] == "En curso"
 
@@ -189,7 +198,7 @@ def test_unparseable_timestamp_becomes_empty_but_row_is_not_dropped() -> None:
         },
     ]
     events = assemble_investigation_timeline(audit, [])
-    rows = _rows(timeline_to_csv(events))
+    rows = _rows(timeline_to_hoja(events))
     assert len(rows) == 2  # cabecera + la fila, nunca descartada
     assert rows[1][_IDX["Marca temporal (UTC)"]] == ""
 
@@ -214,6 +223,6 @@ def test_an_unknown_vocabulary_value_travels_verbatim() -> None:
         },
     ]
     events = assemble_investigation_timeline(audit, [])
-    row = _rows(timeline_to_csv(events))[1]
+    row = _rows(timeline_to_hoja(events))[1]
     assert row[_IDX["Estado"]] == "cancelado_por_el_operador"
     assert row[_IDX["Código de salida"]] == "137"

@@ -4,9 +4,9 @@ El perito necesita llevarse los datos fuera de Agentopsy. Dos formatos, ambos
 **derivados de la cobertura real** (`CoverageStore.coverage`): las propuestas del
 agente (eje 1) y los dictámenes del perito (eje 2), sin fundirlos.
 
-- ``coverage_to_csv`` — una HOJA (``forensia.export_csv``: BOM, ``sep=;``, bloque
-  de procedencia y una línea vacía antes de la tabla) con una fila por técnica
-  evaluada, propuesta, dictaminada o ambas. Los nombres/tácticas salen del
+- ``coverage_to_hoja`` — una HOJA de cálculo real (``forensia.export_hoja``: un
+  `.xlsx` con bloque de procedencia y una línea vacía antes de la tabla) con una
+  fila por técnica evaluada, propuesta, dictaminada o ambas. Los nombres/tácticas salen del
   catálogo Enterprise (``forensia.mitre.catalog``); NO se inventan. Si el
   catálogo Enterprise no está montado, la columna del nombre/táctica degrada a
   vacío y el id queda como única referencia honesta (RULE 2: nunca una lista
@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from forensia.export_csv import build_sheet, iso_utc_ahora, unir
+from forensia.export_hoja import build_workbook, iso_utc_ahora, unir
 from forensia.mitre import catalog
 
 #: Versión del formato de *layer* del ATT&CK Navigator que emitimos. Es lo único que
@@ -58,7 +58,7 @@ SIN_DICTAMEN = "No dictaminada"
 #: el layer del Navigator, que no cambia). Las dos primeras columnas de datos son
 #: las que identifican la técnica; el motivo del veredicto va al final porque es
 #: la única de longitud libre y arrastraría el ancho de las demás.
-CSV_HEADER: tuple[str, ...] = (
+HOJA_HEADER: tuple[str, ...] = (
     "N",
     "ID de la técnica",
     "Técnica",
@@ -100,13 +100,13 @@ def _findings_for(entry: dict[str, Any]) -> list[str]:
     return out
 
 
-def coverage_to_csv(
+def coverage_to_hoja(
     entries: list[dict[str, Any]],
     *,
     case_id: str = "",
     case_name: str = "",
     exported_at: str | None = None,
-) -> str:
+) -> bytes:
     """La hoja de cobertura del caso: una fila por técnica evaluada.
 
     ``entries`` son las entradas de :meth:`CoverageStore.coverage`. Con **cero**
@@ -169,7 +169,12 @@ def coverage_to_csv(
             unir(_findings_for(entry)),
             entry.get("rationale") or "",
         ])
-    return build_sheet(procedencia=procedencia, cabecera=CSV_HEADER, filas=filas)
+    return build_workbook(
+        procedencia=procedencia,
+        cabecera=HOJA_HEADER,
+        filas=filas,
+        titulo="Cobertura ATT&CK",
+    )
 
 
 def _navigator_comment(entry: dict[str, Any]) -> str:

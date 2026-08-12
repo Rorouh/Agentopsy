@@ -223,6 +223,35 @@ export interface Case {
   notes: string;
 }
 
+// Los flujos de un caso que la interfaz observa para refrescarse sola. El nombre
+// es el contrato con `forensia.pulse.FLUJOS`: si allí se añade uno, aquí también.
+export type CaseStream =
+  | "case"
+  | "evidence"
+  | "findings"
+  // El log encadenado: respalda el uso de herramientas Y el timeline de
+  // investigación, los dos se agregan a partir de él.
+  | "audit"
+  | "documents"
+  | "graphs"
+  | "mitre_proposals"
+  | "mitre_verdicts"
+  | "timeline"
+  | "knowledge"
+  | "chats";
+
+// El PULSO del caso: una firma por flujo, más los trabajos de fondo en curso.
+// Una firma es OPACA: comparar dos sólo responde «igual» o «distinto». No es un
+// contador, no ordena y no se enseña.
+export interface CasePulse {
+  case_id: string;
+  streams: Record<CaseStream, string>;
+  jobs: {
+    running: number;
+    by_kind: Record<string, number>;
+  };
+}
+
 export interface VerificationRecord {
   verified_at: string;
   verified: boolean;
@@ -590,67 +619,6 @@ export interface ToolUsage {
   failed: number;
 }
 
-// Coste/tokens por ejecutor agregado del audit log (Bug 008, apartado 2, Nivel 0).
-// `runs_with_tokens` distingue "el ejecutor no reportó tokens" de un cero real
-// (p. ej. Codex hoy no reporta si no se adopta --json).
-export interface ExecutorCost {
-  executor: string;
-  runs: number;
-  runs_with_tokens: number;
-  input_tokens: number;
-  output_tokens: number;
-  total_tokens: number;
-  cost_usd: number;
-  response_chars: number;
-}
-
-// Estimación PRE-VUELO del análisis (GET /api/cases/{id}/analyze/estimate,
-// hallazgo E): rangos + supuestos declarados, NUNCA un número fingido (RULE 2).
-// `basis` de cada cantidad dice si sale del histórico real del caso o de una
-// heurística documentada. Para Ollama (local) el coste monetario es 0.
-export interface AnalysisEstimateRange {
-  min: number;
-  max: number;
-  // tokens/iteración o segundos/iteración usados como base.
-  per_iteration: number;
-  // "history" = anclado en la media real del caso; "heuristic" = por defecto.
-  basis: "history" | "heuristic";
-}
-
-export interface AnalysisCostTariff {
-  assumed_model: string;
-  input_usd_per_mtok: number;
-  output_usd_per_mtok: number;
-  source: string; // cita de la tarifa (RULE 2: sin cita no se cablea)
-}
-
-export interface AnalysisCostEstimate {
-  // false → no hay tarifa pública cableada para ese ejecutor cloud; el coste no
-  // se inventa (RULE 2). min/max serán null en ese caso.
-  available: boolean;
-  min: number | null;
-  max: number | null;
-  currency: string;
-  // p. ej. "local, sin coste monetario" para Ollama.
-  label: string | null;
-  tariff: AnalysisCostTariff | null;
-  note: string | null;
-}
-
-export interface AnalysisEstimate {
-  case_id: string;
-  executor: { id: ExecutorId; name: string; local: boolean };
-  evidence_id: string | null;
-  evidence_size_bytes: number | null;
-  evidence_size_human: string | null;
-  iterations: { min: number; max: number };
-  tokens: AnalysisEstimateRange;
-  cost_usd: AnalysisCostEstimate;
-  time_seconds: AnalysisEstimateRange;
-  basis: string; // resumen humano de en qué se apoya
-  disclaimer: string; // aviso de que es orientativo
-}
-
 export interface ConfigKeyStatus {
   set: boolean;
   preview: string | null;
@@ -933,15 +901,6 @@ export interface GraphCaseView {
   lienzo: GraphCanvas;
 }
 
-// Previsión de coste, con su base declarada. NUNCA comparte campo con el coste
-// real de un lote ya ejecutado (`GraphJob.result.coste_usd`).
-export interface GraphEstimacion {
-  hallazgos: number;
-  coste_estimado_usd: number;
-  estimado_por_hallazgo_usd: number;
-  base_del_estimado: string;
-}
-
 export interface GraphSummary {
   finding_id: string;
   title: string;
@@ -959,7 +918,6 @@ export interface GraphIndex {
   grafos: GraphSummary[];
   pendientes: string[];
   hallazgos: { id: string; title: string }[];
-  estimacion: GraphEstimacion;
 }
 
 export interface GraphJobEvent {
@@ -1007,16 +965,10 @@ export interface GraphJob {
     con_grafo: number;
     sin_grafo: number;
     resultados: GraphJobResultRow[];
-    // Coste REAL del audit. `null` cuando el ejecutor no lo informa (codex no
-    // lo hace): un cero ahí sería mentira.
-    coste_usd: number | null;
-    input_tokens: number;
-    output_tokens: number;
     executor: string;
     model: string | null;
   } | null;
   case_name?: string;
   solicitados?: number;
   executor?: { id: ExecutorId; name: string; local: boolean };
-  estimacion?: GraphEstimacion;
 }

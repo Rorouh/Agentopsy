@@ -95,7 +95,7 @@ export function Sidebar({
       {/* Elegir caso y crear caso son el MISMO momento, así que viven juntos y
           en un solo control. El nombre es el selector: la posición más el icono
           ya dicen «esto se cambia», de modo que la etiqueta «Caso» sobraba. El
-          perfil (unix/windows) tampoco se repite aquí — su sitio es Evidencia,
+          perfil (unix/windows) tampoco se repite aquí: su sitio es Evidencia,
           junto a la huella de triage que lo justifica. Y el estado sólo se
           enuncia cuando es CERRADO: abierto es lo normal y no explica nada,
           cerrado es lo que explica que no te deje registrar evidencia. */}
@@ -106,7 +106,7 @@ export function Sidebar({
           onClick={onOpenCaseSearch}
           disabled={!onOpenCaseSearch}
           // El nombre completo, por si ni con dos renglones cabe.
-          title={activeCase ? `${activeCase.name} — cambiar de caso` : "Elegir un caso"}
+          title={activeCase ? `${activeCase.name} · cambiar de caso` : "Elegir un caso"}
         >
           <span className={`case-picker-name${activeCase ? "" : " is-empty"}`}>
             {activeCase ? activeCase.name : "Elige un caso"}

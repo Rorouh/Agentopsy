@@ -11,6 +11,7 @@ import type {
 } from "../api/types";
 import { usePublishShellHeader } from "../layout/shellHeader";
 import { useActiveCase } from "../state/activeCase";
+import { useCaseStream } from "../state/casePulse";
 import { useCaseEvidence } from "../state/caseEvidence";
 import { IncidentRail, exportRailPng } from "./timeline/IncidentRail";
 import { useThemePalette } from "./timeline/themePalette";
@@ -134,6 +135,10 @@ function Pager({
 
 export function TimelinePage() {
   const { activeCase, phase: casesPhase, error: casesError } = useActiveCase();
+  // Las dos capas de la vista: la de investigación se agrega del log encadenado
+  // (cada herramienta que corre añade eventos) y la del incidente, de los
+  // hallazgos. Una y otra crecen mientras el análisis trabaja.
+  const revTimeline = useCaseStream("audit", "findings");
   // Capa 2: la evidencia elegible sale del store compartido, así una imagen
   // registrada mientras el perito está en esta vista aparece en el selector sin
   // recargar la página.
@@ -196,6 +201,27 @@ export function TimelinePage() {
       cancelled = true;
     };
   }, [activeCase?.id]);
+
+  // Reposición EN SILENCIO mientras el análisis corre: la línea crece sola. No
+  // toca `selectedEvidence`, que es una elección del perito para la capa 2 y no
+  // puede reiniciarse cada vez que una herramienta termina.
+  useEffect(() => {
+    const caseId = activeCase?.id;
+    if (!caseId || revTimeline === 0) return;
+    let cancelled = false;
+    (async () => {
+      const [tl, inc] = await Promise.all([
+        api.cases.timeline(caseId).catch(() => null),
+        api.cases.incidentTimeline(caseId).catch(() => null),
+      ]);
+      if (cancelled) return;
+      if (tl) setEvents(tl.events);
+      if (inc) setIncident(inc);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeCase?.id, revTimeline]);
 
   // Rehidrata la capa 2 al cambiar de caso o de evidencia seleccionada: cancela
   // cualquier job/sondeo en curso y carga la super-timeline PERSISTIDA de esa
@@ -266,14 +292,14 @@ export function TimelinePage() {
     }
   }, [activeCase, selectedEvidence, poll]);
 
-  // Export CSV del timeline de investigación (tool runs + hallazgos). Se descarga
+  // Hoja de cálculo del timeline de investigación (tool runs + hallazgos). Se descarga
   // con el token mismo-origen; un caso sin actividad exporta igual.
   const exportInvestigationCsv = useCallback(async () => {
     if (!activeCase) return;
     setExporting(true);
     setExportError("");
     try {
-      await api.cases.exportTimelineCsv(activeCase.id);
+      await api.cases.exportTimelineHoja(activeCase.id);
     } catch (err) {
       setExportError(err instanceof ApiError ? err.detail : String(err));
     } finally {
@@ -371,7 +397,7 @@ export function TimelinePage() {
   const canGenerate =
     !!selectedEvidence && !starting && fsJob?.status !== "running" && evidences.length > 0;
 
-  // Exportar CSV pertenece SOLO a la capa de investigación; generar la
+  // Exportar la hoja pertenece SOLO a la capa de investigación; generar la
   // super-timeline (tsk_fls -m), solo a las de sistema de ficheros. La cabecera
   // transporta la acción YA RESUELTA por la página, no la regla (RULE 3).
   usePublishShellHeader(
@@ -397,7 +423,7 @@ export function TimelinePage() {
         ) : undefined
       ) : isInvestigation ? (
         <button type="button" disabled={exporting} onClick={() => void exportInvestigationCsv()}>
-          {exporting ? "Exportando…" : "Exportar CSV"}
+          {exporting ? "Exportando…" : "Exportar hoja"}
         </button>
       ) : (
         <button

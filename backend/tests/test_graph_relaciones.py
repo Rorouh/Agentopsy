@@ -574,9 +574,6 @@ def test_the_end_to_end_extraction_lands_in_the_view_with_its_provenance(http, m
     )
     assert r.status_code == 200
     job_id = r.json()["job_id"]
-    # La previsión de coste viaja con el job, y con su base declarada.
-    assert r.json()["estimacion"]["coste_estimado_usd"] > 0
-    assert "medido el" in r.json()["estimacion"]["base_del_estimado"]
 
     deadline = time.time() + 10
     while time.time() < deadline:

@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from forensia.cases import case_manager
-from forensia.export_csv import export_basename, iso_utc_ahora
+from forensia.export_hoja import export_basename, iso_utc_ahora
 from forensia.findings.store import Finding, finding_store
 from forensia.mitre import catalog
 from forensia.mitre.coverage import coverage_store
@@ -217,7 +217,7 @@ def build_findings_timeline(case_id: str) -> dict[str, Any]:
     """La línea de tiempo del incidente de un caso. ``KeyError`` si el caso no existe.
 
     Añade la PROCEDENCIA de la figura: el nombre del caso, el instante de la
-    exportación y el nombre de fichero, este último por ``export_csv.export_basename``,
+    exportación y el nombre de fichero, este último por ``export_hoja.export_basename``,
     la misma función que nombra las dos hojas de cálculo. La figura se dibuja en el
     navegador, pero su identidad se resuelve aquí: escribir una segunda versión del
     nombre en TypeScript serían dos nombres para la misma exportación.
