@@ -23,7 +23,9 @@ commit that introduced this):
 
     Phase 1: fixed-offset HEADERS at byte 0 / 512 / 1024 / 0x438 / 32 — strong
              signal, near-zero false positive risk. LiME / Windows crash dump
-             / EWF (.E01) / AFF / VMDK / VDI / QCOW / VHD / VHDX.
+             / EWF (.E01) / AFF / VMDK / VDI / QCOW / VHD / VHDX, and the
+             STANDALONE-FILE magics of ``_DOCUMENT_MAGICS`` (PDF, PNG, JPEG,
+             OOXML, OLE2, SQLite, EVTX, pcap…) → ``kind=document``.
     Phase 2: MBR boot signature 0x55AA at byte 510 (with a sanity check on the
              partition table) + GPT "EFI PART" at byte 512.
     Phase 3: filesystem boot sectors (NTFS, ext2/3/4, HFS+, APFS) — strong
@@ -34,18 +36,30 @@ commit that introduced this):
              linux_banner) + first 4 KiB all-zero ("page 0 unmapped").
              Each signal adds to a score; >= 3 → memory.
     Phase 5: extension hint (.mem/.vmem/.lime/.dmp) — last resort only.
+    Phase 6: PLAIN TEXT by content (no NUL bytes + decodes clean) — the .txt /
+             .log / .csv / .json a examiner supplies, which carry no magic at
+             all → ``kind=document``.
 
 Family classification (unix vs windows) uses the same head+mid+tail windows
 already loaded for Phase 4, scoring marker byte-strings. The two axes are
 independent: a Windows memdump scores ``family=windows, kind=memory``.
 
+``kind=document`` is the ONE exception to that independence, and it is
+deliberate: a supplied file is not a system, so there is no OS it was "taken
+from" to determine, and its family is always ``unknown``. A PDF report about a
+Windows incident is full of Windows strings; scoring them would let a DOCUMENT
+set the case ``os_profile`` — and worse, conflict with the profile the real disk
+image determines. ``routable_profile`` refuses to route a document a second
+time, so a hand-built record cannot get around it either.
+
 Tuning the thresholds is fine; breaking the contract (always returns a record
 with ``family ∈ {unix, windows, unknown}`` and ``kind ∈ {disk, memory,
-container_disk, unknown}``) is not.
+container_disk, document, unknown}``) is not.
 """
 
 from __future__ import annotations
 
+import codecs
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -54,7 +68,7 @@ from typing import Literal
 logger = logging.getLogger(__name__)
 
 DetectedOS = Literal["unix", "windows", "unknown"]
-DetectedKind = Literal["disk", "memory", "container_disk", "unknown"]
+DetectedKind = Literal["disk", "memory", "container_disk", "document", "unknown"]
 DetectedConfidence = Literal["header", "markers", "extension", "none"]
 
 # Per-region cap. 8 MiB at head + 4 MiB at middle + 4 MiB at tail covers the
@@ -150,6 +164,87 @@ _MEMORY_EXTENSIONS: frozenset[str] = frozenset({
     ".mem", ".vmem", ".lime", ".dmp", ".raw_mem", ".bin_mem",
 })
 
+# ── Ficheros SUELTOS aportados al caso (kind=document) ───────────────────────
+# Un perito no siempre recibe un disco entero. Recibe también el PDF de un
+# contrato, el Word de una carta de despido, la foto que alguien envió, el CSV
+# que exportó un sistema o el `.evtx` que le pasó el cliente. Todo eso es
+# evidencia: entra por el MISMO hash-gate y la MISMA cadena de custodia; lo que
+# cambia es que no hay sistema de ficheros que recorrer ni memoria que perfilar,
+# así que TSK y Volatility no aplican y el agente lee el fichero en sí.
+#
+# La determinación es por CONTENIDO, no por extensión (una foto renombrada a
+# `.txt` sigue siendo un JPEG, y es precisamente el tipo de cosa que un
+# investigado hace). Cada entrada es ``(offset, magic, signal)``: el offset fijo
+# donde la firma tiene que estar, los bytes literales, y el nombre que queda en
+# ``signals`` y por tanto en ``baseline.json`` y en el log de auditoría.
+#
+# BMP, tar y PE quedan FUERA de esta tabla: sus firmas son de 2-5 bytes y chocan
+# con datos corrientes, así que se validan aparte con una comprobación de
+# estructura (``_looks_like_bmp`` / ``_looks_like_tar`` / ``_looks_like_pe``).
+_DOCUMENT_MAGICS: tuple[tuple[int, bytes, str], ...] = (
+    # --- Documentos ofimáticos y de texto enriquecido ---
+    (0, b"%PDF-", "pdf"),
+    (0, b"{\\rtf", "rtf"),
+    (0, b"%!PS", "postscript"),
+    (0, b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1", "ole2_office"),  # .doc/.xls/.ppt/.msg
+    # --- Imágenes ---
+    (0, b"\x89PNG\r\n\x1a\n", "png"),
+    (0, b"\xff\xd8\xff", "jpeg"),
+    (0, b"GIF87a", "gif"),
+    (0, b"GIF89a", "gif"),
+    (0, b"II*\x00", "tiff"),
+    (0, b"MM\x00*", "tiff"),
+    (4, b"ftyp", "iso_bmff"),  # HEIC/HEIF, MP4, MOV: la misma caja ISO-BMFF
+    # --- Audio y vídeo ---
+    (0, b"ID3", "mp3"),
+    (0, b"OggS", "ogg"),
+    (0, b"fLaC", "flac"),
+    (0, b"\x1a\x45\xdf\xa3", "matroska"),  # MKV / WebM
+    # --- Empaquetados ---
+    (0, b"7z\xbc\xaf\x27\x1c", "7z"),
+    (0, b"Rar!\x1a\x07", "rar"),
+    (0, b"\x1f\x8b", "gzip"),
+    (0, b"BZh", "bzip2"),
+    (0, b"\xfd7zXZ\x00", "xz"),
+    # --- Artefactos sueltos que un cliente entrega sin el disco ---
+    (0, b"SQLite format 3\x00", "sqlite"),
+    (0, b"ElfFile\x00", "evtx"),          # log de eventos de Windows
+    (0, b"regf", "registry_hive"),        # hive del registro de Windows
+    (0, b"FILE0", "mft_record"),          # registro del $MFT extraído
+    (0, b"MAM\x04", "prefetch_compressed"),
+    (0, b"SCCA", "prefetch"),
+    (0, b"\xd4\xc3\xb2\xa1", "pcap"),
+    (0, b"\xa1\xb2\xc3\xd4", "pcap"),
+    (0, b"\x0a\x0d\x0d\x0a", "pcapng"),
+    (0, b"\x7fELF", "elf"),               # binario Linux: la muestra de malware
+)
+
+# Contenedores ZIP: OOXML (docx/xlsx/pptx), OpenDocument (odt/ods/odp), JAR, APK
+# y el ZIP a secas comparten la firma ``PK\x03\x04``. Qué hay DENTRO se decide
+# leyendo el nombre de las primeras entradas del archivo, que el ZIP guarda en
+# claro en sus cabeceras locales, al principio del fichero.
+_ZIP_MAGIC = b"PK\x03\x04"
+_ZIP_PAYLOAD_MARKERS: tuple[tuple[bytes, str], ...] = (
+    (b"word/", "ooxml_word"),
+    (b"xl/", "ooxml_excel"),
+    (b"ppt/", "ooxml_powerpoint"),
+    (b"mimetypeapplication/vnd.oasis.opendocument.text", "odf_text"),
+    (b"mimetypeapplication/vnd.oasis.opendocument.spreadsheet", "odf_spreadsheet"),
+    (b"mimetypeapplication/vnd.oasis.opendocument.presentation", "odf_presentation"),
+    (b"AndroidManifest.xml", "apk"),
+)
+# Cuánto del principio se mira para resolver el contenido de un ZIP y para
+# comprobar las firmas de offset fijo. 64 KiB cubre de sobra las cabeceras
+# locales de las primeras entradas de un OOXML.
+_MAGIC_WINDOW = 64 * 1024
+
+# Muestra que decide si un fichero SIN firma es texto plano (Phase 6). 64 KiB es
+# suficiente para descartar binarios y barato para un log de cientos de MB.
+_TEXT_SAMPLE = 64 * 1024
+# Proporción mínima de bytes imprimibles para llamar «texto» a algo que no
+# decodifica como UTF-8 (un log en latin-1, un CSV exportado por Windows).
+_TEXT_PRINTABLE_RATIO = 0.95
+
 
 @dataclass(frozen=True)
 class DetectedEvidence:
@@ -207,9 +302,20 @@ def fingerprint_evidence(evidence_path: Path) -> DetectedEvidence:
             unix_hits = _count_markers(head, _UNIX_MARKERS)
 
             # ---- Phase 1: fixed-offset headers.
-            header_kind, header_signal = _classify_header(head[:4096])
+            header_kind, header_signal = _classify_header(head[:_MAGIC_WINDOW])
             if header_kind is not None:
                 signals.append(header_signal)
+                # Un fichero SUELTO no es un sistema, así que no hay familia que
+                # determinar: se devuelve `unknown` sin puntuar marcadores. No es
+                # renuncia, es lo contrario — el PDF de un informe sobre un
+                # incidente de Windows está LLENO de cadenas de Windows, y
+                # puntuarlas dejaría que un documento fijase el `os_profile` del
+                # caso (y entrase en conflicto con el que determina el disco de
+                # verdad). Ver la nota del docstring del módulo.
+                if header_kind == "document":
+                    return DetectedEvidence(
+                        "unknown", "document", "header", tuple(signals)
+                    )
                 # Family from head markers still has signal even when kind is
                 # decided by header — disk images carry OS strings inside.
                 if size > _HEAD_WINDOW + _MID_WINDOW:
@@ -293,6 +399,23 @@ def fingerprint_evidence(evidence_path: Path) -> DetectedEvidence:
                 family = _decide_family(win_hits, unix_hits)
                 return DetectedEvidence(family, "memory", "extension", tuple(signals))
 
+            # ---- Phase 6: TEXTO PLANO por contenido.
+            # Un .txt, un .log, un .csv o un .json no tienen firma ninguna: lo que
+            # los identifica es que TODO lo que hay dentro es texto. Va la última
+            # porque es la comprobación más débil de las seis, y llega aquí sólo
+            # cuando ni el disco ni la memoria dieron señal — un volcado o una
+            # imagen están llenos de bytes nulos y no pasan de la primera línea.
+            # La familia es `unknown` por lo mismo que en la fase 1: el log de un
+            # servidor Linux está lleno de rutas Unix y no por eso el CASO es
+            # Unix; la determinación del SO se hace sobre sistemas, no sobre
+            # ficheros aportados.
+            text_signal = _looks_like_text(head)
+            if text_signal is not None:
+                signals.append(text_signal)
+                return DetectedEvidence(
+                    "unknown", "document", "markers", tuple(signals)
+                )
+
             # Family may still resolve even when kind is unknown.
             family = _decide_family(win_hits, unix_hits)
             return DetectedEvidence(family, "unknown", "none" if family == "unknown" else "markers", tuple(signals))
@@ -316,7 +439,14 @@ def fingerprint_os(evidence_path: Path) -> DetectedOS:
 
 
 def _classify_header(head4k: bytes) -> tuple[DetectedKind | None, str]:
-    """Return (kind, signal_name) for any Phase-1 magic match, else (None, '')."""
+    """Return (kind, signal_name) for any Phase-1 magic match, else (None, '').
+
+    Los soportes de SISTEMA (volcado de memoria, contenedor de disco) van
+    PRIMERO y las firmas de fichero suelto después: un `.E01` empieza por
+    ``EVF\\x09`` y un volcado LiME por ``LiME``, ninguno choca con las de abajo,
+    pero el orden deja explícito qué manda si algún día una firma nueva
+    solapase.
+    """
     if len(head4k) < 8:
         return None, ""
     if head4k[:4] == b"LiME":
@@ -337,7 +467,108 @@ def _classify_header(head4k: bytes) -> tuple[DetectedKind | None, str]:
         return "container_disk", "vhd"
     if head4k[:8] == b"vhdxfile":
         return "container_disk", "vhdx"
+
+    document_signal = _classify_document(head4k)
+    if document_signal is not None:
+        return "document", document_signal
     return None, ""
+
+
+def _classify_document(head: bytes) -> str | None:
+    """Nombre de la firma de FICHERO SUELTO que encaja en ``head``, o ``None``.
+
+    Sólo firmas de offset FIJO (la tabla ``_DOCUMENT_MAGICS``) más los tres
+    formatos que necesitan comprobar estructura porque su firma es demasiado
+    corta para fiarse de ella (ZIP, BMP, tar, PE). Nunca mira la extensión: una
+    foto renombrada a `.txt` sigue siendo un JPEG, y renombrar es justo lo que
+    hace quien esconde algo.
+    """
+    for offset, magic, signal in _DOCUMENT_MAGICS:
+        end = offset + len(magic)
+        if len(head) >= end and head[offset:end] == magic:
+            return signal
+    if head[:4] == _ZIP_MAGIC:
+        for marker, signal in _ZIP_PAYLOAD_MARKERS:
+            if marker in head:
+                return signal
+        return "zip"
+    if head[:4] == b"RIFF" and len(head) >= 12:
+        container = head[8:12]
+        if container == b"WEBP":
+            return "webp"
+        if container == b"WAVE":
+            return "wav"
+        if container == b"AVI ":
+            return "avi"
+    if _looks_like_bmp(head):
+        return "bmp"
+    if _looks_like_tar(head):
+        return "tar"
+    if _looks_like_pe(head):
+        return "pe_executable"
+    return None
+
+
+def _looks_like_bmp(head: bytes) -> bool:
+    """``BM`` son dos bytes y aparecen en cualquier sitio, así que además se
+    comprueba la estructura: un BMP declara su propio tamaño en los bytes 2-6 y
+    el offset de los píxeles en los 10-14, y ambos tienen que ser coherentes."""
+    if len(head) < 14 or head[:2] != b"BM":
+        return False
+    declared_size = int.from_bytes(head[2:6], "little")
+    pixel_offset = int.from_bytes(head[10:14], "little")
+    return 14 <= pixel_offset < declared_size <= 1 << 32
+
+
+def _looks_like_tar(head: bytes) -> bool:
+    """El tar POSIX pone ``ustar`` en el byte 257 de su primera cabecera."""
+    return len(head) >= 262 and head[257:262] == b"ustar"
+
+
+def _looks_like_pe(head: bytes) -> bool:
+    """Un ejecutable de Windows: ``MZ`` al principio Y la cabecera ``PE\\0\\0``
+    en el offset que el propio ``e_lfanew`` (bytes 60-64) declara.
+
+    Las dos condiciones juntas, porque ``MZ`` suelto son dos bytes corrientes.
+    Esto NO estorba a la detección de volcados de memoria: allí lo que puntúa es
+    el REPARTO de cabeceras PE por las tres ventanas del fichero (fase 4), no un
+    `MZ` en el byte 0, que en un volcado es página cero y suele ir a ceros.
+    """
+    if len(head) < 64 or head[:2] != b"MZ":
+        return False
+    e_lfanew = int.from_bytes(head[60:64], "little")
+    end = e_lfanew + 4
+    return 64 <= e_lfanew and len(head) >= end and head[e_lfanew:end] == b"PE\x00\x00"
+
+
+def _looks_like_text(head: bytes) -> str | None:
+    """``"text_utf8"`` / ``"text_8bit"`` si ``head`` es texto plano, o ``None``.
+
+    Dos pasadas, de más a menos estricta. UTF-8 primero, con un decodificador
+    INCREMENTAL: la muestra corta el fichero por un byte cualquiera, y un
+    carácter multibyte partido por la mitad no es un fallo de codificación, es el
+    final de la muestra. Si no decodifica, se cuenta la proporción de bytes
+    imprimibles, que es lo que separa un log en latin-1 de un binario.
+
+    Un byte NUL descarta de entrada: ningún texto plano los lleva y todos los
+    soportes binarios (volcado, imagen de disco, contenedor) están llenos.
+    """
+    sample = head[:_TEXT_SAMPLE]
+    if not sample or b"\x00" in sample:
+        return None
+    decoder = codecs.getincrementaldecoder("utf-8")()
+    try:
+        decoder.decode(sample, False)
+    except UnicodeDecodeError:
+        pass
+    else:
+        return "text_utf8"
+    printable = sum(
+        1 for byte in sample if 32 <= byte < 127 or byte in (9, 10, 13) or byte >= 160
+    )
+    if printable / len(sample) >= _TEXT_PRINTABLE_RATIO:
+        return "text_8bit"
+    return None
 
 
 def _mbr_partitions_sane(part_table: bytes, file_size: int) -> bool:
@@ -405,7 +636,18 @@ def routable_profile(detected: DetectedEvidence) -> DetectedOS | None:
     This is the SINGLE source of truth for "can we auto-route this evidence?".
     The auto-set / conflict bookkeeping (``CaseManager.apply_detected_evidence``)
     and every routing caller build on it — none re-derive the predicate.
+
+    ``kind=document`` NUNCA enruta. Un fichero aportado (un PDF, un Word, una
+    foto, un log) no es el sistema investigado: es material sobre él. Su
+    contenido puede nombrar un sistema operativo de mil maneras sin que eso
+    determine nada, así que el perfil del caso lo fijan las imágenes y los
+    volcados, o lo ancla el operador. ``fingerprint_evidence`` ya devuelve
+    ``family=unknown`` para un documento y con eso bastaría; la comprobación de
+    aquí es la que hace que siga siendo verdad si alguien construye el registro a
+    mano (un test, una migración, un backfill).
     """
+    if detected.kind == "document":
+        return None
     if detected.family in ("unix", "windows") and detected.confidence in _ROUTABLE_CONFIDENCE:
         return detected.family
     return None

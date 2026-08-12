@@ -390,9 +390,19 @@ def _is_ewf_first_segment(suffix: str) -> bool:
 
 
 def _is_ewf_middle_segment(suffix: str) -> bool:
-    """A non-first EWF segment (``.E02`` … / ``.EAA`` … / ``.Ex02`` …). Registering
-    one alone can never assemble the image; the register entry point rejects it."""
-    return bool(_EWF_ANY_RE.match(suffix)) and not _is_ewf_first_segment(suffix)
+    """A non-first NUMERIC EWF segment (``.E02`` … ``.E99`` / ``.Ex02`` …).
+    Registering one alone can never assemble the image; the register entry point
+    rejects it.
+
+    Numérica y no alfa, por lo mismo que ``_is_ewf_numeric_segment``: por NOMBRE,
+    un ``.EAA`` no se distingue de una extensión corriente que empiece por «e»
+    (``.exe`` es literalmente ``e`` + dos letras). Tratarlo como segmento por su
+    nombre haría IRREGISTRABLE una muestra de malware `.exe` y un correo `.eml`,
+    que son material aportado legítimo. Dentro de un SET anclado en su ``.E01``
+    la continuación alfa sí se contempla (``_discover_ewf_segment_set``), porque
+    allí manda la numeración del conjunto y no el nombre suelto.
+    """
+    return _is_ewf_numeric_segment(suffix) and not _is_ewf_first_segment(suffix)
 
 
 def _is_ewf_numeric_segment(suffix: str) -> bool:
@@ -434,6 +444,15 @@ def _discover_ewf_segment_set(first: Path) -> list[Path]:
     parent = first.parent
 
     found: dict[int, Path] = {}
+    # La continuación ALFA (``.EAA`` en adelante) se recoge aparte y sólo se
+    # incorpora si la parte NUMÉRICA llega hasta el 99, que es su definición: el
+    # ``.EAA`` es el segmento 100 y no puede existir sin los 99 anteriores.
+    # Sin esa condición, un ``muestra.exe`` junto a un ``muestra.E01`` entra como
+    # segmento 702 (``.exe`` = ``e`` + ``xe``, dos letras, exactamente la forma de
+    # una continuación alfa) y el registro se cae pidiendo los segmentos 2 a 701.
+    # Con la bandeja aceptando muestras de malware, ese choque deja de ser
+    # teórico: una imagen y su muestra comparten nombre base muy a menudo.
+    alpha: dict[int, Path] = {}
     for entry in parent.iterdir():
         if entry.stem != stem:
             continue
@@ -452,12 +471,16 @@ def _discover_ewf_segment_set(first: Path) -> list[Path]:
             )
         if not entry.is_file():
             continue
-        if index in found:
+        bucket = found if _is_ewf_numeric_segment(entry.suffix) else alpha
+        if index in bucket:
             raise ValueError(
-                f"duplicate EWF segment index {index}: {found[index].name!r} and "
+                f"duplicate EWF segment index {index}: {bucket[index].name!r} and "
                 f"{entry.name!r}, ambiguous set, refusing (RULE 2)."
             )
-        found[index] = entry
+        bucket[index] = entry
+
+    if alpha and all(i in found for i in range(1, 100)):
+        found.update(alpha)
 
     if 1 not in found:
         # ``first`` is the ``.E01`` and exists, so this is defensive.
@@ -1173,42 +1196,120 @@ class EvidenceManager:
         return data
 
 
-# Extensiones que la bandeja acepta al SUBIR evidencia (drag-and-drop del
-# perito). Espejo de web/src/utils/evidence.ts SUPPORTED_EXTENSIONS; la fuente
-# real de los formatos es toolkit/catalog.py + triage.py. Validación en minúsculas.
-SUPPORTED_EVIDENCE_EXTENSIONS: frozenset[str] = frozenset(
-    {".raw", ".dd", ".img", ".vmdk", ".vmem", ".e01", ".aff", ".vhd", ".mem", ".lime", ".dmp"}
+# ── Qué es «evidencia» en la bandeja ─────────────────────────────────────────
+# Dos familias, y la distinción NO es burocrática: cambia lo que Agentopsy hace
+# después con el fichero.
+#
+#   IMÁGENES Y VOLCADOS — un sistema entero capturado. Tiene tabla de
+#   particiones o espacio de memoria, lo abren TSK / Volatility / plaso, y de su
+#   CONTENIDO se determina el `os_profile` del caso (forensia.triage).
+#
+#   MATERIAL APORTADO — un fichero suelto que el perito recibe: el PDF de un
+#   contrato, el Word de una carta, la foto que alguien envió, el CSV que exportó
+#   un sistema, el `.evtx` que entregó el cliente, la muestra de malware. Entra
+#   por el MISMO hash-gate y la MISMA cadena de custodia, se clasifica
+#   `kind=document`, y NUNCA fija el perfil del caso (RULE 2 + la nota de
+#   `triage.routable_profile`): un documento no es el sistema investigado.
+#
+# La extensión es sólo la puerta de la bandeja. Lo que el fichero ES lo decide
+# `fingerprint_evidence` leyendo sus bytes, después de registrarlo: una foto
+# renombrada a `.txt` se registra por la puerta del texto y se clasifica como
+# JPEG, que es lo correcto.
+_IMAGE_AND_DUMP_EXTENSIONS: frozenset[str] = frozenset({
+    # Imagen cruda de disco
+    ".raw", ".dd", ".img", ".iso",
+    # Contenedores de disco (virtualización y formatos forenses)
+    ".vmdk", ".vdi", ".qcow", ".qcow2", ".vhd", ".vhdx", ".e01", ".ex01",
+    ".aff", ".aff4", ".s01", ".l01",
+    # Volcados de memoria
+    ".vmem", ".mem", ".lime", ".dmp", ".core",
+})
+
+#: Material aportado, por familias. Cada una está declarada por separado porque
+#: el mensaje de error las enumera y porque leerlas es cómo se revisa que no
+#: falta nada obvio.
+_DOCUMENT_EXTENSIONS: frozenset[str] = frozenset({
+    # Documentos de texto y ofimática
+    ".pdf", ".doc", ".docx", ".odt", ".rtf", ".pages",
+    ".xls", ".xlsx", ".ods", ".csv", ".tsv",
+    ".ppt", ".pptx", ".odp",
+    # Texto plano, notas, exportaciones y configuración
+    ".txt", ".md", ".log", ".json", ".xml", ".yaml", ".yml", ".ini", ".conf",
+    ".html", ".htm",
+    # Correo y mensajería
+    ".eml", ".msg", ".mbox", ".pst", ".ost", ".vcf", ".ics",
+})
+
+_MEDIA_EXTENSIONS: frozenset[str] = frozenset({
+    # Imagen fija
+    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff", ".webp",
+    ".heic", ".heif", ".svg",
+    # Vídeo
+    ".mp4", ".mov", ".avi", ".mkv", ".webm", ".wmv",
+    # Audio
+    ".mp3", ".wav", ".m4a", ".ogg", ".flac", ".aac",
+})
+
+_ARTIFACT_EXTENSIONS: frozenset[str] = frozenset({
+    # Empaquetados (una entrega llega comprimida más veces que suelta)
+    ".zip", ".7z", ".rar", ".tar", ".gz", ".tgz", ".bz2", ".xz",
+    # Artefactos sueltos que un cliente entrega sin el disco entero
+    ".evtx", ".evt", ".etl", ".reg", ".pf", ".lnk", ".jls", ".plist",
+    ".sqlite", ".sqlite3", ".db", ".journal",
+    # Capturas de red
+    ".pcap", ".pcapng", ".cap", ".har",
+    # Muestras y binarios bajo estudio
+    ".exe", ".dll", ".sys", ".so", ".jar", ".apk", ".ps1", ".vbs", ".bat",
+    ".sh", ".py", ".bin", ".dat",
+})
+
+#: Material aportado: la unión de las tres familias de arriba.
+SUPPORTED_MATERIAL_EXTENSIONS: frozenset[str] = (
+    _DOCUMENT_EXTENSIONS | _MEDIA_EXTENSIONS | _ARTIFACT_EXTENSIONS
+)
+
+# Todo lo que la bandeja acepta. Espejo de web/src/utils/evidence.ts, que
+# re-valida en cliente sólo para no hacer subir un fichero que el backend va a
+# rechazar; la validación de verdad es esta. Siempre en minúsculas.
+SUPPORTED_EVIDENCE_EXTENSIONS: frozenset[str] = (
+    _IMAGE_AND_DUMP_EXTENSIONS | SUPPORTED_MATERIAL_EXTENSIONS
 )
 
 
 # «Subible a la bandeja» y «punto de entrada registrable» NO son lo mismo, y
 # confundirlos es lo que impedía subir un EWF segmentado desde el navegador:
 #
-#   - SUBIBLE   = formato single-file soportado ∪ segmento EWF numerado
-#     (``.E01`` … ``.E99`` / ``.Ex01`` … ``.Ex99``). Un set EWF son N ficheros y
-#     la bandeja los necesita TODOS, así que las continuaciones también se suben
-#     aunque no estén en ``SUPPORTED_EVIDENCE_EXTENSIONS``. La continuación
-#     ALFA (``.EAA`` …, del segmento 100 en adelante) queda fuera a propósito:
-#     suelta es indistinguible de extensiones corrientes (``.exe``, ``.eml``…) y
-#     abriría la bandeja a ficheros arbitrarios — un set de >99 segmentos se
-#     deposita copiándolo a ``./evidence`` en el host, donde el descubrimiento
-#     del set sí la contempla.
-#   - REGISTRABLE = formato single-file soportado ∪ PRIMER segmento EWF
-#     (``.E01`` / ``.Ex01``). Registrar el primero ingiere el set entero
+#   - SUBIBLE   = formato reconocido ∪ segmento EWF numerado (``.E01`` …
+#     ``.E99`` / ``.Ex01`` … ``.Ex99``) ∪ fichero SIN extensión. Un set EWF son
+#     N ficheros y la bandeja los necesita TODOS, así que las continuaciones
+#     también se suben aunque no estén en ``SUPPORTED_EVIDENCE_EXTENSIONS``. Y
+#     sin extensión se suben porque medio Unix no la usa: ``syslog``,
+#     ``authorized_keys``, ``passwd`` o ``known_hosts`` son artefactos de pleno
+#     derecho. La continuación ALFA (``.EAA`` …, del segmento 100 en adelante)
+#     queda fuera de la comprobación por nombre: suelta es indistinguible de
+#     extensiones corrientes (``.exe``, ``.eml``…). Dentro de un SET sí se
+#     contempla, porque allí manda la numeración y no el nombre a secas.
+#   - REGISTRABLE = cualquier fichero de la bandeja MENOS un segmento EWF que no
+#     sea el primero. Registrar el ``.E01`` ingiere el set entero
 #     (``EvidenceManager.register`` descubre los hermanos co-localizados); un
 #     segmento intermedio suelto no puede ensamblar la imagen y ``register`` lo
-#     rechaza (RULE 2).
+#     rechaza (RULE 2). Todo lo demás se registra: quien decide si un fichero
+#     aporta al caso es el perito, no una lista de extensiones. Por eso la lista
+#     gobierna la SUBIDA (el camino de escritura del api, acotado a propósito) y
+#     no el registro, que opera sobre un fichero que el operador ya ha puesto en
+#     ``./evidence`` a conciencia.
 def is_uploadable_evidence_ext(ext: str) -> bool:
     """¿Se puede DEPOSITAR en la bandeja un fichero con esta extensión?"""
     ext = ext.lower()
+    if ext == "":
+        return True
     return ext in SUPPORTED_EVIDENCE_EXTENSIONS or _is_ewf_numeric_segment(ext)
 
 
 def is_registrable_evidence_ext(ext: str) -> bool:
     """¿Es esta extensión un punto de entrada REGISTRABLE (lo que el operador
     puede elegir y pulsar «Registrar»)? Espejo en ``web/src/utils/evidence.ts``."""
-    ext = ext.lower()
-    return ext in SUPPORTED_EVIDENCE_EXTENSIONS or _is_ewf_first_segment(ext)
+    return not _is_ewf_middle_segment(ext.lower())
 
 
 # Tamaño de bloque al escribir un upload en la bandeja (imágenes multi-GB).
@@ -1279,10 +1380,20 @@ def save_uploaded_source(filename: str, stream: BinaryIO) -> dict:
     ext = Path(name).suffix.lower()
     if not is_uploadable_evidence_ext(ext):
         raise ValueError(
-            f"Formato no soportado: {ext or '(sin extensión)'}. Formatos válidos: "
-            + ", ".join(sorted(SUPPORTED_EVIDENCE_EXTENSIONS))
-            + ", y los segmentos de continuación de un EWF segmentado "
-            "(.E02 … .E99 / .Ex02 …), que se suben junto a su .E01."
+            f"La bandeja no reconoce la extensión {ext}. Acepta imágenes y "
+            "volcados ("
+            + ", ".join(sorted(_IMAGE_AND_DUMP_EXTENSIONS))
+            + "), los segmentos de continuación de un EWF segmentado (.E02 … "
+            ".E99 / .Ex02 …) junto a su .E01, ficheros sin extensión, y material "
+            "aportado: documentos ("
+            + ", ".join(sorted(_DOCUMENT_EXTENSIONS))
+            + "), imagen y audiovisual ("
+            + ", ".join(sorted(_MEDIA_EXTENSIONS))
+            + ") y artefactos sueltos ("
+            + ", ".join(sorted(_ARTIFACT_EXTENSIONS))
+            + "). Si este fichero aporta al caso aun sin estar en la lista, "
+            "cópialo a la carpeta ./evidence del repositorio: la bandeja lista "
+            "todo lo que hay ahí y desde ahí se registra igual."
         )
 
     dest = (root / name).resolve()

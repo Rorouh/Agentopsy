@@ -19,7 +19,11 @@ su system prompt. En cada corrida, Agentopsy añade el contexto del caso:
 
 - La **evidencia anclada** (verificada por hash, montada solo lectura a nivel de bloque).
 - El **triage** (`detected_os`, `detected_kind`) — determinado por el contenido, no por
-  el host.
+  el host. `detected_kind` marca el SOPORTE y con él qué herramientas aplican:
+  `disk` / `container_disk` (TSK), `memory` (Volatility3) y `document`, que es un
+  fichero aportado (un PDF, una foto, un correo, un log, un artefacto suelto, una
+  muestra) sobre el que no aplica ninguna de las dos y se lee el fichero en sí.
+  Un `document` **nunca** enruta el perfil del caso: no es el sistema investigado.
 - La **allowlist de herramientas**, que es el **catálogo filtrado por el `os_profile`**
   del caso (`forensia.toolkit.catalog`). El agente elige por id; Agentopsy resuelve el
   argv real desde el allowlist (SECURITY INVARIANT 5) y le inyecta el path de la

@@ -1,22 +1,75 @@
 // Conocimiento compartido sobre ficheros de evidencia, en UN solo sitio.
-// Fuente de los formatos: backend/forensia/toolkit/catalog.py y forensia/triage.py.
+// Fuente de los formatos: backend/forensia/evidence.py, que RE-VALIDA siempre;
+// lo de aquí sólo evita hacer subir un fichero que el backend va a rechazar.
 
 import type { EvidenceHandle } from "../api/types";
 
-export const SUPPORTED_EXTENSIONS = [
+// ── Las dos familias de evidencia ────────────────────────────────────────────
+// La distinción no es burocrática, cambia lo que Agentopsy hace después:
+//
+//   IMÁGENES Y VOLCADOS: un sistema entero capturado. Lo abren TSK /
+//   Volatility / plaso y de su CONTENIDO se determina el perfil de SO del caso.
+//
+//   MATERIAL APORTADO: un fichero suelto que el perito recibe, el PDF de un
+//   contrato, la foto que alguien envió, el CSV que exportó un sistema, el
+//   .evtx que entregó el cliente, la muestra de malware. Entra por el MISMO
+//   hash-gate y la misma cadena de custodia, se clasifica `kind=document` y
+//   NUNCA fija el perfil del caso: un documento no es el sistema investigado.
+//
+// Espejo de _IMAGE_AND_DUMP_EXTENSIONS / SUPPORTED_MATERIAL_EXTENSIONS.
+export const IMAGE_AND_DUMP_EXTENSIONS = [
   ".raw",
   ".dd",
   ".img",
+  ".iso",
   ".vmdk",
-  ".vmem",
-  ".E01",
-  ".e01",
-  ".aff",
+  ".vdi",
+  ".qcow",
+  ".qcow2",
   ".vhd",
+  ".vhdx",
+  ".E01",
+  ".Ex01",
+  ".aff",
+  ".aff4",
+  ".s01",
+  ".l01",
+  ".vmem",
   ".mem",
   ".lime",
   ".dmp",
+  ".core",
 ];
+
+export const MATERIAL_EXTENSIONS = [
+  // Documentos de texto y ofimática
+  ".pdf", ".doc", ".docx", ".odt", ".rtf", ".pages",
+  ".xls", ".xlsx", ".ods", ".csv", ".tsv",
+  ".ppt", ".pptx", ".odp",
+  // Texto plano, notas, exportaciones y configuración
+  ".txt", ".md", ".log", ".json", ".xml", ".yaml", ".yml", ".ini", ".conf",
+  ".html", ".htm",
+  // Correo y mensajería
+  ".eml", ".msg", ".mbox", ".pst", ".ost", ".vcf", ".ics",
+  // Imagen fija
+  ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff", ".webp",
+  ".heic", ".heif", ".svg",
+  // Vídeo y audio
+  ".mp4", ".mov", ".avi", ".mkv", ".webm", ".wmv",
+  ".mp3", ".wav", ".m4a", ".ogg", ".flac", ".aac",
+  // Empaquetados
+  ".zip", ".7z", ".rar", ".tar", ".gz", ".tgz", ".bz2", ".xz",
+  // Artefactos sueltos que un cliente entrega sin el disco entero
+  ".evtx", ".evt", ".etl", ".reg", ".pf", ".lnk", ".jls", ".plist",
+  ".sqlite", ".sqlite3", ".db", ".journal",
+  // Capturas de red
+  ".pcap", ".pcapng", ".cap", ".har",
+  // Muestras y binarios bajo estudio
+  ".exe", ".dll", ".sys", ".so", ".jar", ".apk", ".ps1", ".vbs", ".bat",
+  ".sh", ".py", ".bin", ".dat",
+];
+
+export const SUPPORTED_EXTENSIONS = [...IMAGE_AND_DUMP_EXTENSIONS, ...MATERIAL_EXTENSIONS];
 
 export function fileExtension(name: string): string {
   const idx = name.lastIndexOf(".");
@@ -29,10 +82,12 @@ export function fileExtension(name: string): string {
 // esquema EWF2 `.Ex01`, `.Ex02` …). libewf reensambla la imagen desde el
 // PRIMERO descubriendo a sus hermanos co-localizados, así que:
 //   - la bandeja necesita TODOS los segmentos (todos son subibles), y
-//   - solo el PRIMERO es registrable (registrarlo ingiere el set completo).
-// La continuación ALFA (`.EAA` …, del segmento 100 en adelante) se deja fuera a
-// propósito: suelta no se distingue de una extensión corriente (.exe, .eml…).
-// Un set de >99 segmentos se deposita copiándolo a ./evidence en el host.
+//   - registrar el PRIMERO ingiere el set completo, mientras que una
+//     continuación suelta no puede ensamblar nada y el backend la rechaza.
+// La continuación ALFA (`.EAA` …, del segmento 100 en adelante) NO se decide por
+// el nombre: `.exe` es literalmente «e» + dos letras, o sea la misma forma, y
+// tratarla como segmento haría irregistrable una muestra de malware. Dentro de
+// un set anclado en su `.E01` sí se contempla, porque allí manda la numeración.
 // Espejo de backend/forensia/evidence.py (_EWF_FIRST_RE / _is_ewf_numeric_segment,
 // is_uploadable_evidence_ext / is_registrable_evidence_ext), que re-valida siempre.
 const EWF_FIRST_RE = /^\.(ex?)01$/i;
@@ -55,26 +110,31 @@ export function isEwfContinuationSegment(name: string): boolean {
 }
 
 // Validación client-side de la bandeja: el backend re-valida siempre (RULE 2).
-// SUBIR admite cualquier segmento EWF además de los formatos single-file, para
-// poder depositar el CONJUNTO de un EWF segmentado desde el navegador.
 export function isSupportedEvidence(name: string): boolean {
   const ext = fileExtension(name).toLowerCase();
   if (!ext) return false;
   return SUPPORTED_EXTENSIONS.some((s) => s.toLowerCase() === ext);
 }
 
+// SUBIR admite además cualquier segmento EWF numerado (para depositar el
+// CONJUNTO de un EWF partido desde el navegador) y los ficheros SIN extensión,
+// porque medio Unix no la usa: `syslog`, `authorized_keys`, `passwd` o
+// `known_hosts` son artefactos de pleno derecho.
 export function isUploadableEvidence(name: string): boolean {
-  return isSupportedEvidence(name) || isEwfSegment(name);
+  return isSupportedEvidence(name) || isEwfSegment(name) || fileExtension(name) === "";
 }
 
-// REGISTRAR solo es posible sobre un formato single-file soportado o el PRIMER
-// segmento de un EWF (el backend ingiere el set entero a partir de él).
+// REGISTRAR es posible sobre CUALQUIER fichero de la bandeja menos una
+// continuación EWF: quien decide si algo aporta al caso es el perito, no una
+// lista de extensiones. Por eso la lista gobierna la SUBIDA (el camino de
+// escritura acotado) y no el registro, que opera sobre un fichero que el
+// operador ya ha puesto en ./evidence a conciencia.
 export function isRegistrableEvidence(name: string): boolean {
-  return isSupportedEvidence(name) || isEwfFirstSegment(name);
+  return !isEwfContinuationSegment(name);
 }
 
 // Extensiones que ofrece el diálogo «Examinar…». Además de los formatos
-// single-file, las continuaciones numéricas `.E02` … `.E99`: sin ellas el
+// declarados, las continuaciones numéricas `.E02` … `.E99`: sin ellas el
 // selector nativo no dejaría elegir los segmentos de un EWF partido.
 export const FILE_INPUT_ACCEPT_EXTENSIONS = Array.from(
   new Set([
@@ -89,5 +149,6 @@ export const DETECTED_KIND_LABEL: Record<EvidenceHandle["detected_kind"], string
   disk: "Imagen de disco",
   memory: "Volcado de memoria",
   container_disk: "Disco VM",
+  document: "Fichero aportado",
   unknown: "Desconocido",
 };

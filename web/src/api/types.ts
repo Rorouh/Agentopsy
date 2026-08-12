@@ -271,7 +271,7 @@ export interface EvidenceHandle {
   // caso sola (RULE 2). En una imagen contenedor (.E01/.vmdk/.qcow2/.vhd) el
   // valor lo determina el pase PROFUNDO, que abre la imagen por el maletín.
   detected_os: "unix" | "windows" | "unknown";
-  detected_kind: "disk" | "memory" | "container_disk" | "unknown";
+  detected_kind: "disk" | "memory" | "container_disk" | "document" | "unknown";
   // Ficheros que respaldan la evidencia: 1 para un fichero unico, N para un set
   // EWF (.E01 ... .E0N), cada uno con su propio hash baseline.
   segment_count: number;
@@ -362,7 +362,7 @@ export interface EvidenceMetadata {
   read_only_level: "fs";
   read_only_label: string;
   detected_os: "unix" | "windows" | "unknown";
-  detected_kind: "disk" | "memory" | "container_disk" | "unknown";
+  detected_kind: "disk" | "memory" | "container_disk" | "document" | "unknown";
   verification: VerificationRecord | null;
 }
 
@@ -395,7 +395,7 @@ export interface CustodyAct {
     total_size_human: string;
     registered_at: string;
     detected_os: "unix" | "windows" | "unknown";
-    detected_kind: "disk" | "memory" | "container_disk" | "unknown";
+    detected_kind: "disk" | "memory" | "container_disk" | "document" | "unknown";
     segments: {
       name: string;
       sha256: string;

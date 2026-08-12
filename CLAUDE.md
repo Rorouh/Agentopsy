@@ -8,7 +8,8 @@ and the **non-negotiable invariants**. Read it before writing code.
 
 Agentopsy is an **AI-assisted post-mortem digital forensics tool** (TFM), self-hosted
 and deployed with **Docker Compose**. A forensic analyst loads already-extracted evidence
-(`.vmdk` / `.raw` / RAM dumps), and an **orchestrator agent** — routing to the
+(`.vmdk` / `.raw` / RAM dumps, and the standalone files a case is handed: documents,
+images, mail, logs, samples), and an **orchestrator agent** — routing to the
 **sub-agent** that matches the evidence's OS profile — drives a curated toolkit of
 forensic CLI tools to produce a structured, court-style report plus a timeline (see
 *Trained-agent packages*).
@@ -814,6 +815,64 @@ persistiera cerraría la técnica que el perito está dictaminando o movería el
 detalle bajo su cursor, que es peor que no refrescar. La primera vuelta de un caso
 tampoco cuenta como cambio: no había con qué comparar. Pinned by
 `tests/test_pulse.py`.
+
+**La evidencia de un caso ya no tiene que ser un sistema entero (2026-08-12,
+`forensia.triage` + `forensia.evidence`)**: Agentopsy sólo admitía once
+extensiones, todas de imagen de disco o volcado de RAM, y un caso real casi
+nunca llega así. Llega con lo que alguien ENTREGA: el PDF de un contrato, el
+Word de una carta de despido, la foto que se mandó por mensajería, el CSV que
+exportó una aplicación, el `.evtx` que envía el cliente sin su disco, la muestra
+de malware. Nada de eso se podía registrar, así que quedaba fuera de la cadena de
+custodia, fuera del informe y fuera del alcance del agente. Ahora entra por el
+MISMO hash-gate, la MISMA copia inmutable y el MISMO log encadenado, y el triage
+gana un cuarto valor de `detected_kind`, **`document`**, determinado por
+CONTENIDO como los otros tres: una tabla de firmas de offset fijo (PDF, PNG,
+JPEG, TIFF, ISO-BMFF, OLE2, RTF, 7z/rar/gzip/xz, SQLite, EVTX, hive `regf`,
+prefetch, pcap, ELF), tres formatos que se validan por ESTRUCTURA porque su firma
+es demasiado corta para fiarse (BMP declara su propio tamaño, tar pone `ustar` en
+el byte 257, un PE necesita `MZ` **y** la cabecera `PE\0\0` en el offset que él
+mismo declara), el contenido de un ZIP leído en sus cabeceras locales para
+separar un `.docx` de un `.zip`, y una fase final de texto plano para el `.txt` /
+`.log` / `.csv` / `.json`, que no tienen firma ninguna. La extensión no manda
+nunca: una foto renombrada a `.txt` se clasifica como JPEG, que es justo lo que
+hace quien esconde algo.
+
+Lo que obligó a tocar el ENRUTADO fue el efecto lateral: **un documento no puede
+fijar el `os_profile` del caso**. El PDF de un informe sobre un incidente de
+Windows está lleno de cadenas de Windows y el marcador scoring de siempre las
+habría puntuado; peor todavía, un documento que enruta primero deja el disco de
+verdad en CONFLICTO, y un caso en conflicto se queda sin perfil, o sea sin
+agente. Así que un `kind=document` sale con `family=unknown` por construcción (no
+se puntúan sus marcadores) y `routable_profile` lo rechaza además por su kind,
+para que siga siendo verdad si el registro se construye por otra vía (un
+backfill, una migración). El pase profundo tampoco lo toca: `_DEEP_KINDS` ya
+excluía todo lo que no fuera disco, así que un PDF no gasta una ida y vuelta al
+maletín para que `mmls` falle. La bandeja pasa de once extensiones a unas ciento
+diez agrupadas en familias declaradas, y el REGISTRO deja de mirar la extensión:
+registrable es cualquier fichero de la bandeja menos una continuación EWF, porque
+quien decide si algo aporta al caso es el perito y no una lista. La lista sigue
+gobernando la SUBIDA, que es el camino de escritura del api y conviene acotado, y
+lo que no reconoce se rechaza NOMBRANDO la salida (copiarlo a `./evidence` en el
+host, de donde se registra igual) en vez de dejar al perito sin ninguna.
+
+La lista ancha destapó una trampa que ya estaba puesta: `.exe` es literalmente
+«e» más dos letras, o sea la misma forma que la continuación EWF alfa `.EAA`, así
+que `muestra.exe` junto a `muestra.E01` entraba como el segmento 702 y tumbaba el
+registro pidiendo los 700 que faltaban. La continuación alfa deja de decidirse
+por el NOMBRE (`_is_ewf_middle_segment` pasa a numérica) y sólo se incorpora
+dentro de un set cuya parte numérica llega al 99, que es su definición. El agente
+recibe su sección de playbook (`tsk_*`/`volatility3` no aplican; `file_info`
+PRIMERO porque dice qué es de verdad; después
+`strings_head`/`bulk_extractor`/`yara`/`hashdeep`; y la regla que más importa en
+un informe: la fecha del sistema de ficheros dice cuándo llegó el fichero al
+perito, no cuándo ocurrió el hecho, así que `observed_at` sale de la fecha que el
+documento AFIRMA o se queda vacío), el informe pericial escribe la naturaleza en
+castellano («documento PDF», «imagen fotográfica», «registro de eventos de
+Windows») y la vista de Evidencia deja de pedirle al perito que resuelva algo que
+no es una pregunta: un fichero aportado pinta «no aplica» en la columna de SO, no
+se le reintenta la determinación, y si el caso es SÓLO material aportado el aviso
+del anclaje lo dice y explica que ahí el perfil elige el maletín, no el sistema.
+Pinned by `tests/test_evidencia_documental.py`.
 
 **La línea de tiempo del INCIDENTE, y `observed_at` deja de ser opcional de
 hecho (2026-08-10, `forensia.timeline.hallazgos`)**: el Timeline tenía tres capas

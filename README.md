@@ -15,7 +15,7 @@ Herramienta de análisis forense **post-mortem** asistida por IA, **autoalojada*
 
 ## Qué es
 
-Un investigador carga evidencias ya extraídas (`.E01` / `.raw` / `.vmdk` / volcado), conduce el análisis mediante prompts contra dos **sub-agentes** especializados (Windows y Unix-like) coordinados por un **agente orquestador**, y obtiene un informe forense estructurado, su línea temporal y la correlación con MITRE ATT&CK.
+Un investigador carga evidencias ya extraídas, tanto imágenes de un sistema entero (`.E01` / `.raw` / `.vmdk` / volcado de RAM) como los ficheros sueltos que le entregan (un PDF, un Word, una foto, un correo, un log exportado, un `.evtx` sin su disco, una muestra), conduce el análisis mediante prompts contra dos **sub-agentes** especializados (Windows y Unix-like) coordinados por un **agente orquestador**, y obtiene un informe forense estructurado, su línea temporal y la correlación con MITRE ATT&CK. Todo entra por el mismo hash-gate y la misma cadena de custodia.
 
 **Principios**
 

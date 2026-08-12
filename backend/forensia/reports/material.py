@@ -63,12 +63,58 @@ _ADJ_LABEL: dict[str | None, str] = {
 _VIRTUAL_DISK_EXTS = (".vmdk", ".vdi", ".qcow", ".qcow2", ".vhd", ".vhdx")
 _FORENSIC_CONTAINER_EXTS = (".e01", ".ex01", ".aff", ".aff4", ".s01", ".l01")
 
+#: Naturaleza de un fichero APORTADO (``kind=document``) según su extensión
+#: literal, con el mismo criterio que arriba: se nombra lo que se reconoce y lo
+#: demás queda en la categoría general, nunca se adivina (RULE 2). Un informe
+#: pericial escribe «documento PDF», no «document».
+_MATERIAL_NATURALEZA: dict[str, str] = {
+    ".pdf": "documento PDF",
+    ".doc": "documento de texto", ".docx": "documento de texto",
+    ".odt": "documento de texto", ".rtf": "documento de texto",
+    ".xls": "hoja de cálculo", ".xlsx": "hoja de cálculo",
+    ".ods": "hoja de cálculo", ".csv": "hoja de cálculo", ".tsv": "hoja de cálculo",
+    ".ppt": "presentación", ".pptx": "presentación", ".odp": "presentación",
+    ".txt": "fichero de texto plano", ".md": "fichero de texto plano",
+    ".json": "fichero de texto plano", ".xml": "fichero de texto plano",
+    ".log": "registro de actividad", ".journal": "registro de actividad",
+    ".eml": "mensaje de correo electrónico", ".msg": "mensaje de correo electrónico",
+    ".mbox": "buzón de correo", ".pst": "buzón de correo", ".ost": "buzón de correo",
+    ".png": "imagen fotográfica", ".jpg": "imagen fotográfica",
+    ".jpeg": "imagen fotográfica", ".gif": "imagen fotográfica",
+    ".bmp": "imagen fotográfica", ".tif": "imagen fotográfica",
+    ".tiff": "imagen fotográfica", ".webp": "imagen fotográfica",
+    ".heic": "imagen fotográfica", ".heif": "imagen fotográfica",
+    ".mp4": "grabación de vídeo", ".mov": "grabación de vídeo",
+    ".avi": "grabación de vídeo", ".mkv": "grabación de vídeo",
+    ".mp3": "grabación de audio", ".wav": "grabación de audio",
+    ".m4a": "grabación de audio", ".ogg": "grabación de audio",
+    ".flac": "grabación de audio",
+    ".evtx": "registro de eventos de Windows", ".evt": "registro de eventos de Windows",
+    ".reg": "exportación del registro de Windows",
+    ".pf": "artefacto de ejecución de Windows (prefetch)",
+    ".lnk": "acceso directo de Windows",
+    ".sqlite": "base de datos SQLite", ".sqlite3": "base de datos SQLite",
+    ".db": "base de datos",
+    ".pcap": "captura de tráfico de red", ".pcapng": "captura de tráfico de red",
+    ".cap": "captura de tráfico de red",
+    ".zip": "archivo comprimido", ".7z": "archivo comprimido",
+    ".rar": "archivo comprimido", ".tar": "archivo comprimido",
+    ".gz": "archivo comprimido", ".tgz": "archivo comprimido",
+    ".bz2": "archivo comprimido", ".xz": "archivo comprimido",
+    ".exe": "ejecutable de Windows", ".dll": "biblioteca de Windows",
+    ".sys": "controlador de Windows", ".so": "biblioteca de Linux",
+    ".ps1": "script de PowerShell", ".bat": "script por lotes",
+    ".vbs": "script de Visual Basic", ".sh": "script de shell",
+    ".py": "script de Python",
+}
+
 
 def naturaleza(handle: Any) -> str:
     """La naturaleza de una evidencia — «volcado de memoria RAM», «imagen de
-    disco virtual» — derivada del ``detected_kind`` del triaje y, para un
-    contenedor, de la extensión literal del fichero. Un kind desconocido
-    degrada a «evidencia»: la naturaleza no se adivina (RULE 2)."""
+    disco virtual», «documento PDF» — derivada del ``detected_kind`` del triaje
+    y, para un contenedor o un fichero aportado, de la extensión literal del
+    fichero. Un kind desconocido degrada a «evidencia»: la naturaleza no se
+    adivina (RULE 2)."""
     kind = str(getattr(handle, "detected_kind", "") or "").strip()
     if kind == "memory":
         return "volcado de memoria RAM"
@@ -81,6 +127,9 @@ def naturaleza(handle: Any) -> str:
         if ext in _FORENSIC_CONTAINER_EXTS:
             return "imagen forense de disco"
         return "imagen de disco en formato contenedor"
+    if kind == "document":
+        ext = handle.original_path.suffix.lower()
+        return _MATERIAL_NATURALEZA.get(ext, "fichero aportado")
     return "evidencia"
 
 

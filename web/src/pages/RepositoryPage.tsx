@@ -28,8 +28,17 @@ const KIND_LABEL: Record<EvidenceHandle["detected_kind"], string> = {
   disk: "imagen de disco",
   container_disk: "imagen contenedor",
   memory: "volcado de memoria",
+  document: "fichero aportado",
   unknown: "formato no identificado",
 };
+
+// Un fichero APORTADO (un PDF, una foto, un correo, un log) no es el sistema
+// investigado: es material sobre él. No hay SO que determinarle, así que ni se
+// reintenta la determinación ni se le pinta «SO sin determinar», que sería
+// pedirle al perito que resuelva algo que no es una pregunta.
+function hasOperatingSystem(ev: EvidenceHandle): boolean {
+  return ev.detected_kind !== "document";
+}
 
 interface RepositoryPageProps {
   onNavigate?: (view: ViewId) => void;
@@ -305,7 +314,10 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
     // siguiente.
     if (redetecting !== null) return;
     const pending = evidence.find(
-      (ev) => ev.detected_os === "unknown" && !autoRedetected.current.has(ev.evidence_id),
+      (ev) =>
+        hasOperatingSystem(ev) &&
+        ev.detected_os === "unknown" &&
+        !autoRedetected.current.has(ev.evidence_id),
     );
     if (!pending) return;
     autoRedetected.current.add(pending.evidence_id);
@@ -382,6 +394,14 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
   );
   const pendingCount = evidence.length - verifiedCount;
   const caseClosed = activeCase?.status === "closed";
+  // Un caso cuya evidencia es SÓLO material aportado no tiene un SO que
+  // determinar, así que el aviso de abajo no puede hablarle de una imagen que no
+  // ha podido abrirse. Sigue haciendo falta un perfil, pero por otro motivo: es
+  // lo que elige el maletín donde corren las herramientas.
+  const onlyMaterial = useMemo(
+    () => evidence.length > 0 && evidence.every((ev) => !hasOperatingSystem(ev)),
+    [evidence],
+  );
 
   // La acción de la cabecera es la del mock, «Registrar evidencia», y solo
   // procede con un punto de entrada elegido: sin selección no se adivina cuál
@@ -562,11 +582,17 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
                   <span className="os-name">{evidenceFileName(ev)}</span>
                   <span className="os-meta">{KIND_LABEL[ev.detected_kind]}</span>
                   <span
-                    className={`os-verdict${ev.detected_os === "unknown" ? " is-open" : ""}`}
+                    className={`os-verdict${
+                      hasOperatingSystem(ev) && ev.detected_os === "unknown" ? " is-open" : ""
+                    }`}
                   >
-                    {ev.detected_os === "unknown" ? "SO sin determinar" : ev.detected_os}
+                    {!hasOperatingSystem(ev)
+                      ? "no aplica"
+                      : ev.detected_os === "unknown"
+                        ? "SO sin determinar"
+                        : ev.detected_os}
                   </span>
-                  {ev.detected_os === "unknown" && (
+                  {hasOperatingSystem(ev) && ev.detected_os === "unknown" && (
                     <button
                       type="button"
                       className="link-action os-action"
@@ -588,10 +614,24 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
                 la huella delante, no en mitad del chat. */}
             {activeCase.os_profile === null && redetecting === null && (
               <div className="note-rail">
-                La determinación automática no ha podido cerrar el sistema operativo de este
-                caso, o la imagen contiene señales de más de un SO, o el maletín que la abre
-                no está disponible. El agente no se enruta hasta que haya un perfil, así que
-                puedes anclarlo tú:
+                {onlyMaterial ? (
+                  <>
+                    Este caso sólo tiene ficheros aportados, y un fichero no es el sistema
+                    investigado: no hay sistema operativo que determinarle. Aun así el agente
+                    necesita un perfil, porque es lo que elige el maletín donde corren las
+                    herramientas. Las que leen un fichero suelto (file, strings,
+                    bulk_extractor, yara, hashdeep) están en los dos, así que para material
+                    aportado cualquiera de los dos sirve; elige el del sistema del que
+                    proceda el material si lo sabes:
+                  </>
+                ) : (
+                  <>
+                    La determinación automática no ha podido cerrar el sistema operativo de
+                    este caso, o la imagen contiene señales de más de un SO, o el maletín que
+                    la abre no está disponible. El agente no se enruta hasta que haya un
+                    perfil, así que puedes anclarlo tú:
+                  </>
+                )}
                 <div className="anchor-actions">
                   <button
                     type="button"

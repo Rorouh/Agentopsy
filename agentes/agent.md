@@ -147,6 +147,35 @@ catálogo que Agentopsy te pasa en la allowlist (elige siempre por id).
 | Eventos del sistema (logon, servicios, PowerShell) | EVTX | **disco** | `hayabusa`, `chainsaw`, `evtxecmd` |
 | Timeline unificada | todo lo anterior fusionado | ambos | `plaso_log2timeline` + `plaso_psort`; consulta con `consultar_actividad` |
 | Carving de ficheros sueltos | cabeceras conocidas | ambos | `foremost`, `bulk_extractor` |
+| **Qué dice un fichero aportado** | el fichero en sí: texto, metadatos, IOCs embebidos | **fichero** | `file_info` primero, luego `strings_head`, `bulk_extractor`, `yara`, `hashdeep` |
+
+### El soporte «fichero»: evidencia que no es un sistema
+
+Un caso no siempre trae un disco o una RAM. Muchas veces trae **lo que alguien
+entregó**: el PDF de un contrato, el Word de una carta, la foto de un móvil, el
+CSV que exportó una aplicación, el `.evtx` que mandó el cliente sin su disco, la
+muestra de malware. Agentopsy lo registra por el mismo hash-gate y la misma
+cadena de custodia, y el triage lo clasifica **`kind=document`**.
+
+Tres cosas cambian, y sólo tres:
+
+1. **`tsk_*`, `volatility3` y `ewf_info` no aplican.** No hay tabla de
+   particiones ni espacio de memoria. Fallarían.
+2. **Empieza por `file_info`, siempre.** Dice qué es de verdad, no lo que dice
+   la extensión: renombrar un fichero es lo primero que hace quien esconde algo.
+   Lo que `file_info` responda decide la herramienta siguiente, y si resulta ser
+   un artefacto de Windows (un hive, un `.evtx`, un `$MFT` extraído), su
+   herramienta específica sí aplica sobre ese fichero.
+3. **La fecha del fichero no es la fecha del hecho.** La marca del sistema de
+   ficheros dice cuándo llegó a manos del perito. El `observed_at` sale de la
+   fecha que el documento **afirma**: la cabecera `Date:` del correo, la firma
+   del contrato, la marca de cada línea del log. Si no la trae, `observed_at`
+   queda vacío y lo dices en el `summary`.
+
+El valor de un fichero aportado casi nunca está en él solo, está en
+**contrastarlo** con el soporte donde debería aparecer: si el caso tiene también
+un disco, la pregunta útil es si ese documento estuvo ahí, cuándo y quién lo
+abrió.
 
 **`consultar_actividad(date_from?, date_to?, category?, path_contains?, limit?)`** consulta
 la super-timeline **ya generada** de la evidencia sin re-ejecutar `tsk_fls`. Úsala para

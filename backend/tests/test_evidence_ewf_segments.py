@@ -105,9 +105,17 @@ class TestSegmentHelpers:
         assert _is_ewf_first_segment(suffix)
         assert not _is_ewf_middle_segment(suffix)
 
-    @pytest.mark.parametrize("suffix", [".E02", ".E99", ".EAA", ".Ex02"])
+    @pytest.mark.parametrize("suffix", [".E02", ".E99", ".Ex02"])
     def test_is_middle_segment(self, suffix):
         assert _is_ewf_middle_segment(suffix)
+        assert not _is_ewf_first_segment(suffix)
+
+    @pytest.mark.parametrize("suffix", [".EAA", ".EZZ", ".exe", ".eml"])
+    def test_an_alpha_suffix_is_not_a_segment_by_name(self, suffix):
+        # ``.exe`` es literalmente «e» + dos letras, o sea la MISMA forma que la
+        # continuación alfa ``.EAA``. Decidir por el nombre haría irregistrable
+        # una muestra de malware; la continuación alfa se resuelve dentro del set.
+        assert not _is_ewf_middle_segment(suffix)
         assert not _is_ewf_first_segment(suffix)
 
     @pytest.mark.parametrize("suffix", [".raw", ".vmdk", ".dd", ".mem", ""])
@@ -440,20 +448,38 @@ class TestIntakePredicates:
         assert is_uploadable_evidence_ext(ext)
         assert not is_registrable_evidence_ext(ext)
 
-    @pytest.mark.parametrize("ext", [".txt", ".pdf", ".exe", ".eml", ".E00", ".E1", ""])
-    def test_unsupported_extensions_are_neither(self, ext):
-        assert not is_uploadable_evidence_ext(ext)
-        assert not is_registrable_evidence_ext(ext)
+    @pytest.mark.parametrize(
+        "ext", [".txt", ".pdf", ".docx", ".png", ".jpg", ".eml", ".evtx", ".exe", ""]
+    )
+    def test_supplied_material_is_uploadable_and_registrable(self, ext):
+        # Material aportado: el PDF de un contrato, la foto que alguien envió, el
+        # .evtx que entregó el cliente, la muestra de malware. Entra por el mismo
+        # hash-gate que una imagen de disco; lo que cambia es que el triage lo
+        # clasifica `kind=document` y NUNCA fija el perfil del caso.
+        # Sin extensión también: medio Unix no la usa (`syslog`, `passwd`).
+        assert is_uploadable_evidence_ext(ext)
+        assert is_registrable_evidence_ext(ext)
+
+    @pytest.mark.parametrize("ext", [".E00", ".E1"])
+    def test_a_malformed_ewf_extension_is_not_a_segment(self, ext):
+        # `.E00` y `.E1` no son segmentos EWF (la numeración va de 01 a 99, con
+        # dos cifras). Se aceptan como material aportado, como cualquier otra
+        # extensión, pero NO como parte de un set: lo que se comprueba aquí es
+        # que no se cuelan por la puerta de los segmentos.
+        assert _ewf_segment_index(ext) is None
+        assert not _is_ewf_middle_segment(ext)
 
     @pytest.mark.parametrize("ext", [".EAA", ".EZZ", ".eaa"])
-    def test_alpha_continuation_is_not_uploadable_on_its_own(self, ext):
+    def test_alpha_continuation_is_not_a_segment_on_its_own(self, ext):
         # Suelta, ``.EAA`` no se distingue de una extensión corriente que empiece
-        # por «e» (.exe, .eml…): admitirla convertiría la bandeja en un buzón de
-        # ficheros arbitrarios. Un set de >99 segmentos se deposita copiándolo a
-        # ./evidence en el host; el descubrimiento del set sí la contempla
-        # (``_ewf_segment_index`` la indexa dentro de un set anclado en su .E01).
+        # por «e» (.exe, .eml…), así que por NOMBRE nunca se trata como
+        # continuación: no se sube (la bandeja no la reconoce; un set de >99
+        # segmentos se deposita copiándolo a ./evidence en el host) pero tampoco
+        # se rechaza como «segmento intermedio», que sería mentir sobre qué es.
+        # Dentro de un set anclado en su .E01 sí se indexa, porque allí manda la
+        # numeración del conjunto.
         assert not is_uploadable_evidence_ext(ext)
-        assert not is_registrable_evidence_ext(ext)
+        assert is_registrable_evidence_ext(ext)
         assert _ewf_segment_index(ext) is not None
 
 
@@ -491,9 +517,16 @@ class TestUploadSegmentSet:
             "original.E03",
         ]
 
-    def test_unsupported_extension_is_still_rejected(self, inbox):
-        with pytest.raises(ValueError, match="Formato no soportado"):
-            self._upload("notas.txt", b"nope")
+    def test_supplied_material_lands_in_the_inbox(self, inbox):
+        entry = self._upload("contrato.pdf", b"%PDF-1.7\n")
+        assert entry["name"] == "contrato.pdf"
+        assert (inbox / "contrato.pdf").read_bytes() == b"%PDF-1.7\n"
+
+    def test_an_unrecognised_extension_names_the_way_in(self, inbox):
+        # Rechazar sin decir por dónde entra es dejar al perito sin salida: el
+        # mensaje tiene que nombrar la carpeta del host, que sí lo acepta.
+        with pytest.raises(ValueError, match=r"\./evidence"):
+            self._upload("captura.qqq", b"nope")
         assert list(inbox.iterdir()) == []
 
     def test_duplicate_name_never_overwrites(self, inbox):

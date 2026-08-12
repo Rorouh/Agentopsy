@@ -66,7 +66,7 @@ export function GuidePage({ onNavigate }: GuidePageProps) {
     {
       n: "02",
       title: "Registrar evidencia",
-      desc: "Sube la imagen forense o el volcado; Agentopsy calcula el hash baseline y la deja en solo lectura.",
+      desc: "Sube la imagen, el volcado o los ficheros que te hayan entregado; Agentopsy calcula el hash baseline y los deja en solo lectura.",
       state: has(facts.evidenceTotal) ? "done" : activeCase ? "now" : "todo",
       view: "repository",
     },

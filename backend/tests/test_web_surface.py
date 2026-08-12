@@ -169,7 +169,24 @@ def test_upload_deposits_file_in_inbox(
     assert not list(inbox.glob(".subiendo-*"))
 
 
-def test_upload_rejects_unsupported_format(
+def test_upload_accepts_supplied_material(
+    client: TestClient, auth: dict, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    # Un documento es evidencia: entra por la bandeja como una imagen de disco.
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    monkeypatch.setenv("FORENSIA_EVIDENCE_DIR", str(inbox))
+
+    r = client.post(
+        "/api/evidence/upload",
+        headers=auth,
+        files={"file": ("contrato.pdf", b"%PDF-1.7\n", "application/pdf")},
+    )
+    assert r.status_code == 200
+    assert (inbox / "contrato.pdf").read_bytes() == b"%PDF-1.7\n"
+
+
+def test_upload_rejects_an_unrecognised_extension(
     client: TestClient, auth: dict, monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
     inbox = tmp_path / "inbox"
@@ -179,9 +196,10 @@ def test_upload_rejects_unsupported_format(
     r = client.post(
         "/api/evidence/upload",
         headers=auth,
-        files={"file": ("notas.txt", b"nope", "text/plain")},
+        files={"file": ("captura.qqq", b"nope", "application/octet-stream")},
     )
     assert r.status_code == 422
+    assert "./evidence" in r.json()["detail"]
     assert not list(inbox.iterdir())
 
 

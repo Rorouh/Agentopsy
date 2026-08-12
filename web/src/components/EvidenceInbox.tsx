@@ -4,7 +4,7 @@ import type { EvidenceRegisterJob, EvidenceSource } from "../api/types";
 import { formatBytes } from "../utils/format";
 import {
   FILE_INPUT_ACCEPT_EXTENSIONS,
-  SUPPORTED_EXTENSIONS,
+  IMAGE_AND_DUMP_EXTENSIONS,
   fileExtension,
   isEwfContinuationSegment,
   isRegistrableEvidence,
@@ -43,7 +43,15 @@ interface EvidenceInboxProps {
   onUploadFiles: (files: File[]) => void;
 }
 
-const FORMATS_HINT = SUPPORTED_EXTENSIONS.join(" · ");
+// La lista entera pasa de cien extensiones: enumerarlas aquí sería un muro
+// ilegible. Se nombran las FAMILIAS, que es lo que el perito necesita saber para
+// decidir si su fichero entra, y las imágenes y volcados se enumeran porque son
+// pocas y porque acertar el formato ahí sí importa.
+const IMAGE_FORMATS_HINT = IMAGE_AND_DUMP_EXTENSIONS.join(" · ");
+const MATERIAL_FORMATS_HINT =
+  "documentos (pdf, word, hojas de cálculo, presentaciones, texto, logs), " +
+  "correo, imagen y audiovisual, archivos comprimidos, capturas de red, " +
+  "artefactos sueltos de Windows y muestras";
 const FILE_INPUT_ACCEPT = FILE_INPUT_ACCEPT_EXTENSIONS.join(",");
 // Un EWF partido se sube ENTERO (todos sus segmentos); registrar sigue siendo
 // cosa del .E01, que ingiere el set completo en el backend.
@@ -130,8 +138,9 @@ export function EvidenceInbox({
   }, []);
 
   const selectedSource = sources?.find((s) => s.path === selectedSourcePath) ?? null;
-  // Solo un formato single-file soportado o el PRIMER segmento EWF es un punto
-  // de entrada registrable; una continuación .E02 no se registra por sí sola.
+  // Todo lo que hay en la bandeja es punto de entrada registrable MENOS una
+  // continuación EWF, que no puede ensamblar la imagen por sí sola: su set se
+  // registra desde el .E01.
   const selectedRegistrable =
     selectedSource !== null && isRegistrableEvidence(selectedSource.name);
   const canRegister =
@@ -176,9 +185,13 @@ export function EvidenceInbox({
     const rejected = picked.filter((f) => !isUploadableEvidence(f.name));
     if (rejected.length > 0) {
       hints.push(
-        `${rejected.map((f) => `«${f.name}»`).join(", ")} no ${
-          rejected.length === 1 ? "es un formato soportado" : "son formatos soportados"
-        }. Formatos válidos: ${FORMATS_HINT} (y los segmentos de un EWF partido).`,
+        `La bandeja no reconoce la extensión de ${rejected
+          .map((f) => `«${f.name}»`)
+          .join(", ")}. Acepta imágenes y volcados (${IMAGE_FORMATS_HINT}), los ` +
+          `segmentos de un EWF partido, ficheros sin extensión, y material aportado: ` +
+          `${MATERIAL_FORMATS_HINT}. Si aun así aporta al caso, cópialo a la carpeta ` +
+          `./evidence del repositorio: la bandeja lista todo lo que hay ahí y desde ahí ` +
+          `se registra igual.`,
       );
     }
     setRejectHint(hints.length > 0 ? hints.join(" ") : null);
@@ -252,11 +265,13 @@ export function EvidenceInbox({
 
         <div className="dashed-panel-main">
           <div className="dashed-panel-title">
-            Arrastra la imagen forense o el volcado aquí
+            Arrastra aquí la evidencia del caso
           </div>
           <div className="dashed-panel-body">
             Agentopsy calcula el SHA-256 baseline y la deja en solo lectura antes de que
-            ninguna herramienta la toque. Formatos: {FORMATS_HINT}. {EWF_HINT}
+            ninguna herramienta la toque, sea una imagen de un sistema entero o un fichero
+            que te han entregado. Imágenes y volcados: {IMAGE_FORMATS_HINT}. Material
+            aportado: {MATERIAL_FORMATS_HINT}. {EWF_HINT}
           </div>
         </div>
         <div className="cta-row">
@@ -377,8 +392,6 @@ export function EvidenceInbox({
                   <span className="source-row-side">
                     {continuation ? (
                       <span className="tag tag--muted">segmento EWF · se registra desde el .E01</span>
-                    ) : !registrable ? (
-                      <span className="tag tag--muted">formato no compatible</span>
                     ) : selected ? (
                       <span className="tag tag--accent">seleccionada</span>
                     ) : null}
