@@ -120,7 +120,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
   const [sourcesError, setSourcesError] = useState<string | null>(null);
 
   // Evidencia cuya FICHA está abierta bajo la tabla. Sin selección explícita se
-  // abre la primera: con una sola evidencia —el caso normal— obligar a un clic
+  // abre la primera. Con una sola evidencia (el caso normal), obligar a un clic
   // para ver su hash y su acta sería un paso de más.
   const [selectedEvidenceId, setSelectedEvidenceId] = useState<string | null>(null);
   // Acuse de copia del SHA-256 de la ficha, 1,5 s.
@@ -590,8 +590,8 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
           </div>
         )}
 
-        {/* Con una sola evidencia no hay tabla, así que sus dos fallos —leer la
-            lista y verificar— se pintan aquí o se perderían. */}
+        {/* Con una sola evidencia no hay tabla, así que sus dos fallos (leer la
+            lista y verificar) se pintan aquí o se perderían. */}
         {evidence.length === 1 && evidenceListError && (
           <ErrorState
             message={`No se pudo listar la evidencia del caso: ${evidenceListError}`}
@@ -611,7 +611,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
           <div className="section-stack evidence-card">
             <div className="rule-label">
               {/* El nombre va LITERAL, no por `.eyebrow`: esa clase fuerza
-                  mayúsculas y en forense un nombre de fichero las distingue —
+                  mayúsculas y en forense un nombre de fichero las distingue:
                   pintar «ORIGINAL.RAW» donde el disco dice «original.raw» es
                   afirmar algo que no es. */}
               <span className="evidence-card-name">

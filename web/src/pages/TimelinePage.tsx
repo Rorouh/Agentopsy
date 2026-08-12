@@ -575,8 +575,8 @@ export function TimelinePage() {
         </div>
       )}
 
-      {/* Sin barra de herramientas —la capa del incidente es una figura, no una
-          lista— el contenido quedaba pegado a las pestañas: en las otras capas
+      {/* Sin barra de herramientas (la capa del incidente es una figura, no una
+          lista), el contenido quedaba pegado a las pestañas: en las otras capas
           ese hueco lo crea el buscador. Se repone aquí para que las cuatro
           arranquen a la misma altura. */}
       <div className={`tl-scroll${isIncident ? " tl-scroll--bare" : ""}`}>

@@ -189,6 +189,42 @@ def test_integrity_of_the_hash_chain_is_reported(entorno) -> None:
     assert material["integridad"]["hash_chain_verified"] is True
 
 
+def test_cost_is_only_what_the_provider_reported(entorno) -> None:
+    """El coste del anexo NO se calcula: se lee de `cost_usd`, que hoy sólo trae
+    el envoltorio de Claude Code. Un ejecutor que devuelve tokens sin precio
+    (Codex, Gemini) no entra, porque con caché los tokens no miden el coste:
+    hay una corrida medida donde el coste cayó un 79 % mientras los tokens de
+    entrada subían un 13,5 %. Sumar unidades distintas sería inventar la cifra.
+    """
+    audit = AuditLog(entorno["cases"].case_dir(entorno["case"].id) / "audit.jsonl")
+    audit.append({
+        "action": "executor_run_finish", "executor": "claude-code",
+        "cost_usd": 0.1150, "usage_source": "claude_code.usage",
+    })
+    audit.append({
+        "action": "executor_run_finish", "executor": "claude-code",
+        "cost_usd": 0.0141, "usage_source": "claude_code.usage",
+    })
+    # Codex reporta tokens y ningún precio: queda fuera, no se le adjudica cero.
+    audit.append({
+        "action": "executor_run_finish", "executor": "codex",
+        "input_tokens": 4000, "output_tokens": 120, "usage_source": "codex.json",
+    })
+
+    coste = _build(entorno)["integridad"]["coste_reportado"]
+    assert set(coste) == {"claude-code"}
+    assert coste["claude-code"] == {
+        "corridas_con_precio": 2, "coste_usd": 0.1291, "fuente": "claude_code.usage",
+    }
+
+
+def test_no_cost_key_at_all_when_nobody_reported_one(entorno) -> None:
+    """Sin ninguna corrida con precio, la clave NO viaja: el anexo no menciona el
+    coste en vez de escribir un cero, que se leería como «fue gratis» (RULE 2).
+    """
+    assert "coste_reportado" not in _build(entorno)["integridad"]
+
+
 def test_the_examiner_signs_when_no_perito_is_given(entorno) -> None:
     assert _build(entorno)["perito"]["nombre"] == "Daniel Ramos"
     material = build_material(

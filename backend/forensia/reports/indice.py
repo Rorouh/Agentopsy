@@ -267,7 +267,11 @@ INDICE: tuple[SeccionIndice, ...] = (
             "de auditoría del caso (`integridad.hash_chain_verified`); y el "
             "baseline de cada evidencia con el resultado de su verificación "
             "(`evidencias[].verificacion`). Copia los hashes del material tal "
-            "cual, completos."
+            "cual, completos. Si el material trae `integridad.coste_reportado`, "
+            "añade una línea con el coste que REPORTÓ cada ejecutor y cuántas de "
+            "sus corridas lo traen, diciendo que es la cifra del proveedor y no "
+            "un cálculo de Agentopsy; no lo sumes con otros ejecutores ni "
+            "conviertas tokens en dinero. Si no viene, no menciones el coste."
         ),
     ),
 )

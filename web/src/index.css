@@ -149,7 +149,7 @@
    Segunda identidad, gris frío y azul de instrumento. La paleta es un eje
    INDEPENDIENTE del claro/oscuro: `data-palette` elige el temperamento y
    `data-theme` elige el modo, así que hay cuatro combinaciones y ninguna
-   duplica reglas de componente — todo pasa por los mismos tokens.
+   duplica reglas de componente: todo pasa por los mismos tokens.
 
    Va DESPUÉS del bloque oscuro a propósito: `[data-palette]` y `[data-theme]`
    tienen la misma especificidad, así que el orden de aparición es lo que
@@ -275,7 +275,7 @@ html, body, #root {
    hereda el control CRUDO del agente de usuario: relleno gris, borde en relieve
    y su propia tipografía. En tema claro pasa casi desapercibido; en oscuro el
    relleno tapaba la × de cerrar los diálogos.
-   Va en `:where()` — especificidad CERO — así que toda regla de clase existente
+   Va en `:where()`, especificidad CERO, así que toda regla de clase existente
    sigue mandando y esto sólo cubre lo que nadie ha vestido. */
 :where(button) {
   padding: 0;
@@ -388,7 +388,7 @@ html, body, #root {
 .case-picker-icon { flex-shrink: 0; color: var(--ink-4); }
 .case-picker-row:hover:not(:disabled) .case-picker-icon { color: var(--accent); }
 /* Píldora rellena y AJUSTADA AL TEXTO, no a todo el ancho: se lee como una
-   acción y no como un enlace suelto, pero sin pesar más que el propio caso —
+   acción y no como un enlace suelto, pero sin pesar más que el propio caso:
    crear uno ocurre una vez, cambiar de caso muchas.
    Nota: es la única esquina redondeada del sidebar. Excepción deliberada al
    lenguaje de esquina viva del resto de la interfaz, no un descuido. */
@@ -1645,7 +1645,7 @@ select option:disabled { color: var(--ink-5); }
   border-top: 1px solid var(--hair);
 }
 /* Antes había una excepción que le quitaba el filete superior al primer bloque,
-   porque no tenía nada encima. Ahora sí lo tiene —la ficha de evidencia— y ese
+   porque no tenía nada encima. Ahora sí lo tiene (la ficha de evidencia) y ese
    filete es justo lo que los separa, así que la excepción se retira. */
 .inv-block-scroll {
   flex: 1;
@@ -2229,7 +2229,7 @@ select option:disabled { color: var(--ink-5); }
 /* ── Elección de paleta ──────────────────────────────────────────────────────
    Se elige por cómo se ve, así que la tarjeta enseña la paleta REAL en vez de
    un icono o un nombre. La muestra se pinta con los tokens de esa paleta
-   —`data-palette` en el propio elemento— así que si mañana se retoca un color,
+   (`data-palette` en el propio elemento), así que si mañana se retoca un color,
    la muestra se retoca sola: no hay una copia de los hexes aquí. */
 .palette-choices { display: flex; gap: 12px; flex-wrap: wrap; }
 .palette-choice {

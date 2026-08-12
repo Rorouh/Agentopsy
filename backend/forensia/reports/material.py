@@ -30,8 +30,9 @@ Lógica pura (RULE 3): lee los almacenes del caso, devuelve datos. Sin red, sin
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
-from pathlib import PurePosixPath, PureWindowsPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 from forensia import __version__
@@ -335,13 +336,56 @@ def _revisiones_material(
     ]
 
 
+def _coste_reportado(audit_path: Path) -> dict[str, Any] | None:
+    """Lo que el PROVEEDOR dice que costó la investigación, o nada.
+
+    Agentopsy no calcula este número: lo lee de ``cost_usd``, que hoy sólo
+    reporta el envoltorio de Claude Code (``total_cost_usd``). Codex y Gemini
+    devuelven tokens sin precio y Ollama es local, así que sus corridas no
+    entran: sumar tokens y llamarlo coste sería aritmética falsa — con caché el
+    mismo token vale 2× al escribirse y 0,1× al leerse, y hay una corrida medida
+    donde el coste cayó un 79 % mientras los tokens de entrada SUBÍAN un 13,5 %
+    (docs/diseno/tokens-2026-07). Por eso tampoco se enuncia un total «del
+    caso»: se dice qué ejecutor lo reportó y cuántas de sus corridas lo traen.
+
+    Sin ninguna corrida con precio devuelve ``None`` y el anexo no menciona el
+    coste, en vez de escribir un cero que parecería gratis (RULE 2).
+    """
+    if not audit_path.is_file():
+        return None
+    por_ejecutor: dict[str, dict[str, Any]] = {}
+    for line in audit_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            ev = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if ev.get("action") != "executor_run_finish":
+            continue
+        cost = ev.get("cost_usd")
+        if not isinstance(cost, (int, float)):
+            continue
+        agg = por_ejecutor.setdefault(
+            str(ev.get("executor") or "desconocido"),
+            {"corridas_con_precio": 0, "coste_usd": 0.0, "fuente": ev.get("usage_source") or ""},
+        )
+        agg["corridas_con_precio"] += 1
+        agg["coste_usd"] = round(agg["coste_usd"] + float(cost), 4)
+    return por_ejecutor or None
+
+
 def _integridad_material(case_id: str, *, cases: CaseManager) -> dict[str, Any]:
     audit_path = cases.case_dir(case_id) / "audit.jsonl"
-    return {
+    material: dict[str, Any] = {
         "audit_log": "audit.jsonl",
         "hash_chain_verified": AuditLog(audit_path).verify() if audit_path.is_file() else None,
         "herramienta": f"Agentopsy {__version__}",
     }
+    coste = _coste_reportado(audit_path)
+    if coste is not None:
+        material["coste_reportado"] = coste
+    return material
 
 
 def build_material(

@@ -79,7 +79,7 @@ const PATHS: Record<IconName, ReactNode> = {
     </>
   ),
   // Plegar y desplegar el panel lateral. El marco con la barra a la derecha
-  // dibuja el propio panel, así que se entiende sin leer el tooltip — un `›`
+  // dibuja el propio panel, así que se entiende sin leer el tooltip: un `›`
   // suelto no dice a qué se refiere ni hacia dónde va.
   "panel-collapse": (
     <>

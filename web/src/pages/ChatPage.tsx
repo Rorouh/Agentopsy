@@ -189,7 +189,7 @@ function formatMessageContent(content: string) {
 }
 
 // Instrucciones de arranque: verbos del oficio, no botones de demo. Son todas de
-// ESTA fase — «redactar informe» estaba aquí y se saltaba cinco: con cero
+// ESTA fase. «redactar informe» estaba aquí y se saltaba cinco: con cero
 // hallazgos le pedía al modelo un informe sobre nada, y cuesta dinero.
 const QUICK_PROMPTS = [
   "buscar persistencia",
@@ -865,8 +865,8 @@ export function ChatPage({
       <div className="transcript" ref={logRef} onScroll={onTranscriptScroll}>
         <div className="transcript-inner">
           {/* Arranque. Los atajos viven AQUÍ y no bajo el compositor: son la
-              rampa de entrada — le dicen al perito qué se le puede pedir a esto
-              — y ahí abajo quedaban al final del orden de lectura, pasado el
+              rampa de entrada (le dicen al perito qué se le puede pedir a esto)
+              y ahí abajo quedaban al final del orden de lectura, pasado el
               punto en el que ya has decidido que no sabes qué escribir.
               Sin evidencia no se ofrece ninguno: no hay nada sobre lo que
               correr, y una instrucción enviada ahora sólo puede fallar. */}

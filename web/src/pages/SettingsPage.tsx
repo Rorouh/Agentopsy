@@ -586,7 +586,7 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
                     >
                       {/* Muestra de la paleta REAL, no un icono: se elige por
                           cómo se ve, así que hay que verla. Los cuatro tonos son
-                          los que de verdad cargan el peso — fondo, tinta, acento
+                          los que de verdad cargan el peso: fondo, tinta, acento
                           y el verde de «verificada». */}
                       <span
                         className="palette-swatch"
