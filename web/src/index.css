@@ -1033,9 +1033,9 @@ select option:disabled { color: var(--ink-5); }
    de dato (un hecho por evidencia), no una tarjeta aparte. El veredicto es la
    columna que importa, así que va al final y en acento cuando queda abierto. */
 .os-meta { font-family: var(--font-mono); font-size: var(--fs-2); color: var(--ink-3); }
-/* Con el veredicto ya empujado a la derecha por `margin-left: auto`, la acción
-   se pega a él en vez de saltar de línea. */
-.os-action { margin-left: 0; }
+/* En la ficha la acción va INLINE detrás del veredicto, no en una fila flex:
+   sin separación quedaba «sin determinarREINTENTAR». */
+.os-action { margin-left: 10px; }
 
 /* Acta de adquisición */
 .acta-modal { max-width: 620px; }
@@ -1484,7 +1484,10 @@ select option:disabled { color: var(--ink-5); }
   color: var(--ink-4);
   margin-top: 3px;
 }
-.evidence-card-actions { display: flex; gap: 20px; flex-wrap: wrap; }
+/* Separación amplia: son versalitas con tracking, y con menos hueco las dos
+   acciones se leen como una sola frase. También despega la fila de la rejilla
+   de datos que tiene encima. */
+.evidence-card-actions { display: flex; gap: 26px; flex-wrap: wrap; margin-top: 6px; }
 
 /* Fila de la tabla que abre su ficha. El resalte va en las CELDAS, no en el
    <tr>: un `background` sobre la fila no cubre el ancho real cuando la tabla

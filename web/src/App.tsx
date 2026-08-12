@@ -36,11 +36,8 @@ function initialView(): ViewId {
 
 export function App() {
   const [caps, setCaps] = useState<Capabilities | null>(null);
-  const [version, setVersion] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [activeView, setActiveView] = useState<ViewId>(initialView);
-
-  const isConnected = !error && !!version;
 
   // Persiste la vista activa para que la recarga te devuelva donde estabas.
   useEffect(() => {
@@ -61,9 +58,11 @@ export function App() {
   };
 
   useEffect(() => {
+    // La versión que devuelve /health ya no se pinta en ninguna vista; la
+    // llamada se conserva porque es la que detecta que el api no responde y
+    // enciende el banner de error del armazón.
     api
       .health()
-      .then((h) => setVersion(h.version))
       .catch((e) => setError(String(e instanceof Error ? e.message : e)));
     refreshCaps();
   }, []);
@@ -94,12 +93,7 @@ export function App() {
           <MitreAttackPage />
         )}
         {activeView === "settings" && (
-          <SettingsPage
-            caps={caps}
-            version={version}
-            onNavigate={setActiveView}
-            onCapsRefresh={refreshCaps}
-          />
+          <SettingsPage caps={caps} onCapsRefresh={refreshCaps} />
         )}
       </AppShell>
       </ShellHeaderProvider>

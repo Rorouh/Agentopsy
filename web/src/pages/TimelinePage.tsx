@@ -403,18 +403,12 @@ export function TimelinePage() {
   usePublishShellHeader(
     {
       title: "Timeline forense",
-      meta: !activeCase
-        ? "sin caso seleccionado"
-        : isIncident
-          ? incident
-            ? `UTC · ${incident.eventos.length} eventos del incidente de ${incident.total_hallazgos} ` +
-              `${incident.total_hallazgos === 1 ? "hallazgo" : "hallazgos"}`
-            : "UTC · cargando"
-          : isInvestigation
-            ? `UTC · ${counts.toolRuns} ejecuciones · ${counts.findings} hallazgos`
-            : fsResult
-              ? `UTC · ${fsResult.total_events} eventos MACB`
-              : "UTC · super-timeline sin generar",
+      // Sin meta con caso abierto: lo decía todo dos veces. El «UTC» lo enuncia
+      // «todas las horas en UTC» junto a las pestañas, que es donde tiene peso
+      // pericial porque va pegado al contenido que fecha; y los recuentos los
+      // llevan las propias pestañas, las cuatro a la vez, en vez de una sola
+      // cifra que cambia de significado según cuál esté abierta.
+      meta: activeCase ? undefined : "sin caso seleccionado",
       action: !activeCase ? undefined : isIncident ? (
         canExportIncident ? (
           <button type="button" disabled={exporting} onClick={() => void exportIncidentPng()}>
@@ -436,16 +430,14 @@ export function TimelinePage() {
         </button>
       ),
     },
+    // Sin los recuentos: alimentaban la meta que se ha retirado, y como
+    // disparadores del hook solo provocaban republicar la cabecera cada vez que
+    // cambiaba una cifra que ya no se pinta.
     [
       activeCase?.id,
       isIncident,
       isInvestigation,
-      incident?.eventos.length,
-      incident?.total_hallazgos,
       canExportIncident,
-      counts.toolRuns,
-      counts.findings,
-      fsResult?.total_events,
       exporting,
       canGenerate,
       starting,

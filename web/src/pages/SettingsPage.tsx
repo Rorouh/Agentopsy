@@ -15,7 +15,6 @@ import { Icon } from "../ui/Icon";
 
 interface SettingsPageProps {
   caps: Capabilities | null;
-  version: string;
   onNavigate?: (view: ViewId) => void;
   onCapsRefresh?: () => Promise<void> | void;
 }
@@ -40,7 +39,7 @@ const MODEL_CONFIG_KEY: Record<ExecutorId, string> = {
 const TIMEOUT_OPTIONS = [60, 120, 300];
 const SAVED_MS = 2000;
 
-export function SettingsPage({ caps, version, onCapsRefresh }: SettingsPageProps) {
+export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
   const { theme, setTheme } = useTheme();
   const [activeTab, setActiveTab] = useState<TabId>("executors");
   const [config, setConfig] = useState<ConfigSnapshot | null>(null);
@@ -554,34 +553,6 @@ export function SettingsPage({ caps, version, onCapsRefresh }: SettingsPageProps
                     </div>
                   </div>
 
-                  <div className="section-stack">
-                    <div className="rule-label">
-                      <span className="eyebrow eyebrow--section">Servicio</span>
-                      <span className="rule" />
-                    </div>
-                    <div className="kv-rows">
-                      <div className="kv-row">
-                        <span className="kv-k">Backend api</span>
-                        <span className="kv-v">
-                          {version ? `v${version}` : "n/d"} · 127.0.0.1:8000
-                        </span>
-                      </div>
-                      <div className="kv-row">
-                        <span className="kv-k">Sistema del api</span>
-                        <span className="kv-v">{caps.os}</span>
-                      </div>
-                      <div className="kv-row">
-                        <span className="kv-k">Agentes cargados</span>
-                        <span className="kv-v">
-                          {(caps.agents?.loaded ?? []).map((a) => a.id).join(" · ") || "ninguno"}
-                        </span>
-                      </div>
-                      <div className="kv-row">
-                        <span className="kv-k">Configuración</span>
-                        <span className="kv-v">{config?.config_file ?? "n/d"}</span>
-                      </div>
-                    </div>
-                  </div>
                 </>
               )}
             </div>
