@@ -146,12 +146,11 @@ export function NewCaseModal({ open, onClose, onCreated }: NewCaseModalProps) {
           />
         </div>
 
-        {/* RULE 2 dicha al usuario: aquí no se elige el perfil de SO. */}
-        <div className="note-rail">
-          El perfil de sistema operativo no se elige aquí: el orquestador lo deriva del
-          contenido de la evidencia al registrarla. Agentopsy no lo adivina por ti.
-        </div>
-
+        {/* El aviso de que aquí no se elige el perfil de SO se retira: el
+            formulario no ofrece ese campo, así que explicaba la ausencia de algo
+            que nadie echa en falta. Donde el perfil SÍ es una pregunta abierta
+            (triage no concluyente) se dice en Evidencia, junto a la huella que
+            lo justifica. */}
         {error && (
           <div className="error-state">
             <strong>No se pudo crear el caso:</strong> {error}
