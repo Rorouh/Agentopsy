@@ -34,8 +34,16 @@ export function Sidebar({
   const facts = useCaseFacts();
 
   // Estado del CASO por fase. Sin caso, todo pendiente: no hay nada que
-  // presumir. Timeline no expone hoy un contador barato de super-timeline
-  // generada, así que se queda sin meta (TODO) en vez de fingir una.
+  // presumir.
+  //
+  // Cada fase se da por HECHA cuando el caso tiene su producto, y la cifra que lo
+  // dice es siempre real (RULE 2). Correlación ATT&CK y Timeline se quedaban
+  // fuera: la primera no pasaba nunca de «next» y la segunda estaba fijada a
+  // «pending», así que sus dos círculos no se rellenaban jamás por mucho que la
+  // sección tuviera contenido. Ahora la correlación está hecha cuando la matriz
+  // tiene al menos una técnica tocada, y el timeline cuando la capa del
+  // incidente, que es la que se lleva al informe, sitúa al menos un evento en el
+  // eje.
   const phaseState = (id: ViewId): PhaseState => {
     if (!activeCase || !facts.loaded) return "pending";
     switch (id) {
@@ -45,9 +53,11 @@ export function Sidebar({
         if (facts.evidenceTotal === 0) return "pending";
         return facts.findings > 0 ? "done" : "current";
       case "mitre":
-        return facts.findings > 0 ? "next" : "pending";
+        if (facts.findings === 0) return "pending";
+        return facts.mitreTechniques > 0 ? "done" : "next";
       case "timeline":
-        return "pending";
+        if (facts.findings === 0) return "pending";
+        return facts.incidentEvents > 0 ? "done" : "next";
       case "findings":
         return facts.findings > 0 ? "done" : "pending";
       case "graphs":
@@ -69,8 +79,29 @@ export function Sidebar({
       case "investigation":
         if (facts.findings === 0) return "sin hallazgos";
         return `${facts.findings} ${facts.findings === 1 ? "hallazgo" : "hallazgos"}`;
-      case "mitre":
-        return facts.findings > 0 ? "hallazgos por correlacionar" : "";
+      case "mitre": {
+        if (facts.findings === 0) return "";
+        if (facts.mitreTechniques === 0) return "hallazgos por correlacionar";
+        const tecnicas = `${facts.mitreTechniques} ${facts.mitreTechniques === 1 ? "técnica" : "técnicas"}`;
+        // Los dos ejes se enuncian por separado, nunca fundidos: una técnica
+        // propuesta por el agente no es un dictamen del perito.
+        return facts.mitreAdjudicated === 0
+          ? `${tecnicas} · sin dictaminar`
+          : `${tecnicas} · ${facts.mitreAdjudicated} con dictamen`;
+      }
+      case "timeline": {
+        if (facts.findings === 0) return "";
+        // Lo que no se puede situar en el eje viaja CONTADO, aquí también: un
+        // hallazgo sin fecha explica por qué la fase no está hecha.
+        if (facts.incidentEvents === 0) {
+          if (facts.incidentUndated === 0) return "sin eventos en el eje";
+          return `${facts.incidentUndated} sin fecha situable`;
+        }
+        const eventos = `${facts.incidentEvents} ${facts.incidentEvents === 1 ? "evento" : "eventos"}`;
+        return facts.incidentUndated === 0
+          ? eventos
+          : `${eventos} · ${facts.incidentUndated} sin fecha`;
+      }
       case "findings":
         if (facts.findings === 0) return "sin hallazgos";
         return `${facts.findings} ${facts.findings === 1 ? "hallazgo" : "hallazgos"}`;

@@ -81,14 +81,20 @@ export function GuidePage({ onNavigate }: GuidePageProps) {
       n: "04",
       title: "Correlacionar con ATT&CK",
       desc: "Vincula los hallazgos con tácticas y técnicas conocidas para dar contexto al informe final.",
-      state: has(facts.findings) ? "now" : "todo",
+      // Hecho cuando la matriz tiene al menos una técnica tocada (propuesta del
+      // agente, dictamen del perito o ambas), que es la MISMA cifra que usa la
+      // escalera del sidebar: los dos estados no pueden contradecirse.
+      state: has(facts.mitreTechniques) ? "done" : has(facts.findings) ? "now" : "todo",
       view: "mitre",
     },
     {
       n: "05",
       title: "Revisar el timeline",
       desc: "La capa de entrada, Hallazgos, es la línea de tiempo del incidente: qué pasó en el dispositivo investigado, un evento por hallazgo con la marca temporal del artefacto, y se exporta como imagen PNG para adjuntarla. Las otras tres reconstruyen la actividad de la investigación y del sistema de ficheros, y se leen como lista y se exportan como hoja de cálculo.",
-      state: has(facts.findings) ? "now" : "todo",
+      // Hecho cuando la capa del incidente sitúa al menos un evento en el eje:
+      // es la capa de entrada y la que se lleva al informe. Lo que no se puede
+      // situar no cuenta, y por eso el sidebar lo enuncia contado.
+      state: has(facts.incidentEvents) ? "done" : has(facts.findings) ? "now" : "todo",
       view: "timeline",
     },
     {

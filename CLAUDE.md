@@ -1012,6 +1012,31 @@ gana su peldaño con una cifra propia, `CaseFacts.graphs`, que cuenta los grafos
 YA extraídos: la fase está hecha cuando hay al menos uno, porque el grafo del
 caso funde los que haya.
 
+**Correlación ATT&CK y Timeline ya se marcan hechas (2026-08-14,
+`web/src/state/caseFacts.ts`)**: sus dos círculos de la escalera del sidebar no
+se rellenaban NUNCA, por mucho contenido que tuvieran las secciones. No era un
+problema de pintado: eran las dos únicas fases sin una cifra propia con la que
+decidirlo, así que `Sidebar.phaseState` las tenía cableadas, la de ATT&CK a
+`next` en cuanto había un hallazgo y la del timeline a `pending` en todos los
+casos («Timeline no expone hoy un contador barato», decía el TODO). `CaseFacts`
+gana esas cifras, reales y por el endpoint de siempre: `mitreTechniques` /
+`mitreAdjudicated` de la cobertura del caso (`GET …/mitre`) y `incidentEvents` /
+`incidentUndated` de la capa del incidente (`GET …/timeline/findings`). Con ellas
+la correlación está hecha cuando la matriz tiene al menos una técnica TOCADA
+(propuesta del agente, dictamen del perito o ambas) y el timeline cuando la capa
+del incidente, que es la de entrada y la que se lleva al informe, sitúa al menos
+un evento en el eje. Los dos ejes de ATT&CK se siguen enunciando por separado en
+la meta de la fila («3 técnicas · sin dictaminar»): una propuesta del agente no
+se disfraza de dictamen. Y lo que no se puede situar en el eje viaja CONTADO
+también aquí («10 eventos · 5 sin fecha»), igual que en la figura, porque un
+hallazgo sin `observed_at` es un dato del caso y explica una fase que aún no está
+hecha (RULE 2: ninguna de estas cifras se inventa; una lectura que falla deja su
+cifra a cero, como las otras tres). El hook observa además los flujos
+`mitre_proposals` y `mitre_verdicts` del pulso, así que dictaminar una técnica o
+anclar una correlación repinta la escalera sin F5. Los pasos 04 y 05 de la Guía
+leen las MISMAS cifras, que es la razón de que existan en un solo sitio: estaban
+fijados a «En curso» para siempre y ahora dicen lo mismo que el sidebar.
+
 **Lo pendiente vive en `hoja-de-ruta.md`** (2026-08-06): el plan de coste del
 informe pericial, medido sobre la redacción real del caso LoneWolf: **1,0659 USD
 en una llamada** (36.923 tokens de entrada, 26.637 de salida), con el 36,8 % del
