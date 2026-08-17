@@ -26,6 +26,32 @@ from forensia.executors.cache_health import CacheHealthMonitor
 from forensia.executors.session_guard import verify_session
 
 
+class ResponseContractError(ValueError):
+    """The executor answered, but not in the shape ``_parse_action`` demands.
+
+    Split out from every other failure of ``next_action`` on purpose. A timeout,
+    an unusable CLI or a crashed subprocess is an EXECUTION failure: retrying it
+    would be guessing that the second attempt goes better (RULE 2). A contract
+    violation is different in kind: the model DID answer, the answer is in the
+    conversation, and the exact defect can be named back to it. That is the one
+    thing the agent loop is allowed to correct, once, with the same executor and
+    the same contract (mirrors ``reports.writer``'s repair round).
+
+    ``raw_text`` carries a bounded sample of what the model actually emitted, so
+    the correction quotes the defect instead of describing it in the abstract.
+    """
+
+    def __init__(self, message: str, raw_text: str = "") -> None:
+        super().__init__(message)
+        self.raw_text = raw_text[:_RAW_SAMPLE_CHARS]
+
+
+#: How much of a contract-violating reply travels back to the model in the
+#: correction. Enough to recognise its own envelope, bounded so a runaway reply
+#: cannot re-enter the prompt whole.
+_RAW_SAMPLE_CHARS = 600
+
+
 @dataclass(frozen=True)
 class ModelCapabilities:
     supports_native_tools: bool
@@ -98,13 +124,21 @@ class ModelBackend(ABC):
 _RESPONSE_CONTRACT = (
     "## FORMATO DE RESPUESTA (OBLIGATORIO)\n"
     "Responde ÚNICAMENTE con un objeto JSON, sin texto antes ni después y sin "
-    "fences de markdown. Exactamente una de estas dos formas:\n"
+    "fences de markdown. Exactamente una de estas tres formas:\n"
     '1. Invocar una herramienta: {"action": "tool_call", "tool_id": "<id de la '
     'allowlist>", "params": { ... }}\n'
     '2. Varias herramientas de una vez: {"action": "tool_batch", "calls": '
     '[{"tool_id": "...", "params": {...}}, {"tool_id": "...", "params": {...}}]}\n'
     '3. Respuesta final al usuario: {"action": "final", "text": "<respuesta en '
     'markdown>"}\n'
+    'El campo "action" admite ESOS TRES literales y ningún otro. El nombre de '
+    "una herramienta va SIEMPRE en \"tool_id\", NUNCA en \"action\", y eso "
+    "incluye las herramientas internas de Agentopsy, que no son acciones "
+    "aparte: `record_finding`, `annotate_mitre`, `anotar_conocimiento`, "
+    "`consultar_conocimiento`, `leer_artefacto`, `consultar_actividad` y "
+    "`declarar_pivote` se invocan igual que cualquier otra. Se escribe "
+    '{"action": "tool_call", "tool_id": "record_finding", "params": {...}}; '
+    '{"action": "record_finding", ...} no existe.\n'
     "USA `tool_batch` siempre que puedas: encadena de una vez las herramientas "
     "cuyo resultado NO necesitas leer para decidir la siguiente (un lote de "
     "plugins, mmls+fls, extraer varios artefactos). Cada turno re-envía toda la "
@@ -360,6 +394,13 @@ class ExecutorBackend(ModelBackend):
 
     @staticmethod
     def _parse_action(text: str) -> Action:
+        """Strict parse of the response envelope.
+
+        Every rejection here is a ``ResponseContractError``, which the agent loop
+        may correct ONCE by naming the defect back to the model. The strictness
+        does not move: what changes is that a malformed envelope no longer throws
+        away the rest of a run (see ``ResponseContractError``).
+        """
         candidate = text.strip()
         # Tolerate a fenced block despite the contract — it costs nothing and
         # the content is still parsed strictly afterwards.
@@ -369,35 +410,45 @@ class ExecutorBackend(ModelBackend):
                 candidate = candidate[4:].strip()
         start = candidate.find("{")
         if start == -1:
-            raise ValueError(
+            raise ResponseContractError(
                 "el ejecutor no devolvió el objeto JSON del contrato de respuesta. "
-                f"Respuesta (muestra): {text.strip()[:300]!r}"
+                f"Respuesta (muestra): {text.strip()[:300]!r}",
+                text,
             )
         try:
             envelope, _ = json.JSONDecoder().raw_decode(candidate[start:])
         except json.JSONDecodeError as exc:
-            raise ValueError(
+            raise ResponseContractError(
                 "no se pudo parsear el JSON de la respuesta del ejecutor "
-                f"({exc}). Respuesta (muestra): {text.strip()[:300]!r}"
+                f"({exc}). Respuesta (muestra): {text.strip()[:300]!r}",
+                text,
             ) from exc
         if not isinstance(envelope, dict):
-            raise ValueError("la respuesta del ejecutor no es un objeto JSON")
+            raise ResponseContractError(
+                "la respuesta del ejecutor no es un objeto JSON", text
+            )
 
         action = envelope.get("action")
         if action == "final":
             answer = envelope.get("text")
             if not isinstance(answer, str):
-                raise ValueError('la acción "final" no trae el campo "text" de texto')
+                raise ResponseContractError(
+                    'la acción "final" no trae el campo "text" de texto', text
+                )
             return FinalAnswer(text=answer)
         if action == "tool_call":
             tool_id = envelope.get("tool_id")
             if not isinstance(tool_id, str) or not tool_id:
-                raise ValueError('la acción "tool_call" no trae un "tool_id" válido')
+                raise ResponseContractError(
+                    'la acción "tool_call" no trae un "tool_id" válido', text
+                )
             params = envelope.get("params")
             if params is None:
                 params = {}
             if not isinstance(params, dict):
-                raise ValueError('en "tool_call", "params" debe ser un objeto JSON')
+                raise ResponseContractError(
+                    'en "tool_call", "params" debe ser un objeto JSON', text
+                )
             return ToolCall(
                 tool_id=tool_id,
                 params=params,
@@ -407,19 +458,23 @@ class ExecutorBackend(ModelBackend):
         if action == "tool_batch":
             raw_calls = envelope.get("calls")
             if not isinstance(raw_calls, list) or not raw_calls:
-                raise ValueError(
-                    'la acción "tool_batch" debe traer una lista "calls" no vacía'
+                raise ResponseContractError(
+                    'la acción "tool_batch" debe traer una lista "calls" no vacía', text
                 )
             calls: list[ToolCall] = []
             for i, raw in enumerate(raw_calls):
                 if not isinstance(raw, dict):
-                    raise ValueError(f'calls[{i}] debe ser un objeto JSON')
+                    raise ResponseContractError(f'calls[{i}] debe ser un objeto JSON', text)
                 tool_id = raw.get("tool_id")
                 if not isinstance(tool_id, str) or not tool_id:
-                    raise ValueError(f'calls[{i}] no trae un "tool_id" válido')
+                    raise ResponseContractError(
+                        f'calls[{i}] no trae un "tool_id" válido', text
+                    )
                 params = raw.get("params") or {}
                 if not isinstance(params, dict):
-                    raise ValueError(f'en calls[{i}], "params" debe ser un objeto JSON')
+                    raise ResponseContractError(
+                        f'en calls[{i}], "params" debe ser un objeto JSON', text
+                    )
                 calls.append(
                     ToolCall(tool_id=tool_id, params=params, call_id=uuid.uuid4().hex)
                 )
@@ -427,7 +482,15 @@ class ExecutorBackend(ModelBackend):
                 calls=tuple(calls),
                 assistant_message={"role": "assistant", "content": text},
             )
-        raise ValueError(
+        # The measured failure (2026-08-16): the model put the TOOL NAME in
+        # `action` (`{"action": "record_finding", ...}`), which the prompt had
+        # invited by teaching the internal tools in call-signature notation. The
+        # message names that specific confusion because it is the one the
+        # correction round has to undo.
+        raise ResponseContractError(
             f'acción desconocida {action!r} en la respuesta del ejecutor '
-            '(esperado "tool_call", "tool_batch" o "final")'
+            '(esperado "tool_call", "tool_batch" o "final"). Si es el id de una '
+            'herramienta, va en "tool_id" dentro de un "tool_call", nunca en '
+            '"action"',
+            text,
         )

@@ -10,6 +10,8 @@ from forensia.models.base import (
     FinalAnswer,
     ModelBackend,
     ModelCapabilities,
+    ResponseContractError,
+    ToolBatch,
     ToolCall,
 )
 
@@ -19,5 +21,7 @@ __all__ = [
     "FinalAnswer",
     "ModelBackend",
     "ModelCapabilities",
+    "ResponseContractError",
+    "ToolBatch",
     "ToolCall",
 ]

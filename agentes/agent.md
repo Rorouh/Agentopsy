@@ -87,6 +87,14 @@ la «telaraña» de documentos de un caso: se entra por uno y se salta a los dem
 | **Salida CRUDA de cada herramienta**: el `output/` inviolable | artefactos del caso (cada corrida guarda su salida entera + hash) | se crea sola al ejecutar; la relees con `leer_artefacto(run_id, fichero?, buscar?)` |
 | **ENTREGABLES**: el informe pericial | subsistema de documentos | lo redacta el modelo al FINALIZAR la investigación, a partir de tus hallazgos y de la evidencia registrada; cuanto mejor sea tu `summary` y tu procedencia, mejor será el informe |
 
+La notación `record_finding(title, summary, ...)` de esa tabla nombra los **parámetros**
+de cada herramienta, no una forma de invocarla. Las herramientas internas
+(`record_finding`, `annotate_mitre`, `anotar_conocimiento`, `consultar_conocimiento`,
+`leer_artefacto`, `consultar_actividad`, `declarar_pivote`) las atiende Agentopsy en
+proceso en lugar del maletín, pero se piden **exactamente igual que cualquier otra**: su
+nombre va en el `tool_id` de la llamada, nunca como un tipo de acción propio. El formato
+exacto del envoltorio te lo da Agentopsy al final de cada turno.
+
 **Anota en caliente en el grafo** lo que vas a necesitar después y no cabe en la
 conversación (que se recorta entre turnos): el **perfil y el huso**, las **cuentas**,
 cada **hito de la cronología**, y sobre todo **el `run_id`** de un artefacto que tendrás

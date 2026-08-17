@@ -578,6 +578,32 @@ exhausted its 21 iterations without ever emitting a `final`). Pinned by
 `test_claude_argv_strips_the_cli_harness` and
 `test_budget_nudges_demand_a_final_before_exhaustion`.
 
+**Una respuesta fuera de contrato ya no tira la corrida entera (2026-08-16)**:
+una corrida real murió en la iteración 2 con «acción desconocida
+`record_finding`» porque el modelo puso el NOMBRE de la herramienta en `action`
+en vez de en `tool_id` — un error que el propio prompt invitaba, al ser
+`record_finding` la única tool que se enseñaba en notación de firma
+(`record_finding(title, summary, …)`) y no como id de la allowlist. Tres
+cambios. **El contrato lo dice** (`models/base._RESPONSE_CONTRACT`, que se
+renderiza al final de CADA prompt y de cada delta): `action` admite esos tres
+literales y ninguno más, y el nombre de una herramienta va siempre en `tool_id`,
+lo que incluye las siete internas (`record_finding`, `annotate_mitre`,
+`anotar_conocimiento`, `consultar_conocimiento`, `leer_artefacto`,
+`consultar_actividad`, `declarar_pivote`), que no son acciones aparte. **El
+prompt de conducta y `agent.md` lo aclaran** donde nacía la confusión: la
+notación de firma nombra los PARÁMETROS, no una forma de invocar. Y **el bucle
+concede UNA corrección**: `_parse_action` levanta ahora un
+`ResponseContractError` distinguible de un fallo de EJECUCIÓN (un timeout o un
+CLI caído no se reintenta — eso sería adivinar que la segunda vez sale mejor,
+RULE 2), y el loop le devuelve al modelo el motivo exacto más una muestra
+acotada de lo que emitió, audita la ronda (`agent_contract_repair`) y sigue.
+Mismo criterio que `reports.writer.MAX_REPARACIONES` y por la misma razón:
+tirar una corrida con sus iteraciones ya pagadas por un envoltorio mal formado
+no protege nada. El parser NO se relaja: lo acotado son los incumplimientos
+CONSECUTIVOS (el contador se reinicia con cada envoltorio válido), dos seguidos
+abortan como antes, y la ronda consume una iteración del presupuesto porque
+cuesta una llamada real. Pinned by `tests/test_contract_repair.py`.
+
 **Una sesión caducada ya no se disfraza de «stderr vacío» (2026-08-05)**: un
 caso real dejó seis corridas de `claude-code` muertas con `exit_code 1` y
 `error: "stderr: (vacío)"`, y el perito no tenía forma de saber qué arreglar.

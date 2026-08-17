@@ -66,12 +66,53 @@ from forensia.findings.store import finding_store
 from forensia.knowledge import knowledge_store
 from forensia.mitre.coverage import coverage_store
 from forensia.timeline import query_filesystem_timeline
-from forensia.models.base import FinalAnswer, ModelBackend, ToolBatch, ToolCall
+from forensia.models.base import (
+    FinalAnswer,
+    ModelBackend,
+    ResponseContractError,
+    ToolBatch,
+    ToolCall,
+)
 from forensia.path_policy import inject_evidence_path
 from forensia.toolkit.catalog import BY_ID as TOOL_BY_ID
 from forensia.toolkit.tool import Tool
 
 logger = logging.getLogger(__name__)
+
+#: Rondas de CORRECCIÓN SEGUIDAS que se le conceden al modelo cuando su
+#: respuesta no cumple el contrato de formato (``ResponseContractError``): el
+#: contador se pone a cero en cuanto vuelve a emitir un envoltorio válido, así
+#: que lo que se prohíbe son dos incumplimientos consecutivos, no dos en toda
+#: una corrida de veinte iteraciones. Mismo criterio que
+#: ``reports.writer.MAX_REPARACIONES`` y por la misma razón: tirar una corrida
+#: entera, con sus iteraciones ya pagadas, porque el modelo puso el nombre de una
+#: herramienta en ``action`` en vez de en ``tool_id`` no protege nada, solo
+#: pierde el trabajo. NO es un fallback (RULE 2): el mismo ejecutor, el mismo
+#: contrato, ninguna tolerancia nueva en el parser, y el motivo exacto devuelto
+#: al modelo. Si la corrección tampoco cumple, la corrida se aborta como antes.
+#: La ronda CONSUME una iteración del presupuesto porque cuesta una llamada real
+#: al ejecutor: el coste se ve en el contador, nunca se esconde.
+MAX_REPARACIONES_CONTRATO = 1
+
+
+def _contract_repair_message(exc: ResponseContractError) -> str:
+    """El mensaje que devuelve al modelo el defecto EXACTO de su envoltorio.
+
+    Es autocontenido a propósito (cita la muestra de lo que emitió) para que
+    valga igual con transporte de sesión, donde el modelo ya tiene su turno en la
+    conversación, que con un ejecutor stateless, donde no lo tiene.
+    """
+    muestra = exc.raw_text.strip()
+    bloque = f"\nEsto es lo que emitiste:\n{muestra}\n" if muestra else "\n"
+    return (
+        "[Contrato de respuesta] Tu respuesta anterior NO se pudo interpretar y "
+        f"no se ejecutó nada. Motivo: {exc}."
+        f"{bloque}"
+        "Reemítela AHORA cumpliendo el formato, sin texto fuera del JSON. "
+        "Recuerda que \"action\" solo admite \"tool_call\", \"tool_batch\" o "
+        "\"final\", y que el id de una herramienta va en \"tool_id\", nunca en "
+        "\"action\". No repitas el trabajo ya hecho: continúa donde estabas."
+    )
 
 
 def _max_tool_attempts() -> int:
@@ -388,6 +429,13 @@ class ForensicAgent:
         tools_since_finding = 0
         FINDING_NUDGE_AFTER = 3
 
+        # Correcciones de contrato encadenadas. Se pone a cero en cuanto el
+        # modelo vuelve a emitir un envoltorio válido: la garantía es «nunca dos
+        # incumplimientos SEGUIDOS», no «uno por corrida». Un desliz aislado en
+        # la iteración 2 no debe condenar a la 15, y un modelo que no consigue
+        # cumplir el formato dos veces seguidas no va a conseguirlo a la tercera.
+        contract_repairs = 0
+
         # Identificadores del PLANO DE CONTROL: los emite Agentopsy, no salen de la
         # evidencia y el agente los necesita literales para citar procedencia. Se
         # excluyen de la redacción de egress (ver forensia.agent.redaction). Crece
@@ -514,6 +562,55 @@ class ForensicAgent:
             egress_state = {**state, "messages": outbound, "messages_full": outbound_full}
             try:
                 action = self.model.next_action(egress_state, specs)
+            except ResponseContractError as exc:
+                # El modelo SÍ contestó, pero fuera del contrato. A diferencia de
+                # un fallo de ejecución (timeout, CLI caído), aquí el defecto se
+                # puede nombrar y se le concede UNA corrección. El parser no se
+                # relaja: lo que cambia es que un envoltorio mal formado ya no se
+                # lleva por delante el resto de la corrida.
+                if contract_repairs >= MAX_REPARACIONES_CONTRATO:
+                    logger.warning("response contract violated again: %s", exc)
+                    self._audit_event(
+                        "agent_contract_repair",
+                        case_id=case_id,
+                        evidence_id=evidence_id,
+                        backend=self.model.name,
+                        model_name=model_name,
+                        iteration=iteration + 1,
+                        attempt=contract_repairs + 1,
+                        repaired=False,
+                        reason=str(exc),
+                    )
+                    return AgentLoopResult(
+                        reply=(
+                            f"El modelo `{model_name}` incumplió el contrato de "
+                            f"respuesta en la iteración {iteration + 1} y tampoco "
+                            "lo corrigió cuando se le devolvió el motivo: "
+                            f"`{exc}`. Los hallazgos y artefactos ya registrados "
+                            "se conservan."
+                        ),
+                        iterations=iteration,
+                        tool_calls=tool_calls_log,
+                    )
+                contract_repairs += 1
+                logger.warning(
+                    "response contract violated, requesting correction: %s", exc
+                )
+                self._audit_event(
+                    "agent_contract_repair",
+                    case_id=case_id,
+                    evidence_id=evidence_id,
+                    backend=self.model.name,
+                    model_name=model_name,
+                    iteration=iteration + 1,
+                    attempt=contract_repairs,
+                    repaired=True,
+                    reason=str(exc),
+                )
+                messages.append(
+                    {"role": "system", "content": _contract_repair_message(exc)}
+                )
+                continue
             except Exception as exc:  # noqa: BLE001 — surface as friendly reply
                 logger.warning("model.next_action failed: %s", exc)
                 return AgentLoopResult(
@@ -525,6 +622,9 @@ class ForensicAgent:
                     iterations=iteration,
                     tool_calls=tool_calls_log,
                 )
+            # Envoltorio válido: se cierra la ronda de corrección abierta, si la
+            # había. Lo que se acota son los incumplimientos SEGUIDOS.
+            contract_repairs = 0
 
             # The prompt-cache watchdog (plan.md Fase 0). The whole saving of the
             # session transport depends on where the CLI puts its cache
@@ -1354,8 +1454,21 @@ class ForensicAgent:
             "tool calls siguiendo tu playbook. No saludes y luego esperes, "
             "saluda E invoca tools en la misma respuesta si quieres, pero NUNCA "
             "te quedes esperando una clarificación que el sistema ya te dio.\n\n"
+            "## Las tools internas se invocan como cualquier otra\n"
+            "`record_finding`, `annotate_mitre`, `anotar_conocimiento`, "
+            "`consultar_conocimiento`, `leer_artefacto`, `consultar_actividad` y "
+            "`declarar_pivote` las atiende Agentopsy en proceso, no el maletín, "
+            "pero viajan en el MISMO envoltorio que el resto: su nombre va en "
+            "`tool_id` dentro de un `tool_call` (o de un `tool_batch`), NUNCA en "
+            "`action`. Cuando abajo se escribe `record_finding(title, summary, "
+            "...)` eso nombra sus PARÁMETROS, no una forma de llamarla: lo que "
+            "emites es "
+            "`{\"action\": \"tool_call\", \"tool_id\": \"record_finding\", "
+            "\"params\": {\"title\": ..., \"summary\": ...}}`. Un "
+            "`{\"action\": \"record_finding\", ...}` no se puede interpretar y no "
+            "ejecuta nada.\n\n"
             "## Registra hallazgos EN CALIENTE, regla estricta\n"
-            "Tienes una tool especial `record_finding(title, summary, severity, "
+            "Tienes una tool interna `record_finding(title, summary, severity, "
             "tool_id?, run_id?, mitre_hints?, observed_at?)`. **Después de CADA herramienta cuyo "
             "resultado te dé una conclusión (aunque sea parcial o un descarte), "
             "llama a `record_finding` INMEDIATAMENTE, ANTES de invocar la siguiente "
