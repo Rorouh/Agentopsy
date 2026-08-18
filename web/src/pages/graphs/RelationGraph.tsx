@@ -27,10 +27,55 @@ import {
 //: aquí se le añade la cabecera arriba y la banda de leyenda y procedencia abajo.
 const MARGEN_X = 30;
 const CABECERA = 92;
-const PIE = 128;
+//: Pie con UNA línea de nodos y UNA de relaciones. Cuando la leyenda necesita
+//: más líneas, crece con ellas (`pie`, calculado en el render).
+const PIE_BASE = 128;
 
 const RADIO_NODO = 19;
 const MAX_CHARS_ETIQUETA = 22;
+
+// ── rejilla de la leyenda ─────────────────────────────────────────────────────
+//
+// Las dos filas comparten UNA rejilla de columnas: la muestra de la primera
+// relación cae justo debajo de la del primer tipo de nodo, la de la segunda
+// debajo de la segunda, y así. Antes cada fila llevaba su propio paso fijo (118
+// los nodos, 152 las relaciones), de modo que solo coincidía la primera entrada
+// y el resto quedaba a la deriva; y como el paso no miraba la etiqueta, una
+// larga se comía el hueco de la siguiente («Transferencia de ficheros» ocupa
+// 148 de los 152 px de su hueco) y dos entradas acababan pegadas mientras otras
+// dos quedaban separadas por un palmo.
+//
+// El ancho de columna sale de la entrada MÁS ancha de la leyenda, así que
+// ninguna invade a la que tiene al lado, y las que no caben en el ancho de la
+// figura pasan a la línea siguiente: la leyenda enumera SIEMPRE todo lo que la
+// figura pinta, nunca las primeras que quepan.
+const LEYENDA_X = MARGEN_X + 88; //: donde acaba el rótulo de la fila
+const LEYENDA_LINEA = 24; //: alto de una línea de leyenda
+const LEYENDA_AIRE = 26; //: separación mínima entre dos columnas
+const MUESTRA_NODO = 15; //: cuadro de color + hueco, antes de la etiqueta
+const MUESTRA_RELACION = 20; //: raya de color + hueco, antes de la etiqueta
+
+//: Ancho aproximado de una etiqueta a 10,5px. Se ESTIMA con un ancho medio de
+//: carácter en vez de medirlo con el canvas del navegador porque la figura se
+//: exporta a PNG y se adjunta a un informe: la rejilla tiene que salir igual en
+//: cualquier máquina, y una medida tomada de la tipografía instalada la haría
+//: depender del equipo. El valor va por encima del ancho real medido (5,0 a 5,9
+//: px por carácter en las etiquetas del vocabulario), que es el lado seguro:
+//: sobra aire, nunca falta.
+const ANCHO_CARACTER = 5.9;
+
+function anchoEtiqueta(texto: string): number {
+  return texto.length * ANCHO_CARACTER;
+}
+
+//: Cuántas entradas van en cada línea. Cuando no caben todas, las líneas salen
+//: EQUILIBRADAS: cinco relaciones con sitio para cuatro se reparten 3 + 2, no
+//: 4 + 1, que deja una entrada suelta debajo de una fila llena y vuelve a
+//: romper la lectura en columnas.
+function porLinea(entradas: number, cabenPorLinea: number): number {
+  if (entradas <= cabenPorLinea) return Math.max(1, entradas);
+  return Math.ceil(entradas / Math.ceil(entradas / cabenPorLinea));
+}
 
 type Props = {
   titulo: string;
@@ -121,7 +166,6 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
   const oscuro = document.documentElement.getAttribute("data-theme") === "dark";
 
   const ancho = lienzo.ancho + MARGEN_X * 2;
-  const alto = lienzo.alto + CABECERA + PIE;
   const dx = MARGEN_X;
   const dy = CABECERA;
 
@@ -130,6 +174,38 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
   // leyenda con trece entradas de las que se usan dos no explica, estorba.
   const tiposPresentes = NODOS_LEYENDA.filter((t) => nodos.some((n) => n.tipo === t));
   const relacionesPresentes = Array.from(new Set(relaciones.map((r) => r.tipo))).sort();
+
+  // La rejilla que comparten las dos filas de la leyenda.
+  const anchoColumna =
+    Math.max(
+      0,
+      ...tiposPresentes.map((t) => MUESTRA_NODO + anchoEtiqueta(etiquetaNodo(t))),
+      ...relacionesPresentes.map(
+        (t) => MUESTRA_RELACION + anchoEtiqueta(etiquetaRelacion(t)),
+      ),
+    ) + LEYENDA_AIRE;
+  //: Cuántas columnas caben. La última no necesita su aire de la derecha, así
+  //: que se le devuelve antes de dividir: sin eso, una leyenda que entra por los
+  //: pelos se parte en dos líneas sin motivo.
+  const caben = Math.max(
+    1,
+    Math.floor((ancho - MARGEN_X - LEYENDA_X + LEYENDA_AIRE) / anchoColumna),
+  );
+  const nodosPorLinea = porLinea(tiposPresentes.length, caben);
+  const relacionesPorLinea = porLinea(relacionesPresentes.length, caben);
+  // Una fila sin entradas ocupa igualmente su línea: ahí va su «n/d».
+  const lineasNodos = Math.max(1, Math.ceil(tiposPresentes.length / nodosPorLinea));
+  const lineasRelaciones = Math.max(
+    1,
+    Math.ceil(relacionesPresentes.length / relacionesPorLinea),
+  );
+
+  const pie = PIE_BASE + (lineasNodos + lineasRelaciones - 2) * LEYENDA_LINEA;
+  const alto = lienzo.alto + CABECERA + pie;
+  //: `y` de la línea `i` de la leyenda, contando desde la de «NODOS».
+  const yLinea = (i: number) => alto - pie + 26 + i * LEYENDA_LINEA;
+  //: `x` de la entrada que ocupa la columna `c`, la MISMA en las dos filas.
+  const xColumna = (c: number) => LEYENDA_X + c * anchoColumna;
 
   return (
     <svg
@@ -328,15 +404,15 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
       {/* leyenda, abajo a la izquierda, DENTRO de la figura */}
       <line
         x1={MARGEN_X}
-        y1={alto - PIE + 8}
+        y1={alto - pie + 8}
         x2={ancho - MARGEN_X}
-        y2={alto - PIE + 8}
+        y2={alto - pie + 8}
         stroke={palette["--hair"]}
         strokeWidth={1}
       />
       <text
         x={MARGEN_X}
-        y={alto - PIE + 30}
+        y={yLinea(0) + 4}
         fill={palette["--ink-4"]}
         fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
         fontSize={9}
@@ -345,10 +421,15 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
         NODOS
       </text>
       {tiposPresentes.map((t, i) => (
-        <g key={`leyenda-nodo-${t}`} transform={`translate(${MARGEN_X + 88 + i * 118}, ${alto - PIE + 26})`}>
+        <g
+          key={`leyenda-nodo-${t}`}
+          transform={`translate(${xColumna(i % nodosPorLinea)}, ${yLinea(
+            Math.floor(i / nodosPorLinea),
+          )})`}
+        >
           <rect x={0} y={-7} width={9} height={9} fill={colorNodo(t, oscuro)} />
           <text
-            x={15}
+            x={MUESTRA_NODO}
             y={1}
             fill={palette["--ink-2"]}
             fontFamily="ui-sans-serif, system-ui, sans-serif"
@@ -358,9 +439,20 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
           </text>
         </g>
       ))}
+      {tiposPresentes.length === 0 && (
+        <text
+          x={LEYENDA_X}
+          y={yLinea(0) + 4}
+          fill={palette["--ink-3"]}
+          fontFamily="ui-sans-serif, system-ui, sans-serif"
+          fontSize={10.5}
+        >
+          n/d
+        </text>
+      )}
       <text
         x={MARGEN_X}
-        y={alto - PIE + 54}
+        y={yLinea(lineasNodos) + 4}
         fill={palette["--ink-4"]}
         fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
         fontSize={9}
@@ -368,11 +460,16 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
       >
         RELACIONES
       </text>
-      {relacionesPresentes.slice(0, 6).map((t, i) => (
-        <g key={`leyenda-rel-${t}`} transform={`translate(${MARGEN_X + 88 + i * 152}, ${alto - PIE + 50})`}>
+      {relacionesPresentes.map((t, i) => (
+        <g
+          key={`leyenda-rel-${t}`}
+          transform={`translate(${xColumna(i % relacionesPorLinea)}, ${yLinea(
+            lineasNodos + Math.floor(i / relacionesPorLinea),
+          )})`}
+        >
           <line x1={0} y1={-3} x2={14} y2={-3} stroke={colorRelacion(t, oscuro)} strokeWidth={1.6} />
           <text
-            x={20}
+            x={MUESTRA_RELACION}
             y={1}
             fill={palette["--ink-2"]}
             fontFamily="ui-sans-serif, system-ui, sans-serif"
@@ -384,8 +481,8 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
       ))}
       {relacionesPresentes.length === 0 && (
         <text
-          x={MARGEN_X + 88}
-          y={alto - PIE + 54}
+          x={LEYENDA_X}
+          y={yLinea(lineasNodos) + 4}
           fill={palette["--ink-3"]}
           fontFamily="ui-sans-serif, system-ui, sans-serif"
           fontSize={10.5}
