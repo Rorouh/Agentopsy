@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import type { ExecutorId, ExecutorLoginCapability, ExecutorLoginStart } from "../api/types";
 import { Modal } from "../ui/Modal";
+import { useT } from "../i18n";
 import { Icon } from "../ui/Icon";
 
 // Conecta un ejecutor CLI cloud (Codex/Claude) DESDE LA WEB, sin abrir terminal.
@@ -37,6 +38,7 @@ export function ExecutorLoginModal({
   onConnected,
   force = false,
 }: ExecutorLoginModalProps) {
+  const t = useT();
   const [phase, setPhase] = useState<Phase>("loading");
   const [capability, setCapability] = useState<ExecutorLoginCapability | null>(null);
   const [start, setStart] = useState<ExecutorLoginStart | null>(null);
@@ -71,7 +73,7 @@ export function ExecutorLoginModal({
       } else if (st.state === "error" || st.state === "expired") {
         stopPolling();
         setPhase("error");
-        setReason(st.reason ?? "El login terminó sin completarse.");
+        setReason(st.reason ?? t("execLogin.incomplete"));
       }
       // "waiting" → seguimos sondeando.
     } catch (err) {
@@ -79,7 +81,7 @@ export function ExecutorLoginModal({
       setPhase("error");
       setReason(err instanceof Error ? err.message : String(err));
     }
-  }, [executorId, finishConnected, stopPolling]);
+  }, [executorId, finishConnected, stopPolling, t]);
 
   const beginRelay = useCallback(async () => {
     setPhase("loading");
@@ -178,32 +180,33 @@ export function ExecutorLoginModal({
       if (st.state === "logged_in") {
         await finishConnected();
       } else {
-        setReason(st.reason ?? "Aún no hay sesión iniciada.");
+        setReason(st.reason ?? t("execLogin.noSession"));
       }
     } catch (err) {
       setReason(err instanceof Error ? err.message : String(err));
     } finally {
       setChecking(false);
     }
-  }, [executorId, finishConnected]);
+  }, [executorId, finishConnected, t]);
 
   return (
-    <Modal open={open} title={`Conectar ${executorName}`} onClose={onClose}>
+    <Modal open={open} title={t("execLogin.title", { name: executorName })} onClose={onClose}>
       <div className="exec-login" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         {phase === "loading" && (
           <div className="exec-login-loading">
-            <span className="spinner" aria-hidden="true" /> Iniciando el login de {executorName}…
+            <span className="spinner" aria-hidden="true" />{" "}
+            {t("execLogin.starting", { name: executorName })}
           </div>
         )}
 
         {phase === "relay-unsupported" && capability && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <p className="field-hint">
-              El login de <strong>{executorName}</strong> no puede completarse desde la web.
+              {t("execLogin.notFromWebLead", { name: executorName })}
               {reason ? ` ${reason}` : ""}
             </p>
             <div className="field">
-              <label className="eyebrow">Ejecuta este comando en una terminal</label>
+              <label className="eyebrow">{t("execLogin.runCommand")}</label>
               <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
                 <code
                   style={{
@@ -219,7 +222,7 @@ export function ExecutorLoginModal({
                   {capability.manual_command}
                 </code>
                 <button type="button" className="link-action" onClick={() => copy("url", capability.manual_command)}>
-                  {copied === "url" ? <Icon name="check" size={12} /> : "Copiar"}
+                  {copied === "url" ? <Icon name="check" size={12} /> : t("execLogin.copy")}
                 </button>
               </div>
             </div>
@@ -227,14 +230,14 @@ export function ExecutorLoginModal({
               <button type="button" className="action-invert" disabled={checking} onClick={checkNow}>
                 {checking ? (
                   <>
-                    <span className="spinner" aria-hidden="true" /> Comprobando…
+                    <span className="spinner" aria-hidden="true" /> {t("execLogin.checking")}
                   </>
                 ) : (
-                  "Comprobar"
+                  t("execLogin.check")
                 )}
               </button>
               <button type="button" className="link-action" onClick={onClose}>
-                Cerrar
+                {t("common.close")}
               </button>
             </div>
             {reason && (
@@ -248,7 +251,7 @@ export function ExecutorLoginModal({
         {phase === "waiting" && start && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div className="field">
-              <label className="eyebrow">1 · Abre esta URL en tu navegador</label>
+              <label className="eyebrow">{t("execLogin.step1")}</label>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <a
                   href={start.url}
@@ -259,14 +262,14 @@ export function ExecutorLoginModal({
                   {start.url}
                 </a>
                 <button type="button" className="link-action" onClick={() => copy("url", start.url)}>
-                  {copied === "url" ? <Icon name="check" size={12} /> : "Copiar"}
+                  {copied === "url" ? <Icon name="check" size={12} /> : t("execLogin.copy")}
                 </button>
               </div>
             </div>
 
             {start.code && (
               <div className="field">
-                <label className="eyebrow">2 · Introduce este código EN EL NAVEGADOR</label>
+                <label className="eyebrow">{t("execLogin.step2code")}</label>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <code
                     style={{
@@ -284,19 +287,17 @@ export function ExecutorLoginModal({
                     {start.code}
                   </code>
                   <button type="button" className="link-action" onClick={() => copy("code", start.code!)}>
-                    {copied === "code" ? <Icon name="check" size={12} /> : "Copiar"}
+                    {copied === "code" ? <Icon name="check" size={12} /> : t("execLogin.copy")}
                   </button>
                 </div>
-                <span className="field-hint">
-                  El código caduca en ~15 min. No lo compartas con nadie.
-                </span>
+                <span className="field-hint">{t("execLogin.codeExpiry")}</span>
               </div>
             )}
 
             {start.needs_code_input && (
               <div className="field">
                 <label className="eyebrow" htmlFor="exec-login-code">
-                  {start.code ? "3" : "2"} · Pega aquí el código que te da el navegador
+                  {t("execLogin.pasteStep", { n: start.code ? 3 : 2 })}
                 </label>
                 <div style={{ display: "flex", gap: 8 }}>
                   <input
@@ -305,7 +306,7 @@ export function ExecutorLoginModal({
                     type="text"
                     autoComplete="off"
                     spellCheck={false}
-                    placeholder="Código de la página de autorización"
+                    placeholder={t("execLogin.codePlaceholder")}
                     value={codeDraft}
                     onChange={(e) => setCodeDraft(e.target.value)}
                     onKeyDown={(e) => {
@@ -321,10 +322,10 @@ export function ExecutorLoginModal({
                   >
                     {submitting ? (
                       <>
-                        <span className="spinner" aria-hidden="true" /> Enviando…
+                        <span className="spinner" aria-hidden="true" /> {t("execLogin.sending")}
                       </>
                     ) : (
-                      "Enviar código"
+                      t("execLogin.sendCode")
                     )}
                   </button>
                 </div>
@@ -333,9 +334,7 @@ export function ExecutorLoginModal({
 
             <div className="exec-login-status" style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span className="spinner" aria-hidden="true" />
-              <span className="field-hint">
-                Esperando a que completes el acceso en el navegador…
-              </span>
+              <span className="field-hint">{t("execLogin.waiting")}</span>
             </div>
 
             {reason && (
@@ -346,7 +345,7 @@ export function ExecutorLoginModal({
 
             <div>
               <button type="button" className="link-action" onClick={onClose}>
-                Cancelar
+                {t("common.cancel")}
               </button>
             </div>
           </div>
@@ -354,7 +353,8 @@ export function ExecutorLoginModal({
 
         {phase === "logged_in" && (
           <div className="exec-login-ok" role="status" aria-live="polite">
-            <Icon name="check" size={13} /> {executorName} conectado. La sesión persiste en el volumen{" "}
+            <Icon name="check" size={13} />{" "}
+            {t("execLogin.connectedBefore", { name: executorName })}{" "}
             <code>forensia-cli-auth</code>.
           </div>
         )}
@@ -362,17 +362,17 @@ export function ExecutorLoginModal({
         {phase === "error" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div className="error-state" role="alert" aria-live="polite">
-              {reason ?? "No se pudo completar el login."}
+              {reason ?? t("execLogin.failed")}
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <button type="button" className="action-invert" onClick={beginRelay}>
-                Reintentar
+                {t("common.retry")}
               </button>
               <button type="button" className="link-action" disabled={checking} onClick={checkNow}>
-                {checking ? "Comprobando…" : "Comprobar"}
+                {checking ? t("execLogin.checking") : t("execLogin.check")}
               </button>
               <button type="button" className="link-action" onClick={onClose}>
-                Cerrar
+                {t("common.close")}
               </button>
             </div>
           </div>

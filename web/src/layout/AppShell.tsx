@@ -5,7 +5,8 @@ import { useShellHeader } from "./shellHeader";
 import { CaseSearchModal } from "../components/CaseSearchModal";
 import { NewCaseModal } from "../components/NewCaseModal";
 import { useActiveCase } from "../state/activeCase";
-import { viewEyebrow, viewLabel, type ViewId } from "../navigation/navItems";
+import { PHASES, viewLabelKey, viewPhase, type ViewId } from "../navigation/navItems";
+import { useLang } from "../i18n";
 
 interface AppShellProps {
   activeView: ViewId;
@@ -23,6 +24,7 @@ interface AppShellProps {
 // desde cualquier vista, no solo desde Evidencia.
 export function AppShell({ activeView, onViewChange, error, children }: AppShellProps) {
   const { payload } = useShellHeader();
+  const { t } = useLang();
   const {
     cases,
     activeCaseId,
@@ -48,10 +50,17 @@ export function AppShell({ activeView, onViewChange, error, children }: AppShell
           <div className="shell-header-titles">
             {/* Sin fase no hay eyebrow: la línea no se pinta vacía, que dejaría
                 el título descolgado respecto al de las demás vistas. */}
-            {viewEyebrow(activeView) && (
-              <div className="eyebrow">{viewEyebrow(activeView)}</div>
+            {viewPhase(activeView) && (
+              <div className="eyebrow">
+                {t("shell.phaseOf", {
+                  n: viewPhase(activeView)!.index,
+                  total: PHASES.length,
+                })}
+              </div>
             )}
-            <h1 className="shell-header-title">{payload?.title ?? viewLabel(activeView)}</h1>
+            <h1 className="shell-header-title">
+              {payload?.title ?? (viewLabelKey(activeView) ? t(viewLabelKey(activeView)!) : "")}
+            </h1>
           </div>
           <div className="shell-header-right">
             {payload?.meta && <div className="shell-header-meta">{payload.meta}</div>}

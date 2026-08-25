@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { EvidenceHandle } from "../api/types";
-import { formatBytes, shortHash } from "../utils/format";
-import { DETECTED_KIND_LABEL } from "../utils/evidence";
+import { useFormat } from "../utils/format";
+import { DETECTED_KIND_KEY } from "../utils/evidence";
+import { useLang, type MessageKey } from "../i18n";
 import { Pagination } from "./Pagination";
 import { Icon } from "../ui/Icon";
 
@@ -10,8 +11,16 @@ const EVIDENCE_PAGE_SIZE = 10;
 const SEARCH_THRESHOLD = 5;
 
 // Columnas del mock. La fecha de registro no está: vive en el acta de
-// adquisición, que es su sitio de custodia.
-const COLUMNS = ["Fichero", "Tipo", "Tamaño", "SHA-256", "Integridad", ""];
+// adquisición, que es su sitio de custodia. `null` es la columna de acciones,
+// que va sin cabecera: un hueco no es una clave del catálogo.
+const COLUMNS: (MessageKey | null)[] = [
+  "evidenceTable.col.file",
+  "evidenceTable.col.kind",
+  "evidenceTable.col.size",
+  "evidenceTable.col.hash",
+  "evidenceTable.col.integrity",
+  null,
+];
 
 function evidenceFileName(ev: EvidenceHandle): string {
   return ev.original_path.split("/").pop() ?? ev.original_path;
@@ -20,11 +29,8 @@ function evidenceFileName(ev: EvidenceHandle): string {
 // Cuántos ficheros respaldan la evidencia, cuando es más de uno. Un EWF partido se
 // registra como UNA evidencia a partir del .E01, así que sin esto la tabla enseñaba
 // el nombre y el tamaño del primer segmento y no había forma de comprobar que el
-// conjunto entero entró.
-function segmentNote(ev: EvidenceHandle): string | null {
-  if (ev.segment_count <= 1) return null;
-  return `${ev.segment_count} segmentos`;
-}
+// conjunto entero entró. Compone texto, así que se resuelve dentro del
+// componente, que es donde hay idioma.
 
 interface EvidenceTableProps {
   evidence: EvidenceHandle[];
@@ -48,6 +54,11 @@ export function EvidenceTable({
   selectedId = null,
   onSelect,
 }: EvidenceTableProps) {
+  const { t, tn } = useLang();
+  const { formatBytes, shortHash } = useFormat();
+  const segmentNote = (ev: EvidenceHandle): string | null =>
+    ev.segment_count <= 1 ? null : tn("count.segments", ev.segment_count);
+
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -84,11 +95,8 @@ export function EvidenceTable({
   if (evidence.length === 0) {
     return (
       <div className="empty-rail">
-        <div className="empty-rail-title">Sin evidencia registrada</div>
-        <div className="empty-rail-body">
-          Arrastra la imagen forense a la zona de arriba o elígela de la bandeja. Nada llega a
-          una herramienta antes de que exista su hash baseline.
-        </div>
+        <div className="empty-rail-title">{t("evidenceTable.empty")}</div>
+        <div className="empty-rail-body">{t("evidenceTable.emptyBody")}</div>
       </div>
     );
   }
@@ -97,7 +105,7 @@ export function EvidenceTable({
     <>
       {verifyError && (
         <div className="error-state" aria-live="polite">
-          <strong>No se pudo verificar la evidencia:</strong> {verifyError}
+          <strong>{t("evidence.verifyFailedLabel")}</strong> {verifyError}
         </div>
       )}
 
@@ -110,7 +118,7 @@ export function EvidenceTable({
             id="evidence-search"
             className="field-input field-input--sm"
             type="search"
-            placeholder="Buscar por nombre de fichero…"
+            placeholder={t("evidenceTable.search")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -118,14 +126,14 @@ export function EvidenceTable({
       )}
 
       {visible.length === 0 ? (
-        <div className="inline-note">Ningún fichero coincide con «{query.trim()}».</div>
+        <div className="inline-note">{t("evidenceTable.noMatch", { query: query.trim() })}</div>
       ) : (
         <div className="table-scroll">
           <table className="data-table data-table--evidence">
             <thead>
               <tr>
                 {COLUMNS.map((c, i) => (
-                  <th key={c || `col-${i}`}>{c}</th>
+                  <th key={c ?? `col-${i}`}>{c ? t(c) : ""}</th>
                 ))}
               </tr>
             </thead>
@@ -148,14 +156,14 @@ export function EvidenceTable({
                       {fileName}
                       {segments && <span className="cell-note">{segments}</span>}
                     </td>
-                    <td className="cell-text">{DETECTED_KIND_LABEL[ev.detected_kind]}</td>
+                    <td className="cell-text">{t(DETECTED_KIND_KEY[ev.detected_kind])}</td>
                     {/* El tamaño del CONJUNTO. En un set EWF, `size` es solo el
                         primer segmento (es lo que cubre el hash baseline). */}
                     <td className="cell-mono">
                       {formatBytes(ev.total_size)}
                       {segments && (
                         <span className="cell-note">
-                          {formatBytes(ev.size)} el primer segmento
+                          {t("evidenceTable.firstSegment", { size: formatBytes(ev.size) })}
                         </span>
                       )}
                     </td>
@@ -167,8 +175,8 @@ export function EvidenceTable({
                           e.stopPropagation();
                           void copyHash(ev.evidence_id, ev.sha256);
                         }}
-                        title={`${ev.sha256}\n\nClic para copiar el SHA-256 completo`}
-                        aria-label="Copiar el SHA-256 completo"
+                        title={`${ev.sha256}\n\n${t("evidenceTable.copyHash")}`}
+                        aria-label={t("evidenceTable.copyHashLabel")}
                       >
                         <span>{shortHash(ev.sha256)}</span>
                         <span className="hash-copy-icon" aria-hidden="true">
@@ -178,13 +186,13 @@ export function EvidenceTable({
                     </td>
                     <td>
                       {verifying ? (
-                        <span className="tag tag--muted">verificando…</span>
+                        <span className="tag tag--muted">{t("evidenceTable.verifying")}</span>
                       ) : lv === null ? (
-                        <span className="tag tag--accent">sin verificar</span>
+                        <span className="tag tag--accent">{t("evidenceTable.unverified")}</span>
                       ) : lv.verified ? (
-                        <span className="tag tag--ok"><Icon name="check" size={12} /> verificada</span>
+                        <span className="tag tag--ok"><Icon name="check" size={12} /> {t("evidenceTable.verified")}</span>
                       ) : (
-                        <span className="tag tag--danger"><Icon name="alert" size={12} /> hash mismatch</span>
+                        <span className="tag tag--danger"><Icon name="alert" size={12} /> {t("evidenceTable.mismatch")}</span>
                       )}
                     </td>
                     <td>
@@ -197,7 +205,11 @@ export function EvidenceTable({
                           onVerify(ev.evidence_id);
                         }}
                       >
-                        {verifying ? "Verificando…" : lv ? "Re-verificar" : "Verificar ahora"}
+                        {verifying
+                          ? t("evidenceTable.verifyingBtn")
+                          : lv
+                            ? t("evidenceTable.reverify")
+                            : t("evidenceTable.verifyNow")}
                       </button>
                     </td>
                   </tr>

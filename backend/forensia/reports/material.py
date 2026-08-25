@@ -36,6 +36,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 from forensia import __version__
+from forensia.i18n import t
 from forensia.audit.log import AuditLog
 from forensia.cases import CaseManager, case_manager
 from forensia.custody import build_custody_act
@@ -54,11 +55,11 @@ MAX_TRABAJOS = 250
 MAX_TRAZA = 400
 
 #: Etiqueta del veredicto del perito para una técnica ATT&CK.
-_ADJ_LABEL: dict[str | None, str] = {
-    "confirmada": "Confirmada",
-    "sospechosa": "Sospechosa",
-    "descartada": "Descartada",
-    None: "No dictaminada",
+_ADJ_KEY: dict[str | None, str] = {
+    "confirmada": "mitre.status.confirmada",
+    "sospechosa": "mitre.status.sospechosa",
+    "descartada": "mitre.status.descartada",
+    None: "mitreSheet.noVerdict",
 }
 
 _VIRTUAL_DISK_EXTS = (".vmdk", ".vdi", ".qcow", ".qcow2", ".vhd", ".vhdx")
@@ -68,45 +69,47 @@ _FORENSIC_CONTAINER_EXTS = (".e01", ".ex01", ".aff", ".aff4", ".s01", ".l01")
 #: literal, con el mismo criterio que arriba: se nombra lo que se reconoce y lo
 #: demás queda en la categoría general, nunca se adivina (RULE 2). Un informe
 #: pericial escribe «documento PDF», no «document».
+#: La tabla lleva CLAVES del catálogo, no texto: la naturaleza se escribe en el
+#: idioma del INFORME, que es lo que el modelo copia al redactar.
 _MATERIAL_NATURALEZA: dict[str, str] = {
-    ".pdf": "documento PDF",
-    ".doc": "documento de texto", ".docx": "documento de texto",
-    ".odt": "documento de texto", ".rtf": "documento de texto",
-    ".xls": "hoja de cálculo", ".xlsx": "hoja de cálculo",
-    ".ods": "hoja de cálculo", ".csv": "hoja de cálculo", ".tsv": "hoja de cálculo",
-    ".ppt": "presentación", ".pptx": "presentación", ".odp": "presentación",
-    ".txt": "fichero de texto plano", ".md": "fichero de texto plano",
-    ".json": "fichero de texto plano", ".xml": "fichero de texto plano",
-    ".log": "registro de actividad", ".journal": "registro de actividad",
-    ".eml": "mensaje de correo electrónico", ".msg": "mensaje de correo electrónico",
-    ".mbox": "buzón de correo", ".pst": "buzón de correo", ".ost": "buzón de correo",
-    ".png": "imagen fotográfica", ".jpg": "imagen fotográfica",
-    ".jpeg": "imagen fotográfica", ".gif": "imagen fotográfica",
-    ".bmp": "imagen fotográfica", ".tif": "imagen fotográfica",
-    ".tiff": "imagen fotográfica", ".webp": "imagen fotográfica",
-    ".heic": "imagen fotográfica", ".heif": "imagen fotográfica",
-    ".mp4": "grabación de vídeo", ".mov": "grabación de vídeo",
-    ".avi": "grabación de vídeo", ".mkv": "grabación de vídeo",
-    ".mp3": "grabación de audio", ".wav": "grabación de audio",
-    ".m4a": "grabación de audio", ".ogg": "grabación de audio",
-    ".flac": "grabación de audio",
-    ".evtx": "registro de eventos de Windows", ".evt": "registro de eventos de Windows",
-    ".reg": "exportación del registro de Windows",
-    ".pf": "artefacto de ejecución de Windows (prefetch)",
-    ".lnk": "acceso directo de Windows",
-    ".sqlite": "base de datos SQLite", ".sqlite3": "base de datos SQLite",
-    ".db": "base de datos",
-    ".pcap": "captura de tráfico de red", ".pcapng": "captura de tráfico de red",
-    ".cap": "captura de tráfico de red",
-    ".zip": "archivo comprimido", ".7z": "archivo comprimido",
-    ".rar": "archivo comprimido", ".tar": "archivo comprimido",
-    ".gz": "archivo comprimido", ".tgz": "archivo comprimido",
-    ".bz2": "archivo comprimido", ".xz": "archivo comprimido",
-    ".exe": "ejecutable de Windows", ".dll": "biblioteca de Windows",
-    ".sys": "controlador de Windows", ".so": "biblioteca de Linux",
-    ".ps1": "script de PowerShell", ".bat": "script por lotes",
-    ".vbs": "script de Visual Basic", ".sh": "script de shell",
-    ".py": "script de Python",
+    ".pdf": "nature.pdf",
+    ".doc": "nature.textDoc", ".docx": "nature.textDoc",
+    ".odt": "nature.textDoc", ".rtf": "nature.textDoc",
+    ".xls": "nature.spreadsheet", ".xlsx": "nature.spreadsheet",
+    ".ods": "nature.spreadsheet", ".csv": "nature.spreadsheet", ".tsv": "nature.spreadsheet",
+    ".ppt": "nature.presentation", ".pptx": "nature.presentation", ".odp": "nature.presentation",
+    ".txt": "nature.plainText", ".md": "nature.plainText",
+    ".json": "nature.plainText", ".xml": "nature.plainText",
+    ".log": "nature.activityLog", ".journal": "nature.activityLog",
+    ".eml": "nature.email", ".msg": "nature.email",
+    ".mbox": "nature.mailbox", ".pst": "nature.mailbox", ".ost": "nature.mailbox",
+    ".png": "nature.photo", ".jpg": "nature.photo",
+    ".jpeg": "nature.photo", ".gif": "nature.photo",
+    ".bmp": "nature.photo", ".tif": "nature.photo",
+    ".tiff": "nature.photo", ".webp": "nature.photo",
+    ".heic": "nature.photo", ".heif": "nature.photo",
+    ".mp4": "nature.video", ".mov": "nature.video",
+    ".avi": "nature.video", ".mkv": "nature.video",
+    ".mp3": "nature.audio", ".wav": "nature.audio",
+    ".m4a": "nature.audio", ".ogg": "nature.audio",
+    ".flac": "nature.audio",
+    ".evtx": "nature.evtx", ".evt": "nature.evtx",
+    ".reg": "nature.regExport",
+    ".pf": "nature.prefetch",
+    ".lnk": "nature.lnk",
+    ".sqlite": "nature.sqlite", ".sqlite3": "nature.sqlite",
+    ".db": "nature.database",
+    ".pcap": "nature.pcap", ".pcapng": "nature.pcap",
+    ".cap": "nature.pcap",
+    ".zip": "nature.archive", ".7z": "nature.archive",
+    ".rar": "nature.archive", ".tar": "nature.archive",
+    ".gz": "nature.archive", ".tgz": "nature.archive",
+    ".bz2": "nature.archive", ".xz": "nature.archive",
+    ".exe": "nature.winExe", ".dll": "nature.winDll",
+    ".sys": "nature.winSys", ".so": "nature.linuxSo",
+    ".ps1": "nature.ps1", ".bat": "nature.bat",
+    ".vbs": "nature.vbs", ".sh": "nature.sh",
+    ".py": "nature.py",
 }
 
 
@@ -118,20 +121,20 @@ def naturaleza(handle: Any) -> str:
     adivina (RULE 2)."""
     kind = str(getattr(handle, "detected_kind", "") or "").strip()
     if kind == "memory":
-        return "volcado de memoria RAM"
+        return t("nature.ram")
     if kind == "disk":
-        return "imagen de disco"
+        return t("nature.disk")
     if kind == "container_disk":
         ext = handle.original_path.suffix.lower()
         if ext in _VIRTUAL_DISK_EXTS:
-            return "imagen de disco virtual"
+            return t("nature.virtualDisk")
         if ext in _FORENSIC_CONTAINER_EXTS:
-            return "imagen forense de disco"
-        return "imagen de disco en formato contenedor"
+            return t("nature.forensicDisk")
+        return t("nature.containerDisk")
     if kind == "document":
         ext = handle.original_path.suffix.lower()
-        return _MATERIAL_NATURALEZA.get(ext, "fichero aportado")
-    return "evidencia"
+        return t(_MATERIAL_NATURALEZA.get(ext, "nature.supplied"))
+    return t("nature.evidence")
 
 
 def _basename(path: Any) -> str:
@@ -307,7 +310,13 @@ def _mitre_material(
                 {"finding_id": fid, "titulo": titulos.get(fid, "")}
                 for fid in (entry.get("proposed_by") or [])
             ],
-            "veredicto": _ADJ_LABEL.get(entry.get("status"), str(entry.get("status"))),
+            # El veredicto del perito, en el idioma del informe. Un estado que
+            # la tabla no declare viaja TAL CUAL (RULE 2), no se traduce a ojo.
+            "veredicto": (
+                t(_ADJ_KEY[entry.get("status")])
+                if entry.get("status") in _ADJ_KEY
+                else str(entry.get("status"))
+            ),
             "motivacion_del_veredicto": entry.get("rationale") or "",
             "dictaminada_en": entry.get("adjudicated_at") or "",
         })

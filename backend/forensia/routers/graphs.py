@@ -25,6 +25,7 @@ from typing import Any, Callable
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from forensia.i18n import t, traducir_excepcion
 from forensia.agent.jobs import job_registry
 from forensia.audit.log import AuditLog
 from forensia.cases.manager import case_manager
@@ -60,20 +61,20 @@ EXPORT_KIND_HALLAZGO = "grafo-hallazgo"
 #: PROPUESTA del modelo sobre el texto de un hallazgo, no un hecho verificado
 #: como un hash o un argv auditado, y esa distinción viaja con el dato, no solo
 #: en la maqueta de la vista.
-AVISO_PROPUESTA = (
-    "Grafo propuesto por el modelo a partir del texto del hallazgo. Las entidades "
-    "aparecen literalmente en ese texto, pero el tipo de cada una y las relaciones "
-    "entre ellas son una interpretación del modelo, no un hecho verificado."
-)
+#: El aviso viaja DENTRO de la figura exportada, así que se resuelve por
+#: petición: una imagen que se adjunta a un informe se lee en el idioma del
+#: informe. La clave vive en el catálogo (`graph.proposalNotice`).
+def aviso_propuesta() -> str:
+    return t("graph.proposalNotice")
 
 
 def _case_or_404(case_id: str):
     try:
         return case_manager.load(case_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
 
 
 class ExtractRequest(BaseModel):
@@ -94,7 +95,7 @@ def list_graphs(case_id: str) -> dict[str, Any]:
     pendientes = [f.id for f in findings if f.id not in grafos]
     return {
         "case_id": case_id,
-        "aviso": AVISO_PROPUESTA,
+        "aviso": aviso_propuesta(),
         "grafos": [
             {
                 **grafos[f.id].ficha(),
@@ -127,7 +128,7 @@ def case_graph(case_id: str) -> dict[str, Any]:
     return {
         "case_id": case_id,
         "case_name": case.name,
-        "aviso": AVISO_PROPUESTA,
+        "aviso": aviso_propuesta(),
         "exported_at": exported_at,
         "export_basename": export_basename(
             case.name, EXPORT_KIND_CASO, exported_at=exported_at
@@ -152,8 +153,7 @@ def start_extraction(case_id: str, req: ExtractRequest) -> dict[str, Any]:
     if not req.finding_ids:
         raise HTTPException(
             status_code=422,
-            detail="finding_ids is required: indica de qué hallazgos quieres el "
-                   "grafo. Agentopsy no asume 'todos' ni 'los que falten' (RULE 2).",
+            detail=t("api.findingIdsRequired"),
         )
 
     por_id = {f.id: f for f in finding_store.list(case_id)}
@@ -161,8 +161,7 @@ def start_extraction(case_id: str, req: ExtractRequest) -> dict[str, Any]:
     if desconocidos:
         raise HTTPException(
             status_code=404,
-            detail=f"el caso {case_id} no tiene estos hallazgos: "
-                   f"{', '.join(desconocidos)}",
+            detail=t("api.unknownFindings", case_id=case_id, ids=", ".join(desconocidos)),
         )
     # Se respeta el orden en que los pidió el operador, sin repetir.
     pedidos: list[str] = []
@@ -175,15 +174,12 @@ def start_extraction(case_id: str, req: ExtractRequest) -> dict[str, Any]:
     if not executor_id:
         raise HTTPException(
             status_code=422,
-            detail="executor is required: el grafo lo extrae el modelo que "
-                   f"selecciones ({' | '.join(EXECUTOR_IDS)}). Elígelo en esta "
-                   "página o fija DEFAULT_EXECUTOR explícitamente en "
-                   "Configuración. Agentopsy no elige uno por ti (RULE 2).",
+            detail=t("api.graphExecutorRequired", ids=" | ".join(EXECUTOR_IDS)),
         )
     try:
         executor = get_executor(str(executor_id))
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
 
     availability = executor.is_available()
     if not availability.available:
@@ -192,7 +188,7 @@ def start_extraction(case_id: str, req: ExtractRequest) -> dict[str, Any]:
     try:
         audit = AuditLog(case_manager.case_dir(case_id) / "audit.jsonl")
     except (KeyError, ValueError) as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
 
     model = config.get(MODEL_CONFIG_KEY[executor.id])
     reasoning_key = REASONING_CONFIG_KEY.get(executor.id)
@@ -237,10 +233,11 @@ def get_graph_job(case_id: str, job_id: str, since: int = 0) -> dict[str, Any]:
     """Sondeo de un job de extracción: running / done (con el parte) / error."""
     snap = job_registry.snapshot(job_id, since=max(0, since))
     if snap is None:
-        raise HTTPException(status_code=404, detail=f"job {job_id} not found")
+        raise HTTPException(status_code=404, detail=t("api.jobNotFound", job_id=job_id))
     if snap.get("case_id") != case_id:
         raise HTTPException(
-            status_code=404, detail=f"job {job_id} does not belong to case {case_id}"
+            status_code=404,
+            detail=t("api.jobNotInCase", job_id=job_id, case_id=case_id),
         )
     return snap
 
@@ -258,9 +255,9 @@ def get_graph(case_id: str, finding_id: str, revision: int | None = None) -> dic
     try:
         g = graph_store.get(case_id, finding_id, revision)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
 
     finding = next((f for f in finding_store.list(case_id) if f.id == finding_id), None)
     exported_at = iso_utc_ahora()
@@ -277,7 +274,7 @@ def get_graph(case_id: str, finding_id: str, revision: int | None = None) -> dic
         "created_at": g.created_at,
         "sha256": g.sha256,
         "extraction": g.extraction,
-        "aviso": AVISO_PROPUESTA,
+        "aviso": aviso_propuesta(),
         "nodos": layout_hallazgo(finding_id, g.nodos, g.relaciones),
         "relaciones": g.relaciones,
         "lienzo": {"ancho": ANCHO, "alto": ALTO},

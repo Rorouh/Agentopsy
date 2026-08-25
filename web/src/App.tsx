@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "./api/client";
 import type { Capabilities } from "./api/types";
 import { ThemeProvider } from "./ThemeProvider";
+import { LanguageProvider } from "./i18n";
 import { ActiveCaseProvider } from "./state/activeCase";
 import { CasePulseProvider } from "./state/casePulse";
 import { CaseEvidenceProvider } from "./state/caseEvidence";
@@ -68,6 +69,9 @@ export function App() {
   }, []);
 
   return (
+    // El idioma envuelve a todo lo demás: cualquier cosa que pinte texto está
+    // por dentro, incluidos los avisos de error del armazón.
+    <LanguageProvider>
     <ThemeProvider>
       <ActiveCaseProvider>
       <CasePulseProvider>
@@ -101,5 +105,6 @@ export function App() {
       </CasePulseProvider>
       </ActiveCaseProvider>
     </ThemeProvider>
+    </LanguageProvider>
   );
 }

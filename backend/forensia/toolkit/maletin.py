@@ -31,6 +31,7 @@ import urllib.error
 import urllib.request
 from typing import TYPE_CHECKING, Any
 
+from forensia.i18n import Mensaje, t
 from forensia.toolkit.resolver import resolve
 
 if TYPE_CHECKING:  # avoid an import cycle — snapshot() takes the catalog as an argument
@@ -175,7 +176,7 @@ def run_argv_in_maletin(
     if not base_url:
         raise MaletinExecError(_no_url_reason(service))
     if not isinstance(argv, list) or not argv or not all(isinstance(a, str) for a in argv):
-        raise MaletinExecError("argv debe ser una list[str] no vacía (shell-free)")
+        raise MaletinExecError(Mensaje("maletin.argvNotList"))
     if ewf_image is not None and qemu_image is not None:
         raise MaletinExecError(
             "ewf_image y qemu_image son mutuamente excluyentes: una evidencia es de UNA "
@@ -183,8 +184,11 @@ def run_argv_in_maletin(
         )
     if qemu_image is not None and qemu_format not in _QEMU_FORMATS:
         raise MaletinExecError(
-            f"qemu_format inválido {qemu_format!r}: esperado uno de {sorted(_QEMU_FORMATS)} "
-            "(RULE 2: lo elige el api desde la triage, nunca el LLM)"
+            Mensaje(
+                "maletin.badQemuFormat",
+                format=repr(qemu_format),
+                allowed=sorted(_QEMU_FORMATS),
+            )
         )
     # The exec-agent caps this run at `min(timeout, ceiling)` (or the ceiling itself when
     # the api passes no timeout — see `_EXEC_AGENT_MAX_TIMEOUT`). Wait strictly longer so
@@ -219,7 +223,7 @@ def run_argv_in_maletin(
         # carry it through so the operator sees the concrete dependency, not just a status.
         detail = body.get("error") if isinstance(body, dict) else None
         raise MaletinExecError(
-            f"el exec-agent {base_url} devolvió una respuesta inesperada (estado {status})"
+            Mensaje("maletin.unexpectedResponse", url=base_url, status=status)
             + (f": {detail}" if detail else "")
         )
     # P0.5-4 (FORENSIC INVARIANT 4): the argv the maletín ACTUALLY launched must match
@@ -264,53 +268,69 @@ def _verify_executed_argv(
         rewrite_token, expected_basename, kind = None, None, ""
     if not isinstance(executed, list) or not all(isinstance(t, str) for t in executed):
         raise MaletinExecError(
-            f"el exec-agent {base_url} no devolvió 'executed_argv' (o no es list[str]), "
-            "la imagen del maletín es anterior al contrato P0.5-4; reconstruye con "
-            "docker compose build. Sin el argv ejecutado no se puede verificar que el "
-            "maletín corrió el comando auditado (FORENSIC INVARIANT 4)."
+            Mensaje("maletin.noExecutedArgv", url=base_url)
         )
     if len(executed) != len(requested):
         raise MaletinExecError(
-            f"custodia rota: el exec-agent {base_url} ejecutó un argv de "
-            f"{len(executed)} tokens cuando el auditado tiene {len(requested)}, "
-            "el comando ejecutado no es el registrado (FORENSIC INVARIANT 4)."
+            Mensaje(
+                "maletin.argvLengthMismatch",
+                url=base_url,
+                got=len(executed),
+                want=len(requested),
+            )
         )
     rewrites: set[str] = set()
     for index, (req, got) in enumerate(zip(requested, executed)):
         if rewrite_token is not None and req == rewrite_token:
             if got == req:
                 raise MaletinExecError(
-                    f"custodia rota: el exec-agent {base_url} no reescribió el token "
-                    f"del {kind} (posición {index}), la tool habría leído el contenedor "
-                    "directamente, que TSK no interpreta (RULE 2: el desencapsulado no "
-                    "puede degradarse en silencio)."
+                    Mensaje(
+                        "maletin.tokenNotRewritten",
+                        url=base_url,
+                        kind=kind,
+                        index=index,
+                    )
                 )
             if not got.startswith("/") or got.rsplit("/", 1)[-1] != expected_basename:
                 raise MaletinExecError(
-                    f"custodia rota: el exec-agent {base_url} reescribió el token del "
-                    f"{kind} (posición {index}) a {got!r}, que no es el bloque raw "
-                    f"{expected_basename!r} absoluto esperado, reescritura no reconocida "
-                    "(FORENSIC INVARIANT 3/4)."
+                    Mensaje(
+                        "maletin.badRewrite",
+                        url=base_url,
+                        kind=kind,
+                        index=index,
+                        got=repr(got),
+                        expected=repr(expected_basename),
+                    )
                 )
             rewrites.add(got)
         elif got != req:
             raise MaletinExecError(
-                f"custodia rota: el exec-agent {base_url} ejecutó un argv distinto "
-                f"del auditado (posición {index}: se auditó {req!r}, se ejecutó "
-                f"{got!r}), FORENSIC INVARIANT 4; el resultado no se acepta."
+                Mensaje(
+                    "maletin.argvDiffers",
+                    url=base_url,
+                    index=index,
+                    want=repr(req),
+                    got=repr(got),
+                )
             )
     if rewrite_token is not None:
         if not rewrites:
             raise MaletinExecError(
-                f"custodia rota: se pidió desencapsulado {kind} para {rewrite_token!r} pero "
-                f"ese token no aparece en el argv auditado, bug del llamador; el "
-                f"exec-agent {base_url} no pudo haberlo reescrito."
+                Mensaje(
+                    "maletin.tokenAbsent",
+                    kind=kind,
+                    token=repr(rewrite_token),
+                    url=base_url,
+                )
             )
         if len(rewrites) > 1:
             raise MaletinExecError(
-                f"custodia rota: el exec-agent {base_url} reescribió el token del {kind} a "
-                f"rutas distintas en posiciones distintas ({sorted(rewrites)}), "
-                "reescritura inconsistente (FORENSIC INVARIANT 4)."
+                Mensaje(
+                    "maletin.inconsistentRewrite",
+                    url=base_url,
+                    kind=kind,
+                    paths=sorted(rewrites),
+                )
             )
 
 
@@ -351,10 +371,12 @@ def tool_versions(service: str) -> dict[str, str]:
     if status != 200 or not isinstance(versions, dict):
         detail = body.get("error") if isinstance(body, dict) else None
         raise MaletinExecError(
-            f"el exec-agent {base_url} no sirvió un manifiesto de versiones válido "
-            f"(estado {status})" + (f": {detail}" if detail else "")
-            + ", reconstruye el maletín (docker compose build) para hornear "
-            "versions.json (RULE 1)."
+            Mensaje(
+                "maletin.badManifest",
+                url=base_url,
+                status=status,
+                detail=f": {detail}" if detail else "",
+            )
         )
     for binary, version in versions.items():
         if (
@@ -363,9 +385,12 @@ def tool_versions(service: str) -> dict[str, str]:
             or _is_forbidden_version(version)
         ):
             raise MaletinExecError(
-                f"el manifiesto de versiones de {service} contiene una entrada "
-                f"inválida ({binary!r}: {version!r}), manifiesto corrupto; "
-                "reconstruye el maletín."
+                Mensaje(
+                    "maletin.manifestBadEntry",
+                    service=service,
+                    binary=repr(binary),
+                    version=repr(version),
+                )
             )
     return {binary: version.strip() for binary, version in versions.items()}
 
@@ -381,21 +406,13 @@ def tool_version(service: str, binary: str) -> str:
     version = versions.get(binary)
     if version is None:
         raise MaletinExecError(
-            f"el manifiesto de versiones de {service} no contiene el binario "
-            f"{binary!r}, la tool no tiene identidad de versión en ese maletín; "
-            "alinea docker/docker/forensic-toolkit/tool-binaries.json con el catálogo "
-            "y reconstruye la imagen (RULE 2: sin versión no hay ejecución anclada)."
+            Mensaje("maletin.manifestNoBinary", service=service, binary=repr(binary))
         )
     return version
 
 
 def _no_url_reason(service: str) -> str:
-    return (
-        f"el servicio api no tiene configurada la URL del exec-agent del maletín "
-        f"('{_URL_ENV[service]}'). En el compose la fija el servicio api "
-        f"(http://{service}:8666); en ejecución standalone expórtala. Ver "
-        f"docs/operacion/exec-agent.md"
-    )
+    return t("maletin.urlUnset", env=_URL_ENV[service], service=service)
 
 
 def probe_service(service: str, *, base_url: str | None) -> dict[str, Any]:
@@ -415,9 +432,11 @@ def probe_service(service: str, *, base_url: str | None) -> dict[str, Any]:
         return {
             **base,
             "running": None,
-            "reason": (
-                f"no se pudo consultar el exec-agent en {base_url} "
-                f"({type(exc).__name__}), ¿está el maletín '{name}' levantado?"
+            "reason": t(
+                "maletin.probeFailed",
+                url=base_url,
+                error=type(exc).__name__,
+                name=name,
             ),
         }
     if status == 200 and isinstance(body, dict) and body.get("ok"):
@@ -425,7 +444,7 @@ def probe_service(service: str, *, base_url: str | None) -> dict[str, Any]:
     return {
         **base,
         "running": False,
-        "reason": f"exec-agent en {base_url} respondió estado {status}, maletín '{name}' inaccesible",
+        "reason": t("maletin.probeStatus", url=base_url, status=status, name=name),
     }
 
 
@@ -476,10 +495,7 @@ def _tool_status(
             "via": "env-override-or-api-path",
             "reason": None,
             "version": None,
-            "version_reason": (
-                "vía api-PATH/env-override: sin manifiesto de versiones de build, "
-                "las ejecuciones ancladas a caso exigen el maletín (INVARIANT 4)"
-            ),
+            "version_reason": t("maletin.viaPathNoManifest"),
             "detail": {},
         }
 
@@ -488,7 +504,7 @@ def _tool_status(
             "available": False,
             "toolkits": [],
             "via": None,
-            "reason": f"'{tool.id}' no declara maletín (toolkits vacío)",
+            "reason": t("maletin.noToolkitDeclared", tool=tool.id),
             "version": None,
             "version_reason": None,
             "detail": {},
@@ -533,11 +549,11 @@ def _tool_status(
                 seen_versions.add(service_version)
             elif service_versions is None:
                 version_reasons.append(
-                    f"{service}: manifiesto de versiones no disponible (reconstruye el maletín)"
+                    t("maletin.manifestUnavailable", service=service)
                 )
             else:
                 version_reasons.append(
-                    f"{service}: '{tool.binary}' sin identidad de versión en el manifiesto"
+                    t("maletin.noVersionIdentity", service=service, binary=tool.binary)
                 )
         else:
             reasons.append(f"{service}: binario '{tool.binary}' ausente")

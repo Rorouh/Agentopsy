@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from forensia.i18n import Mensaje, t
 from forensia.executors.base import (
     CliPromptExecutor,
     ExecutorAvailability,
@@ -70,14 +71,9 @@ _REASONING_KEY = "model_reasoning_effort"
 # cerrar la cadena ni colar otra clave de configuración (SECURITY INVARIANT 5).
 _EFFORT_RE = re.compile(r"^[a-z]{1,16}$")
 
-_LOGIN_HINT = (
-    "Inicia sesión UNA VEZ dentro del contenedor: "
-    "`docker compose exec -it api codex login --device-auth` (flujo device-code "
-    "para entornos sin navegador; si el CLI lo rechaza, actívalo en los ajustes "
-    "de seguridad de tu cuenta ChatGPT). La sesión persiste en el volumen "
-    "forensia-cli-auth; se revoca con `docker compose down -v`. Si ejecutas el "
-    "backend fuera del compose, ejecuta `codex login` en esa máquina."
-)
+def _login_hint() -> str:
+    """El comando de login, en el idioma en curso (clave `codex.loginHint`)."""
+    return t("codex.loginHint")
 
 
 @dataclass(frozen=True)
@@ -120,21 +116,13 @@ def read_model_catalog() -> tuple[list[CodexModel], str | None]:
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        return [], (
-            f"El CLI de Codex todavía no ha cacheado su catálogo en {path}: lo "
-            "descarga con la sesión del operador al ejecutar su primer turno. "
-            "Lanza una consulta con Codex y vuelve a abrir este selector."
-        )
+        return [], t("codex.noCacheYet", path=path)
     except (OSError, json.JSONDecodeError) as exc:
-        return [], f"No se pudo leer el catálogo de modelos de Codex ({path}): {exc}"
+        return [], t("codex.cacheUnreadable", path=path, error=exc)
 
     entries = raw.get("models") if isinstance(raw, dict) else None
     if not isinstance(entries, list):
-        return [], (
-            f"{path} no tiene la forma esperada (falta la lista 'models'): el CLI "
-            "puede haber cambiado el formato de su caché. Escribe el id del modelo "
-            "a mano; Agentopsy no sustituye el catálogo por una lista propia."
-        )
+        return [], t("codex.cacheBadShape", path=path)
 
     models: list[CodexModel] = []
     for entry in entries:
@@ -172,10 +160,7 @@ def read_model_catalog() -> tuple[list[CodexModel], str | None]:
         )
 
     if not models:
-        return [], (
-            f"{path} no lista ningún modelo elegible. Escribe el id a mano; "
-            "Agentopsy no inventa un catálogo (RULE 2)."
-        )
+        return [], t("codex.cacheEmpty", path=path)
     return models, None
 
 
@@ -187,10 +172,7 @@ def validate_reasoning_effort(effort: str) -> str:
     antes de lanzar el proceso.
     """
     if not isinstance(effort, str) or not _EFFORT_RE.match(effort):
-        raise ExecutorError(
-            f"nivel de razonamiento inválido {effort!r}: solo minúsculas "
-            "(low, medium, high, xhigh, max, ultra…), máximo 16 caracteres."
-        )
+        raise ExecutorError(Mensaje("codex.badEffort", effort=repr(effort)))
     return effort
 
 
@@ -219,7 +201,7 @@ class CodexExecutor(CliPromptExecutor):
         logged_in, detail = self._probe_auth_command(["codex", "login", "status"])
         if logged_in:
             return ExecutorAvailability(available=True)
-        reason = f"Codex CLI no tiene sesión iniciada. {_LOGIN_HINT}"
+        reason = t("codex.noSession", hint=_login_hint())
         if detail:
             reason += f" (detalle de `codex login status`: {detail})"
         return ExecutorAvailability(available=False, reason=reason)
@@ -285,8 +267,7 @@ class CodexExecutor(CliPromptExecutor):
         path = self._last_message_path
         if path is None or not os.path.exists(path):
             raise ExecutorError(
-                "Codex CLI no escribió el fichero de --output-last-message; "
-                f"stdout (muestra): {stdout.strip()[:500]!r}"
+                Mensaje("codex.noLastMessage", sample=repr(stdout.strip()[:500]))
             )
         with open(path, encoding="utf-8") as fh:
             return fh.read().strip()
@@ -393,7 +374,10 @@ class CodexExecutor(CliPromptExecutor):
         if not allowed or effort in allowed:
             return
         raise ExecutorError(
-            f"el modelo {model.strip()!r} no admite el nivel de razonamiento "
-            f"{effort!r}. Admite: {', '.join(allowed)}. Cámbialo en "
-            "Configuración → Ejecutores/IA (Agentopsy no lo degrada solo)."
+            Mensaje(
+                "codex.effortNotAllowed",
+                model=repr(model.strip()),
+                effort=repr(effort),
+                allowed=", ".join(allowed),
+            )
         )

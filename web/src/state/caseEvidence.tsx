@@ -11,6 +11,7 @@ import {
 import { ApiError, GATEWAY_STATUS, api } from "../api/client";
 import type { EvidenceHandle, EvidenceRegisterJob } from "../api/types";
 import { useActiveCase } from "./activeCase";
+import { useT } from "../i18n";
 import { useCaseStream } from "./casePulse";
 
 // Evidencia del caso activo, UNA sola fuente de verdad para toda la aplicación,
@@ -80,6 +81,7 @@ interface CaseEvidenceContextValue {
 const CaseEvidenceContext = createContext<CaseEvidenceContextValue | null>(null);
 
 export function CaseEvidenceProvider({ children }: { children: ReactNode }) {
+  const t = useT();
   const { activeCaseId, upsertCase } = useActiveCase();
 
   const [evidence, setEvidence] = useState<EvidenceHandle[]>([]);
@@ -215,9 +217,7 @@ export function CaseEvidenceProvider({ children }: { children: ReactNode }) {
           if (sinContacto < STALL_GIVE_UP_MS) {
             if (failures > STALL_AFTER_FAILURES) {
               setRegisterStalled(
-                "Sin contacto con el api mientras se sondeaba el registro " +
-                  `(${Math.round(sinContacto / 1000)} s). El hash-gate corre en el ` +
-                  "servidor y sigue su curso; esto se reintenta solo.",
+                t("register.stalled", { seconds: Math.round(sinContacto / 1000) }),
               );
             }
             timer = window.setTimeout(() => void poll(), POLL_RETRY_MS);
@@ -228,11 +228,10 @@ export function CaseEvidenceProvider({ children }: { children: ReactNode }) {
           setRegistering(false);
           setRegisterStalled(null);
           setRegisterError(
-            `No se ha podido contactar con el api en ${Math.round(sinContacto / 1000)} s, ` +
-              "así que se deja de sondear. El registro puede seguir corriendo en el " +
-              "servidor: comprueba el servicio (docker compose ps api) y vuelve a esta " +
-              "vista, que retoma el registro que siga vivo. " +
-              `Último fallo: ${err instanceof Error ? err.message : String(err)}`,
+            t("register.gaveUp", {
+              seconds: Math.round(sinContacto / 1000),
+              detail: err instanceof Error ? err.message : String(err),
+            }),
           );
           setRegisterJobRef(null);
           return;
@@ -245,11 +244,7 @@ export function CaseEvidenceProvider({ children }: { children: ReactNode }) {
           await load(caseId, false);
           setRegistering(false);
           setRegisterStalled(null);
-          setRegisterError(
-            "El api ya no conoce este registro: se reinició mientras corría. El " +
-              "registro es atómico, así que no ha quedado nada a medias. Si la " +
-              "evidencia no aparece en la lista, vuelve a registrarla.",
-          );
+          setRegisterError(t("register.jobLost"));
           setRegisterJobRef(null);
           return;
         }
@@ -272,7 +267,7 @@ export function CaseEvidenceProvider({ children }: { children: ReactNode }) {
       if (job.state === "error") {
         // RULE 2: el mensaje del backend nombra la dependencia/guarda que falló.
         setRegistering(false);
-        setRegisterError(job.error ?? "el registro terminó en error sin detalle");
+        setRegisterError(job.error ?? t("register.errorNoDetail"));
         setRegisterJobRef(null);
         return;
       }
@@ -308,7 +303,7 @@ export function CaseEvidenceProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [activeCaseId, registerJobRef, load, upsertCase]);
+  }, [activeCaseId, registerJobRef, load, upsertCase, t]);
 
   // Re-enganche: al arrancar (o al cambiar de caso) pregunta si ese caso tiene un
   // registro VIVO y retoma su sondeo. Cerrar la pestaña no aborta nada, el job

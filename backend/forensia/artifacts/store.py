@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal
 
+from forensia.i18n import Mensaje
 from forensia.cases.manager import CaseManager, case_manager
 
 # Baseline SHA-256 of the evidence a run acted on — 64 hex chars, always present in a
@@ -488,8 +489,7 @@ class ArtifactStore:
             target = self._run_dir(case_id, run_id) / f"{fichero}.txt"
             if not target.is_file():
                 raise KeyError(
-                    f"el run {run_id} no tiene {fichero} persistido "
-                    "(¿sigue en ejecución?)"
+                    Mensaje("artifacts.notPersisted", run_id=run_id, file=fichero)
                 )
         else:
             # Fichero de salida declarado: confinado y re-hasheado contra el manifiesto.
@@ -507,9 +507,7 @@ class ArtifactStore:
             head = fh.read(8192)
         if b"\x00" in head:
             raise ValueError(
-                f"{fichero!r} del run {run_id} es BINARIO: no se sirve como texto. "
-                "Usa `strings_head` o `xxd_head` sobre él, o la herramienta que "
-                "corresponda a su formato."
+                Mensaje("artifacts.isBinary", file=repr(fichero), run_id=run_id)
             )
 
         total = 0

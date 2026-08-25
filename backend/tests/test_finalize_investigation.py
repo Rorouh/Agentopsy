@@ -23,12 +23,13 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
+from forensia.i18n import LANG_HEADER, t
 from forensia.cases.manager import CaseManager
 from forensia.evidence import EvidenceManager
 from forensia.executors.base import ExecutorAvailability, ExecutorResult, PromptExecutor
 from forensia.findings.store import FindingStore
 from forensia.mitre.coverage import CoverageStore
-from forensia.reports.indice import NUMS, TITULOS
+from forensia.reports.indice import NUMS, titulos
 from forensia.reports.material import build_material
 from forensia.reports.store import DocumentStore
 from forensia.server import create_app
@@ -57,7 +58,7 @@ def _reply() -> str:
     return json.dumps({
         "resumen": "Informe pericial del caso Murcielago.",
         "secciones": [
-            {"num": n, "titulo": TITULOS[n],
+            {"num": n, "titulo": titulos()[n],
              "bloques": [{"t": "p", "text": f"Redaccion de la seccion {n}."}]}
             for n in NUMS
         ],
@@ -207,7 +208,17 @@ def test_without_findings_there_is_no_report(client, auth, entorno, monkeypatch)
         json={"executor": "claude-code"}, headers=auth,
     )
     assert r.status_code == 422
-    assert "hallazgo" in r.json()["detail"]
+    # El texto sale en el idioma de la PETICIÓN, así que el test fija la
+    # entrada del catálogo, no una frase castellana que dejaría de valer en
+    # cuanto la interfaz esté en inglés.
+    assert r.json()["detail"] == t("api.noFindingsForReport", "en")
+    # Y en castellano dice lo suyo, con la misma clave.
+    es = client.post(
+        f"/api/cases/{entorno['case'].id}/documents/finalize",
+        json={"executor": "claude-code"},
+        headers={**auth, LANG_HEADER: "es"},
+    )
+    assert "hallazgo" in es.json()["detail"]
     assert entorno["documents"].list(entorno["case"].id) == []
 
 

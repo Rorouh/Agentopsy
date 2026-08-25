@@ -10,6 +10,7 @@ import type {
   TimelineEvent,
 } from "../api/types";
 import { usePublishShellHeader } from "../layout/shellHeader";
+import { useLang, type MessageKey } from "../i18n";
 import { useActiveCase } from "../state/activeCase";
 import { useCaseStream } from "../state/casePulse";
 import { useCaseEvidence } from "../state/caseEvidence";
@@ -33,11 +34,11 @@ import { useThemePalette } from "./timeline/themePalette";
 
 type Layer = "findings" | "investigation" | "filesystem" | "relevant";
 
-const SEV_LABEL: Record<string, string> = {
-  low: "Baja",
-  medium: "Media",
-  high: "Alta",
-  critical: "Crítica",
+const SEV_KEY: Record<string, MessageKey> = {
+  low: "tl.sev.low",
+  medium: "tl.sev.medium",
+  high: "tl.sev.high",
+  critical: "tl.sev.critical",
 };
 
 // Filas por página en las tablas del sistema de ficheros (paginación client-side).
@@ -45,21 +46,28 @@ const FS_PAGE_SIZE = 200;
 
 // Etiqueta legible de cada categoría de relevancia (clasificador determinista del
 // backend, forensia.timeline.relevance). Fuente única de las etiquetas de la UI.
-const CATEGORY_LABEL: Record<string, string> = {
-  credenciales: "Credenciales",
-  ssh: "SSH",
-  historial: "Historial de shell",
-  persistencia: "Persistencia",
-  ejecutable_temporal: "Ejecutable en temporal",
-  web: "Artefacto web",
-  logs: "Logs",
-  binario_sistema: "Binario de sistema",
+// La CATEGORÍA la determina el clasificador del backend
+// (`forensia.timeline.relevance`) y su valor es dato: una que esta tabla no
+// declare se pinta tal cual (RULE 2), nunca traducida a lo que se le parezca.
+const CATEGORY_KEY: Record<string, MessageKey> = {
+  credenciales: "tl.cat.credenciales",
+  ssh: "tl.cat.ssh",
+  historial: "tl.cat.historial",
+  persistencia: "tl.cat.persistencia",
+  ejecutable_temporal: "tl.cat.ejecutable_temporal",
+  web: "tl.cat.web",
+  logs: "tl.cat.logs",
+  binario_sistema: "tl.cat.binario_sistema",
 };
 
-function fmtUtc(ts: string | null): { date: string; time: string } {
-  if (!ts) return { date: "sin fecha", time: "n/d" };
+function fmtUtc(
+  ts: string | null,
+  blancoFecha = "no date",
+  blancoHora = "n/a",
+): { date: string; time: string } {
+  if (!ts) return { date: blancoFecha, time: blancoHora };
   const d = new Date(ts);
-  if (isNaN(d.getTime())) return { date: ts.slice(0, 10) || "sin fecha", time: ts.slice(11, 19) };
+  if (isNaN(d.getTime())) return { date: ts.slice(0, 10) || blancoFecha, time: ts.slice(11, 19) };
   const p = (n: number) => String(n).padStart(2, "0");
   return {
     date: `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`,
@@ -67,10 +75,14 @@ function fmtUtc(ts: string | null): { date: string; time: string } {
   };
 }
 
-function groupByDay<T>(rows: T[], ts: (row: T) => string | null): { label: string; rows: T[] }[] {
+function groupByDay<T>(
+  rows: T[],
+  ts: (row: T) => string | null,
+  blancoFecha: string,
+): { label: string; rows: T[] }[] {
   const map = new Map<string, T[]>();
   for (const row of rows) {
-    const label = fmtUtc(ts(row)).date;
+    const label = fmtUtc(ts(row), blancoFecha).date;
     if (!map.has(label)) map.set(label, []);
     map.get(label)!.push(row);
   }
@@ -96,6 +108,7 @@ function Pager({
   noun: string;
   onPage: (p: number) => void;
 }) {
+  const { t, locale } = useLang();
   if (total === 0) return null;
   return (
     <div className="pager">
@@ -111,7 +124,12 @@ function Pager({
         ‹
       </button>
       <span className="pager-info">
-        Página {page + 1} de {pageCount} · {total.toLocaleString("es-ES")} {noun}
+        {t("tl.pager", {
+          page: page + 1,
+          total: pageCount,
+          count: total.toLocaleString(locale),
+          noun,
+        })}
       </span>
       <button
         type="button"
@@ -134,6 +152,10 @@ function Pager({
 }
 
 export function TimelinePage() {
+  const { t, tn, locale } = useLang();
+  // `fmtUtc` es puro; aquí se le atan los blancos del idioma para no
+  // repetirlos en las quince llamadas de la vista.
+  const fecha = (ts: string | null) => fmtUtc(ts, t("tl.noDate"), t("common.na"));
   const { activeCase, phase: casesPhase, error: casesError } = useActiveCase();
   // Las dos capas de la vista: la de investigación se agrega del log encadenado
   // (cada herramienta que corre añade eventos) y la del incidente, de los
@@ -321,7 +343,7 @@ export function TimelinePage() {
       // Un ciclo de pintado para que el SVG del ref sea ya el de los datos frescos.
       await new Promise((r) => requestAnimationFrame(() => r(null)));
       const svg = railRef.current;
-      if (!svg) throw new Error("la figura todavía no está dibujada");
+      if (!svg) throw new Error(t("tl.figureNotDrawn"));
       await exportRailPng(svg, `${fresh.export_basename}.png`, palette["--surface"]);
     } catch (err) {
       setExportError(err instanceof ApiError ? err.detail : String(err));
@@ -344,7 +366,10 @@ export function TimelinePage() {
   );
 
   const invFiltered = useMemo(() => events.filter(invMatches), [events, invMatches]);
-  const invDays = useMemo(() => groupByDay(invFiltered, (e) => e.ts), [invFiltered]);
+  const invDays = useMemo(
+    () => groupByDay(invFiltered, (e) => e.ts, t("tl.noDate")),
+    [invFiltered, t],
+  );
 
   const counts = useMemo(() => {
     let toolRuns = 0;
@@ -363,14 +388,16 @@ export function TimelinePage() {
     const q = search.trim().toLowerCase();
     if (!q) return fsResult.events;
     return fsResult.events.filter((e) => `${e.path} ${e.macb} ${e.inode}`.toLowerCase().includes(q));
-  }, [fsResult, search]);
+  }, [fsResult, search, t]);
 
   const relevantFiltered = useMemo(() => {
     const all = fsResult?.relevant_events ?? [];
     const q = search.trim().toLowerCase();
     if (!q) return all;
     return all.filter((e) =>
-      `${e.path} ${e.macb} ${e.inode} ${e.reason} ${CATEGORY_LABEL[e.category] ?? e.category}`
+      `${e.path} ${e.macb} ${e.inode} ${e.reason} ${
+        CATEGORY_KEY[e.category] ? t(CATEGORY_KEY[e.category]) : e.category
+      }`
         .toLowerCase()
         .includes(q),
     );
@@ -384,8 +411,8 @@ export function TimelinePage() {
     [activeFsRows, safeFsPage],
   );
   const fsDays = useMemo(
-    () => groupByDay(fsPageRows as FsTimelineEvent[], (e) => e.ts),
-    [fsPageRows],
+    () => groupByDay(fsPageRows as FsTimelineEvent[], (e) => e.ts, t("tl.noDate")),
+    [fsPageRows, t],
   );
 
   const fsProgress = fsJob?.events ?? [];
@@ -402,31 +429,31 @@ export function TimelinePage() {
   // transporta la acción YA RESUELTA por la página, no la regla (RULE 3).
   usePublishShellHeader(
     {
-      title: "Timeline forense",
+      title: t("tl.title"),
       // Sin meta con caso abierto: lo decía todo dos veces. El «UTC» lo enuncia
       // «todas las horas en UTC» junto a las pestañas, que es donde tiene peso
       // pericial porque va pegado al contenido que fecha; y los recuentos los
       // llevan las propias pestañas, las cuatro a la vez, en vez de una sola
       // cifra que cambia de significado según cuál esté abierta.
-      meta: activeCase ? undefined : "sin caso seleccionado",
+      meta: activeCase ? undefined : t("common.noCase"),
       action: !activeCase ? undefined : isIncident ? (
         canExportIncident ? (
           <button type="button" disabled={exporting} onClick={() => void exportIncidentPng()}>
-            {exporting ? "Exportando…" : "Exportar PNG"}
+            {t(exporting ? "mitre.exporting" : "graph.exportPng")}
           </button>
         ) : undefined
       ) : isInvestigation ? (
         <button type="button" disabled={exporting} onClick={() => void exportInvestigationCsv()}>
-          {exporting ? "Exportando…" : "Exportar hoja"}
+          {t(exporting ? "mitre.exporting" : "tl.exportSheet")}
         </button>
       ) : (
         <button
           type="button"
           disabled={!canGenerate}
-          title={selectedEvidence ? undefined : "Elige primero la evidencia."}
+          title={selectedEvidence ? undefined : t("tl.pickEvidenceFirst")}
           onClick={() => void startFsTimeline()}
         >
-          {fsJob?.status === "running" || starting ? "Generando…" : "Generar super-timeline"}
+          {t(fsJob?.status === "running" || starting ? "tl.generating" : "tl.generate")}
         </button>
       ),
     },
@@ -442,6 +469,7 @@ export function TimelinePage() {
       canGenerate,
       starting,
       fsJob?.status,
+      t,
     ],
   );
 
@@ -450,7 +478,7 @@ export function TimelinePage() {
       <div className="view-scroll">
         <div className="loading-state">
           <span className="spinner" aria-hidden="true" />
-          <span>Cargando la línea de tiempo…</span>
+          <span>{t("tl.loading")}</span>
         </div>
       </div>
     );
@@ -460,7 +488,7 @@ export function TimelinePage() {
     return (
       <div className="view-scroll">
         <div className="error-state">
-          <strong>No se pudo cargar la línea de tiempo:</strong> {loadError || casesError}
+          <strong>{t("tl.loadFailed")}</strong> {loadError || casesError}
         </div>
       </div>
     );
@@ -470,11 +498,8 @@ export function TimelinePage() {
     return (
       <div className="view-scroll">
         <div className="empty-rail">
-          <div className="empty-rail-title">Sin caso abierto</div>
-          <div className="empty-rail-body">
-            La línea de tiempo se construye con la actividad auditada y la evidencia del caso.
-            Abre uno desde el lateral.
-          </div>
+          <div className="empty-rail-title">{t("findings.noCase")}</div>
+          <div className="empty-rail-body">{t("tl.noCaseBody")}</div>
         </div>
       </div>
     );
@@ -488,17 +513,19 @@ export function TimelinePage() {
             type="button"
             className={`tab${layer === "findings" ? " is-active" : ""}`}
             onClick={() => setLayer("findings")}
-            title="Qué pasó en el dispositivo investigado, según los hallazgos con marca temporal del artefacto."
+            title={t("tl.tabFindingsTitle")}
           >
-            Hallazgos
-            <span className="tab-count">{incident ? incident.eventos.length : "n/d"}</span>
+            {t("nav.findings")}
+            <span className="tab-count">
+              {incident ? incident.eventos.length : t("common.na")}
+            </span>
           </button>
           <button
             type="button"
             className={`tab${layer === "investigation" ? " is-active" : ""}`}
             onClick={() => setLayer("investigation")}
           >
-            Investigación
+            {t("nav.investigation")}
             <span className="tab-count">{counts.total}</span>
           </button>
           <button
@@ -506,22 +533,24 @@ export function TimelinePage() {
             className={`tab${layer === "filesystem" ? " is-active" : ""}`}
             onClick={() => setLayer("filesystem")}
           >
-            Sistema de ficheros (MACB)
-            <span className="tab-count">{fsResult ? fsResult.total_events : "n/d"}</span>
+            {t("tl.tabFs")}
+            <span className="tab-count">
+              {fsResult ? fsResult.total_events : t("common.na")}
+            </span>
           </button>
           <button
             type="button"
             className={`tab${layer === "relevant" ? " is-active" : ""}`}
             onClick={() => setLayer("relevant")}
-            title="Eventos del sistema de ficheros forensemente relevantes (credenciales, persistencia, historial, logs, ejecutables en temporales…)"
+            title={t("tl.tabRelevantTitle")}
           >
-            Eventos relevantes
+            {t("tl.tabRelevant")}
             <span className="tab-count">
-              {fsResult?.total_relevant !== undefined ? fsResult.total_relevant : "n/d"}
+              {fsResult?.total_relevant !== undefined ? fsResult.total_relevant : t("common.na")}
             </span>
           </button>
         </div>
-        <span className="bar-note">Todas las horas en UTC</span>
+        <span className="bar-note">{t("tl.allUtc")}</span>
       </div>
 
       {/* La capa del incidente es una FIGURA: no lleva barra de herramientas. Un
@@ -529,7 +558,7 @@ export function TimelinePage() {
       {!isIncident && (
         <div className="tl-toolbar">
           <label className="visually-hidden" htmlFor="tl-search">
-            Buscar en la línea de tiempo
+            {t("tl.searchLabel")}
           </label>
           <input
             id="tl-search"
@@ -538,21 +567,21 @@ export function TimelinePage() {
             onChange={(e) => setSearch(e.target.value)}
             placeholder={
               isInvestigation
-                ? "Buscar por herramienta, argv, hallazgo o técnica…"
+                ? t("tl.searchInv")
                 : layer === "relevant"
-                  ? "Buscar por ruta, motivo, categoría, MACB o inode…"
-                  : "Buscar por ruta, MACB o inode…"
+                  ? t("tl.searchRelevant")
+                  : t("tl.searchFs")
             }
           />
           {isInvestigation ? (
             <div className="tl-meta">
-              {counts.toolRuns} ejecuciones · {counts.findings} hallazgos
+              {t("tl.metaCounts", { runs: counts.toolRuns, findings: counts.findings })}
             </div>
           ) : (
             <div className="tl-evidence">
-              <span className="eyebrow">Evidencia</span>
+              <span className="eyebrow">{t("inv.evidence")}</span>
               <label className="visually-hidden" htmlFor="tl-evidence-select">
-                Evidencia de la super-timeline
+                {t("tl.evidenceSelect")}
               </label>
               <select
                 id="tl-evidence-select"
@@ -582,18 +611,18 @@ export function TimelinePage() {
       <div className={`tl-scroll${isIncident ? " tl-scroll--bare" : ""}`}>
         <div className="view-stack view-stack--1000 tl-stack">
           {exportError && (isInvestigation || isIncident) && (
-            <div className="error-state">No se pudo exportar: {exportError}</div>
+            <div className="error-state">{t("mitre.exportFailed", { detail: exportError })}</div>
           )}
 
           {isIncident ? (
             !incident ? (
               <div className="loading-state">
                 <span className="spinner" aria-hidden="true" />
-                <span>Cargando la línea de tiempo del incidente…</span>
+                <span>{t("tl.loadingIncident")}</span>
               </div>
             ) : incident.eventos.length === 0 ? (
               <div className="empty-rail">
-                <div className="empty-rail-title">Sin eventos que situar en el tiempo</div>
+                <div className="empty-rail-title">{t("tl.noPlaceable")}</div>
                 {/* El backend dice POR QUÉ: no hay hallazgos, o los hay y ninguno
                     tiene marca temporal del artefacto. Son dos cosas distintas. */}
                 <div className="empty-rail-body">{incident.message}</div>
@@ -606,14 +635,13 @@ export function TimelinePage() {
           ) : isInvestigation ? (
             events.length === 0 ? (
               <div className="empty-rail">
-                <div className="empty-rail-title">Sin actividad todavía</div>
+                <div className="empty-rail-title">{t("tl.noActivity")}</div>
                 <div className="empty-rail-body">
-                  La línea de tiempo se llena con cada herramienta que se ejecuta y cada hallazgo
-                  que el agente registra, tomados del log de auditoría encadenado.
+                  {t("tl.noActivityBody")}
                 </div>
               </div>
             ) : invFiltered.length === 0 ? (
-              <div className="inline-note">Ningún evento coincide con la búsqueda.</div>
+              <div className="inline-note">{t("tl.noEventMatch")}</div>
             ) : (
               invDays.map((day) => (
                 <div className="tl-day" key={day.label}>
@@ -621,17 +649,18 @@ export function TimelinePage() {
                     <span className="tl-day-label">{day.label} · UTC</span>
                     <span className="rule" />
                     <span className="rule-count">
-                      {day.rows.length} evento{day.rows.length === 1 ? "" : "s"}
+                      {tn("count.events", day.rows.length)}
                     </span>
                   </div>
                   {day.rows.map((ev) =>
                     ev.kind === "finding" ? (
                       <div className="tl-row" key={ev.finding_id}>
-                        <div className="tl-time">{fmtUtc(ev.ts).time}</div>
+                        <div className="tl-time">{fecha(ev.ts).time}</div>
                         <div className="tl-kindcol">
-                          <span className="tl-kind tl-kind--finding">Hallazgo</span>
+                          <span className="tl-kind tl-kind--finding">{t("tl.kindFinding")}</span>
                           <span className="tl-src">
-                            {ev.tool_id ?? "agente"} · {SEV_LABEL[ev.severity] ?? ev.severity}
+                            {ev.tool_id ?? t("tl.agent")} ·{" "}
+                            {SEV_KEY[ev.severity] ? t(SEV_KEY[ev.severity]) : ev.severity}
                           </span>
                         </div>
                         <div className="tl-body">
@@ -647,9 +676,9 @@ export function TimelinePage() {
                       </div>
                     ) : (
                       <div className="tl-row" key={ev.run_id ?? `${ev.ts}-${ev.tool_id}`}>
-                        <div className="tl-time">{fmtUtc(ev.ts).time}</div>
+                        <div className="tl-time">{fecha(ev.ts).time}</div>
                         <div className="tl-kindcol">
-                          <span className="tl-kind">Ejecución</span>
+                          <span className="tl-kind">{t("tl.kindRun")}</span>
                           <span className="tl-src">
                             {ev.tool_id ?? "tool"}
                             {ev.exit === null ? ` · ${ev.status}` : ` · exit ${ev.exit}`}
@@ -657,13 +686,10 @@ export function TimelinePage() {
                         </div>
                         <div className="tl-body">
                           {/* El argv LITERAL que se ejecutó (FORENSIC INVARIANT 4). */}
-                          <div className="tl-argv">{ev.argv.join(" ") || "(sin argv)"}</div>
+                          <div className="tl-argv">{ev.argv.join(" ") || t("tl.noArgv")}</div>
                           {ev.output_files_count !== null && ev.output_files_count > 0 && (
                             <div className="tl-techs">
-                              <span>
-                                {ev.output_files_count} artefacto
-                                {ev.output_files_count === 1 ? "" : "s"}
-                              </span>
+                              <span>{tn("count.artifacts", ev.output_files_count)}</span>
                             </div>
                           )}
                         </div>
@@ -677,18 +703,16 @@ export function TimelinePage() {
             <>
               {evidences.length === 0 ? (
                 <div className="empty-rail">
-                  <div className="empty-rail-title">Sin evidencia registrada</div>
+                  <div className="empty-rail-title">{t("tl.noEvidence")}</div>
                   <div className="empty-rail-body">
-                    Registra una evidencia en el caso para construir la super-timeline del
-                    sistema de ficheros.
+                    {t("tl.noEvidenceBody")}
                   </div>
                 </div>
               ) : !selectedEvidence ? (
                 <div className="empty-rail">
-                  <div className="empty-rail-title">Elige la evidencia</div>
+                  <div className="empty-rail-title">{t("tl.pickEvidence")}</div>
                   <div className="empty-rail-body">
-                    La super-timeline se construye sobre una evidencia concreta. Agentopsy no
-                    elige por ti cuál analizar.
+                    {t("tl.pickEvidenceBody")}
                   </div>
                 </div>
               ) : null}
@@ -698,38 +722,37 @@ export function TimelinePage() {
               {fsJob?.status === "running" && (
                 <div className="progress-block" aria-live="polite">
                   <div className="progress-head">
-                    <span>{lastProgress || "Ejecutando tsk_fls -m sobre la evidencia…"}</span>
+                    <span>{lastProgress || t("tl.runningFls")}</span>
                   </div>
                   <div className="progress-track">
                     <div className="progress-fill progress-fill--indeterminate" />
                   </div>
                   <div className="progress-note">
-                    Es un trabajo asíncrono: puedes seguir investigando mientras corre.
+                    {t("tl.asyncNote")}
                   </div>
                 </div>
               )}
               {fsJob?.status === "error" && (
-                <div className="error-state">{fsJob.error ?? "El análisis falló."}</div>
+                <div className="error-state">{fsJob.error ?? t("tl.analysisFailed")}</div>
               )}
 
               {selectedEvidence && !fsJob && !fsResult && !fsError && (
                 <div className="empty-rail">
-                  <div className="empty-rail-title">Super-timeline sin generar</div>
+                  <div className="empty-rail-title">{t("tl.notGenerated")}</div>
                   <div className="empty-rail-body">
-                    La línea temporal MACB se construye ejecutando <span className="mono">
-                      tsk_fls -m
-                    </span>{" "}
-                    sobre la evidencia seleccionada. Es un trabajo asíncrono: puedes seguir
-                    investigando mientras corre.
+                    {t("tl.notGeneratedA")} <span className="mono">tsk_fls -m</span>{" "}
+                    {t("tl.notGeneratedB")}
                   </div>
                 </div>
               )}
 
               {fsResult && fsResult.generated_at && !fsJob && (
                 <div className="inline-note">
-                  Super-timeline generada el {fmtUtc(fsResult.generated_at).date} a las{" "}
-                  {fmtUtc(fsResult.generated_at).time} UTC · {fsResult.total_events} eventos.
-                  Vuelve a pulsar «Generar super-timeline» para recalcularla.
+                  {t("tl.generatedAt", {
+                    date: fecha(fsResult.generated_at).date,
+                    time: fecha(fsResult.generated_at).time,
+                    count: fsResult.total_events,
+                  })}
                 </div>
               )}
 
@@ -737,15 +760,15 @@ export function TimelinePage() {
                 <>
                   {fsResult.truncated && (
                     <div className="inline-note">
-                      Mostrando {fsResult.returned} de {fsResult.total_events} eventos (recortado
-                      para acotar el tamaño). Afina con la búsqueda.
+                      {t("tl.truncated", {
+                        shown: fsResult.returned,
+                        total: fsResult.total_events,
+                      })}
                     </div>
                   )}
                   {fsFiltered.length === 0 ? (
                     <div className="inline-note">
-                      {fsResult.total_events === 0
-                        ? "La evidencia no produjo eventos de sistema de ficheros."
-                        : "Ningún evento coincide con la búsqueda."}
+                      {t(fsResult.total_events === 0 ? "tl.noFsEvents" : "tl.noEventMatch")}
                     </div>
                   ) : (
                     <>
@@ -754,25 +777,25 @@ export function TimelinePage() {
                           <div className="tl-day-head">
                             <span className="tl-day-label">{day.label} · UTC</span>
                             <span className="rule" />
-                            <span className="rule-count">{day.rows.length} eventos</span>
+                            <span className="rule-count">{tn("count.events", day.rows.length)}</span>
                           </div>
                           <div className="table-scroll">
                             <table className="data-table">
                               <thead>
                                 <tr>
-                                  <th>Hora (UTC)</th>
-                                  <th>MACB</th>
-                                  <th>Tamaño</th>
-                                  <th>Inodo</th>
-                                  <th>Ruta</th>
+                                  <th>{t("tl.colTime")}</th>
+                                  <th>{t("tl.colMacb")}</th>
+                                  <th>{t("tl.colSize")}</th>
+                                  <th>{t("tl.colInode")}</th>
+                                  <th>{t("tl.colPath")}</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {day.rows.map((ev, i) => (
                                   <tr key={`${ev.inode}-${ev.ts}-${i}`}>
-                                    <td className="cell-dim">{fmtUtc(ev.ts).time}</td>
+                                    <td className="cell-dim">{fecha(ev.ts).time}</td>
                                     <td className="cell-mono">{ev.macb}</td>
-                                    <td className="cell-dim">{ev.size.toLocaleString("es-ES")}</td>
+                                    <td className="cell-dim">{ev.size.toLocaleString(locale)}</td>
                                     <td className="cell-dim">{ev.inode}</td>
                                     <td className="cell-path">{ev.path}</td>
                                   </tr>
@@ -786,7 +809,7 @@ export function TimelinePage() {
                         page={safeFsPage}
                         pageCount={fsPageCount}
                         total={fsFiltered.length}
-                        noun="eventos"
+                        noun={t("tl.nounEvents")}
                         onPage={setFsPage}
                       />
                     </>
@@ -798,23 +821,25 @@ export function TimelinePage() {
                 <>
                   {fsResult.relevant_events === undefined ? (
                     <div className="inline-note">
-                      Esta super-timeline se generó con una versión anterior sin triage de
-                      relevancia. Vuelve a pulsar «Generar super-timeline» para calcular los
-                      eventos relevantes.
+                      {t("tl.oldSuperTimeline")}
                     </div>
                   ) : (
                     <>
                       {fsResult.relevant_truncated && (
                         <div className="inline-note">
-                          Mostrando {fsResult.relevant_returned} de {fsResult.total_relevant}{" "}
-                          eventos relevantes (recortado). Afina con la búsqueda.
+                          {t("tl.relevantTruncated", {
+                            shown: fsResult.relevant_returned ?? 0,
+                            total: fsResult.total_relevant ?? 0,
+                          })}
                         </div>
                       )}
                       {relevantFiltered.length === 0 ? (
                         <div className="inline-note">
-                          {(fsResult.total_relevant ?? 0) === 0
-                            ? "El triage no marcó ningún evento del sistema de ficheros como relevante."
-                            : "Ningún evento relevante coincide con la búsqueda."}
+                          {t(
+                            (fsResult.total_relevant ?? 0) === 0
+                              ? "tl.noRelevantMarked"
+                              : "tl.noRelevantMatch",
+                          )}
                         </div>
                       ) : (
                         <>
@@ -822,22 +847,24 @@ export function TimelinePage() {
                             <table className="data-table">
                               <thead>
                                 <tr>
-                                  <th>Fecha (UTC)</th>
-                                  <th>Hora</th>
-                                  <th>Categoría</th>
-                                  <th>Motivo</th>
-                                  <th>MACB</th>
-                                  <th>Ruta</th>
+                                  <th>{t("tl.colDate")}</th>
+                                  <th>{t("tl.colHour")}</th>
+                                  <th>{t("tl.colCategory")}</th>
+                                  <th>{t("tl.colReason")}</th>
+                                  <th>{t("tl.colMacb")}</th>
+                                  <th>{t("tl.colPath")}</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {(fsPageRows as FsRelevantEvent[]).map((ev, i) => (
                                   <tr key={`${ev.inode}-${ev.ts}-${ev.category}-${i}`}>
-                                    <td className="cell-dim">{fmtUtc(ev.ts).date}</td>
-                                    <td className="cell-dim">{fmtUtc(ev.ts).time}</td>
+                                    <td className="cell-dim">{fecha(ev.ts).date}</td>
+                                    <td className="cell-dim">{fecha(ev.ts).time}</td>
                                     <td>
                                       <span className="tag tag--accent">
-                                        {CATEGORY_LABEL[ev.category] ?? ev.category}
+                                        {CATEGORY_KEY[ev.category]
+                                          ? t(CATEGORY_KEY[ev.category])
+                                          : ev.category}
                                       </span>
                                     </td>
                                     <td className="cell-text">{ev.reason}</td>
@@ -852,7 +879,7 @@ export function TimelinePage() {
                             page={safeFsPage}
                             pageCount={fsPageCount}
                             total={relevantFiltered.length}
-                            noun="eventos relevantes"
+                            noun={t("tl.nounRelevant")}
                             onPage={setFsPage}
                           />
                         </>

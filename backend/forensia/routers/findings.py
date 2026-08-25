@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from forensia.i18n import traducir_excepcion
 from forensia.findings.store import finding_store
 from forensia.security import require_token
 from forensia.toolkit.usage import tool_usage
@@ -36,9 +37,9 @@ def list_findings(case_id: str) -> list[dict[str, Any]]:
     try:
         return [asdict(f) for f in finding_store.list(case_id)]
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
 
 
 @router.get(
@@ -50,9 +51,9 @@ def list_tool_usage(case_id: str) -> list[dict[str, Any]]:
     try:
         return tool_usage(case_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
 
 
 @router.post(
@@ -63,7 +64,7 @@ def append_finding(case_id: str, req: AppendFindingRequest) -> dict[str, Any]:
     try:
         finding = finding_store.append(case_id, req.model_dump())
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
     return asdict(finding)

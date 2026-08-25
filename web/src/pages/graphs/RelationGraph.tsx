@@ -6,9 +6,10 @@ import {
   NODOS_LEYENDA,
   colorNodo,
   colorRelacion,
-  etiquetaNodo,
-  etiquetaRelacion,
+  claveNodo,
+  claveRelacion,
 } from "./vocabulario";
+import { useLang } from "../../i18n";
 
 // La FIGURA del grafo de relaciones.
 //
@@ -163,6 +164,16 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
   ref,
 ) {
   const palette = useThemePalette();
+  const { t } = useLang();
+  // Un tipo que el vocabulario no declara sale TAL CUAL (RULE 2).
+  const rotuloNodo = (tipo: string) => {
+    const k = claveNodo(tipo);
+    return k ? t(k) : tipo;
+  };
+  const rotuloRelacion = (tipo: string) => {
+    const k = claveRelacion(tipo);
+    return k ? t(k) : tipo;
+  };
   const oscuro = document.documentElement.getAttribute("data-theme") === "dark";
 
   const ancho = lienzo.ancho + MARGEN_X * 2;
@@ -179,9 +190,9 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
   const anchoColumna =
     Math.max(
       0,
-      ...tiposPresentes.map((t) => MUESTRA_NODO + anchoEtiqueta(etiquetaNodo(t))),
+      ...tiposPresentes.map((tipo) => MUESTRA_NODO + anchoEtiqueta(rotuloNodo(tipo))),
       ...relacionesPresentes.map(
-        (t) => MUESTRA_RELACION + anchoEtiqueta(etiquetaRelacion(t)),
+        (tipo) => MUESTRA_RELACION + anchoEtiqueta(rotuloRelacion(tipo)),
       ),
     ) + LEYENDA_AIRE;
   //: Cuántas columnas caben. La última no necesita su aire de la derecha, así
@@ -267,7 +278,7 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
         fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
         fontSize={11}
       >
-        {`${nodos.length} nodos · ${relaciones.length} aristas`}
+        {t("graph.svgCounts", { nodes: nodos.length, edges: relaciones.length })}
       </text>
       <line
         x1={MARGEN_X}
@@ -346,7 +357,7 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
               fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
               fontSize={9.5}
             >
-              {etiquetaRelacion(r.tipo)}
+              {rotuloRelacion(r.tipo)}
             </text>
           </g>
         );
@@ -418,7 +429,7 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
         fontSize={9}
         letterSpacing={0.6}
       >
-        NODOS
+        {t("graph.legendNodes")}
       </text>
       {tiposPresentes.map((t, i) => (
         <g
@@ -435,7 +446,7 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
             fontFamily="ui-sans-serif, system-ui, sans-serif"
             fontSize={10.5}
           >
-            {etiquetaNodo(t)}
+            {rotuloNodo(t)}
           </text>
         </g>
       ))}
@@ -447,7 +458,7 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
           fontFamily="ui-sans-serif, system-ui, sans-serif"
           fontSize={10.5}
         >
-          n/d
+          {t("common.na")}
         </text>
       )}
       <text
@@ -458,7 +469,7 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
         fontSize={9}
         letterSpacing={0.6}
       >
-        RELACIONES
+        {t("graph.legendEdges")}
       </text>
       {relacionesPresentes.map((t, i) => (
         <g
@@ -475,7 +486,7 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
             fontFamily="ui-sans-serif, system-ui, sans-serif"
             fontSize={10.5}
           >
-            {etiquetaRelacion(t)}
+            {rotuloRelacion(t)}
           </text>
         </g>
       ))}
@@ -487,7 +498,7 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
           fontFamily="ui-sans-serif, system-ui, sans-serif"
           fontSize={10.5}
         >
-          n/d
+          {t("common.na")}
         </text>
       )}
 
@@ -500,7 +511,12 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
         fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
         fontSize={9.5}
       >
-        {`Caso: ${caseName} · Exportado: ${exportadoEn} · ${nodos.length} nodos, ${relaciones.length} aristas`}
+        {t("graph.provenance", {
+          case: caseName,
+          date: exportadoEn,
+          nodes: nodos.length,
+          edges: relaciones.length,
+        })}
       </text>
       <text
         x={MARGEN_X}

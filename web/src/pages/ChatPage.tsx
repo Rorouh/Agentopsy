@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { ApiError, api } from "../api/client";
+import { useLang, type MessageKey } from "../i18n";
 import type {
   AgentSummary,
   Capabilities,
@@ -191,17 +192,13 @@ function formatMessageContent(content: string) {
 // Instrucciones de arranque: verbos del oficio, no botones de demo. Son todas de
 // ESTA fase. «redactar informe» estaba aquí y se saltaba cinco: con cero
 // hallazgos le pedía al modelo un informe sobre nada, y cuesta dinero.
-const QUICK_PROMPTS = [
-  "buscar persistencia",
-  "analizar conexiones de red",
-  "generar timeline del sistema de ficheros",
-];
+const QUICK_PROMPT_KEYS: MessageKey[] = ["chat.prompt1", "chat.prompt2", "chat.prompt3"];
 
-const SEVERITY_LABEL: Record<string, string> = {
-  low: "Baja",
-  medium: "Media",
-  high: "Alta",
-  critical: "Crítica",
+const SEVERITY_KEY: Record<string, MessageKey> = {
+  low: "tl.sev.low",
+  medium: "tl.sev.medium",
+  high: "tl.sev.high",
+  critical: "tl.sev.critical",
 };
 
 interface ChatMessage {
@@ -221,11 +218,11 @@ interface ChatMessage {
   jobStartedAt?: string;
 }
 
-function clockOf(at: string | undefined): string {
+function clockOf(at: string | undefined, locale: string): string {
   if (!at) return "";
   const d = new Date(at);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleTimeString("es-ES", { hour12: false });
+  return d.toLocaleTimeString(locale, { hour12: false });
 }
 
 function formatElapsed(seconds: number): string {
@@ -259,15 +256,16 @@ function ElapsedSince({ since }: { since: string }) {
 // No es la intención declarada por el LLM, es el comando que corrió y quedó en
 // el log de auditoría encadenado (FORENSIC INVARIANT 4).
 function ToolChain({ activity, streaming }: { activity: StreamEvent[]; streaming: boolean }) {
+  const { t, tn } = useLang();
   const steps = activity.filter((e) => e.type === "tool_call").length;
   if (activity.length === 0 && !streaming) return null;
 
   return (
     <div className="toolchain">
       <div className="toolchain-head">
-        <span>Cadena de ejecución</span>
+        <span>{t("chat.toolchain")}</span>
         <span>
-          {steps} paso{steps === 1 ? "" : "s"} · {streaming ? "en curso" : "registrada"}
+          {tn("count.steps", steps)} · {t(streaming ? "chat.chainRunning" : "chat.chainDone")}
         </span>
       </div>
       {activity.map((ev, i) => {
@@ -364,6 +362,7 @@ export function ChatPage({
   onTurnComplete,
   onCapsRefresh,
 }: ChatPageProps) {
+  const { t, locale } = useLang();
   const [msgs, setMsgs] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -650,9 +649,7 @@ export function ChatPage({
           anchored = true;
           patchLast({
             jobStartedAt: job.created_at,
-            content:
-              "Analizando en segundo plano · puedes cambiar de sección o cerrar la " +
-              "pestaña: el análisis no se detiene y los hallazgos se guardan en caliente.",
+            content: t("chat.background"),
           });
         }
         (job.events ?? []).forEach((ev) => {
@@ -664,12 +661,12 @@ export function ChatPage({
         if (job.status === "done" || job.status === "cancelled") {
           reply =
             job.result?.reply ??
-            (job.status === "cancelled" ? "Análisis detenido por el operador." : "");
+            (job.status === "cancelled" ? t("chat.stoppedByOperator") : "");
           tools = (job.result?.tool_calls as unknown[]) ?? null;
           break;
         }
         if (job.status === "error") {
-          reply = job.error ?? "El análisis en segundo plano falló.";
+          reply = job.error ?? t("chat.jobFailed");
           break;
         }
         if (onCapsRefresh) await onCapsRefresh();
@@ -737,7 +734,7 @@ export function ChatPage({
               ...prev,
               {
                 role: "assistant",
-                content: "Reanudando análisis en curso…",
+                content: t("chat.resuming"),
                 // El turno se sella con la hora a la que ARRANCÓ el análisis,
                 // no con la de este reenganche: al volver de otra sección la
                 // transcripción sigue siendo un acta cronológica.
@@ -773,7 +770,7 @@ export function ChatPage({
       { role: "user", content: text, at: now },
       {
         role: "assistant",
-        content: "Lanzando análisis en segundo plano…",
+        content: t("chat.launching"),
         at: now,
         pending: true,
         streaming: false,
@@ -807,7 +804,7 @@ export function ChatPage({
       const friendly =
         e instanceof ApiError
           ? e.detail
-          : "No se pudo lanzar el análisis. ¿Está levantado el compose?";
+          : t("chat.launchFailed");
       patchLast({ content: friendly, pending: false, streaming: false });
       setBusy(false);
       if (onTurnComplete) onTurnComplete();
@@ -822,7 +819,7 @@ export function ChatPage({
     const jobId = jobIdRef.current;
     if (!jobId || stopping) return;
     setStopping(true);
-    patchLast({ content: "Deteniendo el análisis…" });
+    patchLast({ content: t("chat.stopping") });
     try {
       await api.cancelJob(jobId);
     } catch {
@@ -845,7 +842,7 @@ export function ChatPage({
   const sendDisabled = !input.trim() || busy || !hasEvidence;
   const agentLabel = activeAgent?.id ?? (activeProfile ? `forensia-${activeProfile}` : "agentopsy");
 
-  const providerLabel = executor ? executorStatus?.name ?? executor : "Elige ejecutor";
+  const providerLabel = executor ? executorStatus?.name ?? executor : t("chat.pickExecutor");
   // El modelo recomendado del paquete solo aplica a Ollama (modelo local).
   const recommendedModel = activeAgent?.model.name ?? "";
   const configuredModel = executor ? modelByProvider[executor] ?? "" : "";
@@ -874,34 +871,30 @@ export function ChatPage({
             <div className="chat-start">
               {hasEvidence ? (
                 <div className="chat-start-inner">
-                  <div className="chat-start-title">¿Qué le pedimos al agente?</div>
-                  <div className="chat-start-body">
-                    Ejecuta el maletín forense sobre la evidencia verificada y deja cada
-                    comando en el log de auditoría encadenado.
-                  </div>
+                  <div className="chat-start-title">{t("chat.startTitle")}</div>
+                  <div className="chat-start-body">{t("chat.startBody")}</div>
                   <div className="chat-start-prompts">
-                    {QUICK_PROMPTS.map((p) => (
+                    {QUICK_PROMPT_KEYS.map((k) => (
                       <button
-                        key={p}
+                        key={k}
                         type="button"
                         className="chat-start-prompt"
                         onClick={() => {
-                          setInput(p);
+                          // El atajo escribe en el compositor el texto YA en el
+                          // idioma del perito: es lo que le llega al modelo.
+                          setInput(t(k));
                           inputRef.current?.focus();
                         }}
                       >
-                        {p}
+                        {t(k)}
                       </button>
                     ))}
                   </div>
                 </div>
               ) : (
                 <div className="chat-start-inner">
-                  <div className="chat-start-title">Este caso todavía no tiene evidencia</div>
-                  <div className="chat-start-body">
-                    El agente analiza una imagen forense verificada, así que primero hay que
-                    registrarla. Su hash baseline se calcula al hacerlo.
-                  </div>
+                  <div className="chat-start-title">{t("chat.noEvidenceTitle")}</div>
+                  <div className="chat-start-body">{t("chat.noEvidenceBody")}</div>
                 </div>
               )}
             </div>
@@ -918,15 +911,15 @@ export function ChatPage({
           {msgs.map((msg, i) =>
             msg.role === "user" ? (
               <div className="turn" key={i}>
-                <div className="turn-time">{clockOf(msg.at)}</div>
+                <div className="turn-time">{clockOf(msg.at, locale)}</div>
                 <div className="turn-body turn-body--user">
-                  <div className="turn-role">Perito</div>
+                  <div className="turn-role">{t("chat.roleExaminer")}</div>
                   <div className="turn-said">{msg.content}</div>
                 </div>
               </div>
             ) : (
               <div className="turn" key={i}>
-                <div className="turn-time">{clockOf(msg.at)}</div>
+                <div className="turn-time">{clockOf(msg.at, locale)}</div>
                 <div className="turn-body turn-body--agent">
                   <div className="turn-role">{agentLabel}</div>
 
@@ -935,11 +928,12 @@ export function ChatPage({
                       <span className="turn-running-dot" aria-hidden="true" />
                       {(() => {
                         const last = msg.activity?.[msg.activity.length - 1];
-                        if (last?.type === "tool_call") return `ejecutando ${last.tool_id}`;
-                        if (last?.type === "reasoning") return "razonando";
-                        if (last?.type === "tool_result") return "procesando resultado";
-                        if (last?.type === "finding") return "registrando hallazgo";
-                        return "trabajando";
+                        if (last?.type === "tool_call")
+                          return t("chat.runningTool", { tool: last.tool_id });
+                        if (last?.type === "reasoning") return t("chat.reasoning");
+                        if (last?.type === "tool_result") return t("chat.processing");
+                        if (last?.type === "finding") return t("chat.recording");
+                        return t("chat.working");
                       })()}
                       {msg.jobStartedAt && <ElapsedSince since={msg.jobStartedAt} />}
                     </div>
@@ -962,10 +956,10 @@ export function ChatPage({
                       e.type === "finding" ? (
                         <div className="finding-strip" key={k}>
                           <span className="tag tag--box">
-                            {SEVERITY_LABEL[e.severity] ?? e.severity}
+                            {SEVERITY_KEY[e.severity] ? t(SEVERITY_KEY[e.severity]) : e.severity}
                           </span>
                           <span className="finding-strip-title">{e.title}</span>
-                          <span className="finding-strip-meta">registrado en el caso</span>
+                          <span className="finding-strip-meta">{t("chat.recorded")}</span>
                         </div>
                       ) : null,
                     )}
@@ -983,9 +977,10 @@ export function ChatPage({
             type="button"
             className="transcript-jump"
             onClick={scrollToBottom}
-            title="Volver al final de la conversación"
+            title={t("chat.jumpTitle")}
           >
-            ↓ Ir al final{busy ? " · análisis en curso" : ""}
+            ↓ {t("chat.jump")}
+            {busy ? ` · ${t("chat.analysisRunning")}` : ""}
           </button>
         )}
       </div>
@@ -995,7 +990,7 @@ export function ChatPage({
           <textarea
             ref={inputRef}
             className="composer-input"
-            placeholder="Pide algo al agente"
+            placeholder={t("chat.placeholder")}
             rows={1}
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -1010,18 +1005,18 @@ export function ChatPage({
               <button
                 type="button"
                 className={`composer-pick${executor ? "" : " is-empty"}`}
-                title="Ejecutor del análisis"
+                title={t("chat.executorTitle")}
                 onClick={() => setOpenMenu(openMenu === "provider" ? null : "provider")}
               >
                 {providerLabel}
-                {executorStatus?.local ? " · local" : ""}
+                {executorStatus?.local ? ` · ${t("executor.local")}` : ""}
                 <Icon name="chevron-down" size={12} />
               </button>
               {openMenu === "provider" && (
                 <div className="composer-popover">
-                  <div className="composer-popover-title">Ejecutor</div>
+                  <div className="composer-popover-title">{t("chat.executor")}</div>
                   {executorEntries.length === 0 && (
-                    <div className="composer-popover-note">consultando capacidades…</div>
+                    <div className="composer-popover-note">{t("chat.queryingCaps")}</div>
                   )}
                   {executorEntries.map(([id, status]) =>
                     status.available ? (
@@ -1070,25 +1065,27 @@ export function ChatPage({
               <button
                 type="button"
                 className="composer-pick composer-pick--quiet"
-                title={executor ? "Modelo del proveedor" : "Elige primero un ejecutor"}
+                title={t(executor ? "chat.modelPickTitle" : "chat.pickExecutorFirst")}
                 disabled={!executor}
                 onClick={() => {
                   setModelDraft(effectiveModel);
                   setOpenMenu(openMenu === "model" ? null : "model");
                 }}
               >
-                modelo
+                {t("chat.modelPick")}
                 <Icon name="chevron-down" size={12} />
               </button>
               {openMenu === "model" && (
                 <div className="composer-popover">
                   <div className="composer-popover-title">
-                    Modelo · {executorStatus?.name ?? executor}
+                    {t("chat.modelTitle", { name: executorStatus?.name ?? executor })}
                   </div>
-                  {modelsLoading && <div className="composer-popover-note">cargando modelos…</div>}
+                  {modelsLoading && (
+                    <div className="composer-popover-note">{t("chat.loadingModels")}</div>
+                  )}
                   {!modelsLoading && !modelEditable && (
                     <div className="composer-popover-note">
-                      {providerModels?.note ?? "El modelo lo gestiona el CLI de este proveedor."}
+                      {providerModels?.note ?? t("settings.modelByCli")}
                     </div>
                   )}
                   {!modelsLoading && modelEditable && (
@@ -1103,7 +1100,7 @@ export function ChatPage({
                           disabled={modelSaving}
                           onClick={() => void saveModel("")}
                         >
-                          <span>Por defecto del CLI</span>
+                          <span>{t("settings.cliDefault")}</span>
                           {!configuredModel && <Icon name="check" size={12} />}
                         </button>
                       )}
@@ -1117,7 +1114,7 @@ export function ChatPage({
                         >
                           <span>{m}</span>
                           {m === recommendedModel && (
-                            <span className="composer-popover-tag">recomendado</span>
+                            <span className="composer-popover-tag">{t("chat.recommended")}</span>
                           )}
                         </button>
                       ))}
@@ -1150,17 +1147,18 @@ export function ChatPage({
                         </div>
                       )}
                       <div className="composer-popover-note">
-                        Se guarda como <code>{executor ? MODEL_CONFIG_KEY[executor] : ""}</code>.
+                        {t("chat.savedAs")}{" "}
+                        <code>{executor ? MODEL_CONFIG_KEY[executor] : ""}</code>.
                       </div>
 
                       {reasoning && (
                         <>
-                          <div className="composer-popover-title">Potencia</div>
+                          <div className="composer-popover-title">{t("settings.power")}</div>
                           {efforts.length === 0 ? (
                             <div className="composer-popover-note">
                               {effectiveModel
-                                ? `El catálogo no declara niveles para ${effectiveModel}.`
-                                : "Elige antes un modelo: los niveles dependen de él."}
+                                ? t("chat.noEfforts", { model: effectiveModel })
+                                : t("chat.pickModelFirst")}
                             </div>
                           ) : (
                             <>
@@ -1170,7 +1168,7 @@ export function ChatPage({
                                 disabled={modelSaving}
                                 onClick={() => void saveEffort("")}
                               >
-                                <span>Por defecto del CLI</span>
+                                <span>{t("settings.cliDefault")}</span>
                                 {!configuredEffort && <Icon name="check" size={12} />}
                               </button>
                               {efforts.map((eff) => (
@@ -1188,8 +1186,10 @@ export function ChatPage({
                               ))}
                               {effortMismatch && (
                                 <div className="composer-popover-note">
-                                  {effectiveModel} no admite «{configuredEffort}»: el turno
-                                  fallaría. Elige uno de los de arriba.
+                                  {t("chat.effortMismatch", {
+                                    model: effectiveModel,
+                                    effort: configuredEffort,
+                                  })}
                                 </div>
                               )}
                             </>
@@ -1206,7 +1206,7 @@ export function ChatPage({
             {/* Sólo el atajo que se usa. «Shift+Enter salta línea» es la
                 convención por defecto de cualquier campo multilínea: enunciarla
                 doblaba la pista sin enseñar nada. */}
-            <span className="composer-tip">Enter envía</span>
+            <span className="composer-tip">{t("chat.enterSends")}</span>
 
             {busy ? (
               <button
@@ -1214,9 +1214,9 @@ export function ChatPage({
                 className="action-stop composer-send"
                 onClick={() => void onStop()}
                 disabled={!jobIdRef.current || stopping}
-                title="Detener el análisis en curso (conserva lo ya registrado)"
+                title={t("chat.stopTitle")}
               >
-                {stopping ? "Deteniendo…" : "■"}
+                {stopping ? t("chat.stoppingBtn") : "■"}
               </button>
             ) : (
               <button
@@ -1225,7 +1225,7 @@ export function ChatPage({
                 onClick={() => void send()}
                 disabled={sendDisabled}
               >
-                Enviar
+                {t("chat.send")}
               </button>
             )}
           </div>

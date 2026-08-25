@@ -28,6 +28,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 
+from forensia.i18n import t, traducir_excepcion
 from forensia.agent.jobs import job_registry
 from forensia.cases.manager import (
     OsProfileUnresolved,
@@ -65,9 +66,9 @@ def findings_timeline(case_id: str) -> dict[str, Any]:
     try:
         timeline = build_findings_timeline(case_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
     return {"case_id": case_id, "timezone": TIMEZONE, **timeline}
 
 
@@ -82,9 +83,9 @@ def investigation_timeline(case_id: str) -> dict[str, Any]:
     try:
         events = build_investigation_timeline(case_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
     return {"case_id": case_id, "timezone": TIMEZONE, "events": events}
 
 
@@ -101,9 +102,9 @@ def export_investigation_timeline_hoja(case_id: str) -> Response:
         events = build_investigation_timeline(case_id)
         case = case_manager.load(case_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
     body = timeline_to_hoja(
         events, case_id=case_id, case_name=case.name, timezone=TIMEZONE
     )
@@ -140,19 +141,18 @@ def get_persisted_filesystem_timeline(
     if not evidence_id:
         raise HTTPException(
             status_code=422,
-            detail="evidence_id is required: indica la evidencia cuya super-timeline "
-                   "quieres recuperar (Agentopsy no asume 'la única' ni 'la última', RULE 2).",
+            detail=t("api.timelineEvidenceRequired"),
         )
     try:
         evidence_manager.get(case_id, evidence_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
     try:
         result = load_filesystem_timeline(case_id, evidence_id)
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
     return {"case_id": case_id, "timezone": TIMEZONE, "result": result}
 
 
@@ -170,28 +170,26 @@ def start_filesystem_timeline(
     if not req.evidence_id:
         raise HTTPException(
             status_code=422,
-            detail="evidence_id is required: selecciona una evidencia registrada en el "
-                   "caso para construir la super-timeline (Agentopsy no asume 'la única' "
-                   "ni 'la última', RULE 2).",
+            detail=t("api.timelineEvidenceForBuild"),
         )
 
     try:
         handle = evidence_manager.get(case_id, req.evidence_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
 
     try:
         case = case_manager.load(case_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
     try:
         os_profile = resolve_os_profile(case)
     except OsProfileUnresolved as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=traducir_excepcion(exc)) from exc
 
     evidence_context = EvidenceContext.from_handle(handle)
 
@@ -224,10 +222,10 @@ def get_filesystem_timeline_job(
     show the stage (``fls`` → ``mactime`` → ``done``) as it advances."""
     snap = job_registry.snapshot(job_id, since=max(0, since))
     if snap is None:
-        raise HTTPException(status_code=404, detail=f"job {job_id} not found")
+        raise HTTPException(status_code=404, detail=t("api.jobNotFound", job_id=job_id))
     if snap.get("case_id") != case_id:
         raise HTTPException(
             status_code=404,
-            detail=f"job {job_id} does not belong to case {case_id}",
+            detail=t("api.jobNotInCase", job_id=job_id, case_id=case_id),
         )
     return snap

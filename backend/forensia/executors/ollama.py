@@ -21,6 +21,7 @@ import urllib.error
 import urllib.request
 from typing import Any
 
+from forensia.i18n import Mensaje, t
 from forensia.config import config
 from forensia.executors.base import (
     ExecutorAvailability,
@@ -53,12 +54,7 @@ class OllamaExecutor(PromptExecutor):
         if host is None:
             return ExecutorAvailability(
                 available=False,
-                reason=(
-                    "OLLAMA_HOST no está configurado. En el compose lo fija el "
-                    "servicio api (http://ollama:11434); en ejecución standalone "
-                    "defínelo en Settings o como variable de entorno. Agentopsy no "
-                    "asume un host por defecto (RULE 2)."
-                ),
+                reason=t("ollama.hostUnset"),
             )
         try:
             req = urllib.request.Request(f"{host}/api/version", method="GET")
@@ -67,11 +63,7 @@ class OllamaExecutor(PromptExecutor):
         except (urllib.error.URLError, OSError, ValueError) as exc:
             return ExecutorAvailability(
                 available=False,
-                reason=(
-                    f"Ollama no responde en {host} ({exc}). Comprueba que el "
-                    "servicio está levantado (`docker compose ps ollama`) o corrige "
-                    "OLLAMA_HOST."
-                ),
+                reason=t("ollama.noAnswer", host=host, error=exc),
             )
         return ExecutorAvailability(available=True)
 
@@ -83,23 +75,19 @@ class OllamaExecutor(PromptExecutor):
         """
         host = self._host()
         if host is None:
-            raise ExecutorError(
-                "OLLAMA_HOST no está configurado, no se pueden listar modelos "
-                "(RULE 2: sin defaults silenciosos)."
-            )
+            raise ExecutorError(Mensaje("ollama.hostUnsetForList"))
         try:
             req = urllib.request.Request(f"{host}/api/tags", method="GET")
             with urllib.request.urlopen(req, timeout=_PROBE_TIMEOUT_S) as resp:
                 body = resp.read().decode("utf-8")
         except (urllib.error.URLError, OSError, ValueError) as exc:
             raise ExecutorError(
-                f"no se pudo listar modelos de Ollama en {host} ({exc}). "
-                "Comprueba que el servicio está levantado o corrige OLLAMA_HOST."
+                Mensaje("ollama.listFailed", host=host, error=exc)
             ) from exc
         try:
             data = json.loads(body)
         except json.JSONDecodeError as exc:
-            raise ExecutorError("Ollama /api/tags devolvió un cuerpo no-JSON") from exc
+            raise ExecutorError(Mensaje("ollama.tagsNotJson")) from exc
         entries = data.get("models") if isinstance(data, dict) else None
         names = {
             m["name"]
@@ -112,10 +100,7 @@ class OllamaExecutor(PromptExecutor):
         ctx = context or {}
         host = self._host()
         if host is None:
-            raise ExecutorError(
-                "OLLAMA_HOST no está configurado, selecciona/configura el host de "
-                "Ollama antes de ejecutar (RULE 2: sin defaults silenciosos)."
-            )
+            raise ExecutorError(Mensaje("ollama.hostUnsetForRun"))
         model = ctx.get("model")
         if not isinstance(model, str) or not model.strip():
             raise ExecutorError(
@@ -165,7 +150,7 @@ class OllamaExecutor(PromptExecutor):
             detail = exc.read().decode("utf-8", errors="replace")[:500]
             self._audit_finish(audit, case_id, started, error=f"HTTP {exc.code}: {detail}")
             raise ExecutorError(
-                f"Ollama devolvió HTTP {exc.code} en {url}: {detail}"
+                Mensaje("ollama.httpError", code=exc.code, url=url, detail=detail)
             ) from exc
         except (urllib.error.URLError, OSError) as exc:
             self._audit_finish(audit, case_id, started, error=str(exc))
@@ -177,7 +162,7 @@ class OllamaExecutor(PromptExecutor):
         except json.JSONDecodeError as exc:
             self._audit_finish(audit, case_id, started, error="unparseable body")
             raise ExecutorError(
-                f"Ollama devolvió un cuerpo no-JSON: {body.strip()[:500]!r}"
+                Mensaje("ollama.bodyNotJson", sample=repr(body.strip()[:500]))
             ) from exc
 
         text = envelope.get("response") if isinstance(envelope, dict) else None

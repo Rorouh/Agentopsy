@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 
+from forensia.i18n import traducir_excepcion
 from forensia.cases.manager import case_manager
 from forensia.export_hoja import EXTENSION, MEDIA_TYPE, export_basename
 from forensia.mitre import catalog
@@ -43,9 +44,9 @@ def get_coverage(case_id: str) -> list[dict[str, Any]]:
     try:
         return coverage_store.coverage(case_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
 
 
 @router.get(
@@ -60,9 +61,9 @@ def export_coverage_hoja(case_id: str) -> Response:
         entries = coverage_store.coverage(case_id)
         case = case_manager.load(case_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
     body = coverage_to_hoja(entries, case_id=case_id, case_name=case.name)
     filename = f"{export_basename(case.name, 'mitre-attack')}.{EXTENSION}"
     return Response(
@@ -84,9 +85,9 @@ def export_navigator_layer(case_id: str) -> Response:
         entries = coverage_store.coverage(case_id)
         case = case_manager.load(case_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
     layer = coverage_to_navigator_layer(entries, case_id=case_id, case_name=case.name)
     filename = f"{export_basename(case.name, 'mitre-navigator')}.json"
     return Response(
@@ -109,6 +110,6 @@ def adjudicate(case_id: str, req: AdjudicateRequest) -> dict[str, Any]:
         )
         return {"coverage": coverage_store.coverage(case_id)}
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc

@@ -26,6 +26,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 
+from forensia.i18n import t, traducir_excepcion
 from forensia.agent.jobs import job_registry
 from forensia.audit import AuditLog
 from forensia.cases import case_manager
@@ -82,8 +83,8 @@ class FinalizeInvestigationRequest(BaseModel):
 
 def _svc_error(exc: Exception) -> HTTPException:
     if isinstance(exc, KeyError):
-        return HTTPException(status_code=404, detail=str(exc).strip('"'))
-    return HTTPException(status_code=422, detail=str(exc))
+        return HTTPException(status_code=404, detail=traducir_excepcion(exc).strip('"'))
+    return HTTPException(status_code=422, detail=traducir_excepcion(exc))
 
 
 @router.get("/api/cases/{case_id}/documents", dependencies=[Depends(require_token)])
@@ -129,9 +130,9 @@ def finalize_investigation(
     try:
         case = case_manager.load(case_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
 
     # Sin un solo hallazgo no hay investigación que informar. El redactor lo
     # vuelve a comprobar (es su invariante), pero fallar aquí ahorra la llamada
@@ -139,25 +140,19 @@ def finalize_investigation(
     if not finding_store.list(case_id):
         raise HTTPException(
             status_code=422,
-            detail="el caso no tiene ningún hallazgo registrado: no hay "
-                   "investigación que informar. Analiza la evidencia con el "
-                   "agente antes de finalizar la investigación, Agentopsy no "
-                   "redacta un informe que nada sostiene (RULE 2).",
+            detail=t("api.noFindingsForReport"),
         )
 
     executor_id = req.executor or config.get("DEFAULT_EXECUTOR")
     if not executor_id:
         raise HTTPException(
             status_code=422,
-            detail="executor is required: el informe lo redacta el modelo que "
-                   f"selecciones ({' | '.join(EXECUTOR_IDS)}). Elígelo en esta "
-                   "página o fija DEFAULT_EXECUTOR explícitamente en "
-                   "Configuración. Agentopsy no elige uno por ti (RULE 2).",
+            detail=t("api.reportExecutorRequired", ids=" | ".join(EXECUTOR_IDS)),
         )
     try:
         executor = get_executor(str(executor_id))
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
 
     availability = executor.is_available()
     if not availability.available:
@@ -236,7 +231,8 @@ def get_report_job(case_id: str, job_id: str, since: int = 0) -> dict[str, Any]:
     snap = job_registry.snapshot(job_id, since=max(0, since))
     if snap is None or snap.get("case_id") != case_id:
         raise HTTPException(
-            status_code=404, detail=f"report job {job_id} not found in case {case_id}"
+            status_code=404,
+            detail=t("api.reportJobNotFound", job_id=job_id, case_id=case_id),
         )
     return snap
 

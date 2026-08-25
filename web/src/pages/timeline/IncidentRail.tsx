@@ -1,6 +1,7 @@
 import { forwardRef, useMemo } from "react";
 import type { IncidentEvent, IncidentTimeline } from "../../api/types";
 import { useThemePalette } from "./themePalette";
+import { useLang } from "../../i18n";
 
 // El raíl cronológico del INCIDENTE: qué pasó en el dispositivo investigado, un evento
 // por hallazgo con marca del artefacto, de arriba abajo en orden ascendente.
@@ -138,6 +139,7 @@ export const IncidentRail = forwardRef<SVGSVGElement, Props>(function IncidentRa
   ref,
 ) {
   const palette = useThemePalette();
+  const { t } = useLang();
 
   const { rows, height, fueraLines, bottom } = useMemo(() => {
     // Bloque de procedencia: la figura se basta a sí misma fuera de la aplicación.
@@ -147,22 +149,19 @@ export const IncidentRail = forwardRef<SVGSVGElement, Props>(function IncidentRa
 
     const fuera: string[] = [];
     if (timeline.sin_observed_at) {
-      fuera.push(
-        `${timeline.sin_observed_at} sin marca temporal del artefacto (no se sitúan en el eje: ` +
-          `fecharlos con la hora del análisis falsearía el incidente)`,
-      );
+      fuera.push(t("rail.noObservedAt", { count: timeline.sin_observed_at }));
     }
     if (timeline.no_parseable) {
       const valores = timeline.no_parseable_valores.join(", ");
       fuera.push(
-        `${timeline.no_parseable} con una marca ilegible como fecha con zona` +
+        t("rail.unparseable", { count: timeline.no_parseable }) +
           (valores ? `: ${valores}` : "") +
-          (timeline.no_parseable_truncado ? " (lista recortada)" : ""),
+          (timeline.no_parseable_truncado ? t("rail.listTrimmed") : ""),
       );
     }
     const fueraLines = fuera.length
       ? fuera.flatMap((t) => wrap(t, WIDTH - PAD * 2, F_MONO, CH_MONO))
-      : [`Los ${timeline.total_hallazgos} hallazgos del caso se sitúan en el eje.`];
+      : [t("rail.allPlaced", { count: timeline.total_hallazgos })];
 
     return {
       rows,
@@ -170,7 +169,7 @@ export const IncidentRail = forwardRef<SVGSVGElement, Props>(function IncidentRa
       height: bottom + 24 + fueraLines.length * 17 + PAD,
       fueraLines,
     };
-  }, [timeline]);
+  }, [timeline, t]);
 
   // El raíl muere en la ÚLTIMA MARCA, no al final del bloque de texto de la última
   // fila: una línea que sobrepasa el último evento sugiere que la cronología sigue.
@@ -184,7 +183,7 @@ export const IncidentRail = forwardRef<SVGSVGElement, Props>(function IncidentRa
       height={height}
       viewBox={`0 0 ${WIDTH} ${height}`}
       role="img"
-      aria-label={`Línea de tiempo del incidente: ${timeline.eventos.length} eventos`}
+      aria-label={t("rail.ariaLabel", { count: timeline.eventos.length })}
       style={{ maxWidth: "100%", height: "auto" }}
     >
       <rect x={0} y={0} width={WIDTH} height={height} fill={palette["--surface"]} />
@@ -198,14 +197,17 @@ export const IncidentRail = forwardRef<SVGSVGElement, Props>(function IncidentRa
         fontWeight={600}
         fill={palette["--ink"]}
       >
-        Línea de tiempo del incidente
+        {t("rail.title")}
       </text>
       <text x={PAD} y={PAD + 26} fontFamily={FONT_MONO} fontSize={F_MONO} fill={palette["--ink-3"]}>
-        {`Caso: ${timeline.case_name}`}
+        {t("rail.case", { name: timeline.case_name })}
       </text>
       <text x={PAD} y={PAD + 43} fontFamily={FONT_MONO} fontSize={F_MONO} fill={palette["--ink-3"]}>
-        {`Exportado: ${timeline.exported_at} · ${timeline.eventos.length} eventos representados ` +
-          `de ${timeline.total_hallazgos} hallazgos del caso`}
+        {t("rail.exported", {
+          date: timeline.exported_at,
+          shown: timeline.eventos.length,
+          total: timeline.total_hallazgos,
+        })}
       </text>
       <line
         x1={PAD}

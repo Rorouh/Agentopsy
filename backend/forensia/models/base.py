@@ -21,6 +21,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
 
+from forensia.i18n import Mensaje, t
 from forensia.executors.base import PromptExecutor
 from forensia.executors.cache_health import CacheHealthMonitor
 from forensia.executors.session_guard import verify_session
@@ -121,33 +122,14 @@ class ModelBackend(ABC):
 # executors without native tool-use (Ollama open models) the parser is the only
 # contract, and for the CLI executors it stops them from "helpfully" answering
 # in prose mid-loop.
-_RESPONSE_CONTRACT = (
-    "## FORMATO DE RESPUESTA (OBLIGATORIO)\n"
-    "Responde ÚNICAMENTE con un objeto JSON, sin texto antes ni después y sin "
-    "fences de markdown. Exactamente una de estas tres formas:\n"
-    '1. Invocar una herramienta: {"action": "tool_call", "tool_id": "<id de la '
-    'allowlist>", "params": { ... }}\n'
-    '2. Varias herramientas de una vez: {"action": "tool_batch", "calls": '
-    '[{"tool_id": "...", "params": {...}}, {"tool_id": "...", "params": {...}}]}\n'
-    '3. Respuesta final al usuario: {"action": "final", "text": "<respuesta en '
-    'markdown>"}\n'
-    'El campo "action" admite ESOS TRES literales y ningún otro. El nombre de '
-    "una herramienta va SIEMPRE en \"tool_id\", NUNCA en \"action\", y eso "
-    "incluye las herramientas internas de Agentopsy, que no son acciones "
-    "aparte: `record_finding`, `annotate_mitre`, `anotar_conocimiento`, "
-    "`consultar_conocimiento`, `leer_artefacto`, `consultar_actividad` y "
-    "`declarar_pivote` se invocan igual que cualquier otra. Se escribe "
-    '{"action": "tool_call", "tool_id": "record_finding", "params": {...}}; '
-    '{"action": "record_finding", ...} no existe.\n'
-    "USA `tool_batch` siempre que puedas: encadena de una vez las herramientas "
-    "cuyo resultado NO necesitas leer para decidir la siguiente (un lote de "
-    "plugins, mmls+fls, extraer varios artefactos). Cada turno re-envía toda la "
-    "conversación, así que 5 herramientas en un turno cuestan mucho menos que 5 "
-    "turnos de una. Reserva `tool_call` para cuando de verdad dependas del "
-    "resultado anterior.\n"
-    "No inventes tool_ids fuera de la lista de especificaciones. No incluyas "
-    "paths absolutos en params, Agentopsy los inyecta."
-)
+def _response_contract() -> str:
+    """El contrato de respuesta, en el idioma del agente.
+
+    Se renderiza al final de CADA prompt y de cada delta: es lo que sostiene el
+    parseo estricto de `_parse_action`, y por eso viaja en el idioma en el que el
+    agente está trabajando, no en uno fijo.
+    """
+    return t("agentContract.format")
 
 
 class ExecutorBackend(ModelBackend):
@@ -274,9 +256,10 @@ class ExecutorBackend(ModelBackend):
             # to reason about than inventing a filler turn, and it cannot happen
             # in the normal loop (every iteration appends at least one message).
             self._reset_session()
-            return self._render_prompt(base, tools), False, (
-                "No hay mensajes nuevos que enviar como delta; se reenvía el "
-                "contexto completo."
+            return (
+                self._render_prompt(base, tools),
+                False,
+                t("agentContract.noDelta"),
             )
         return self._render_delta(pending), True, None
 
@@ -297,10 +280,7 @@ class ExecutorBackend(ModelBackend):
             if self.executor.supports_session_resume and not self._warned_no_session:
                 self._warned_no_session = True
                 self.notices.append(
-                    f"{self.executor.name} declara reanudación de sesión pero no "
-                    "devolvió session_id en su envelope: cada iteración reenviará "
-                    "el contexto completo a coste íntegro. Revisa la versión del "
-                    "CLI, el ahorro por sesión está desactivado en esta corrida."
+                    t("agentContract.noSessionId", name=self.executor.name)
                 )
             self._reset_session()
 
@@ -369,9 +349,9 @@ class ExecutorBackend(ModelBackend):
         specs = json.dumps(tools, ensure_ascii=False, separators=(",", ":"))
         blocks = [
             *system_blocks,
-            "## HERRAMIENTAS DISPONIBLES (especificación function-calling)\n" + specs,
+            t("agentContract.toolsHeader") + specs,
             *conversation,
-            _RESPONSE_CONTRACT,
+            _response_contract(),
         ]
         return "\n\n".join(blocks)
 
@@ -389,7 +369,7 @@ class ExecutorBackend(ModelBackend):
         turn: opening prompt + deltas (FORENSIC INVARIANT 4).
         """
         blocks = [ExecutorBackend._render_message(msg) for msg in pending]
-        blocks.append(_RESPONSE_CONTRACT)
+        blocks.append(_response_contract())
         return "\n\n".join(blocks)
 
     @staticmethod
@@ -411,8 +391,7 @@ class ExecutorBackend(ModelBackend):
         start = candidate.find("{")
         if start == -1:
             raise ResponseContractError(
-                "el ejecutor no devolvió el objeto JSON del contrato de respuesta. "
-                f"Respuesta (muestra): {text.strip()[:300]!r}",
+                Mensaje("agentContract.noJson", sample=repr(text.strip()[:300])),
                 text,
             )
         try:
@@ -433,14 +412,14 @@ class ExecutorBackend(ModelBackend):
             answer = envelope.get("text")
             if not isinstance(answer, str):
                 raise ResponseContractError(
-                    'la acción "final" no trae el campo "text" de texto', text
+                    Mensaje("agentContract.finalNoText"), text
                 )
             return FinalAnswer(text=answer)
         if action == "tool_call":
             tool_id = envelope.get("tool_id")
             if not isinstance(tool_id, str) or not tool_id:
                 raise ResponseContractError(
-                    'la acción "tool_call" no trae un "tool_id" válido', text
+                    Mensaje("agentContract.callNoToolId"), text
                 )
             params = envelope.get("params")
             if params is None:
@@ -459,7 +438,7 @@ class ExecutorBackend(ModelBackend):
             raw_calls = envelope.get("calls")
             if not isinstance(raw_calls, list) or not raw_calls:
                 raise ResponseContractError(
-                    'la acción "tool_batch" debe traer una lista "calls" no vacía', text
+                    Mensaje("agentContract.batchNoCalls"), text
                 )
             calls: list[ToolCall] = []
             for i, raw in enumerate(raw_calls):
@@ -468,7 +447,7 @@ class ExecutorBackend(ModelBackend):
                 tool_id = raw.get("tool_id")
                 if not isinstance(tool_id, str) or not tool_id:
                     raise ResponseContractError(
-                        f'calls[{i}] no trae un "tool_id" válido', text
+                        Mensaje("agentContract.batchItemNoToolId", index=i), text
                     )
                 params = raw.get("params") or {}
                 if not isinstance(params, dict):
@@ -488,9 +467,6 @@ class ExecutorBackend(ModelBackend):
         # message names that specific confusion because it is the one the
         # correction round has to undo.
         raise ResponseContractError(
-            f'acción desconocida {action!r} en la respuesta del ejecutor '
-            '(esperado "tool_call", "tool_batch" o "final"). Si es el id de una '
-            'herramienta, va en "tool_id" dentro de un "tool_call", nunca en '
-            '"action"',
+            Mensaje("agentContract.unknownAction", action=repr(action)),
             text,
         )

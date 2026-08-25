@@ -12,7 +12,8 @@ import type {
 import { exportRailPng } from "../timeline/IncidentRail";
 import { useThemePalette } from "../timeline/themePalette";
 import { RelationGraph } from "./RelationGraph";
-import { etiquetaNodo, etiquetaRelacion } from "./vocabulario";
+import { claveNodo, claveRelacion } from "./vocabulario";
+import { useLang } from "../../i18n";
 
 // GRAFOS DE RELACIONES: la figura, su ficha lateral y la extracción.
 //
@@ -64,6 +65,17 @@ type Props = {
 };
 
 export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
+  const { t, tn } = useLang();
+  // Un tipo que el vocabulario no declara sale TAL CUAL (RULE 2): feo y
+  // verdadero, en vez de una etiqueta inventada.
+  const rotuloNodo = (tipo: string) => {
+    const k = claveNodo(tipo);
+    return k ? t(k) : tipo;
+  };
+  const rotuloRelacion = (tipo: string) => {
+    const k = claveRelacion(tipo);
+    return k ? t(k) : tipo;
+  };
   const palette = useThemePalette();
   const svgRef = useRef<SVGSVGElement | null>(null);
 
@@ -233,8 +245,8 @@ export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
   if (!index) {
     return (
       <section className="graph-section">
-        <div className="eyebrow eyebrow--section">Figura</div>
-        <div className="inline-note">{error ?? "Cargando los grafos del caso…"}</div>
+        <div className="eyebrow eyebrow--section">{t("graph.figure")}</div>
+        <div className="inline-note">{error ?? t("graphs.loading")}</div>
       </section>
     );
   }
@@ -255,11 +267,11 @@ export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
 
   return (
     <section className="graph-section">
-      <div className="eyebrow eyebrow--section">Figura</div>
+      <div className="eyebrow eyebrow--section">{t("graph.figure")}</div>
 
       <div className="graph-toolbar">
         <label className="visually-hidden" htmlFor="graph-vista">
-          Figura
+          {t("graph.selectLabel")}
         </label>
         <select
           id="graph-vista"
@@ -274,15 +286,15 @@ export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
             );
           }}
         >
-          <option value="caso">Grafo del caso (todos los hallazgos, fundidos)</option>
+          <option value="caso">{t("graph.caseOption")}</option>
           {index.hallazgos.map((h) => {
             const g = index.grafos.find((x) => x.finding_id === h.id);
             return (
               <option key={h.id} value={h.id}>
                 {h.title}
                 {g
-                  ? ` · ${g.n_nodos} nodos, ${g.n_relaciones} aristas`
-                  : " · sin grafo"}
+                  ? ` · ${t("graph.optionCounts", { nodes: g.n_nodos, edges: g.n_relaciones })}`
+                  : ` · ${t("graph.optionNoGraph")}`}
               </option>
             );
           })}
@@ -296,8 +308,8 @@ export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
             onClick={() => void extraer(pendientes)}
           >
             {running
-              ? "Extrayendo…"
-              : `Extraer los ${pendientes.length} que faltan`}
+              ? t("graph.extracting")
+              : t("graph.extractMissing", { count: pendientes.length })}
           </button>
         )}
         {vista.tipo === "hallazgo" && (
@@ -307,7 +319,7 @@ export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
             disabled={busy || running || sinEjecutor}
             onClick={() => void extraer([vista.findingId])}
           >
-            {detalle ? "Volver a extraer este" : "Extraer este hallazgo"}
+            {t(detalle ? "graph.reextractThis" : "graph.extractThis")}
           </button>
         )}
         <button
@@ -316,14 +328,13 @@ export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
           disabled={nodos.length === 0}
           onClick={() => void exportar()}
         >
-          Exportar PNG
+          {t("graph.exportPng")}
         </button>
       </div>
 
       {sinEjecutor && pendientes.length > 0 && (
         <div className="inline-note">
-          El grafo lo extrae el modelo que selecciones. Elige uno en «Modelo que extrae»,
-          aquí arriba: Agentopsy no elige uno por ti.
+          {t("graph.needExecutor")}
         </div>
       )}
 
@@ -336,8 +347,12 @@ export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
                   .reverse()
                   .find((e) => e.type === "graph_finding_start");
                 return ultimo
-                  ? `Extrayendo ${(ultimo.index ?? 0) + 1} de ${ultimo.total ?? "?"}: ${ultimo.title ?? ""}`
-                  : "Extrayendo los grafos…";
+                  ? t("graph.extractingNth", {
+                      n: (ultimo.index ?? 0) + 1,
+                      total: ultimo.total ?? "?",
+                      title: ultimo.title ?? "",
+                    })
+                  : t("graph.extractingAll");
               })()}
             </span>
             <span className="mono">{elapsed(job.created_at, now)}</span>
@@ -346,8 +361,7 @@ export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
             <div className="progress-fill progress-fill--indeterminate" />
           </div>
           <div className="progress-note">
-            Puedes cambiar de sección o cerrar la pestaña: la extracción corre en el
-            servidor y al volver aquí se retoma su progreso.
+            {t("graph.backgroundNote")}
           </div>
         </div>
       )}
@@ -357,9 +371,14 @@ export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
       {job?.status === "done" && job.result && (
         <div className="graph-parte">
           <strong>
-            {job.result.con_grafo} de {job.result.solicitados} hallazgos con grafo
+            {t("graph.batchResult", {
+              done: job.result.con_grafo,
+              asked: job.result.solicitados,
+            })}
           </strong>
-          <span className="mono">Extraído con {job.result.executor}</span>
+          <span className="mono">
+            {t("graph.extractedWith", { executor: job.result.executor })}
+          </span>
           {job.result.resultados
             .filter((r) => !r.ok)
             .map((r) => (
@@ -373,7 +392,7 @@ export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
 
       {job?.status === "error" && (
         <div className="danger-notice">
-          <strong>La extracción no llegó a terminar</strong>
+          <strong>{t("graph.didNotFinish")}</strong>
           <div className="report-failure-reason">{job.error}</div>
         </div>
       )}
@@ -384,25 +403,24 @@ export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
         <div className="graph-figure">
           <RelationGraph
             ref={svgRef}
-            titulo={
-              vista.tipo === "caso"
-                ? "Grafo de relaciones del caso"
-                : "Grafo de relaciones del hallazgo"
-            }
+            titulo={t(vista.tipo === "caso" ? "graph.caseTitle" : "graph.findingTitle")}
             subtitulo={
               vista.tipo === "caso"
-                ? `${nodos.length} activos y ${relaciones.length} conexiones, de ${caso?.hallazgos.length ?? 0} hallazgos`
-                : `${nodos.length} activos y ${relaciones.length} conexiones`
+                ? t("graph.caseSubtitle", {
+                    nodes: nodos.length,
+                    edges: relaciones.length,
+                    findings: caso?.hallazgos.length ?? 0,
+                  })
+                : t("graph.findingSubtitle", {
+                    nodes: nodos.length,
+                    edges: relaciones.length,
+                  })
             }
             nodos={nodos}
             relaciones={relaciones}
             lienzo={activo.lienzo}
             aviso={activo.aviso}
-            vacio={
-              vista.tipo === "caso"
-                ? "Todavía no se ha extraído ningún grafo en este caso. El grafo del caso funde los de los hallazgos, así que aparece en cuanto haya uno."
-                : "Este hallazgo no nombra ninguna entidad de los cinco tipos. Grafo vacío, que es un resultado legítimo."
-            }
+            vacio={t(vista.tipo === "caso" ? "graph.emptyCase" : "graph.emptyFinding")}
             caseName={caseName}
             exportadoEn={activo.exported_at}
             seleccionado={nodo}
@@ -418,29 +436,35 @@ export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
                 <span className="mono graph-card-type">{seleccionado.tipo}</span>
                 <span className="graph-card-value">{seleccionado.valor}</span>
               </div>
-              <div className="eyebrow">Propuesto por el modelo</div>
+              <div className="eyebrow">{t("graph.proposedByModel")}</div>
               <dl className="graph-card-list">
-                <dt>Tipo</dt>
-                <dd>{etiquetaNodo(seleccionado.tipo)}</dd>
-                <dt>Relaciones</dt>
+                <dt>{t("graph.cardType")}</dt>
+                <dd>{rotuloNodo(seleccionado.tipo)}</dd>
+                <dt>{t("graph.cardRelations")}</dt>
                 <dd>
                   {susRelaciones.length === 0
-                    ? "n/d"
+                    ? t("common.na")
                     : susRelaciones.map((r, i) => (
                         <div key={i} className="graph-card-rel">
                           {r.origen === seleccionado.valor
-                            ? `${etiquetaRelacion(r.tipo)} hacia ${r.destino}`
-                            : `${etiquetaRelacion(r.tipo)} desde ${r.origen}`}
+                            ? t("graph.relTowards", {
+                                relation: rotuloRelacion(r.tipo),
+                                target: r.destino,
+                              })
+                            : t("graph.relFrom", {
+                                relation: rotuloRelacion(r.tipo),
+                                source: r.origen,
+                              })}
                           {r.nota ? ` (${r.nota})` : ""}
                         </div>
                       ))}
                 </dd>
               </dl>
 
-              <div className="eyebrow">Verificado, del caso</div>
+              <div className="eyebrow">{t("graph.verifiedFromCase")}</div>
               {vista.tipo === "caso" ? (
                 <dl className="graph-card-list">
-                  <dt>Hallazgos</dt>
+                  <dt>{t("graph.cardFindings")}</dt>
                   <dd>
                     {(seleccionado.hallazgos ?? []).map((fid) => (
                       <button
@@ -459,17 +483,17 @@ export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
                 </dl>
               ) : (
                 <dl className="graph-card-list">
-                  <dt>Hallazgo</dt>
-                  <dd>{detalle?.hallazgo?.title ?? "n/d"}</dd>
+                  <dt>{t("graph.cardFinding")}</dt>
+                  <dd>{detalle?.hallazgo?.title ?? t("common.na")}</dd>
                   <dt>run_id</dt>
-                  <dd className="mono">{detalle?.procedencia?.run_id ?? "n/d"}</dd>
-                  <dt>Herramienta</dt>
-                  <dd className="mono">{detalle?.procedencia?.tool_id ?? "n/d"}</dd>
-                  <dt>SHA-256 del artefacto</dt>
+                  <dd className="mono">{detalle?.procedencia?.run_id ?? t("common.na")}</dd>
+                  <dt>{t("graph.cardTool")}</dt>
+                  <dd className="mono">{detalle?.procedencia?.tool_id ?? t("common.na")}</dd>
+                  <dt>{t("graph.cardArtifactHash")}</dt>
                   <dd className="mono graph-card-hash">
-                    {detalle?.procedencia?.artifact_sha256 ?? "n/d"}
+                    {detalle?.procedencia?.artifact_sha256 ?? t("common.na")}
                   </dd>
-                  <dt>Observado</dt>
+                  <dt>{t("graph.cardObserved")}</dt>
                   <dd className="mono">{fmt(detalle?.procedencia?.observed_at)}</dd>
                 </dl>
               )}
@@ -479,23 +503,24 @@ export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
       ) : (
         <div className="empty-rail">
           <div className="empty-rail-title">
-            {vista.tipo === "hallazgo" ? "Este hallazgo no tiene grafo" : "Sin grafo todavía"}
+            {t(vista.tipo === "hallazgo" ? "graph.noGraphFinding" : "graph.noGraphYet")}
           </div>
           <div className="empty-rail-body">
-            {index.hallazgos.length === 0
-              ? "El grafo se extrae del texto de los hallazgos, y este caso no tiene ninguno todavía."
-              : "Pulsa «Extraer» y el modelo seleccionado leerá el texto del hallazgo para proponer qué entidades intervienen y con qué relación."}
+            {t(index.hallazgos.length === 0 ? "graph.noFindingsBody" : "graph.pressExtract")}
           </div>
         </div>
       )}
 
       {vista.tipo === "hallazgo" && detalle && (
         <div className="graph-meta mono">
-          Revisión v{detalle.revision} de {detalle.revisiones.length} · SHA-256{" "}
-          {detalle.sha256.slice(0, 12)} · {fmt(detalle.created_at)} ·{" "}
-          {detalle.extraction.executor ?? "n/d"}
+          {t("graph.revisionMeta", {
+            rev: detalle.revision,
+            total: detalle.revisiones.length,
+          })}{" "}
+          · SHA-256 {detalle.sha256.slice(0, 12)} · {fmt(detalle.created_at)} ·{" "}
+          {detalle.extraction.executor ?? t("common.na")}
           {detalle.extraction.attempts && detalle.extraction.attempts > 1
-            ? ` · ${detalle.extraction.attempts} intentos`
+            ? ` · ${tn("count.attempts", detalle.extraction.attempts)}`
             : ""}
         </div>
       )}

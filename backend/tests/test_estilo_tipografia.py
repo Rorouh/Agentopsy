@@ -32,7 +32,15 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BACKEND = REPO_ROOT / "backend" / "forensia"
 WEB_SRC = REPO_ROOT / "web" / "src"
-AGENT_MD = REPO_ROOT / "agentes" / "agent.md"
+#: Los DOS ficheros de comportamiento, con el rótulo de su regla 9 y la
+#: frase que prueba que la regla está escrita y no solo cumplida. Desde
+#: 2026-08-25 el producto habla dos idiomas y el agente tiene un fichero por
+#: cada uno: el gemelo inglés es el texto que el modelo lee e imita cuando el
+#: perito trabaja en inglés, así que la regla le obliga igual.
+AGENT_MDS: tuple[tuple[str, str, str], ...] = (
+    ("agent.md", "**Cómo se escribe.**", "Cómo se escribe"),
+    ("agent.en.md", "**How you write.**", "How you write"),
+)
 
 #: Guiones largos: raya, barra horizontal y las rayas dobles/triples.
 RAYAS = "—―⸺⸻"
@@ -122,37 +130,42 @@ def test_la_web_no_pinta_guiones_largos() -> None:
     assert not fallos, "guiones largos en la interfaz:\n" + "\n".join(fallos)
 
 
-def test_el_fichero_de_comportamiento_del_agente_cumple_la_regla() -> None:
-    """``agent.md`` es el texto que el modelo lee e imita: una raya ahí es una
-    raya en el chat y en el `summary` de cada hallazgo, que viaja al informe."""
-    lineas = AGENT_MD.read_text(encoding="utf-8").split("\n")
+@pytest.mark.parametrize(("nombre", "rotulo", "enunciado"), AGENT_MDS)
+def test_el_fichero_de_comportamiento_del_agente_cumple_la_regla(
+    nombre: str, rotulo: str, enunciado: str
+) -> None:
+    """El fichero de comportamiento es el texto que el modelo lee e imita: una
+    raya ahí es una raya en el chat y en el `summary` de cada hallazgo, que viaja
+    al informe. Vale para los dos idiomas, y en inglés no es una preferencia
+    tipográfica del castellano sino la MISMA regla de producto (RULE 7)."""
+    lineas = (REPO_ROOT / "agentes" / nombre).read_text(encoding="utf-8").split("\n")
     texto = "\n".join(lineas)
     # La regla 9 NOMBRA los tres signos para prohibirlos, así que ese párrafo
     # los lleva por fuerza. Se excluye entero (no línea a línea) para que
     # reajustar el ancho del texto no rompa el test.
-    inicio = next(i for i, ln in enumerate(lineas) if "**Cómo se escribe.**" in ln)
+    inicio = next(i for i, ln in enumerate(lineas) if rotulo in ln)
     fin = next(i for i in range(inicio, len(lineas)) if not lineas[i].strip())
     fallos = [
-        f"agentes/agent.md:{i + 1}: {linea.strip()[:90]}"
+        f"agentes/{nombre}:{i + 1}: {linea.strip()[:90]}"
         for i, linea in enumerate(lineas)
         if not (inicio <= i < fin)
         and (_RAYA_RE.search(linea) or "§" in linea or _EMOJI_RE.search(linea))
     ]
-    assert not fallos, "tipografía prohibida en agent.md:\n" + "\n".join(fallos)
+    assert not fallos, f"tipografía prohibida en {nombre}:\n" + "\n".join(fallos)
     # Y la regla está escrita, no solo cumplida.
-    assert "Cómo se escribe" in texto
+    assert enunciado in texto
 
 
 def test_el_indice_del_informe_no_ensena_el_signo_de_seccion() -> None:
     """El índice es lo único común a todos los informes y lo primero que el
     modelo copia: se enuncia «1. Control de versiones», nunca «§1»."""
-    from forensia.reports.indice import TITULOS, contrato_del_indice
+    from forensia.reports.indice import contrato_del_indice, titulos
 
     indice = contrato_del_indice()
     assert "§" not in indice
     assert not _RAYA_RE.search(indice)
     assert not _EMOJI_RE.search(indice)
-    for num, titulo in TITULOS.items():
+    for num, titulo in titulos().items():
         assert not _RAYA_RE.search(titulo), num
 
 
@@ -160,8 +173,19 @@ def test_el_indice_del_informe_no_ensena_el_signo_de_seccion() -> None:
 def test_el_encargo_del_informe_prohibe_el_signo(prohibido: str) -> None:
     """La regla viaja EN el encargo: el modelo tiene que leerla, no solo
     padecer la normalización posterior."""
-    from forensia.reports.writer import _REGLAS
+    from forensia.i18n import t
 
-    assert prohibido in _REGLAS  # se nombra para prohibirlo
-    assert "PROHIBIDO" in _REGLAS
-    assert "NO se usa ningún emoji" in _REGLAS
+    # Las reglas viajan en el idioma del informe, así que la prohibición tiene
+    # que estar en LOS DOS. El signo y la raya se NOMBRAN para prohibirlos, que
+    # es la excepción que este mismo módulo declara.
+    reglas_es = t("writer.rules", "es")
+    reglas_en = t("writer.rules", "en")
+    assert prohibido in reglas_es  # se nombra para prohibirlo
+    assert "PROHIBIDO" in reglas_es
+    assert "NO se usa ningún emoji" in reglas_es
+    # El inglés dice lo mismo sin escribir los caracteres: los nombra en
+    # palabras («the section sign», «the long dash»), que también los prohíbe y
+    # además cumple la regla en su propio texto.
+    assert "FORBIDDEN" in reglas_en
+    assert "long dash is NOT used" in reglas_en
+    assert "No emoji" in reglas_en

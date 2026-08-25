@@ -5,6 +5,8 @@ import type { ViewId } from "../navigation/navItems";
 import { useActiveCase } from "../state/activeCase";
 import { useCaseStream } from "../state/casePulse";
 import { usePublishShellHeader } from "../layout/shellHeader";
+import { useLang, type MessageKey } from "../i18n";
+import { useFormat } from "../utils/format";
 
 interface FindingsPageProps {
   onNavigate?: (view: ViewId) => void;
@@ -12,11 +14,11 @@ interface FindingsPageProps {
 
 type SeverityFilter = "all" | AgentFinding["severity"];
 
-const SEVERITY_LABEL: Record<AgentFinding["severity"], string> = {
-  low: "baja",
-  medium: "media",
-  high: "alta",
-  critical: "crítica",
+const SEVERITY_KEY: Record<AgentFinding["severity"], MessageKey> = {
+  low: "severity.low",
+  medium: "severity.medium",
+  high: "severity.high",
+  critical: "severity.critical",
 };
 
 const SEVERITY_ORDER: Record<AgentFinding["severity"], number> = {
@@ -30,25 +32,13 @@ function isHot(sev: AgentFinding["severity"]): boolean {
   return sev === "high" || sev === "critical";
 }
 
-function fmtDate(iso: string | null | undefined): string {
-  if (!iso) return "n/d";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString("es-ES", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 // FASE 5 · Hallazgos. La lectura de los HALLAZGOS que el agente persiste vía
 // `record_finding`: cada uno una tarjeta; al abrirla, el detalle completo con su
 // procedencia (run que lo sostiene, evidencia, hash del artefacto) y su
 // correlación ATT&CK. Es una fase SEPARADA del «Informe pericial» (el
 // entregable final firmable): aquí se consulta el material, allí se redacta.
 export function FindingsPage({ onNavigate }: FindingsPageProps) {
+  const { t } = useLang();
   const { activeCase, phase: casesPhase, error: casesError } = useActiveCase();
   // El agente persiste hallazgos mientras analiza: la lista se recarga sola
   // cuando el flujo cambia, sin que el perito tenga que recargar la página.
@@ -146,10 +136,10 @@ export function FindingsPage({ onNavigate }: FindingsPageProps) {
 
   usePublishShellHeader(
     {
-      title: "Hallazgos",
+      title: t("nav.findings"),
       // Sin meta con caso abierto: el vacío ya lo dice la columna de la
       // izquierda, y el recuento vive en la escalera del sidebar.
-      meta: activeCase ? undefined : "sin caso seleccionado",
+      meta: activeCase ? undefined : t("common.noCase"),
       action:
         onNavigate && activeCase ? (
           // Apagado sin hallazgos, igual que «Pasar a ATT&CK» en Investigación:
@@ -159,15 +149,15 @@ export function FindingsPage({ onNavigate }: FindingsPageProps) {
             type="button"
             disabled={findings.length === 0}
             title={
-              findings.length === 0 ? "Todavía no hay hallazgos que informar" : undefined
+              findings.length === 0 ? t("findings.nothingToReport") : undefined
             }
             onClick={() => onNavigate("document-viewer")}
           >
-            Ir al informe pericial →
+            {t("findings.goToReport")} →
           </button>
         ) : undefined,
     },
-    [activeCase?.id, activeCase?.name, findings.length],
+    [activeCase?.id, activeCase?.name, findings.length, t],
   );
 
   if (casesPhase === "loading") {
@@ -175,7 +165,7 @@ export function FindingsPage({ onNavigate }: FindingsPageProps) {
       <div className="view-scroll">
         <div className="loading-state">
           <span className="spinner" aria-hidden="true" />
-          <span>Cargando contexto del caso…</span>
+          <span>{t("inv.loadingContext")}</span>
         </div>
       </div>
     );
@@ -185,7 +175,7 @@ export function FindingsPage({ onNavigate }: FindingsPageProps) {
     return (
       <div className="view-scroll">
         <div className="error-state">
-          <strong>No se pudo cargar el caso activo:</strong> {casesError}
+          <strong>{t("findings.loadCaseFailed")}</strong> {casesError}
         </div>
       </div>
     );
@@ -195,16 +185,13 @@ export function FindingsPage({ onNavigate }: FindingsPageProps) {
     return (
       <div className="view-scroll">
         <div className="empty-rail">
-          <div className="empty-rail-title">Sin caso abierto</div>
-          <div className="empty-rail-body">
-            Abre un caso en el lateral. Los hallazgos aparecen aquí a medida que el agente los
-            registra durante la investigación.
-          </div>
+          <div className="empty-rail-title">{t("findings.noCase")}</div>
+          <div className="empty-rail-body">{t("findings.noCaseBody")}</div>
         </div>
         {onNavigate && (
           <div className="cta-row">
             <button type="button" className="link-action" onClick={() => onNavigate("repository")}>
-              Ir a Evidencia →
+              {t("findings.goToEvidence")} →
             </button>
           </div>
         )}
@@ -215,17 +202,17 @@ export function FindingsPage({ onNavigate }: FindingsPageProps) {
   return (
     <div className="report">
       <div className="report-list">
-        <div className="eyebrow eyebrow--section">Hallazgos del caso</div>
+        <div className="eyebrow eyebrow--section">{t("findings.section")}</div>
 
         <label className="visually-hidden" htmlFor="hallazgos-search">
-          Buscar hallazgo
+          {t("findings.searchLabel")}
         </label>
         <input
           id="hallazgos-search"
           className="field-input field-input--sm"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Buscar por título, herramienta o técnica…"
+          placeholder={t("findings.searchPlaceholder")}
         />
 
         <div className="report-filters">
@@ -237,21 +224,18 @@ export function FindingsPage({ onNavigate }: FindingsPageProps) {
               aria-pressed={severity === s}
               onClick={() => setSeverity(s)}
             >
-              {s === "all" ? "Todas" : SEVERITY_LABEL[s]}
+              {t(s === "all" ? "severity.all" : SEVERITY_KEY[s])}
             </button>
           ))}
         </div>
 
         <div className="hallazgo-cards">
           {!loaded ? (
-            <div className="inv-empty">Cargando hallazgos…</div>
+            <div className="inv-empty">{t("findings.loading")}</div>
           ) : findings.length === 0 ? (
-            <div className="inv-empty">
-              Aún no hay hallazgos. El agente los registra en caliente durante la Investigación;
-              en cuanto concluya algo (aunque sea un descarte), aparecerá aquí como tarjeta.
-            </div>
+            <div className="inv-empty">{t("findings.empty")}</div>
           ) : filtered.length === 0 ? (
-            <div className="inv-empty">Ningún hallazgo coincide con la búsqueda o el filtro.</div>
+            <div className="inv-empty">{t("findings.noMatch")}</div>
           ) : (
             filtered.map((f) => (
               <button
@@ -265,8 +249,8 @@ export function FindingsPage({ onNavigate }: FindingsPageProps) {
                 <span className="hallazgo-card-title">{f.title}</span>
                 <span className="hallazgo-card-summary">{f.summary}</span>
                 <span className="hallazgo-card-meta">
-                  {f.finding_kind === "descarte" ? "descarte · " : ""}
-                  {SEVERITY_LABEL[f.severity]}
+                  {f.finding_kind === "descarte" ? `${t("findingKind.descarte")} · ` : ""}
+                  {t(SEVERITY_KEY[f.severity])}
                   {f.tool_id ? ` · ${f.tool_id}` : ""}
                   {f.mitre_hints.length > 0 ? ` · ${f.mitre_hints.length} ATT&CK` : ""}
                 </span>
@@ -279,11 +263,8 @@ export function FindingsPage({ onNavigate }: FindingsPageProps) {
       <div className="report-viewer">
         {!selected ? (
           <div className="empty-rail">
-            <div className="empty-rail-title">Ningún hallazgo abierto</div>
-            <div className="empty-rail-body">
-              Elige un hallazgo de la lista para leerlo completo, con su procedencia y su
-              correlación ATT&CK.
-            </div>
+            <div className="empty-rail-title">{t("findings.noneOpen")}</div>
+            <div className="empty-rail-body">{t("findings.noneOpenBody")}</div>
           </div>
         ) : (
           <FindingDetail finding={selected} />
@@ -294,31 +275,39 @@ export function FindingsPage({ onNavigate }: FindingsPageProps) {
 }
 
 function FindingDetail({ finding: f }: { finding: AgentFinding }) {
+  const { t } = useLang();
+  const { formatDate, na } = useFormat();
+  // Una fecha que el store guardó sin formato reconocible se pinta TAL CUAL: es
+  // dato del caso, y sustituirla por un blanco escondería lo que de verdad hay.
+  const fecha = (iso: string | null | undefined): string => {
+    if (!iso) return na;
+    return Number.isNaN(new Date(iso).getTime()) ? iso : formatDate(iso);
+  };
   const kv: Array<[string, string]> = [
-    ["Severidad", SEVERITY_LABEL[f.severity]],
-    ["Tipo", f.finding_kind === "descarte" ? "descarte" : "afirmación"],
-    ["Herramienta", f.tool_id ?? "n/d"],
-    ["Run que lo sostiene", f.run_id ?? "n/d"],
-    ["Evidencia", f.evidence_id ?? "n/d"],
-    ["Observado en la evidencia", fmtDate(f.observed_at)],
-    ["Registrado", fmtDate(f.created_at)],
-    [
-      "Confianza",
-      f.confidence != null ? `${Math.round(f.confidence * 100)}%` : "n/d",
-    ],
-    ["SHA-256 del artefacto", f.artifact_sha256 ?? "n/d"],
+    [t("finding.severity"), t(SEVERITY_KEY[f.severity])],
+    [t("finding.kind"), t(f.finding_kind === "descarte" ? "findingKind.descarte" : "findingKind.afirmacion")],
+    [t("finding.tool"), f.tool_id ?? na],
+    [t("finding.run"), f.run_id ?? na],
+    [t("finding.evidence"), f.evidence_id ?? na],
+    [t("finding.observedAt"), fecha(f.observed_at)],
+    [t("finding.recordedAt"), fecha(f.created_at)],
+    [t("finding.confidence"), f.confidence != null ? `${Math.round(f.confidence * 100)}%` : na],
+    [t("finding.artifactHash"), f.artifact_sha256 ?? na],
   ];
 
   return (
     <div className="report-doc-body">
       <div className="report-metarow">
-        <span className={`sev-badge sev-badge--${f.severity}`}>{SEVERITY_LABEL[f.severity]}</span>
+        <span className={`sev-badge sev-badge--${f.severity}`}>{t(SEVERITY_KEY[f.severity])}</span>
         <span className="report-doc-meta">
-          {f.finding_kind === "descarte" ? "descarte" : "afirmación"} · registrado {fmtDate(f.created_at)}
+          {t(f.finding_kind === "descarte" ? "findingKind.descarte" : "findingKind.afirmacion")} ·{" "}
+          {t("finding.recordedOn", { date: fecha(f.created_at) })}
         </span>
       </div>
 
       <div>
+        {/* Título y resumen son texto del CASO, escrito por el agente: se pintan
+            tal cual, jamás traducidos. */}
         <h1 className="report-title">{f.title}</h1>
         <p className="report-summary">{f.summary}</p>
       </div>
@@ -326,7 +315,7 @@ function FindingDetail({ finding: f }: { finding: AgentFinding }) {
       <section className="report-section">
         <div className="report-section-head">
           <span className="report-section-num">01</span>
-          <span className="eyebrow">Procedencia y custodia</span>
+          <span className="eyebrow">{t("finding.provenance")}</span>
         </div>
         <div className="report-kv">
           {kv.map(([k, v]) => (
@@ -341,13 +330,10 @@ function FindingDetail({ finding: f }: { finding: AgentFinding }) {
       <section className="report-section">
         <div className="report-section-head">
           <span className="report-section-num">02</span>
-          <span className="eyebrow">Correlación ATT&amp;CK</span>
+          <span className="eyebrow">{t("finding.attackCorrelation")}</span>
         </div>
         {f.mitre_hints.length === 0 ? (
-          <p className="report-p report-p--muted">
-            El agente no asoció ninguna técnica a este hallazgo. Puede anclarlas desde el chat
-            («dame la correlación MITRE») o el perito adjudicarlas en la fase ATT&amp;CK.
-          </p>
+          <p className="report-p report-p--muted">{t("finding.noTechniques")}</p>
         ) : (
           <div className="hallazgo-mitre">
             {f.mitre_hints.map((t) => (

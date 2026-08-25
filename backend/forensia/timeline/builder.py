@@ -22,6 +22,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
+from forensia.i18n import Mensaje, t
 from forensia.cases.manager import case_manager
 from forensia.evidence_context import EvidenceContext
 from forensia.findings.store import Finding, finding_store
@@ -401,7 +402,9 @@ def run_filesystem_timeline(
             mount = f"/p{slot}" if slot is not None else f"/off{offset}"
             _emit({
                 "type": "status", "stage": "fls",
-                "message": f"tsk_fls -m en la partición offset {offset} ({part['description']})…",
+                "message": t(
+                    "fsTl.progressFls", offset=offset, description=part["description"]
+                ),
             })
             exit_code, run_id, stderr = _fls({"partition_offset": offset, "mount_point": mount})
             if exit_code == 0 and isinstance(run_id, str):
@@ -420,9 +423,12 @@ def run_filesystem_timeline(
                 })
         if not runs:
             raise RuntimeError(
-                f"ninguna de las {len(partitions)} particiones dio un sistema de ficheros "
-                f"legible sobre la evidencia {evidence_context.evidence_id}; no se construye "
-                f"una super-timeline (RULE 2). Detalle por partición: {skipped}"
+                Mensaje(
+                    "fsTl.noReadableFs",
+                    count=len(partitions),
+                    evidence=evidence_context.evidence_id,
+                    skipped=skipped,
+                )
             )
     else:
         # Bare filesystem image (no partition table) → single fls at offset 0.
@@ -433,14 +439,16 @@ def run_filesystem_timeline(
         exit_code, run_id, stderr = _fls({})
         if exit_code != 0:
             raise RuntimeError(
-                f"tsk_fls terminó con exit_code {exit_code!r} sobre la evidencia "
-                f"{evidence_context.evidence_id}; no se construye una super-timeline parcial "
-                f"(RULE 2). stderr: {stderr[:2000]}"
+                Mensaje(
+                    "fsTl.flsFailed",
+                    exit=repr(exit_code),
+                    evidence=evidence_context.evidence_id,
+                    stderr=stderr[:2000],
+                )
             )
         if not isinstance(run_id, str):
             raise RuntimeError(
-                "tsk_fls no devolvió run_id (la ejecución no quedó anclada al caso); "
-                "no se puede recuperar el bodyfile."
+                Mensaje("fsTl.noRunId")
             )
         runs.append({
             "run_id": run_id, "partition_offset": None,
@@ -456,13 +464,17 @@ def run_filesystem_timeline(
     # los eventos importantes suelen quedar fuera del corte cronológico.
     relevant, total_relevant = select_relevant_events(all_events)
     run_ids = [r["run_id"] for r in runs]
-    skipped_note = f"; {len(skipped)} partición(es) sin FS legible" if skipped else ""
+    skipped_note = t("fsTl.skippedNote", count=len(skipped)) if skipped else ""
     _emit({
         "type": "status",
         "stage": "done",
-        "message": (
-            f"Super-timeline lista: {len(events)} eventos (de {total}); "
-            f"{total_relevant} relevantes; {len(runs)} partición(es) con FS{skipped_note}."
+        "message": t(
+            "fsTl.ready",
+            events=len(events),
+            total=total,
+            relevant=total_relevant,
+            partitions=len(runs),
+            skipped=skipped_note,
         ),
     })
     result = {
@@ -500,7 +512,7 @@ def _fs_timeline_path(case_id: str, evidence_id: str) -> Any:
     ``<case_dir>/timeline/<evidence_id>.json``. Valida el ``evidence_id`` (UUID4)
     antes de construir la ruta — nunca un id con separadores/traversal."""
     if not _EVIDENCE_ID_RE.match(evidence_id):
-        raise ValueError(f"evidence_id inválido: {evidence_id!r}")
+        raise ValueError(Mensaje("fsTl.badEvidenceId", evidence=repr(evidence_id)))
     return case_manager.case_dir(case_id) / "timeline" / f"{evidence_id}.json"
 
 
@@ -593,34 +605,30 @@ def query_filesystem_timeline(
         return {
             "status": "no_timeline",
             "evidence_id": evidence_id,
-            "message": (
-                "La super-timeline de esta evidencia aún no está generada. Genérala "
-                "primero (tsk_fls -m sobre la evidencia, o el botón «Generar» de la "
-                "vista Timeline) y vuelve a consultar; no infiero actividad sin ella."
-            ),
+            "message": t("fsTl.notGenerated"),
         }
     run_ids = persisted_fls_run_ids(persisted)
     if not run_ids:
         return {
             "status": "no_timeline",
             "evidence_id": evidence_id,
-            "message": (
-                "La super-timeline persistida no referencia el run de tsk_fls que la "
-                "produjo; regenérala antes de consultarla."
-            ),
+            "message": t("fsTl.noProducerRun"),
         }
 
     cat = category.strip() if isinstance(category, str) and category.strip() else None
     if cat is not None and cat not in KNOWN_CATEGORIES:
         raise ValueError(
-            f"categoría desconocida: {cat!r}. Válidas: {sorted(KNOWN_CATEGORIES)}"
+            Mensaje(
+                "fsTl.unknownCategory",
+                category=repr(cat),
+                valid=sorted(KNOWN_CATEGORIES),
+            )
         )
     lo = _parse_query_bound(date_from, end=False) if date_from else None
     hi = _parse_query_bound(date_to, end=True) if date_to else None
     if lo is not None and hi is not None and lo > hi:
         raise ValueError(
-            f"rango de fechas invertido: date_from ({date_from}) es posterior a "
-            f"date_to ({date_to})"
+            Mensaje("fsTl.invertedRange", date_from=date_from, date_to=date_to)
         )
     needle = path_contains.replace("\\", "/").lower() if path_contains else None
     if not isinstance(limit, int) or limit <= 0:

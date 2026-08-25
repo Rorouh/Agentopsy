@@ -10,6 +10,7 @@ import type {
 import { usePublishShellHeader } from "../layout/shellHeader";
 import { useActiveCase } from "../state/activeCase";
 import { useCaseStream } from "../state/casePulse";
+import { useLang, type MessageKey } from "../i18n";
 
 // FASE 3 · Matriz ATT&CK del caso. Dos ejes que NUNCA se funden:
 //
@@ -23,10 +24,12 @@ import { useCaseStream } from "../state/casePulse";
 
 type Phase = "loading" | "ready" | "no-catalog" | "error";
 
-const STATUS_LABEL: Record<MitreStatus, string> = {
-  confirmada: "Confirmada",
-  sospechosa: "Sospechosa",
-  descartada: "Descartada",
+// El VALOR (`confirmada`, …) es la enum cerrada que persiste y audita el
+// backend: no se traduce nunca. Lo que se traduce es cómo se nombra en pantalla.
+const STATUS_KEY: Record<MitreStatus, MessageKey> = {
+  confirmada: "mitre.status.confirmada",
+  sospechosa: "mitre.status.sospechosa",
+  descartada: "mitre.status.descartada",
 };
 
 const STATUS_ORDER: MitreStatus[] = ["confirmada", "sospechosa", "descartada"];
@@ -47,6 +50,7 @@ interface Selection {
 }
 
 export function MitreAttackPage() {
+  const { t, lang, locale } = useLang();
   const [catalog, setCatalog] = useState<MitreCatalog | null>(null);
   const { activeCase: globalCase } = useActiveCase();
   // Modo exploración: recorrer el catálogo sin dictaminar. No toca el caso
@@ -218,18 +222,18 @@ export function MitreAttackPage() {
 
   usePublishShellHeader(
     {
-      title: "Correlación ATT&CK",
+      title: t("nav.mitre"),
       // Con caso no hay meta: «dictamen del perito · auditado» describía la
       // naturaleza de la vista, no su estado. Sin caso sí, porque entonces
       // cambia lo que puedes hacer: se explora el catálogo, no se adjudica.
-      meta: caseMode ? undefined : "exploración del catálogo · sin caso",
+      meta: caseMode ? undefined : t("mitre.exploreMeta"),
       action: caseMode ? (
         <button type="button" disabled={exporting} onClick={() => void onExport("navigator")}>
-          {exporting ? "Exportando…" : "Exportar layer"}
+          {t(exporting ? "mitre.exporting" : "mitre.exportLayer")}
         </button>
       ) : undefined,
     },
-    [caseMode, exporting],
+    [caseMode, exporting, t],
   );
 
   // ── estados degradados ────────────────────────────────────────────────────
@@ -239,7 +243,7 @@ export function MitreAttackPage() {
       <div className="view-scroll">
         <div className="loading-state">
           <span className="spinner" aria-hidden="true" />
-          <span>Cargando la matriz…</span>
+          <span>{t("mitre.loading")}</span>
         </div>
       </div>
     );
@@ -249,7 +253,7 @@ export function MitreAttackPage() {
     return (
       <div className="view-scroll">
         <div className="error-state">
-          <strong>No se pudo cargar la matriz:</strong> {error}
+          <strong>{t("mitre.loadFailed")}</strong> {error}
         </div>
       </div>
     );
@@ -259,10 +263,9 @@ export function MitreAttackPage() {
     return (
       <div className="view-scroll">
         <div className="empty-rail">
-          <div className="empty-rail-title">Falta la semilla ATT&CK</div>
+          <div className="empty-rail-title">{t("mitre.noSeed")}</div>
           <div className="empty-rail-body">
-            {catalog?.reason ??
-              "El catálogo se deriva de la semilla del orquestador y no se ha podido cargar."}
+            {catalog?.reason ?? t("mitre.noSeedBody")}
           </div>
         </div>
       </div>
@@ -335,27 +338,27 @@ export function MitreAttackPage() {
             className={`tab${view === "matrix" ? " is-active" : ""}`}
             onClick={() => setView("matrix")}
           >
-            Matriz
+            {t("mitre.viewMatrix")}
           </button>
           <button
             type="button"
             className={`tab${view === "timeline" ? " is-active" : ""}`}
             onClick={() => setView("timeline")}
           >
-            Línea temporal
+            {t("mitre.viewTimeline")}
           </button>
         </div>
 
         <div className="mitre-bar-right">
           <label className="visually-hidden" htmlFor="mitre-search">
-            Buscar técnica o identificador ATT&CK
+            {t("mitre.searchLabel")}
           </label>
           <input
             id="mitre-search"
             className="field-input mitre-search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar técnica o ID (T1055)…"
+            placeholder={t("mitre.searchPlaceholder")}
           />
           <button
             type="button"
@@ -363,7 +366,7 @@ export function MitreAttackPage() {
             aria-pressed={subsOn}
             onClick={() => setSubsOn((v) => !v)}
           >
-            Sub-técnicas
+            {t("mitre.subTechniques")}
           </button>
           {caseMode && view === "matrix" && (
             <button
@@ -372,7 +375,7 @@ export function MitreAttackPage() {
               aria-pressed={onlyCovered}
               onClick={() => setOnlyCovered((v) => !v)}
             >
-              Solo cubiertas
+              {t("mitre.onlyCovered")}
             </button>
           )}
           {/* Explorar el catálogo sin dictaminar. Sin caso activo el modo es el
@@ -384,7 +387,7 @@ export function MitreAttackPage() {
               aria-pressed={explore}
               onClick={() => setExplore((v) => !v)}
             >
-              Sin caso
+              {t("mitre.noCase")}
             </button>
           )}
           {caseMode && (
@@ -395,7 +398,7 @@ export function MitreAttackPage() {
                 disabled={exporting}
                 onClick={() => void onExport("hoja")}
               >
-                Exportar hoja
+                {t("mitre.exportSheet")}
               </button>
               <button
                 type="button"
@@ -403,7 +406,7 @@ export function MitreAttackPage() {
                 disabled={exporting}
                 onClick={() => void onExport("navigator")}
               >
-                Exportar Navigator layer
+                {t("mitre.exportNavigator")}
               </button>
             </>
           )}
@@ -411,7 +414,7 @@ export function MitreAttackPage() {
       </div>
 
       {exportError && (
-        <div className="mitre-inline-error">No se pudo exportar: {exportError}</div>
+        <div className="mitre-inline-error">{t("mitre.exportFailed", { detail: exportError })}</div>
       )}
 
       <div className="mitre-ribbon-row">
@@ -426,7 +429,9 @@ export function MitreAttackPage() {
                   />
                   <span className="mitre-phase-label">{ph.label}</span>
                   <span className="mitre-phase-stat">
-                    {caseMode ? `${ph.touched}/${ph.total}` : `${ph.total} tácticas`}
+                    {caseMode
+                      ? `${ph.touched}/${ph.total}`
+                      : t("mitre.phaseTactics", { count: ph.total })}
                   </span>
                 </div>
                 <div className="progress-track">
@@ -453,18 +458,18 @@ export function MitreAttackPage() {
           <div className="mitre-summary">
             <div className="stat">
               <div className="mitre-summary-value mitre-summary-value--accent">{confirmed}</div>
-              <div className="eyebrow">Confirmadas</div>
+              <div className="eyebrow">{t("mitre.summaryConfirmed")}</div>
             </div>
             <div className="stat">
               <div className="mitre-summary-value">{suspected}</div>
-              <div className="eyebrow">Sospechosas</div>
+              <div className="eyebrow">{t("mitre.summarySuspected")}</div>
             </div>
             <div className="stat">
               <div className="mitre-summary-value">
                 {tacticsTouched}
                 <span className="mitre-summary-of">/{catalog.tactics.length}</span>
               </div>
-              <div className="eyebrow">Tácticas</div>
+              <div className="eyebrow">{t("mitre.summaryTactics")}</div>
             </div>
           </div>
         )}
@@ -476,12 +481,12 @@ export function MitreAttackPage() {
             {columns.length === 0 ? (
               <div className="empty-rail">
                 <div className="empty-rail-title">
-                  {searching ? "Sin coincidencias" : "Nada que mostrar"}
+                  {t(searching ? "mitre.noMatches" : "mitre.nothingToShow")}
                 </div>
                 <div className="empty-rail-body">
                   {searching
-                    ? `Ninguna técnica coincide con «${search}».`
-                    : "Ninguna táctica tiene cobertura todavía. Desactiva «Solo cubiertas» para ver la matriz completa."}
+                    ? t("mitre.noTechniqueMatch", { query: search })
+                    : t("mitre.noCoverageYet")}
                 </div>
               </div>
             ) : (
@@ -493,17 +498,26 @@ export function MitreAttackPage() {
                         className="mitre-col-accent"
                         style={{ background: PHASE_COLOR[tactic.phase] ?? "var(--ink-4)" }}
                       />
-                      <div className="mitre-col-title">{tactic.name_es}</div>
+                      {/* El nombre de la táctica en el idioma en curso. El
+                          nombre OFICIAL de ATT&CK es el inglés, así que en el
+                          renglón de abajo sólo se repite cuando aporta algo, es
+                          decir cuando el título no es ya ese mismo. */}
+                      <div className="mitre-col-title">
+                        {lang === "es" ? tactic.name_es : tactic.name}
+                      </div>
                       <div className="mitre-col-meta">
-                        <span className="mitre-col-en">{tactic.name}</span>
+                        {(lang === "es" ? tactic.name_es : tactic.name) !== tactic.name && (
+                          <span className="mitre-col-en">{tactic.name}</span>
+                        )}
                         <span>{techniques.length}</span>
                       </div>
                       <div className="mitre-col-cov">
                         {caseMode
-                          ? `${covered}/${techniques.length} cubiertas${
-                              disc > 0 ? ` · ${disc} descart.` : ""
-                            }`
-                          : `${techniques.length} técnicas`}
+                          ? `${t("mitre.colCovered", {
+                              covered,
+                              total: techniques.length,
+                            })}${disc > 0 ? ` · ${t("mitre.colDiscarded", { count: disc })}` : ""}`
+                          : t("mitre.colTechniques", { count: techniques.length })}
                       </div>
                     </div>
 
@@ -528,13 +542,13 @@ export function MitreAttackPage() {
                             {isProposed && (
                               <span
                                 className="mitre-cell-badge"
-                                title={`${c!.proposed_by.length} hallazgo(s) del agente citan esta técnica`}
+                                title={t("mitre.cellProposedBy", { count: c!.proposed_by.length })}
                               >
                                 {c!.proposed_by.length}
                               </span>
                             )}
                             {subsOn && te.sub > 0 && (
-                              <span className="mitre-cell-sub">{te.sub} sub</span>
+                              <span className="mitre-cell-sub">{t("mitre.cellSub", { count: te.sub })}</span>
                             )}
                           </button>
                         );
@@ -552,25 +566,25 @@ export function MitreAttackPage() {
           <div className="mitre-legend">
             <span className="mitre-legend-item">
               <span className="mitre-swatch mitre-swatch--confirmada" />
-              confirmada por el perito
+              {t("mitre.legendConfirmed")}
             </span>
             <span className="mitre-legend-item">
               <span className="mitre-swatch mitre-swatch--sospechosa" />
-              sospechosa
+              {t("mitre.legendSuspected")}
             </span>
             <span className="mitre-legend-item">
               <span className="mitre-swatch mitre-swatch--descartada" />
-              descartada por el perito
+              {t("mitre.legendDiscarded")}
             </span>
             <span className="mitre-legend-item">
               <span className="mitre-swatch mitre-swatch--propuesta" />
-              propuesta del agente, sin dictaminar
+              {t("mitre.legendProposed")}
             </span>
             <span className="mitre-legend-item">
               <span className="mitre-swatch mitre-swatch--none" />
-              no evaluada
+              {t("mitre.legendNone")}
             </span>
-            <span className="mitre-legend-note">gris = no evaluada, nunca «ausente»</span>
+            <span className="mitre-legend-note">{t("mitre.legendNote")}</span>
           </div>
         </>
       )}
@@ -579,18 +593,16 @@ export function MitreAttackPage() {
         <div className="mitre-scroll">
           {!caseMode ? (
             <div className="empty-rail">
-              <div className="empty-rail-title">Sin caso</div>
+              <div className="empty-rail-title">{t("mitre.noCase")}</div>
               <div className="empty-rail-body">
-                La línea temporal se construye con los hallazgos reales del caso. Desactiva «Sin
-                caso» para volver al caso activo.
+                {t("mitre.tlNoCaseBody")}
               </div>
             </div>
           ) : timeline.length === 0 ? (
             <div className="empty-rail">
-              <div className="empty-rail-title">Sin hallazgos correlacionados</div>
+              <div className="empty-rail-title">{t("mitre.tlEmpty")}</div>
               <div className="empty-rail-body">
-                Ningún hallazgo del caso cita todavía una técnica ATT&CK. La línea temporal se
-                construye con los hallazgos reales que el agente asocia a una técnica.
+                {t("mitre.tlEmptyBody")}
               </div>
             </div>
           ) : (
@@ -598,7 +610,7 @@ export function MitreAttackPage() {
               {timeline.map((f) => (
                 <div className="mitre-tl-row" key={f.id}>
                   <div className="mitre-tl-time">
-                    {new Date(f.created_at).toLocaleString("es-ES")}
+                    {new Date(f.created_at).toLocaleString(locale)}
                   </div>
                   <div className="mitre-tl-body">
                     <div className="mitre-tl-head">
@@ -631,20 +643,20 @@ export function MitreAttackPage() {
       {sel && selTactic && (
         <>
           <div className="mitre-scrim" onClick={() => setSel(null)} />
-          <aside className="mitre-detail" aria-label={`Detalle de ${sel.technique.id}`}>
+          <aside className="mitre-detail" aria-label={t("mitre.detailOf", { id: sel.technique.id })}>
             <div className="mitre-detail-head">
               <div className="mitre-detail-tactic">
                 <span
                   className="mitre-phase-dot"
                   style={{ background: PHASE_COLOR[selTactic.phase] ?? "var(--ink-4)" }}
                 />
-                {selTactic.name_es}
+                {lang === "es" ? selTactic.name_es : selTactic.name}
               </div>
               <button
                 type="button"
                 className="modal-close"
                 onClick={() => setSel(null)}
-                aria-label="Cerrar"
+                aria-label={t("common.close")}
               >
                 ×
               </button>
@@ -653,13 +665,15 @@ export function MitreAttackPage() {
             <div className="mitre-detail-title">{sel.technique.name}</div>
             <div className="mitre-detail-idrow">
               <span>{sel.technique.id}</span>
-              {sel.technique.sub > 0 && <span>{sel.technique.sub} sub-técnicas</span>}
+              {sel.technique.sub > 0 && (
+                <span>{t("mitre.subCount", { count: sel.technique.sub })}</span>
+              )}
             </div>
 
             <div className="mitre-detail-body">
               <section className="section-stack">
                 <div className="rule-label">
-                  <span className="eyebrow">Se sostiene con</span>
+                  <span className="eyebrow">{t("mitre.supportedBy")}</span>
                   <span className="rule" />
                 </div>
                 <div className="prose">{sel.technique.supported_by}</div>
@@ -667,14 +681,13 @@ export function MitreAttackPage() {
 
               {!caseMode ? (
                 <div className="note-rail">
-                  Vuelve al caso activo para registrar si esta técnica se ha confirmado, está en
-                  sospecha o se ha descartado en la investigación.
+                  {t("mitre.goBackToCase")}
                 </div>
               ) : (
                 <>
                   <section className="section-stack">
                     <div className="rule-label">
-                      <span className="eyebrow">Propuesta del agente</span>
+                      <span className="eyebrow">{t("mitre.agentProposal")}</span>
                       <span className="rule" />
                     </div>
                     {selEntry && selEntry.proposed_by.length > 0 ? (
@@ -693,27 +706,26 @@ export function MitreAttackPage() {
                       </div>
                     ) : (
                       <div className="inv-empty">
-                        Ningún hallazgo del agente cita esta técnica. Puedes dictaminarla
-                        igualmente si la evidencia que has revisado lo sostiene.
+                        {t("mitre.noAgentCitation")}
                       </div>
                     )}
                   </section>
 
                   <section className="section-stack">
                     <div className="rule-label">
-                      <span className="eyebrow">Dictamen del perito</span>
+                      <span className="eyebrow">{t("mitre.examinerVerdict")}</span>
                       <span className="rule" />
                     </div>
                     {selEntry?.status && (
                       <div className="inline-note">
-                        Actualmente: <strong>{STATUS_LABEL[selEntry.status]}</strong>
+                        {t("mitre.currently")} <strong>{t(STATUS_KEY[selEntry.status])}</strong>
                         {selEntry.adjudicated_at &&
-                          ` · ${new Date(selEntry.adjudicated_at).toLocaleString("es-ES")}`}
+                          ` · ${new Date(selEntry.adjudicated_at).toLocaleString(locale)}`}
                       </div>
                     )}
                     <div className="field">
                       <label className="eyebrow" htmlFor="mitre-rationale">
-                        Motivo · obligatorio, queda en el log de auditoría
+                        {t("mitre.rationaleLabel")}
                       </label>
                       <textarea
                         id="mitre-rationale"
@@ -721,7 +733,7 @@ export function MitreAttackPage() {
                         value={rationale}
                         onChange={(e) => setRationale(e.target.value)}
                         rows={3}
-                        placeholder="Qué evidencia sostiene este veredicto…"
+                        placeholder={t("mitre.rationalePlaceholder")}
                       />
                     </div>
                     <div className="cta-row">
@@ -733,7 +745,7 @@ export function MitreAttackPage() {
                           disabled={saving || rationale.trim().length === 0}
                           onClick={() => void onAdjudicate(s)}
                         >
-                          {STATUS_LABEL[s]}
+                          {t(STATUS_KEY[s])}
                         </button>
                       ))}
                       {selEntry?.status && (
@@ -743,14 +755,13 @@ export function MitreAttackPage() {
                           disabled={saving}
                           onClick={() => void onAdjudicate("none")}
                         >
-                          Retirar dictamen
+                          {t("mitre.withdraw")}
                         </button>
                       )}
                     </div>
                     {rationale.trim().length === 0 && (
                       <div className="inline-note">
-                        Un veredicto sin motivo no vale nada en un informe pericial: el backend
-                        lo rechaza.
+                        {t("mitre.needRationale")}
                       </div>
                     )}
                     {saveError && <div className="error-state">{saveError}</div>}

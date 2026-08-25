@@ -21,6 +21,7 @@ from typing import Any
 
 import pytest
 
+from forensia.i18n import t
 from forensia.agent.agent import ForensicAgent
 from _agent_pkg import make_package
 from forensia.agent.tool_schemas import internal_tool_specs
@@ -28,6 +29,21 @@ from forensia.audit import AuditLog
 from forensia.cases import CaseManager
 from forensia.knowledge import DOC_ID_PATTERN, KnowledgeStore
 from forensia.models.base import FinalAnswer, ModelBackend, ModelCapabilities, ToolCall
+
+def _marca(clave: str) -> str:
+    """El marcador distintivo de un bloque del prompt, EN EL IDIOMA EN CURSO.
+
+    Los bloques del prompt se rotulan desde el catálogo, así que un test los
+    nombra por su CLAVE y no por su texto castellano: lo que fija es que el
+    marcador está, no con qué palabra se escribe. Para los que abren con una
+    etiqueta entre corchetes (`[Presupuesto]`, `[Reminder]`) devuelve esa
+    etiqueta; para el resto, el primer trozo de la primera línea.
+    """
+    texto = t(clave).strip()
+    if texto.startswith("["):
+        return texto[: texto.index("]") + 1]
+    return texto.split("\n")[0].split(",")[0].strip()
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 AGENTES_DIR = REPO_ROOT / "agentes"
@@ -201,7 +217,7 @@ def test_un_nodo_del_caso_vuelve_marcado_no_confiable(wired) -> None:
     assert "Ejecutable sospechoso en el Desktop" in served
     # C4: las notas del agente citan cadenas derivadas de evidencia hostil →
     # vuelven como DATO, nunca como instrucción.
-    assert "EVIDENCIA_NO_CONFIABLE" in served
+    assert _marca("agentLoop.untrustedOpen") in served
 
 
 def test_un_doc_estatico_del_paquete_sigue_siendo_de_confianza(wired) -> None:
@@ -214,7 +230,7 @@ def test_un_doc_estatico_del_paquete_sigue_siendo_de_confianza(wired) -> None:
     served = _tool_messages(model.seen_messages[-1])
     assert served, "el doc del paquete debería haberse servido"
     # Lo escribió el equipo, no la evidencia: sin spotlighting.
-    assert "EVIDENCIA_NO_CONFIABLE" not in served
+    assert _marca("agentLoop.untrustedOpen") not in served
 
 
 def test_el_nodo_del_caso_gana_al_doc_del_paquete_con_el_mismo_id(wired) -> None:
@@ -228,7 +244,7 @@ def test_el_nodo_del_caso_gana_al_doc_del_paquete_con_el_mismo_id(wired) -> None
 
     served = _tool_messages(model.seen_messages[-1])
     assert "LO-MIO-DEL-CASO" in served
-    assert "EVIDENCIA_NO_CONFIABLE" in served
+    assert _marca("agentLoop.untrustedOpen") in served
 
 
 def test_id_desconocido_nombra_los_dos_ambitos(wired) -> None:
@@ -241,7 +257,14 @@ def test_id_desconocido_nombra_los_dos_ambitos(wired) -> None:
     err = result["tool_calls"][0].get("error") or ""
     # El paquete ya no trae docs estáticos (contrato de archivo único): la
     # referencia de paquete es vacía y solo hay nodos del CASO.
-    assert "Referencia del paquete" in err  # ámbito paquete (vacío)
+    # El error nombra los DOS ámbitos: el del paquete y el del caso.
+    assert err == t(
+        "agentLoop.unknownDocId",
+        None,
+        doc_id=repr("no-existe"),
+        valid=[],
+        nodes=["cronologia"],
+    )
     assert "cronologia" in err  # ámbito caso
     assert "anotar_conocimiento" in err  # y cómo crearlo
 

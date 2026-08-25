@@ -12,6 +12,7 @@ import type {
   ReportJob,
 } from "../api/types";
 import { usePublishShellHeader } from "../layout/shellHeader";
+import { useLang, type MessageKey } from "../i18n";
 import { useActiveCase } from "../state/activeCase";
 import { useCaseStream } from "../state/casePulse";
 import { Icon } from "../ui/Icon";
@@ -30,9 +31,9 @@ import { Icon } from "../ui/Icon";
 type StatusFilter = "all" | "draft" | "final";
 type GroupBy = "evidence" | "type" | "none";
 
-function fmtDate(iso: string): string {
+function fmtDate(iso: string, locale: string): string {
   const d = new Date(iso);
-  return isNaN(d.getTime()) ? iso : d.toLocaleString("es-ES");
+  return isNaN(d.getTime()) ? iso : d.toLocaleString(locale);
 }
 const shortHash = (h: string) => (h ? `${h.slice(0, 8)}` : "");
 
@@ -45,24 +46,28 @@ const EXECUTOR_CONFIG_KEY = "DEFAULT_EXECUTOR";
 
 const PERITO_FIELDS: {
   key: keyof FinalizeInvestigationRequest;
-  label: string;
-  placeholder: string;
+  labelKey: MessageKey;
+  placeholderKey: MessageKey | null;
 }[] = [
-  { key: "name", label: "Perito", placeholder: "" },
-  { key: "colegiado", label: "Nº de colegiado", placeholder: "p. ej. COL-1234" },
-  { key: "organization", label: "Organización", placeholder: "Laboratorio / empresa" },
-  { key: "email", label: "Contacto", placeholder: "correo@dominio" },
-  { key: "version", label: "Versión", placeholder: "se deriva de las revisiones" },
+  // El de `name` no lleva placeholder de catálogo: el suyo es el examinador
+  // del CASO, que es dato, no texto de interfaz.
+  { key: "name", labelKey: "doc.perito.name", placeholderKey: null },
+  { key: "colegiado", labelKey: "doc.perito.colegiado", placeholderKey: "doc.perito.colegiadoPh" },
+  { key: "organization", labelKey: "doc.perito.organization", placeholderKey: "doc.perito.organizationPh" },
+  { key: "email", labelKey: "doc.perito.email", placeholderKey: "doc.perito.emailPh" },
+  { key: "version", labelKey: "doc.perito.version", placeholderKey: "doc.perito.versionPh" },
 ];
 
 // Fases del redactor (forensia.reports.writer emite `report_phase`). Es
 // progreso OBSERVACIONAL: sin él, una llamada de minutos parece colgada.
-const PHASE_LABEL: Record<string, string> = {
-  material: "Reuniendo el material del caso…",
-  redactando: "El modelo está redactando el informe…",
-  validando: "Validando índice, referentes y comandos auditados…",
-  corrigiendo: "La validación rechazó el borrador: el modelo lo está corrigiendo…",
-  listo: "Informe redactado.",
+// La FASE la emite el redactor del backend (`report_phase`). Una que esta tabla
+// no declare se pinta tal cual (RULE 2), nunca traducida a lo que se le parezca.
+const PHASE_KEY: Record<string, MessageKey> = {
+  material: "doc.phase.material",
+  redactando: "doc.phase.redactando",
+  validando: "doc.phase.validando",
+  corrigiendo: "doc.phase.corrigiendo",
+  listo: "doc.phase.listo",
 };
 
 function elapsed(fromIso: string, now: number): string {
@@ -73,6 +78,8 @@ function elapsed(fromIso: string, now: number): string {
 }
 
 export function DocumentsPage() {
+  const { t, tn, locale } = useLang();
+  const fecha = (iso: string) => fmtDate(iso, locale);
   const { activeCase, phase: casesPhase, error: casesError } = useActiveCase();
   // Una redacción corre en el servidor durante minutos: cuando publica el
   // informe, la lista lo enseña sin que haya que recargar la página. Los
@@ -250,11 +257,13 @@ export function DocumentsPage() {
           await refreshDocs(caseId);
           setSelectedId(snap.result.doc_id);
           showNotice(
-            `Informe ${snap.result.version} redactado (${snap.result.page_count} pág.). ` +
-              "Nace en BORRADOR: revísalo y fírmalo para darle validez pericial.",
+            t("doc.written", {
+              version: snap.result.version,
+              pages: snap.result.page_count,
+            }),
           );
         } else if (snap.status === "error") {
-          showNotice(snap.error ?? "La redacción del informe no pudo completarse.");
+          showNotice(snap.error ?? t("doc.writeFailed"));
         }
       } catch (err) {
         if (!cancelled) {
@@ -348,7 +357,7 @@ export function DocumentsPage() {
       const signed = await api.cases.signDocument(activeCase.id, selectedDoc.id);
       setSelectedDoc(signed);
       await refreshDocs(activeCase.id);
-      showNotice("Documento firmado y marcado como versión final.");
+      showNotice(t("doc.signed"));
     });
 
   const onDelete = () =>
@@ -400,32 +409,35 @@ export function DocumentsPage() {
   const blocker: string | null = running
     ? null
     : !executor
-      ? "Elige el modelo que redactará el informe: sin selección Agentopsy no llama a ninguno."
+      ? t("doc.blockNoExecutor")
       : executorStatus && !executorStatus.available
-        ? executorStatus.reason ?? `${executorStatus.name} no está disponible.`
+        ? executorStatus.reason ?? t("executor.notAvailable", { name: executorStatus.name })
         : findingCount === 0
-          ? "El caso no tiene ningún hallazgo registrado: no hay investigación que informar. Analiza la evidencia en Investigación primero."
+          ? t("doc.blockNoFindings")
           : null;
 
   usePublishShellHeader(
     {
-      title: "Informe pericial",
+      title: t("nav.report"),
       // Con cero documentos la cuenta no informa: el vacío ya lo dicen la
       // columna de la izquierda y el centro de la vista. Con documentos reales
       // sí es progreso, y cuántos están firmados es lo que separa un borrador
       // de un entregable.
       meta: !activeCase
-        ? "sin caso seleccionado"
+        ? t("common.noCase")
         : documents.length === 0
           ? undefined
-          : `${documents.length} documento${documents.length === 1 ? "" : "s"} · ${finals} firmado${finals === 1 ? "" : "s"}`,
+          : t("doc.headerMeta", {
+              docs: tn("count.documents", documents.length),
+              signed: tn("count.signed", finals),
+            }),
       action: selectedDoc ? (
         <button type="button" disabled={busy} onClick={() => void onDownload()}>
-          Descargar PDF
+          {t("doc.downloadPdf")}
         </button>
       ) : undefined,
     },
-    [activeCase?.id, documents.length, finals, selectedDoc?.id, busy, onDownload],
+    [activeCase?.id, documents.length, finals, selectedDoc?.id, busy, onDownload, t, tn],
   );
 
   if (casesPhase === "loading") {
@@ -433,7 +445,7 @@ export function DocumentsPage() {
       <div className="view-scroll">
         <div className="loading-state">
           <span className="spinner" aria-hidden="true" />
-          <span>Cargando informes del caso…</span>
+          <span>{t("doc.loading")}</span>
         </div>
       </div>
     );
@@ -443,7 +455,7 @@ export function DocumentsPage() {
     return (
       <div className="view-scroll">
         <div className="error-state">
-          <strong>No se pudieron cargar los documentos:</strong> {casesError}
+          <strong>{t("doc.loadFailed")}</strong> {casesError}
         </div>
       </div>
     );
@@ -453,10 +465,8 @@ export function DocumentsPage() {
     return (
       <div className="view-scroll">
         <div className="empty-rail">
-          <div className="empty-rail-title">Sin caso abierto</div>
-          <div className="empty-rail-body">
-            Los informes se redactan y se firman dentro de un caso. Abre uno desde el lateral.
-          </div>
+          <div className="empty-rail-title">{t("findings.noCase")}</div>
+          <div className="empty-rail-body">{t("doc.noCaseBody")}</div>
         </div>
       </div>
     );
@@ -465,17 +475,17 @@ export function DocumentsPage() {
   return (
     <div className="report">
       <div className="report-list">
-        <div className="eyebrow eyebrow--section">Documentos del caso</div>
+        <div className="eyebrow eyebrow--section">{t("doc.section")}</div>
 
         <label className="visually-hidden" htmlFor="docs-search">
-          Buscar documento
+          {t("doc.searchLabel")}
         </label>
         <input
           id="docs-search"
           className="field-input field-input--sm"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Buscar por título, evidencia o hash…"
+          placeholder={t("doc.searchPlaceholder")}
         />
 
         <div className="report-filters">
@@ -487,11 +497,11 @@ export function DocumentsPage() {
               aria-pressed={statusFilter === f}
               onClick={() => setStatusFilter(f)}
             >
-              {f === "all" ? "Todos" : f === "draft" ? "Borrador" : "Final"}
+              {t(f === "all" ? "doc.filterAll" : f === "draft" ? "doc.statusDraft" : "doc.statusFinal")}
             </button>
           ))}
           <label className="visually-hidden" htmlFor="docs-group">
-            Agrupar documentos
+            {t("doc.groupLabel")}
           </label>
           <select
             id="docs-group"
@@ -499,19 +509,17 @@ export function DocumentsPage() {
             value={groupBy}
             onChange={(e) => setGroupBy(e.target.value as GroupBy)}
           >
-            <option value="evidence">por evidencia</option>
-            <option value="type">por tipo</option>
-            <option value="none">sin agrupar</option>
+            <option value="evidence">{t("doc.groupEvidence")}</option>
+            <option value="type">{t("doc.groupType")}</option>
+            <option value="none">{t("doc.groupNone")}</option>
           </select>
         </div>
 
         <div className="report-docs">
           {documents.length === 0 ? (
-            <div className="inv-empty">
-              Aún no hay ningún informe. Se emite al finalizar la investigación, aquí abajo.
-            </div>
+            <div className="inv-empty">{t("doc.none")}</div>
           ) : filtered.length === 0 ? (
-            <div className="inv-empty">Ningún documento coincide con la búsqueda o el filtro.</div>
+            <div className="inv-empty">{t("doc.noMatch")}</div>
           ) : (
             groups.map((g) => (
               <div className="report-group-block" key={g.label || "all"}>
@@ -525,8 +533,8 @@ export function DocumentsPage() {
                   >
                     <span className="report-doc-title">{d.title}</span>
                     <span className="report-doc-meta">
-                      {d.status === "final" ? "final" : "borrador"} · {d.page_count} pág. ·{" "}
-                      {fmtDate(d.created_at)}
+                      {t(d.status === "final" ? "doc.statusFinalLower" : "doc.statusDraftLower")} ·{" "}
+                      {d.page_count} {t("doc.pagesShort")} · {fecha(d.created_at)}
                     </span>
                   </button>
                 ))}
@@ -537,20 +545,14 @@ export function DocumentsPage() {
 
         <div className="dashed-panel report-gen">
           <div className="dashed-panel-main">
-            <div className="dashed-panel-title">Finalizar investigación</div>
-            <div className="dashed-panel-body">
-              El modelo que elijas redacta el informe pericial COMPLETO a partir de todos los
-              hallazgos, evidencias, ejecuciones auditadas y veredictos ATT&CK del caso. Cada
-              informe es único: solo el índice es común. Agentopsy valida que el índice esté
-              entero, que ningún identificador ni hash sea inventado y que cada comando citado
-              sea el argv literal del log de auditoría.
-            </div>
+            <div className="dashed-panel-title">{t("doc.finalize")}</div>
+            <div className="dashed-panel-body">{t("doc.finalizeBody")}</div>
           </div>
 
           <div className="report-gen-fields">
             <div className="field">
               <label className="eyebrow" htmlFor="report-executor">
-                Modelo que redacta
+                {t("doc.writingModel")}
               </label>
               {/* Selección EXPLÍCITA del operador. Un ejecutor no disponible se
                   lista deshabilitado con su nombre, nunca se sustituye por
@@ -563,21 +565,21 @@ export function DocumentsPage() {
                 disabled={running}
                 onChange={(e) => selectExecutor(e.target.value as ExecutorId | "")}
               >
-                <option value="">Elige un ejecutor…</option>
+                <option value="">{t("executor.pick")}</option>
                 {executorEntries.map(([id, st]) => (
                   <option key={id} value={id} disabled={!st.available}>
-                    {st.available ? st.name : `${st.name} (no disponible)`}
-                    {st.local ? " · local" : ""}
+                    {st.available ? st.name : t("executor.unavailable", { name: st.name })}
+                    {st.local ? ` · ${t("executor.local")}` : ""}
                   </option>
                 ))}
               </select>
             </div>
 
-            <div className="eyebrow">Datos del perito (opcionales)</div>
+            <div className="eyebrow">{t("doc.peritoFields")}</div>
             {PERITO_FIELDS.map((f) => (
               <div className="field" key={f.key}>
                 <label className="eyebrow" htmlFor={`perito-${f.key}`}>
-                  {f.label}
+                  {t(f.labelKey)}
                 </label>
                 <input
                   id={`perito-${f.key}`}
@@ -585,7 +587,13 @@ export function DocumentsPage() {
                   value={perito[f.key] ?? ""}
                   disabled={running}
                   onChange={(e) => setPerito((p) => ({ ...p, [f.key]: e.target.value }))}
-                  placeholder={f.key === "name" ? activeCase.examiner : f.placeholder}
+                  placeholder={
+                    f.key === "name"
+                      ? activeCase.examiner
+                      : f.placeholderKey
+                        ? t(f.placeholderKey)
+                        : ""
+                  }
                 />
               </div>
             ))}
@@ -597,15 +605,20 @@ export function DocumentsPage() {
           {running && job && (
             <div className="progress-block">
               <div className="progress-head">
-                <span>{jobPhase ? PHASE_LABEL[jobPhase] ?? jobPhase : PHASE_LABEL.material}</span>
+                <span>
+                  {jobPhase
+                    ? PHASE_KEY[jobPhase]
+                      ? t(PHASE_KEY[jobPhase])
+                      : jobPhase
+                    : t("doc.phase.material")}
+                </span>
                 <span className="mono">{elapsed(job.created_at, now)}</span>
               </div>
               <div className="progress-track">
                 <div className="progress-fill progress-fill--indeterminate" />
               </div>
               <div className="progress-note">
-                Puedes cambiar de sección o cerrar la pestaña: la redacción corre en el servidor
-                y al volver aquí se retoma su progreso.
+                {t("doc.backgroundNote")}
               </div>
             </div>
           )}
@@ -615,11 +628,10 @@ export function DocumentsPage() {
               pasado nada» y el perito buscaría un informe que no existe. */}
           {job?.status === "error" && (
             <div className="danger-notice report-failure">
-              <strong>La redacción no llegó a publicarse</strong>
+              <strong>{t("doc.notPublished")}</strong>
               <div className="report-failure-reason">{job.error}</div>
               <div className="report-failure-reason">
-                No se ha guardado ningún documento: el informe se publica entero o no se
-                publica. Puedes volver a pulsar «Finalizar investigación».
+                {t("doc.notPublishedBody")}
               </div>
             </div>
           )}
@@ -632,7 +644,7 @@ export function DocumentsPage() {
             disabled={busy || running || blocker !== null}
             onClick={() => void onFinalize()}
           >
-            {running ? "Redactando informe…" : "Finalizar investigación"}
+            {t(running ? "doc.writing" : "doc.finalize")}
           </button>
         </div>
       </div>
@@ -643,21 +655,20 @@ export function DocumentsPage() {
         {!selectedDoc ? (
           <div className="empty-rail">
             <div className="empty-rail-title">
-              {documents.length === 0 ? "Sin informe todavía" : "Ningún documento abierto"}
+              {t(documents.length === 0 ? "doc.noReportYet" : "doc.noneOpen")}
             </div>
             <div className="empty-rail-body">
-              {documents.length === 0
-                ? "El informe pericial se emite una sola vez, cuando la investigación termina: pulsa «Finalizar investigación» en el panel de la izquierda y el modelo seleccionado lo redactará de principio a fin desde los hallazgos y las evidencias del caso."
-                : "Elige un documento de la lista para leerlo, verificar su integridad y descargarlo en PDF."}
+              {t(documents.length === 0 ? "doc.noReportYetBody" : "doc.pickToRead")}
             </div>
           </div>
         ) : (
           <div className="report-doc-body">
             <div className="report-metarow">
               <span>
-                {selectedDoc.id.slice(0, 8)} · {selectedDoc.status === "final" ? "final" : "borrador"}
+                {selectedDoc.id.slice(0, 8)} ·{" "}
+                {t(selectedDoc.status === "final" ? "doc.statusFinalLower" : "doc.statusDraftLower")}
               </span>
-              <span>{selectedDoc.page_count} páginas</span>
+              <span>{t("doc.pages", { count: selectedDoc.page_count })}</span>
               <span title={selectedDoc.sha256}>sha256 {shortHash(selectedDoc.sha256)}</span>
               <span>{selectedDoc.version}</span>
               <span>{selectedDoc.author}</span>
@@ -665,13 +676,13 @@ export function DocumentsPage() {
 
             <div className="report-actions">
               <button type="button" className="link-action" disabled={busy} onClick={onVerify}>
-                Verificar integridad
+                {t("doc.verifyIntegrity")}
               </button>
               {/* Un documento FINAL no se borra: es cadena de custodia. */}
               {selectedDoc.status === "draft" && (
                 <>
                   <button type="button" className="link-action" disabled={busy} onClick={onSign}>
-                    Firmar y marcar final
+                    {t("doc.signAsFinal")}
                   </button>
                   <button
                     type="button"
@@ -679,7 +690,7 @@ export function DocumentsPage() {
                     disabled={busy}
                     onClick={onDelete}
                   >
-                    Eliminar borrador
+                    {t("doc.deleteDraft")}
                   </button>
                 </>
               )}
@@ -692,8 +703,11 @@ export function DocumentsPage() {
               <div className={`verify-line${verify.ok ? " is-ok" : " is-bad"}`}>
                 <Icon name={verify.ok ? "check" : "cross"} size={13} />{" "}
                 {verify.ok
-                  ? `Integridad verificada · el SHA-256 recalculado coincide con el de registro (${shortHash(verify.registered_sha256)})`
-                  : `El SHA-256 recalculado (${shortHash(verify.recomputed_sha256)}) NO coincide con el de registro (${shortHash(verify.registered_sha256)}). El documento ha cambiado desde que se registró.`}
+                  ? t("doc.verifyOk", { hash: shortHash(verify.registered_sha256) })
+                  : t("doc.verifyBad", {
+                      got: shortHash(verify.recomputed_sha256),
+                      want: shortHash(verify.registered_sha256),
+                    })}
               </div>
             )}
 
@@ -716,9 +730,9 @@ export function DocumentsPage() {
 
             <div className="report-foot">
               <span>
-                Generado por Agentopsy ·{" "}
-                {selectedDoc.status === "final" ? "Firmado" : "Borrador"} ·{" "}
-                {fmtDate(selectedDoc.created_at)}
+                {t("doc.footGenerated")} ·{" "}
+                {t(selectedDoc.status === "final" ? "doc.footSigned" : "doc.statusDraft")} ·{" "}
+                {fecha(selectedDoc.created_at)}
               </span>
               <span>SHA-256 {shortHash(selectedDoc.sha256)}</span>
             </div>
@@ -729,15 +743,16 @@ export function DocumentsPage() {
   );
 }
 
-const SEV_LABEL: Record<string, string> = {
-  critical: "Crítica",
-  high: "Alta",
-  medium: "Media",
-  low: "Baja",
+const SEV_KEY: Record<string, MessageKey> = {
+  critical: "tl.sev.critical",
+  high: "tl.sev.high",
+  medium: "tl.sev.medium",
+  low: "tl.sev.low",
 };
 
 // Bloques del documento. SEC INV 8: todo se pinta como TEXTO.
 function Block({ b }: { b: DocumentBlock }) {
+  const { t } = useLang();
   switch (b.t) {
     case "p":
       return <p className="report-p">{b.text}</p>;
@@ -809,7 +824,9 @@ function Block({ b }: { b: DocumentBlock }) {
           }`}
         >
           <div className="report-finding-head">
-            <span className="tag tag--accent">{SEV_LABEL[b.sev ?? "low"] ?? b.sev}</span>
+            <span className="tag tag--accent">
+              {SEV_KEY[b.sev ?? "low"] ? t(SEV_KEY[b.sev ?? "low"]) : b.sev}
+            </span>
             <span className="report-finding-title">{b.title}</span>
             {b.tags && b.tags.length > 0 && (
               <span className="report-finding-tags">{b.tags.join(" · ")}</span>

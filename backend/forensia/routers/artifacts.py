@@ -12,6 +12,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from forensia.i18n import traducir_excepcion
 from forensia.artifacts.store import artifact_store
 from forensia.security import require_token
 
@@ -27,9 +28,9 @@ def list_artifacts(case_id: str) -> list[dict[str, Any]]:
     try:
         runs = artifact_store.list_runs(case_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
     return [_run_dict(r) for r in runs]
 
 
@@ -41,7 +42,7 @@ def get_artifact(case_id: str, run_id: str) -> dict[str, Any]:
     try:
         run = artifact_store.get_run(case_id, run_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
     return _run_dict(run)

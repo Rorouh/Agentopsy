@@ -21,6 +21,7 @@ import urllib.error
 
 import pytest
 
+from forensia.i18n import t
 from forensia.toolkit import maletin
 from forensia.toolkit.maletin import TOOLKIT_UNIX, TOOLKIT_WINDOWS
 from forensia.toolkit.tool import Tool
@@ -82,7 +83,13 @@ def test_probe_service_error_status_is_inaccessible(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(maletin, "_request", lambda m, u, p=None: (503, {}))
     out = maletin.probe_service(TOOLKIT_UNIX, base_url=_UNIX_URL)
     assert out["running"] is False
-    assert "inaccesible" in out["reason"]
+    assert out["reason"] == t(
+        "maletin.probeStatus",
+        None,
+        url="http://toolkit-unix:8666",
+        status=503,
+        name="forensia-toolkit-unix",
+    )
 
 
 def test_probe_service_transport_failure_is_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -92,7 +99,7 @@ def test_probe_service_transport_failure_is_unknown(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(maletin, "_request", _boom)
     out = maletin.probe_service(TOOLKIT_UNIX, base_url=_UNIX_URL)
     assert out["running"] is None
-    assert "no se pudo consultar" in out["reason"]
+    assert out["reason"].startswith(t("maletin.probeFailed", None, url="", error="", name="")[:16])
 
 
 # --------------------------------------------------------------------------- #
@@ -155,7 +162,7 @@ def test_env_override_wins_over_maletin(monkeypatch: pytest.MonkeyPatch) -> None
     assert out["via"] == "env-override-or-api-path"
     # …but it has NO build-manifest version identity: anchored runs need the maletín.
     assert out["version"] is None
-    assert "manifiesto" in out["version_reason"]
+    assert out["version_reason"] == t("maletin.viaPathNoManifest")
 
 
 def test_rule2_no_fallback_between_maletines(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -209,7 +216,7 @@ def test_tool_without_declared_toolkit_is_unavailable(monkeypatch: pytest.Monkey
     orphan = Tool("orphan", "orphan", ("unix",), toolkits=())
     out = maletin._tool_status(orphan, services={}, present={}, versions={})
     assert out["available"] is False
-    assert "no declara maletín" in out["reason"]
+    assert out["reason"] == t("maletin.noToolkitDeclared", None, tool="orphan")
 
 
 # --------------------------------------------------------------------------- #

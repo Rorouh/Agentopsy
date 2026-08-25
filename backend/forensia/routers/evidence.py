@@ -10,6 +10,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
+from forensia.i18n import traducir_excepcion
 from forensia.custody import build_custody_act
 from forensia.evidence import evidence_manager, list_source_files, save_uploaded_source
 from forensia.security import require_token
@@ -26,7 +27,7 @@ def sources() -> dict:
     try:
         return {"sources": list_source_files()}
     except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail=traducir_excepcion(exc)) from exc
 
 
 @router.post("/api/evidence/upload", dependencies=[Depends(require_token)])
@@ -43,11 +44,11 @@ def upload_source(file: UploadFile = File(...)) -> dict:
     try:
         return save_uploaded_source(file.filename or "", file.file)
     except FileExistsError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
     except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail=traducir_excepcion(exc)) from exc
 
 
 @router.get(
@@ -63,9 +64,9 @@ def evidence_metadata(case_id: str, evidence_id: str) -> dict[str, Any]:
     try:
         return evidence_manager.metadata(case_id, evidence_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
 
 
 @router.get(
@@ -82,6 +83,6 @@ def custody_act(case_id: str, evidence_id: str) -> dict[str, Any]:
     try:
         return build_custody_act(case_id, evidence_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc

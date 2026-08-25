@@ -61,6 +61,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import BinaryIO
 
+from forensia.i18n import Mensaje, t
 from forensia.audit.log import AuditLog
 from forensia.cases import CaseManager, case_manager
 from forensia.triage import (
@@ -108,11 +109,11 @@ _STAGING_PREFIX = ".registrando-"
 # is NOT implemented (see the module docstring). RULE 2 — never advertise a
 # guarantee we don't enforce.
 READ_ONLY_LEVEL = "fs"
-READ_ONLY_LEVEL_LABELS: dict[str, str] = {
-    "fs": (
-        "Solo lectura a nivel de sistema de ficheros (chmod 0444); "
-        "bloqueo a nivel de bloque pendiente (Fase 2)"
-    ),
+#: Cómo se NOMBRA cada nivel de solo-lectura en el acta. El nivel en sí
+#: (``READ_ONLY_LEVEL``) es dato de custodia y no se traduce nunca; esto es sólo
+#: la frase que lee el perito, y por eso vive en el catálogo de idiomas.
+READ_ONLY_LEVEL_KEYS: dict[str, str] = {
+    "fs": "custody.readOnlyFs",
 }
 
 
@@ -496,9 +497,12 @@ def _discover_ewf_segment_set(first: Path) -> list[Path]:
     missing = [i for i in range(1, top + 1) if i not in found]
     if missing:
         raise ValueError(
-            f"EWF set incompleto para {stem!r}: faltan los segmentos {missing} "
-            f"(presentes {sorted(found)}). Un conjunto EWF debe ser contiguo desde "
-            ".E01; no se registra un set parcial (RULE 2)."
+            Mensaje(
+                "evidence.ewfIncomplete",
+                stem=repr(stem),
+                missing=missing,
+                found=sorted(found),
+            )
         )
     return [found[i] for i in range(1, top + 1)]
 
@@ -537,10 +541,7 @@ class EvidenceManager:
         #    registering more evidence into it needs an explicit reopen first.
         case = self._cases.load(case_id)
         if case.status != "active":
-            raise ValueError(
-                f"case {case_id} is closed, reopen it (POST /api/cases/{case_id}"
-                "/reopen) before registering evidence"
-            )
+            raise ValueError(Mensaje("evidence.caseClosed", case_id=case_id))
         case_dir = self._cases.case_dir(case_id)
 
         # 2. Canonicalize source; reject if missing, non-file, or a symlink.
@@ -571,10 +572,7 @@ class EvidenceManager:
             is_multi_segment = True
         elif _is_ewf_middle_segment(suffix):
             raise ValueError(
-                f"{src.name} is a non-first EWF segment. Register the first segment "
-                f"of the set (…{suffix[:2]}01) instead, Agentopsy ingests the whole "
-                "co-located set from it; a middle segment alone cannot assemble the "
-                "image (RULE 2)."
+                Mensaje("evidence.notFirstSegment", name=src.name, suffix=suffix[:2])
             )
         else:
             segment_sources = [src]
@@ -998,7 +996,7 @@ class EvidenceManager:
             "total_size_human": human_readable_size(handle.total_size),
             "registered_at": handle.registered_at,
             "read_only_level": READ_ONLY_LEVEL,
-            "read_only_label": READ_ONLY_LEVEL_LABELS[READ_ONLY_LEVEL],
+            "read_only_label": t(READ_ONLY_LEVEL_KEYS[READ_ONLY_LEVEL]),
             "detected_os": handle.detected_os,
             "detected_kind": handle.detected_kind,
             # The segment set for an EWF ``.E01`` evidence (each file + its own
@@ -1323,19 +1321,10 @@ def _inbox_root() -> Path:
     nunca un directorio adivinado."""
     root_env = os.environ.get("FORENSIA_EVIDENCE_DIR")
     if not root_env:
-        raise RuntimeError(
-            "FORENSIA_EVIDENCE_DIR no está definido: no hay bandeja de evidencias. "
-            "En el compose la fija el servicio api (/evidence, montado desde "
-            "./evidence del repo). En modo standalone, exporta la variable "
-            "apuntando a tu carpeta de evidencias."
-        )
+        raise RuntimeError(Mensaje("evidence.inboxUndefined"))
     root = Path(root_env).resolve()
     if not root.is_dir():
-        raise RuntimeError(
-            f"FORENSIA_EVIDENCE_DIR apunta a {root}, que no existe o no es un "
-            "directorio. Crea la carpeta (./evidence en el repo, si usas el "
-            "compose) y deja dentro las imágenes a registrar."
-        )
+        raise RuntimeError(Mensaje("evidence.inboxMissing", root=root))
     return root
 
 
@@ -1371,39 +1360,27 @@ def save_uploaded_source(filename: str, stream: BinaryIO) -> dict:
 
     name = (filename or "").strip()
     if not name:
-        raise ValueError("El fichero subido no tiene nombre.")
+        raise ValueError(Mensaje("evidence.uploadNoName"))
     if name.startswith(".") or "/" in name or "\\" in name or ".." in name:
-        raise ValueError(
-            f"Nombre de fichero no válido: {name!r}. Debe ser un nombre simple, "
-            "sin rutas, sin '..' y sin punto inicial."
-        )
+        raise ValueError(Mensaje("evidence.uploadBadName", name=repr(name)))
     ext = Path(name).suffix.lower()
     if not is_uploadable_evidence_ext(ext):
         raise ValueError(
-            f"La bandeja no reconoce la extensión {ext}. Acepta imágenes y "
-            "volcados ("
-            + ", ".join(sorted(_IMAGE_AND_DUMP_EXTENSIONS))
-            + "), los segmentos de continuación de un EWF segmentado (.E02 … "
-            ".E99 / .Ex02 …) junto a su .E01, ficheros sin extensión, y material "
-            "aportado: documentos ("
-            + ", ".join(sorted(_DOCUMENT_EXTENSIONS))
-            + "), imagen y audiovisual ("
-            + ", ".join(sorted(_MEDIA_EXTENSIONS))
-            + ") y artefactos sueltos ("
-            + ", ".join(sorted(_ARTIFACT_EXTENSIONS))
-            + "). Si este fichero aporta al caso aun sin estar en la lista, "
-            "cópialo a la carpeta ./evidence del repositorio: la bandeja lista "
-            "todo lo que hay ahí y desde ahí se registra igual."
+            Mensaje(
+                "evidence.uploadBadExt",
+                ext=ext,
+                images=", ".join(sorted(_IMAGE_AND_DUMP_EXTENSIONS)),
+                documents=", ".join(sorted(_DOCUMENT_EXTENSIONS)),
+                media=", ".join(sorted(_MEDIA_EXTENSIONS)),
+                artifacts=", ".join(sorted(_ARTIFACT_EXTENSIONS)),
+            )
         )
 
     dest = (root / name).resolve()
     if dest.parent != root:
-        raise ValueError(f"Ruta de destino fuera de la bandeja: {name!r}.")
+        raise ValueError(Mensaje("evidence.uploadOutsideInbox", name=repr(name)))
     if dest.exists():
-        raise FileExistsError(
-            f"Ya hay una evidencia llamada {name!r} en la bandeja. Renómbrala o "
-            "elimínala antes de volver a subirla (nunca se sobrescribe evidencia)."
-        )
+        raise FileExistsError(Mensaje("evidence.uploadExists", name=repr(name)))
 
     partial = root / f".subiendo-{uuid.uuid4().hex}-{name}"
     try:

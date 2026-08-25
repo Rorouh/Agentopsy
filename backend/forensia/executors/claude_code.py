@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import json
 
+from forensia.i18n import Mensaje, t
 from forensia.executors.base import (
     CliPromptExecutor,
     ExecutorAvailability,
@@ -52,20 +53,17 @@ from forensia.executors.base import (
 # `agentes/agent.md` — el ÚNICO fichero de conducta); esto solo fija la
 # identidad y remite al contrato. Estable a propósito: cambia el prefijo de
 # caché de TODAS las sesiones si se toca.
-_SYSTEM_PROMPT = (
-    "Eres el motor de razonamiento de Agentopsy, una herramienta de análisis "
-    "forense digital post-mortem. No eres un asistente de programación y no "
-    "tienes herramientas propias: tu única interfaz es el contrato de "
-    "respuesta que el mensaje especifica. Síguelo al pie de la letra."
-)
+def _system_prompt() -> str:
+    """La identidad mínima con la que Agentopsy sustituye el prompt del CLI.
 
-_LOGIN_HINT = (
-    "Inicia sesión UNA VEZ dentro del contenedor: "
-    "`docker compose exec -it api claude auth login` (la sesión persiste en el "
-    "volumen forensia-cli-auth; se revoca con `docker compose down -v`). Si "
-    "ejecutas el backend fuera del compose, ejecuta `claude auth login` en esa "
-    "máquina."
-)
+    Va en el idioma del agente: es lo primero que el modelo lee y contradecirlo
+    con una lengua distinta a la del resto del prompt no ayuda a nadie.
+    """
+    return t("claude.systemPrompt")
+
+def _login_hint() -> str:
+    """El comando de login, en el idioma en curso (clave `claude.loginHint`)."""
+    return t("claude.loginHint")
 
 #: Marcas de un fallo de AUTENTICACIÓN en el mensaje que devuelve el propio CLI.
 #: Se usan junto al `api_error_status`, no en su lugar: el estado HTTP es la señal
@@ -79,16 +77,8 @@ _AUTH_ERROR_MARKERS = (
     "invalid api key",
 )
 
-_EXPIRED_SESSION_HINT = (
-    "La sesión de Claude Code guardada en el volumen forensia-cli-auth ya no es "
-    "válida (caducada o revocada). Renuévala SIN salir de la aplicación: "
-    "Configuración, Ejecutores / IA, despliega Claude Code y pulsa «Renovar "
-    "sesión de Claude Code»; el diálogo te da la URL que abrir y te pide pegar "
-    "de vuelta el código que devuelve el navegador. Ojo: `claude auth status` "
-    "sigue devolviendo `loggedIn: true` con un token caducado, así que el "
-    "ejecutor puede aparecer como disponible hasta que se intenta una corrida. "
-    "Si prefieres la terminal: " + _LOGIN_HINT
-)
+def _expired_session_hint() -> str:
+    return t("claude.expiredHint", hint=_login_hint())
 
 
 def _is_auth_failure(message: str, status: int | None) -> bool:
@@ -116,7 +106,7 @@ class ClaudeCodeExecutor(CliPromptExecutor):
         logged_in, detail = self._probe_auth_command(["claude", "auth", "status"])
         if logged_in:
             return ExecutorAvailability(available=True)
-        reason = f"Claude Code no tiene sesión iniciada. {_LOGIN_HINT}"
+        reason = t("claude.noSession", hint=_login_hint())
         if detail:
             reason += f" (detalle de `claude auth status`: {detail})"
         return ExecutorAvailability(available=False, reason=reason)
@@ -146,7 +136,7 @@ class ClaudeCodeExecutor(CliPromptExecutor):
         argv += [
             "--tools", "",
             "--setting-sources", "",
-            "--system-prompt", _SYSTEM_PROMPT,
+            "--system-prompt", _system_prompt(),
         ]
         argv += ["--output-format", "json"]
         return argv
@@ -161,18 +151,19 @@ class ClaudeCodeExecutor(CliPromptExecutor):
             envelope = json.loads(stdout)
         except json.JSONDecodeError as exc:
             raise ExecutorError(
-                "Claude Code no devolvió el JSON esperado con --output-format json. "
-                f"stdout (muestra): {stdout.strip()[:500]!r}"
+                Mensaje("claude.noJson", sample=repr(stdout.strip()[:500]))
             ) from exc
         if not isinstance(envelope, dict):
             raise ExecutorError(
-                f"Claude Code devolvió {type(envelope).__name__} en vez de un objeto JSON"
+                Mensaje("claude.notAnObject", kind=type(envelope).__name__)
             )
         if envelope.get("is_error"):
             detail = self._envelope_error(envelope)
             raise ExecutorError(
-                "Claude Code reportó is_error=true: "
-                f"{detail or str(envelope.get('result'))[:500]}"
+                Mensaje(
+                    "claude.isError",
+                    detail=detail or str(envelope.get("result"))[:500],
+                )
             )
         result = envelope.get("result")
         if not isinstance(result, str):
@@ -191,11 +182,11 @@ class ClaudeCodeExecutor(CliPromptExecutor):
         if not message and status is None:
             return None
         if not message:
-            message = f"la API devolvió el estado {status}"
+            message = t("claude.apiStatus", status=status)
         elif status is not None:
             message = f"{message} (api_error_status={status})"
         if _is_auth_failure(message, status):
-            return f"{message[:800]} {_EXPIRED_SESSION_HINT}"
+            return f"{message[:800]} {_expired_session_hint()}"
         return message[:1200]
 
     def _extract_error(self, stdout: str, stderr: str) -> str | None:

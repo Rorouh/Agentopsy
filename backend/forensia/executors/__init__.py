@@ -7,6 +7,7 @@ feeds ``/api/capabilities`` so the UI can degrade explicitly per executor.
 
 from __future__ import annotations
 
+from forensia.i18n import Mensaje, t, traducir_excepcion
 from forensia.executors.base import (
     DEFAULT_TIMEOUT_S,
     ExecutorAvailability,
@@ -64,8 +65,11 @@ def get_executor(executor_id: str) -> PromptExecutor:
     factory = _FACTORIES.get(executor_id)
     if factory is None:
         raise ValueError(
-            f"ejecutor desconocido {executor_id!r}. Válidos: {', '.join(EXECUTOR_IDS)} "
-            "(RULE 2: Agentopsy no sustituye por un default)."
+            Mensaje(
+                "executor.unknown",
+                id=repr(executor_id),
+                ids=", ".join(EXECUTOR_IDS),
+            )
         )
     return factory()
 
@@ -100,7 +104,7 @@ def executor_models(executor_id: str) -> dict[str, object]:
             models = executor.list_models()
             note: str | None = None
         except ExecutorError as exc:
-            models, note = [], str(exc)
+            models, note = [], traducir_excepcion(exc)
         return {
             "executor": executor_id,
             "editable": True,
@@ -121,11 +125,7 @@ def executor_models(executor_id: str) -> dict[str, object]:
             "model_details": [entry.as_dict() for entry in catalog],
             "reasoning": {
                 "config_key": REASONING_CONFIG_KEY["codex"],
-                "note": (
-                    "La potencia se pasa como `-c model_reasoning_effort`. Los "
-                    "niveles dependen del modelo (solo la generación 5.6 llega a "
-                    "«ultra»). Sin elegir manda el nivel configurado en el CLI."
-                ),
+                "note": t("executor.reasoningNote"),
             },
         }
     # `note` queda RESERVADO para diagnósticos: por qué la lista viene vacía o

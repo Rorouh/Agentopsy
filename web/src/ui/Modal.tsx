@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 import type { ReactNode } from "react";
 
+import { useT } from "../i18n";
+
 interface ModalProps {
   open: boolean;
   title: string;
@@ -34,6 +36,7 @@ export function Modal({
   footerHint,
   panelClassName,
 }: ModalProps) {
+  const t = useT();
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -60,7 +63,7 @@ export function Modal({
             <h3>{title}</h3>
             {subtitle && <div className="modal-subtitle">{subtitle}</div>}
           </div>
-          <button type="button" className="modal-close" aria-label="Cerrar" onClick={onClose}>
+          <button type="button" className="modal-close" aria-label={t("common.close")} onClick={onClose}>
             ×
           </button>
         </div>

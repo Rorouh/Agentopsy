@@ -25,6 +25,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from forensia.i18n import Mensaje
 from forensia.audit.log import AuditLog
 from forensia.cases import CaseManager, case_manager
 
@@ -117,13 +118,17 @@ class GraphStore:
         revs = self.revisions(case_id, finding_id)
         if not revs:
             raise KeyError(
-                f"el hallazgo {finding_id} no tiene grafo extraído en el caso {case_id}"
+                Mensaje("graphStore.noGraph", finding_id=finding_id, case_id=case_id)
             )
         rev = revs[-1] if revision is None else int(revision)
         if rev not in revs:
             raise KeyError(
-                f"el hallazgo {finding_id} no tiene la revisión v{rev} "
-                f"(existen: {', '.join(f'v{r}' for r in revs)})"
+                Mensaje(
+                    "graphStore.noRevision",
+                    finding_id=finding_id,
+                    rev=rev,
+                    revs=", ".join(f"v{r}" for r in revs),
+                )
             )
         path = self._dir(case_id) / f"{finding_id}.v{rev}.json"
         return Graph(**json.loads(path.read_text(encoding="utf-8")))

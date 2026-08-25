@@ -19,6 +19,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from forensia.i18n import traducir_excepcion
 from forensia.executors.login import (
     LoginError,
     LoginRelayUnsupported,
@@ -54,13 +55,13 @@ def start(executor_id: str, force: bool = False) -> dict[str, Any]:
     except LoginRelayUnsupported as exc:
         raise HTTPException(
             status_code=409,
-            detail=str(exc),
+            detail=traducir_excepcion(exc),
             headers={"X-Forensia-Manual-Command": exc.manual_command},
         ) from exc
     except ValueError as exc:  # unknown / non-cloud id
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
     except LoginError as exc:  # already logged in / unparseable output / launch failure
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=traducir_excepcion(exc)) from exc
 
 
 @router.get("/api/executors/{executor_id}/login/status", dependencies=[Depends(require_token)])
@@ -68,7 +69,7 @@ def status(executor_id: str) -> dict[str, Any]:
     try:
         return login_status(executor_id)
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
 
 
 @router.post("/api/executors/{executor_id}/login/code", dependencies=[Depends(require_token)])
@@ -76,9 +77,9 @@ def code(executor_id: str, req: SubmitCodeRequest) -> dict[str, Any]:
     try:
         return submit_code(executor_id, req.code)
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
     except LoginError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=traducir_excepcion(exc)) from exc
 
 
 @router.post("/api/executors/{executor_id}/login/cancel", dependencies=[Depends(require_token)])
@@ -86,4 +87,4 @@ def cancel(executor_id: str) -> dict[str, Any]:
     try:
         return cancel_login(executor_id)
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc

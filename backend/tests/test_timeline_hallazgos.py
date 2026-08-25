@@ -15,6 +15,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
+from forensia.i18n import LANG_HEADER, t
 from forensia.cases.manager import CaseManager
 from forensia.findings.store import Finding, FindingStore
 from forensia.server import create_app
@@ -160,7 +161,9 @@ def test_a_case_whose_findings_cannot_be_placed_says_why_instead_of_showing_noth
 
     assert tl["eventos"] == []
     assert tl["message"]
-    assert "sin marca temporal" in tl["message"]
+    # El mensaje sale en el idioma en curso, así que se fija por lo que declara
+    # el catálogo: que el motivo es la falta de marca temporal del artefacto.
+    assert t("incidentTl.noObservedAt", None, count=1) in tl["message"]
 
     con_eventos = assemble_findings_timeline([_finding("f1", observed_at="2021-03-18T01:13:54Z")], {})
     assert con_eventos["message"] is None
@@ -176,7 +179,7 @@ def test_severity_is_labelled_from_the_single_table() -> None:
     anexos del mismo informe. Se comprueba contra la tabla misma, no contra literales
     copiados aquí.
     """
-    from forensia.timeline.vocabulario import SEVERITY_LABEL
+    from forensia.timeline.vocabulario import SEVERITY_KEY
 
     findings = [
         _finding(f"f{i}", observed_at=f"2021-03-1{i}T01:00:00Z", severity=sev)
@@ -187,10 +190,10 @@ def test_severity_is_labelled_from_the_single_table() -> None:
 
     assert [e["severity"] for e in tl["eventos"]] == ["low", "medium", "high", "critical"]
     assert [e["severity_label"] for e in tl["eventos"]] == [
-        SEVERITY_LABEL["low"],
-        SEVERITY_LABEL["medium"],
-        SEVERITY_LABEL["high"],
-        SEVERITY_LABEL["critical"],
+        t(SEVERITY_KEY["low"]),
+        t(SEVERITY_KEY["medium"]),
+        t(SEVERITY_KEY["high"]),
+        t(SEVERITY_KEY["critical"]),
     ]
 
 
@@ -305,7 +308,13 @@ def test_http_a_case_without_findings_answers_with_an_actionable_message(
     assert body["eventos"] == []
     assert body["timezone"] == "UTC"
     assert body["total_hallazgos"] == 0
-    assert "no tiene hallazgos registrados" in body["message"]
+    assert body["message"] == t("incidentTl.noFindings", "en")
+    # Y en castellano dice lo suyo, con la misma clave.
+    es = client.get(
+        f"/api/cases/{case.id}/timeline/findings",
+        headers={**auth, LANG_HEADER: "es"},
+    ).json()
+    assert "no tiene hallazgos registrados" in es["message"]
 
 
 def test_http_serves_the_incident_axis_with_what_stayed_out(client, auth, cases) -> None:
@@ -333,7 +342,7 @@ def test_http_serves_the_incident_axis_with_what_stayed_out(client, auth, cases)
     body = res.json()
     assert len(body["eventos"]) == 1
     assert body["eventos"][0]["ts"] == "2021-03-23T19:07:38Z"
-    assert body["eventos"][0]["severity_label"] == "Alta"
+    assert body["eventos"][0]["severity_label"] == t("tlvoc.sev.high", "en")
     assert body["sin_observed_at"] == 1
     assert body["no_parseable"] == 0
     assert body["message"] is None

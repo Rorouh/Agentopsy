@@ -6,6 +6,7 @@ import { useActiveCase } from "../state/activeCase";
 import { useCaseEvidence } from "../state/caseEvidence";
 import { useCaseStream } from "../state/casePulse";
 import { usePublishShellHeader } from "../layout/shellHeader";
+import { useLang, type MessageKey } from "../i18n";
 import { Icon } from "../ui/Icon";
 import { ChatPage } from "./ChatPage";
 
@@ -17,11 +18,11 @@ interface InvestigationPageProps {
   onCapsRefresh?: () => Promise<void> | void;
 }
 
-const SEVERITY_LABEL: Record<AgentFinding["severity"], string> = {
-  low: "baja",
-  medium: "media",
-  high: "alta",
-  critical: "crítica",
+const SEVERITY_KEY: Record<AgentFinding["severity"], MessageKey> = {
+  low: "severity.low",
+  medium: "severity.medium",
+  high: "severity.high",
+  critical: "severity.critical",
 };
 
 // FASE 2 · Investigación. Envuelve el chat con el panel de contexto: hallazgos
@@ -37,6 +38,7 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
   // El panel de contexto se refresca tras cada turno del chat, pero un análisis
   // en SEGUNDO PLANO sigue corriendo cuando el perito se va a otra sección y
   // vuelve: el pulso es lo que lo mantiene al día en ese caso.
+  const { t, tn } = useLang();
   const revPanel = useCaseStream("findings", "audit");
   const [findings, setFindings] = useState<AgentFinding[]>([]);
   const [toolUsage, setToolUsage] = useState<ToolUsage[]>([]);
@@ -96,11 +98,11 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
 
   usePublishShellHeader(
     {
-      title: "Investigación",
+      title: t("nav.investigation"),
       // La evidencia ya no viaja aquí: vive en el panel derecho, donde cabe
       // entera y puede decir además si está verificada. La cabecera se queda
       // con el título y la salida de fase.
-      meta: activeCase ? undefined : "sin caso seleccionado",
+      meta: activeCase ? undefined : t("common.noCase"),
       action:
         onNavigate && activeCase ? (
           // Apagada mientras no haya nada que correlacionar: siendo la única
@@ -111,16 +113,16 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
             disabled={findings.length === 0}
             title={
               findings.length === 0
-                ? "Todavía no hay hallazgos que correlacionar"
+                ? t("inv.nothingToCorrelate")
                 : undefined
             }
             onClick={() => onNavigate("mitre")}
           >
-            Pasar a ATT&amp;CK →
+            {t("inv.goToAttack")} →
           </button>
         ) : undefined,
     },
-    [activeCase?.id, findings.length],
+    [activeCase?.id, findings.length, t],
   );
 
   if (casesPhase === "loading") {
@@ -128,7 +130,7 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
       <div className="view-scroll">
         <div className="loading-state">
           <span className="spinner" aria-hidden="true" />
-          <span>Cargando contexto del caso…</span>
+          <span>{t("inv.loadingContext")}</span>
         </div>
       </div>
     );
@@ -138,7 +140,7 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
     return (
       <div className="view-scroll">
         <div className="error-state">
-          <strong>No se pudo cargar el caso activo:</strong> {casesError}
+          <strong>{t("findings.loadCaseFailed")}</strong> {casesError}
         </div>
       </div>
     );
@@ -148,16 +150,13 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
     return (
       <div className="view-scroll">
         <div className="empty-rail">
-          <div className="empty-rail-title">Sin caso abierto</div>
-          <div className="empty-rail-body">
-            Abre uno con «Nuevo caso» en el lateral y regístrale evidencia antes de investigar:
-            el agente solo trabaja sobre un handle hash-verificado.
-          </div>
+          <div className="empty-rail-title">{t("findings.noCase")}</div>
+          <div className="empty-rail-body">{t("inv.noCaseBody")}</div>
         </div>
         {onNavigate && (
           <div className="cta-row">
             <button type="button" className="link-action" onClick={() => onNavigate("repository")}>
-              Ir a Evidencia →
+              {t("findings.goToEvidence")} →
             </button>
           </div>
         )}
@@ -177,21 +176,17 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
       ? activeEvidence.detected_os
       : null;
 
-  const toolTotal = toolUsage.reduce((n, t) => n + t.total, 0);
+  const toolTotal = toolUsage.reduce((n, u) => n + u.total, 0);
 
   return (
     <div className="investigation">
       {profileMismatch && (
         <div className="mismatch-banner">
-          <strong>
-            Desajuste de perfil: el agente activo no es el adecuado para esta evidencia.
-          </strong>{" "}
-          El caso declara <code>perfil = {activeCase.os_profile}</code> pero la determinación
-          sobre el contenido de la evidencia dice <code>{profileMismatch}</code>. El agente del
-          caso (<code>forensia-{activeCase.os_profile}</code>) se negará a invocar herramientas
-          mientras siga el desacuerdo. Resuélvelo en <strong>Evidencia → Sistema operativo</strong>:
-          al anclar el perfil, Agentopsy re-enruta solo al sub-agente que corresponde. No lo
-          cambia por ti (RULE 2, un desacuerdo lo decide el operador, no el programa).
+          <strong>{t("inv.mismatchLead")}</strong>{" "}
+          {t("inv.mismatchBodyA")} <code>{activeCase.os_profile}</code>{" "}
+          {t("inv.mismatchBodyB")} <code>{profileMismatch}</code>. {t("inv.mismatchBodyC")}{" "}
+          (<code>forensia-{activeCase.os_profile}</code>) {t("inv.mismatchBodyD")}{" "}
+          <strong>{t("inv.mismatchPath")}</strong>: {t("inv.mismatchBodyE")}
         </div>
       )}
 
@@ -208,10 +203,8 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
           <button
             type="button"
             className="inv-aside-toggle"
-            title={panelOpen ? "Plegar el panel de contexto" : "Desplegar el panel de contexto"}
-            aria-label={
-              panelOpen ? "Plegar el panel de contexto" : "Desplegar el panel de contexto"
-            }
+            title={t(panelOpen ? "inv.collapsePanel" : "inv.expandPanel")}
+            aria-label={t(panelOpen ? "inv.collapsePanel" : "inv.expandPanel")}
             aria-expanded={panelOpen}
             onClick={() => setPanelOpen((o) => !o)}
           >
@@ -225,7 +218,7 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
                   porque allí se cortaba y no cabía decir si está verificada,
                   que es el dato que autoriza a empezar. */}
               <section className="inv-evidence">
-                <div className="eyebrow">Evidencia</div>
+                <div className="eyebrow">{t("inv.evidence")}</div>
                 {evidenceName ? (
                   <>
                     <div className="inv-evidence-name">{evidenceName}</div>
@@ -234,13 +227,13 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
                       {activeEvidence?.last_verification?.verified && (
                         <>
                           {" · "}
-                          <span className="inv-evidence-ok">verificada</span>
+                          <span className="inv-evidence-ok">{t("inv.verified")}</span>
                         </>
                       )}
                     </div>
                   </>
                 ) : (
-                  <div className="inv-evidence-meta">ninguna registrada</div>
+                  <div className="inv-evidence-meta">{t("inv.noneRegistered")}</div>
                 )}
               </section>
 
@@ -251,10 +244,10 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
               <section className="inv-block">
                 {/* Sin relleno de ceros: «00» se lee como un reloj, no como un
                     contador a cero. */}
-                <div className="eyebrow">Hallazgos · {findings.length}</div>
+                <div className="eyebrow">{t("nav.findings")} · {findings.length}</div>
                 <div className="inv-block-scroll">
                   {findings.length === 0 ? (
-                    <div className="inv-empty">Sin hallazgos.</div>
+                    <div className="inv-empty">{t("inv.noFindings")}</div>
                   ) : (
                     findings.map((f) => (
                       <div
@@ -266,7 +259,7 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
                         <div className="finding-rail-title">{f.title}</div>
                         <div className="finding-rail-summary">{f.summary}</div>
                         <div className="finding-rail-meta">
-                          {SEVERITY_LABEL[f.severity]}
+                          {t(SEVERITY_KEY[f.severity])}
                           {f.tool_id ? ` · ${f.tool_id}` : ""}
                         </div>
                       </div>
@@ -276,17 +269,19 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
               </section>
 
               <section className="inv-block">
-                <div className="eyebrow">Herramientas · {toolTotal}</div>
+                <div className="eyebrow">{t("inv.tools")} · {toolTotal}</div>
                 <div className="inv-block-scroll">
                   {toolUsage.length === 0 ? (
-                    <div className="inv-empty">Ninguna ejecutada.</div>
+                    <div className="inv-empty">{t("inv.noneRun")}</div>
                   ) : (
-                    toolUsage.map((t) => (
-                      <div className="usage-row" key={t.tool_id}>
-                        <span>{t.tool_id}</span>
+                    toolUsage.map((u) => (
+                      <div className="usage-row" key={u.tool_id}>
+                        <span>{u.tool_id}</span>
                         <span className="usage-count">
-                          {t.ok > 0 ? `${t.ok} ok` : ""}
-                          {t.failed > 0 ? `${t.ok > 0 ? " · " : ""}${t.failed} fallo${t.failed > 1 ? "s" : ""}` : ""}
+                          {u.ok > 0 ? `${u.ok} ok` : ""}
+                          {u.failed > 0
+                            ? `${u.ok > 0 ? " · " : ""}${tn("count.failures", u.failed)}`
+                            : ""}
                         </span>
                       </div>
                     ))

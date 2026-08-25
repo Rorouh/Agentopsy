@@ -33,6 +33,8 @@ Lógica pura (RULE 3): sin HTTP, sin disco, sin llamadas al modelo.
 
 from __future__ import annotations
 
+from forensia.i18n import Mensaje
+
 import re
 from typing import Any
 
@@ -80,7 +82,11 @@ class GraphExtractError(ValueError):
 def _lista_de_fallos(fallos: list[str]) -> str:
     visibles = "; ".join(fallos[:MAX_VIOLACIONES_LISTADAS])
     resto = len(fallos) - MAX_VIOLACIONES_LISTADAS
-    return f"{visibles} (y {resto} más)" if resto > 0 else visibles
+    return (
+        str(Mensaje("graphx.andMore", visible=visibles, rest=resto))
+        if resto > 0
+        else visibles
+    )
 
 
 def texto_del_hallazgo(finding: Any) -> str:
@@ -120,12 +126,11 @@ def _validar_nodos(raw: Any, texto: str) -> list[dict[str, str]]:
         raw = []
     if not isinstance(raw, list):
         raise GraphExtractError(
-            "la respuesta no trae la lista `nodos` del contrato de extracción"
+            Mensaje("graphx.noNodes")
         )
     if len(raw) > MAX_NODOS:
         raise GraphExtractError(
-            f"el grafo trae {len(raw)} nodos (máximo {MAX_NODOS}): un hallazgo "
-            "nombra unas pocas entidades, no un inventario"
+            Mensaje("graphx.tooManyNodes", count=len(raw), max=MAX_NODOS)
         )
 
     fallos_tipo: list[str] = []
@@ -145,8 +150,7 @@ def _validar_nodos(raw: Any, texto: str) -> list[dict[str, str]]:
             continue
         if len(valor) > MAX_CHARS_VALOR:
             fallos_forma.append(
-                f"el valor de un nodo trae {len(valor)} caracteres (máximo "
-                f"{MAX_CHARS_VALOR})"
+                Mensaje("graphx.valueTooLong", length=len(valor), max=MAX_CHARS_VALOR)
             )
             continue
         if tipo not in TIPOS_NODO:
@@ -161,29 +165,30 @@ def _validar_nodos(raw: Any, texto: str) -> list[dict[str, str]]:
             out.append({"tipo": tipo, "valor": valor})
         elif anterior != tipo:
             fallos_forma.append(
-                f"la entidad «{valor}» se declara dos veces con tipos distintos "
-                f"({anterior} y {tipo}): una relación la nombra por su valor, así "
-                "que no puede ser dos cosas"
+                Mensaje(
+                    "graphx.twoTypes", value=valor, first=anterior, second=tipo
+                )
             )
 
     if fallos_tipo:
         raise GraphExtractError(
-            f"tipo de nodo fuera de la enum cerrada: {_lista_de_fallos(fallos_tipo)}. "
-            f"Los tipos válidos son exactamente estos cinco: {', '.join(TIPOS_NODO)}. "
-            "No hay tipo para un proceso: un proceso se representa por su "
-            "ejecutable, que es un nodo `file`. Grafo rechazado entero (RULE 2)."
+            Mensaje(
+                "graphx.badNodeType",
+                failures=_lista_de_fallos(fallos_tipo),
+                valid=", ".join(TIPOS_NODO),
+            )
         )
     if fallos_texto:
         raise GraphExtractError(
-            f"{len(fallos_texto)} entidad(es) no aparecen literalmente en el texto "
-            f"del hallazgo: {_lista_de_fallos(fallos_texto)}. Una entidad que el "
-            "hallazgo no escribe es fabricación: copia el valor tal y como está en "
-            "el titulo o el resumen (misma cadena, mismo formato) o no la incluyas. "
-            "Grafo rechazado entero (RULE 2)."
+            Mensaje(
+                "graphx.notLiteral",
+                count=len(fallos_texto),
+                failures=_lista_de_fallos(fallos_texto),
+            )
         )
     if fallos_forma:
         raise GraphExtractError(
-            f"forma inválida en `nodos`: {_lista_de_fallos(fallos_forma)}"
+            Mensaje("graphx.badNodeShape", failures=_lista_de_fallos(fallos_forma))
         )
     return out
 
@@ -202,11 +207,11 @@ def _validar_relaciones(
         raw = []
     if not isinstance(raw, list):
         raise GraphExtractError(
-            "la respuesta no trae la lista `relaciones` del contrato de extracción"
+            Mensaje("graphx.noEdges")
         )
     if len(raw) > MAX_RELACIONES:
         raise GraphExtractError(
-            f"el grafo trae {len(raw)} relaciones (máximo {MAX_RELACIONES})"
+            Mensaje("graphx.tooManyEdges", count=len(raw), max=MAX_RELACIONES)
         )
 
     canonico = {n["valor"].casefold(): n["valor"] for n in nodos}
@@ -218,13 +223,22 @@ def _validar_relaciones(
 
     for rel in raw:
         if not isinstance(rel, dict):
-            fallos_forma.append("una relación no es un objeto JSON")
+            fallos_forma.append(str(Mensaje("graphx.edgeNotObject")))
             continue
         tipo = str(rel.get("tipo", "")).strip().lower()
         origen = _normalizar_espacios(str(rel.get("origen", "")))
         destino = _normalizar_espacios(str(rel.get("destino", "")))
         if tipo not in TIPOS_RELACION:
-            fallos_tipo.append(f"la relación «{origen} hacia {destino}» llega con tipo {tipo!r}")
+            fallos_tipo.append(
+                str(
+                    Mensaje(
+                        "graphx.badEdgeTypeItem",
+                        source=origen,
+                        target=destino,
+                        type=repr(tipo),
+                    )
+                )
+            )
             continue
         origen_canon = canonico.get(origen.casefold())
         destino_canon = canonico.get(destino.casefold())
@@ -234,8 +248,7 @@ def _validar_relaciones(
             continue
         if origen_canon == destino_canon:
             fallos_forma.append(
-                f"«{origen_canon}» se relaciona consigo misma: una relación une "
-                "dos entidades distintas"
+                Mensaje("graphx.selfRelation", value=origen_canon)
             )
             continue
         clave = (origen_canon, destino_canon, tipo)
@@ -255,21 +268,23 @@ def _validar_relaciones(
 
     if fallos_tipo:
         raise GraphExtractError(
-            f"tipo de relación fuera de la enum cerrada: {_lista_de_fallos(fallos_tipo)}. "
-            f"Los tipos válidos son exactamente estos trece: {', '.join(TIPOS_RELACION)}. "
-            "Grafo rechazado entero (RULE 2)."
+            Mensaje(
+                "graphx.badEdgeType",
+                failures=_lista_de_fallos(fallos_tipo),
+                valid=", ".join(TIPOS_RELACION),
+            )
         )
     if fallos_nodo:
         raise GraphExtractError(
-            f"{len(fallos_nodo)} extremo(s) de relación nombran una entidad que no "
-            f"está declarada en `nodos`: {_lista_de_fallos(fallos_nodo)}. Una "
-            "relación une dos nodos del grafo: declara la entidad como nodo (y "
-            "entonces tiene que aparecer en el texto del hallazgo) o quita la "
-            "relación. Grafo rechazado entero (RULE 2)."
+            Mensaje(
+                "graphx.unknownEndpoint",
+                count=len(fallos_nodo),
+                failures=_lista_de_fallos(fallos_nodo),
+            )
         )
     if fallos_forma:
         raise GraphExtractError(
-            f"forma inválida en `relaciones`: {_lista_de_fallos(fallos_forma)}"
+            Mensaje("graphx.badEdgeShape", failures=_lista_de_fallos(fallos_forma))
         )
     return out
 

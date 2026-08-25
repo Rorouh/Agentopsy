@@ -30,6 +30,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from forensia.i18n import t, traducir_excepcion
 from forensia.agent.agent import ForensicAgent
 from forensia.agent.history import build_replay_messages
 from forensia.agent.jobs import job_registry
@@ -88,34 +89,29 @@ def _prepare_run(req: QueryRequest) -> tuple[ForensicAgent, str, list, str | Non
     tuple only as an optional audit label threaded into ``agent.run``."""
     prompt = (req.prompt or "").strip()
     if not prompt:
-        raise HTTPException(status_code=422, detail="prompt is empty")
+        raise HTTPException(status_code=422, detail=t("api.promptEmpty"))
 
     if not req.case_id:
         raise HTTPException(
             status_code=422,
-            detail="case_id is required: selecciona un caso antes de consultar al "
-                   "agente (Agentopsy no asume 'el único caso', RULE 2).",
+            detail=t("api.caseRequired"),
         )
     if not req.evidence_id:
         raise HTTPException(
             status_code=422,
-            detail="evidence_id is required: selecciona una evidencia registrada en "
-                   "el caso (Agentopsy no asume 'la última registrada', RULE 2).",
+            detail=t("api.evidenceRequired"),
         )
 
     executor_id = req.executor or config.get("DEFAULT_EXECUTOR")
     if not executor_id:
         raise HTTPException(
             status_code=422,
-            detail="executor is required: selecciona un ejecutor "
-                   f"({' | '.join(EXECUTOR_IDS)}) en la petición, o fija "
-                   "DEFAULT_EXECUTOR explícitamente en Settings. Agentopsy no "
-                   "elige uno por ti (RULE 2).",
+            detail=t("api.executorRequired", ids=" | ".join(EXECUTOR_IDS)),
         )
     try:
         executor = get_executor(str(executor_id))
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
 
     availability = executor.is_available()
     if not availability.available:
@@ -128,25 +124,25 @@ def _prepare_run(req: QueryRequest) -> tuple[ForensicAgent, str, list, str | Non
     try:
         case = case_manager.load(req.case_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
     try:
         os_profile = resolve_os_profile(case)
     except OsProfileUnresolved as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=traducir_excepcion(exc)) from exc
 
     try:
         pkg = agent_registry.get_for_profile(os_profile)
     except KeyError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail=traducir_excepcion(exc)) from exc
 
     try:
         audit = AuditLog(case_manager.case_dir(req.case_id) / "audit.jsonl")
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
 
     # Cloud egress no longer requires a recorded consent (removed 2026-07-16):
     # a cloud executor proceeds without one. The executor stays explicitly
@@ -202,7 +198,7 @@ def query(req: QueryRequest) -> dict:
             prior_messages=prior_messages,
         )
     except (KeyError, ValueError) as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
 
     return {
         "status": "llm-loop",
@@ -257,7 +253,7 @@ def get_job(job_id: str, since: int = 0) -> dict:
     hallazgo registrado, etc. según van ocurriendo)."""
     snap = job_registry.snapshot(job_id, since=max(0, since))
     if snap is None:
-        raise HTTPException(status_code=404, detail=f"job {job_id} not found")
+        raise HTTPException(status_code=404, detail=t("api.jobNotFound", job_id=job_id))
     return snap
 
 

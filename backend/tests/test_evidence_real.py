@@ -11,6 +11,7 @@ import sys
 import pytest
 from _symlink_support import requires_symlinks
 
+from forensia.i18n import codigo_de
 from forensia.cases.manager import CaseManager
 from forensia.evidence import EvidenceManager
 
@@ -118,8 +119,9 @@ class TestRegister:
     def test_register_on_closed_case_raises_valueerror(self, manager, cases, case, known_file):
         src, _, _ = known_file
         cases.close(case.id)
-        with pytest.raises(ValueError, match="closed"):
+        with pytest.raises(ValueError) as exc:
             manager.register(case.id, str(src))
+        assert codigo_de(exc.value) == "evidence.caseClosed"
 
     def test_register_after_reopen_succeeds(self, manager, cases, case, known_file):
         src, _, _ = known_file

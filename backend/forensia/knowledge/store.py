@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from forensia.i18n import Mensaje
 from forensia.cases import CaseManager, case_manager
 
 logger = logging.getLogger(__name__)
@@ -111,8 +112,7 @@ def _validate_doc_id(raw: object) -> str:
     doc_id = str(raw or "").strip()
     if not _DOC_ID_RE.match(doc_id):
         raise ValueError(
-            f"doc_id {doc_id!r} inválido: debe cumplir {DOC_ID_PATTERN} "
-            "(minúsculas, dígitos y guiones; sin puntos, barras ni espacios)"
+            Mensaje("knowledge.badDocId", doc_id=repr(doc_id), pattern=DOC_ID_PATTERN)
         )
     return doc_id
 
@@ -121,7 +121,7 @@ def _validate_section(raw: object) -> str:
     section = str(raw or "").strip()
     if not section or not _SECTION_RE.match(section):
         raise ValueError(
-            f"section debe ser una línea no vacía de ≤ {MAX_SECTION_CHARS} caracteres"
+            Mensaje("knowledge.badSection", max=MAX_SECTION_CHARS)
         )
     return section
 
@@ -129,12 +129,14 @@ def _validate_section(raw: object) -> str:
 def _validate_content(raw: object) -> str:
     content = str(raw or "").strip()
     if not content:
-        raise ValueError("content no puede estar vacío")
+        raise ValueError(Mensaje("knowledge.emptyContent"))
     if len(content) > MAX_BLOCK_CHARS:
         raise ValueError(
-            f"content de {len(content)} caracteres supera el tope de {MAX_BLOCK_CHARS}. "
-            "Un nodo lleva la CONCLUSIÓN y el puntero al artefacto que la sostiene, "
-            "no el volcado entero: resume y cita el run_id."
+            Mensaje(
+                "knowledge.contentTooLong",
+                length=len(content),
+                max=MAX_BLOCK_CHARS,
+            )
         )
     return content
 
@@ -261,9 +263,12 @@ class KnowledgeStore:
             existing = len([p for p in kdir.glob("*.md")]) if kdir.is_dir() else 0
             if existing >= MAX_NODES_PER_CASE:
                 raise ValueError(
-                    f"el caso ya tiene {existing} nodos de conocimiento (tope "
-                    f"{MAX_NODES_PER_CASE}): añade a uno existente en vez de crear otro. "
-                    f"Nodos: {sorted(p.stem for p in kdir.glob('*.md'))}"
+                    Mensaje(
+                        "knowledge.tooManyNodes",
+                        existing=existing,
+                        max=MAX_NODES_PER_CASE,
+                        nodes=sorted(p.stem for p in kdir.glob("*.md")),
+                    )
                 )
 
         blocks = self.history(case_id, doc_id)
@@ -271,8 +276,12 @@ class KnowledgeStore:
             distinct = len({b.section for b in blocks})
             if distinct >= MAX_SECTIONS_PER_NODE:
                 raise ValueError(
-                    f"el nodo {doc_id!r} ya tiene {distinct} secciones (tope "
-                    f"{MAX_SECTIONS_PER_NODE}): reutiliza una sección existente"
+                    Mensaje(
+                        "knowledge.tooManySections",
+                        doc_id=repr(doc_id),
+                        distinct=distinct,
+                        max=MAX_SECTIONS_PER_NODE,
+                    )
                 )
 
         block = KnowledgeBlock(

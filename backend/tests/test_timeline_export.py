@@ -20,15 +20,30 @@ from typing import Any
 
 from openpyxl import load_workbook
 
+from forensia.i18n import CATALOGO, t
 from forensia.export_hoja import NO_APLICA
 from forensia.findings.store import Finding
 from forensia.timeline.builder import assemble_investigation_timeline
-from forensia.timeline.export import HOJA_HEADER, timeline_to_hoja
+from forensia.timeline.export import hoja_header, timeline_to_hoja
+
+def _col(nombre_es: str) -> str:
+    """El rótulo de una columna (o de una fila de procedencia) EN EL IDIOMA EN
+    CURSO, nombrándola por su texto castellano.
+
+    El test sigue leyéndose en castellano, que es la lengua del proyecto, pero no
+    se rompe cuando la hoja se exporta en inglés: lo que fija es QUÉ columna, no
+    con qué palabra se escribe.
+    """
+    for clave, entrada in CATALOGO.items():
+        if entrada.get("es") == nombre_es:
+            return t(clave)
+    return nombre_es
+
 
 #: El bloque de procedencia de la hoja del timeline (lo que hay antes de la tabla).
 _PROCEDENCIA_FILAS = 10
 
-_IDX = {name: i for i, name in enumerate(HOJA_HEADER)}
+_IDX = {name: i for i, name in enumerate(hoja_header())}
 
 
 def _hoja(blob: bytes) -> list[list[Any]]:
@@ -85,7 +100,7 @@ def _audit_run() -> list[dict[str, Any]]:
 
 def test_empty_timeline_is_header_only() -> None:
     rows = _rows(timeline_to_hoja([]))
-    assert rows == [list(HOJA_HEADER)]
+    assert rows == [list(hoja_header())]
 
 
 def test_sheet_opens_as_a_spreadsheet_and_declares_its_provenance() -> None:
@@ -103,13 +118,16 @@ def test_sheet_opens_as_a_spreadsheet_and_declares_its_provenance() -> None:
     assert blob[:2] == b"PK"
     hoja = _hoja(blob)
     procedencia = dict((r[0], r[1]) for r in hoja[:_PROCEDENCIA_FILAS])
-    assert procedencia["Caso"] == "Caso Ñandú"  # UTF-8 de verdad, no transliterado
-    assert procedencia["Identificador del caso"] == "c1"
-    assert procedencia["Exportado (UTC)"] == "2026-08-06T13:05:42Z"
-    assert procedencia["Eventos en la hoja"] == "2"
-    assert "1 ejecuciones de herramienta (0 con error)" in procedencia["Composición"]
-    assert procedencia["Primer evento"].startswith("2026-07-15T10:00:00")
-    assert procedencia["Último evento"].startswith("2026-07-15T11:00:00")
+    assert procedencia[_col("Caso")] == "Caso Ñandú"  # UTF-8 de verdad, no transliterado
+    assert procedencia[_col("Identificador del caso")] == "c1"
+    assert procedencia[_col("Exportado (UTC)")] == "2026-08-06T13:05:42Z"
+    assert procedencia[_col("Eventos en la hoja")] == "2"
+    assert (
+        t("tlSheet.prov.compositionValue", None, runs=1, failed=0, findings=1)
+        == procedencia[_col("Composición")]
+    )
+    assert procedencia[_col("Primer evento")].startswith("2026-07-15T10:00:00")
+    assert procedencia[_col("Último evento")].startswith("2026-07-15T11:00:00")
     # La línea vacía es el contrato para quien lea la hoja con un programa.
     assert all(v is None for v in hoja[_PROCEDENCIA_FILAS])
 
@@ -121,35 +139,35 @@ def test_sheet_has_one_row_per_event_across_both_kinds() -> None:
         audit, [_finding("f1", "2026-07-15T11:00:00.000Z")]
     )
     rows = _rows(timeline_to_hoja(events))
-    assert rows[0] == list(HOJA_HEADER)
+    assert rows[0] == list(hoja_header())
     assert len(rows) == 3  # cabecera + tool_run + finding
 
-    by_kind = {r[_IDX["Tipo de evento"]]: r for r in rows[1:]}
+    by_kind = {r[_IDX[_col("Tipo de evento")]]: r for r in rows[1:]}
 
-    tool = by_kind["Ejecución de herramienta"]
-    assert tool[_IDX["N"]] == "1"
-    assert tool[_IDX["Herramienta"]] == "tsk_fls"
+    tool = by_kind[t("tlvoc.kind.tool_run")]
+    assert tool[_IDX[_col("N")]] == "1"
+    assert tool[_IDX[_col("Herramienta")]] == "tsk_fls"
     # El argv literal auditado, en la ÚLTIMA columna: es el dato más ancho y el
     # que antes empujaba fuera de pantalla a las columnas que se leen.
-    assert tool[_IDX["Comando ejecutado (argv literal auditado)"]] == "fls -m / img.raw"
+    assert tool[_IDX[_col("Comando ejecutado (argv literal auditado)")]] == "fls -m / img.raw"
     assert tool[-1] == "fls -m / img.raw"
-    assert tool[_IDX["Código de salida"]] == "0"
-    assert tool[_IDX["Estado"]] == "Finalizada"
-    assert tool[_IDX["Identificador del evento"]] == "r1"
-    assert tool[_IDX["Marca temporal (UTC)"]].endswith("Z")  # UTC explícito
+    assert tool[_IDX[_col("Código de salida")]] == "0"
+    assert tool[_IDX[_col("Estado")]] == t("tlvoc.status.finished")
+    assert tool[_IDX[_col("Identificador del evento")]] == "r1"
+    assert tool[_IDX[_col("Marca temporal (UTC)")]].endswith("Z")  # UTC explícito
     # Lo que no aplica a una ejecución se DICE, no se deja en blanco.
-    assert tool[_IDX["Severidad"]] == NO_APLICA
-    assert tool[_IDX["Técnicas ATT&CK propuestas"]] == NO_APLICA
+    assert tool[_IDX[_col("Severidad")]] == NO_APLICA
+    assert tool[_IDX[_col("Técnicas ATT&CK propuestas")]] == NO_APLICA
 
-    finding = by_kind["Hallazgo"]
-    assert finding[_IDX["N"]] == "2"
-    assert finding[_IDX["Hallazgo"]] == "Persistencia detectada"
-    assert finding[_IDX["Severidad"]] == "Alta"
-    assert finding[_IDX["Detalle del hallazgo"]] == "run key sospechosa"
-    assert finding[_IDX["Técnicas ATT&CK propuestas"]] == "T1547.001"
-    assert finding[_IDX["Herramienta"]] == "RegRipper"
-    assert finding[_IDX["Identificador del evento"]] == "f1"
-    assert finding[_IDX["Comando ejecutado (argv literal auditado)"]] == NO_APLICA
+    finding = by_kind[t("tlvoc.kind.finding")]
+    assert finding[_IDX[_col("N")]] == "2"
+    assert finding[_IDX[_col("Hallazgo")]] == "Persistencia detectada"
+    assert finding[_IDX[_col("Severidad")]] == t("tlvoc.sev.high")
+    assert finding[_IDX[_col("Detalle del hallazgo")]] == "run key sospechosa"
+    assert finding[_IDX[_col("Técnicas ATT&CK propuestas")]] == "T1547.001"
+    assert finding[_IDX[_col("Herramienta")]] == "RegRipper"
+    assert finding[_IDX[_col("Identificador del evento")]] == "f1"
+    assert finding[_IDX[_col("Comando ejecutado (argv literal auditado)")]] == NO_APLICA
 
 
 def test_the_row_number_is_a_number_so_the_sheet_orders_by_value() -> None:
@@ -183,8 +201,8 @@ def test_running_tool_run_has_empty_exit_but_is_kept() -> None:
     ]
     events = assemble_investigation_timeline(audit, [])
     row = _rows(timeline_to_hoja(events))[1]
-    assert row[_IDX["Código de salida"]] == ""  # sin exit todavía
-    assert row[_IDX["Estado"]] == "En curso"
+    assert row[_IDX[_col("Código de salida")]] == ""  # sin exit todavía
+    assert row[_IDX[_col("Estado")]] == t("tlvoc.status.running")
 
 
 def test_unparseable_timestamp_becomes_empty_but_row_is_not_dropped() -> None:
@@ -200,7 +218,7 @@ def test_unparseable_timestamp_becomes_empty_but_row_is_not_dropped() -> None:
     events = assemble_investigation_timeline(audit, [])
     rows = _rows(timeline_to_hoja(events))
     assert len(rows) == 2  # cabecera + la fila, nunca descartada
-    assert rows[1][_IDX["Marca temporal (UTC)"]] == ""
+    assert rows[1][_IDX[_col("Marca temporal (UTC)")]] == ""
 
 
 def test_an_unknown_vocabulary_value_travels_verbatim() -> None:
@@ -224,5 +242,5 @@ def test_an_unknown_vocabulary_value_travels_verbatim() -> None:
     ]
     events = assemble_investigation_timeline(audit, [])
     row = _rows(timeline_to_hoja(events))[1]
-    assert row[_IDX["Estado"]] == "cancelado_por_el_operador"
-    assert row[_IDX["Código de salida"]] == "137"
+    assert row[_IDX[_col("Estado")]] == "cancelado_por_el_operador"
+    assert row[_IDX[_col("Código de salida")]] == "137"

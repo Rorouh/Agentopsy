@@ -21,6 +21,7 @@ from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
+from forensia.i18n import Mensaje
 from forensia.audit.log import AuditLog
 from forensia.config import CONFIG_DIR
 from forensia.triage import DetectedEvidence, routable_profile
@@ -547,10 +548,7 @@ def resolve_os_profile(case: Case) -> str:
         "ancla, nunca se enruta en silencio ni se adivina desde el host."
     )
     if case.os_profile_source == _OS_SOURCE_CONFLICT:
-        raise OsProfileUnresolved(
-            "os_profile en conflicto: el caso tiene evidencias de más de un SO "
-            "(el enrutado multi-SO simultáneo es Fase 2b). " + anchor_hint
-        )
+        raise OsProfileUnresolved(Mensaje("case.osConflict", hint=anchor_hint))
     raise OsProfileUnresolved(
         "os_profile sin determinar: el triage no clasificó el SO de la evidencia "
         "con confianza suficiente, o aún no hay evidencia enrutable registrada. "

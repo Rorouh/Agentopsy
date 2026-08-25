@@ -20,6 +20,7 @@ import uuid
 
 import pytest
 
+from forensia.i18n import _LANG_ACTUAL, set_current_lang
 from forensia.audit.log import AuditLog
 from forensia.cases import CaseManager
 from forensia.evidence import EvidenceManager
@@ -256,7 +257,13 @@ class _Handle:
     ],
 )
 def test_nature_comes_from_triage_and_is_never_guessed(name, kind, expected) -> None:
-    assert naturaleza(_Handle(name, kind)) == expected
+    # La naturaleza se escribe en el idioma del INFORME; los casos de esta
+    # tabla están en castellano, así que se fija esa lengua.
+    token = set_current_lang("es")
+    try:
+        assert naturaleza(_Handle(name, kind)) == expected
+    finally:
+        _LANG_ACTUAL.reset(token)
 
 
 def test_memory_is_enumerated_first(entorno) -> None:

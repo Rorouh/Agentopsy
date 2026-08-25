@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { Case } from "../api/types";
 import { Modal } from "../ui/Modal";
+import { useT } from "../i18n";
 
 interface NewCaseModalProps {
   open: boolean;
@@ -23,6 +24,7 @@ const EMPTY_FORM: FormState = { name: "", examiner: "", notes: "" };
 // diálogo que abre el botón en píldora del sidebar, disponible desde cualquier
 // pantalla.
 export function NewCaseModal({ open, onClose, onCreated }: NewCaseModalProps) {
+  const t = useT();
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,10 +68,10 @@ export function NewCaseModal({ open, onClose, onCreated }: NewCaseModalProps) {
   return (
     <Modal
       open={open}
-      eyebrow="Fase 1 · antes de tocar evidencia"
-      title="Abrir caso nuevo"
+      eyebrow={t("newCase.eyebrow")}
+      title={t("newCase.title")}
       onClose={onClose}
-      footerHint="enter para guardar"
+      footerHint={t("newCase.enterToSave")}
       footer={
         <>
           <button
@@ -78,7 +80,7 @@ export function NewCaseModal({ open, onClose, onCreated }: NewCaseModalProps) {
             disabled={!valid || creating}
             onClick={() => void submit()}
           >
-            {creating ? "Guardando…" : "Guardar caso"}
+            {creating ? t("newCase.saving") : t("newCase.save")}
           </button>
           <button
             type="button"
@@ -86,7 +88,7 @@ export function NewCaseModal({ open, onClose, onCreated }: NewCaseModalProps) {
             disabled={creating}
             onClick={onClose}
           >
-            Cancelar
+            {t("common.cancel")}
           </button>
         </>
       }
@@ -94,7 +96,7 @@ export function NewCaseModal({ open, onClose, onCreated }: NewCaseModalProps) {
       <div className="modal-form">
         <div className="field">
           <label className="eyebrow" htmlFor="nc-name">
-            Nombre del caso
+            {t("newCase.name")}
           </label>
           <input
             id="nc-name"
@@ -102,14 +104,14 @@ export function NewCaseModal({ open, onClose, onCreated }: NewCaseModalProps) {
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
             maxLength={200}
-            placeholder="Nombre o referencia del caso"
+            placeholder={t("newCase.namePlaceholder")}
             autoFocus
           />
         </div>
 
         <div className="field">
           <label className="eyebrow" htmlFor="nc-examiner">
-            Examinador
+            {t("newCase.examiner")}
           </label>
           <input
             id="nc-examiner"
@@ -117,16 +119,14 @@ export function NewCaseModal({ open, onClose, onCreated }: NewCaseModalProps) {
             value={form.examiner}
             onChange={(e) => setForm({ ...form, examiner: e.target.value })}
             maxLength={200}
-            placeholder="Nombre completo"
+            placeholder={t("newCase.examinerPlaceholder")}
           />
-          <div className="field-hint">
-            Responsable del caso. Figura en el acta de adquisición y en el informe pericial.
-          </div>
+          <div className="field-hint">{t("newCase.examinerHint")}</div>
         </div>
 
         <div className="field">
           <label className="eyebrow" htmlFor="nc-notes">
-            Descripción · notas <span className="field-optional">opcional</span>
+            {t("newCase.notes")} <span className="field-optional">{t("newCase.optional")}</span>
           </label>
           <textarea
             id="nc-notes"
@@ -142,7 +142,7 @@ export function NewCaseModal({ open, onClose, onCreated }: NewCaseModalProps) {
                 void submit();
               }
             }}
-            placeholder="Descripción breve del caso"
+            placeholder={t("newCase.notesPlaceholder")}
           />
         </div>
 
@@ -153,7 +153,7 @@ export function NewCaseModal({ open, onClose, onCreated }: NewCaseModalProps) {
             lo justifica. */}
         {error && (
           <div className="error-state">
-            <strong>No se pudo crear el caso:</strong> {error}
+            <strong>{t("newCase.failed")}</strong> {error}
           </div>
         )}
       </div>

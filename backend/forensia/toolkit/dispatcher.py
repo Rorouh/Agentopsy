@@ -32,6 +32,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from forensia.i18n import Mensaje
 from forensia.artifact_ref import is_artifact_ref, validate_artifact_ref
 from forensia.artifacts.store import ArtifactIntegrityError, artifact_store
 from forensia.audit.log import AuditLog
@@ -177,11 +178,11 @@ def execute(
     if case_id is not None:
         if evidence_context is None:
             raise ToolExecutionError(
-                f"tool {tool_id!r}: toda ejecución anclada al caso {case_id!r} requiere "
-                "el contexto de evidencia verificado (evidence_id + baseline SHA-256 "
-                "desde EvidenceManager), también las tools de solo input derivado. Sin "
-                "él la acción no puede anclarse a la evidencia (FORENSIC INVARIANT 4); "
-                "no se ejecuta (RULE 2)."
+                Mensaje(
+                    "dispatch.needEvidenceContext",
+                    tool=repr(tool_id),
+                    case=repr(case_id),
+                )
             )
         try:
             handle = evidence_manager.get(case_id, evidence_context.evidence_id)
@@ -202,8 +203,7 @@ def execute(
         evidence_dir = handle.original_path.parent
     elif evidence_context is not None:
         raise ToolExecutionError(
-            f"tool {tool_id!r}: evidence_context sin case_id no es verificable "
-            "(el contexto ancla la ejecución a una evidencia de un caso); no se ejecuta."
+            Mensaje("dispatch.contextWithoutCase", tool=repr(tool_id))
         )
     evidence_fields = (
         evidence_context.audit_fields() if evidence_context is not None else {}
@@ -616,12 +616,8 @@ def _gate_path_parameters(
                         f"{spec.name}: paths under artifacts/ are DERIVED_INPUT and "
                         "must be supplied as exactly {run_id, relpath} for re-hash"
                     ),
-                    "evidence": (
-                        f"{spec.name}: la evidencia no es un input auxiliar "
-                        "(CASE_INPUT), entra por el parámetro EVIDENCE_INPUT del "
-                        "contexto verificado o como ArtifactRef derivado; un "
-                        "auxiliar no puede leer (ni subsumir) evidencia del caso "
-                        "(mismo caso no es misma evidencia)"
+                    "evidence": str(
+                        Mensaje("dispatch.evidenceNotAux", name=spec.name)
                     ),
                 }
                 for subdir, message in reserved.items():
@@ -661,16 +657,21 @@ def _resolve_artifact_ref(
     # provenance (RULE 2 / FORENSIC INVARIANT 4) — re-run the producer instead.
     if producer.status == "running":
         raise ToolExecutionError(
-            f"input derivado para {name!r}: el run productor {ref['run_id']!r} sigue "
-            "en ejecución, sus artefactos pueden estar mutando y no hay custodia que "
-            "verificar todavía. Espera a que cierre (o re-ejecuta el productor); no se "
-            "ejecuta (FORENSIC INVARIANT 4)."
+            Mensaje(
+                "dispatch.producerRunning",
+                name=repr(name),
+                run=repr(ref["run_id"]),
+            )
         )
     if producer.status != "finished" or producer.exit_code != 0:
         raise ToolExecutionError(
-            f"input derivado para {name!r}: el run productor {ref['run_id']!r} no "
-            f"completó con éxito (status={producer.status!r}, "
-            f"exit_code={producer.exit_code!r}"
+            Mensaje(
+                "dispatch.producerFailed",
+                name=repr(name),
+                run=repr(ref["run_id"]),
+                status=repr(producer.status),
+                exit=repr(producer.exit_code),
+            )
             + (
                 f", error={producer.error_type}: {producer.error_message}"
                 if producer.status == "error"
@@ -702,11 +703,14 @@ def _resolve_artifact_ref(
         evidence_context.baseline_sha256.casefold(),
     ):
         raise ToolExecutionError(
-            f"input derivado para {name!r}: procedencia cruzada, el artefacto "
-            f"{ref['relpath']!r} lo produjo el run {ref['run_id']!r} sobre la evidencia "
-            f"{producer.evidence_id!r}, pero esta ejecución está anclada a "
-            f"{evidence_context.evidence_id!r}. Un derivado de otra evidencia no puede "
-            "auditarse bajo este contexto (FORENSIC INVARIANT 4); no se ejecuta."
+            Mensaje(
+                "dispatch.crossProvenance",
+                name=repr(name),
+                relpath=repr(ref["relpath"]),
+                run=repr(ref["run_id"]),
+                producer_evidence=repr(producer.evidence_id),
+                evidence=repr(evidence_context.evidence_id),
+            )
         )
     # Only now touch the bytes: confine under the producer's out/ and RE-HASH against
     # the digest its (successfully closed) manifest recorded (INVARIANTS 1-2).
@@ -734,8 +738,12 @@ def _resolve_artifact_ref(
     advertised_size = ref.get("size")
     if advertised_size is not None and advertised_size != size:
         raise ToolExecutionError(
-            f"input derivado para {name!r}: ArtifactRef size={advertised_size} no "
-            f"coincide con el tamaño autoritativo {size} de ArtifactStore; no se ejecuta"
+            Mensaje(
+                "dispatch.sizeMismatch",
+                name=repr(name),
+                advertised=advertised_size,
+                size=size,
+            )
         )
     params[name] = str(path)
     return {
@@ -841,20 +849,18 @@ def _resolve_tool_version(tool: Tool, maletin_service: str | None) -> str:
     """
     if maletin_service is None:
         raise ToolExecutionError(
-            f"tool {tool.id!r}: una ejecución anclada exige la versión AUTORITATIVA de "
-            "la herramienta (FORENSIC INVARIANT 4) y esa versión solo existe en el "
-            "manifiesto de build del maletín. El binario se resolvió en el PATH del "
-            "api (vía dev/env-override), que no tiene manifiesto, ejecuta por el "
-            "maletín (compose) o retira el override (RULE 2: sin versión local ni "
-            "placeholder)."
+            Mensaje("dispatch.needAuthoritativeVersion", tool=repr(tool.id))
         )
     try:
         return maletin.tool_version(maletin_service, tool.binary)
     except maletin.MaletinExecError as exc:
         raise ToolExecutionError(
-            f"tool {tool.id!r}: no se pudo resolver la versión autoritativa en "
-            f"{maletin_service!r}, la tool no se ejecuta sin versión (INVARIANT 4 / "
-            f"RULE 2). Causa: {exc}"
+            Mensaje(
+                "dispatch.versionUnresolved",
+                tool=repr(tool.id),
+                service=repr(maletin_service),
+                error=exc,
+            )
         ) from exc
 
 
@@ -882,8 +888,7 @@ def _prepare_execution(
         )
     if maletin_service is None:
         raise ToolExecutionError(
-            f"tool {tool.id!r}: sin venue de ejecución resuelto (ni binario en el PATH "
-            "del api ni maletín seleccionado), bug del llamador"
+            Mensaje("dispatch.noVenue", tool=repr(tool.id))
         )
     return _PreparedExecution(
         argv=[tool.binary, *argv_tail],
@@ -906,16 +911,19 @@ def _select_maletin(tool: Tool, os_profile: str | None) -> str:
     toolkits = tool.toolkits
     if not toolkits:
         raise ToolExecutionError(
-            f"tool {tool.id!r}: su binario {tool.binary!r} no está en el PATH del api y no "
-            f"declara maletín (toolkits vacío), no hay dónde ejecutarlo (RULE 1)."
+            Mensaje("dispatch.nowhereToRun", tool=repr(tool.id), binary=repr(tool.binary))
         )
     if os_profile is not None:
         expected = f"toolkit-{os_profile}"
         if expected in toolkits:
             return expected
         raise ToolExecutionError(
-            f"tool {tool.id!r} no vive en el maletín del perfil {os_profile!r} "
-            f"(está en {list(toolkits)}), RULE 2: sin fallback entre maletines."
+            Mensaje(
+                "dispatch.wrongToolkit",
+                tool=repr(tool.id),
+                profile=repr(os_profile),
+                toolkits=list(toolkits),
+            )
         )
     if len(toolkits) == 1:
         return toolkits[0]

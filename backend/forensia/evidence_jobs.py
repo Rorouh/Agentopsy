@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
+from forensia.i18n import Mensaje, current_lang, set_current_lang, traducir_excepcion
 from forensia.evidence import EvidenceManager, evidence_manager
 
 _MAX_JOBS = 200  # cota del registro de jobs
@@ -39,9 +40,12 @@ def _error_text(exc: BaseException) -> str:
     """Mensaje ACCIONABLE del fallo (RULE 2): el texto que ``register`` lanzó,
     prefijado con el tipo. ``KeyError`` se desenvuelve porque su ``str()`` mete
     comillas alrededor del mensaje y lo vuelve ilegible en la UI."""
-    detail = str(exc)
+    # El texto se re-renderiza por CÓDIGO en el idioma del hilo (el de la
+    # petición que lanzó el registro): este `error` lo pinta la interfaz.
+    detail = traducir_excepcion(exc)
     if isinstance(exc, KeyError) and exc.args:
-        detail = str(exc.args[0])
+        arg = exc.args[0]
+        detail = traducir_excepcion(exc) if isinstance(arg, Mensaje) else str(arg)
     return f"{type(exc).__name__}: {detail}"
 
 
@@ -127,7 +131,16 @@ class RegisterJobRegistry:
                 job.seg_index = seg_index
                 job.seg_count = seg_count
 
+        idioma = current_lang()
+
         def _run() -> None:
+            # El idioma de la PETICIÓN que lanzó el job, fijado dentro del
+            # hilo. Un `ContextVar` no se hereda al crear un hilo (empieza con
+            # su valor por defecto), así que sin esto un trabajo de fondo
+            # redactaría sus mensajes en el idioma de partida y no en el que
+            # tenía la interfaz cuando el perito pulsó el botón. Se captura
+            # FUERA (al crear el job) y se aplica DENTRO.
+            set_current_lang(idioma)
             with self._lock:
                 job.state = "running"
             try:

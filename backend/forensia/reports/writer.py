@@ -66,8 +66,9 @@ import re
 from collections.abc import Callable
 from typing import Any
 
+from forensia.i18n import Mensaje, t
 from forensia.executors.base import PromptExecutor
-from forensia.reports.indice import NUMS, TITULOS, contrato_del_indice
+from forensia.reports.indice import NUMS, contrato_del_indice, titulos
 from forensia.reports.material import build_material
 from forensia.reports.works import audited_argvs
 
@@ -132,8 +133,15 @@ _HEX_RE = re.compile(r"\b(?=[0-9a-f]*[a-f])[0-9a-f]{8,64}\b")
 #: raya escrita por el agente en el título de un hallazgo. Copiarla fielmente no
 #: puede costar el informe entero.
 _RAYA_RE = re.compile(r"\s*[—―⸺⸻]\s*")
+#: Las palabras que pueden preceder al signo, EN LOS DOS IDIOMAS: el informe se
+#: redacta en el del selector, y un normalizador que solo conoce el castellano
+#: dejaría «section §6.2» intacto en un informe inglés, que es exactamente lo
+#: que RULE 7 prohíbe.
 _SECCION_TRAS_NOMBRE_RE = re.compile(
-    r"(?i)\b(secciones|secci[oó]n|apartados|apartado|anexos|anexo|punto)\s*§\s*"
+    r"(?i)\b("
+    r"secciones|secci[oó]n|apartados|apartado|anexos|anexo|punto"
+    r"|sections|section|annexes|annex|items|item|clauses|clause"
+    r")\s*§\s*"
 )
 _SECCION_ANTE_NUMERO_RE = re.compile(r"§\s*(?=[0-9AB])")
 #: Escrito con escapes a propósito: un carácter invisible (el selector de
@@ -162,96 +170,38 @@ class ReportWriteError(ValueError):
 #: El ENCARGO, literal. Pulsar «Finalizar investigación» equivale a enviarle
 #: esta petición al modelo seleccionado; lo que viene después en el prompt no la
 #: matiza, la hace ejecutable (qué apartados, con qué material, en qué formato).
-ENCARGO = (
-    "Redacta un informe de peritaje forense completo, con una redacción "
-    "profesional, basándote en todos los hallazgos y evidencias recopiladas en "
-    "esta investigación."
-)
+def encargo() -> str:
+    """El encargo, en el idioma del informe (clave `writer.encargo`)."""
+    return t("writer.encargo")
 
-_IDENTIDAD = (
-    f"ENCARGO: {ENCARGO}\n\n"
-    "Eres el perito informático forense que redacta el informe de una "
-    "investigación post-mortem ya concluida. Escribes en español, en registro "
-    "pericial: preciso, sobrio, sin adjetivos que la evidencia no sostenga, y "
-    "distinguiendo siempre indicio de prueba.\n\n"
-    "Redactas el informe COMPLETO de principio a fin. No rellenas una "
-    "plantilla: la narrativa, el nivel de detalle y la LONGITUD de cada sección "
-    "los decides tú a partir del MATERIAL de este caso concreto. Un caso con "
-    "tres hallazgos y un caso con cuarenta no producen informes del mismo "
-    "tamaño ni con la misma prosa.\n"
-)
+def _identidad() -> str:
+    """Quién redacta y EN QUÉ IDIOMA. Esta es la línea que decide la lengua del
+    informe: el resto del prompt la acompaña, pero es aquí donde se dice."""
+    return t("writer.identity", encargo=encargo())
 
-_REGLAS = (
-    "REGLAS INNEGOCIABLES\n"
-    "1. Ningún hecho, fecha, cifra, entidad, técnica, ruta, cuenta ni "
-    "identificador que no esté en el MATERIAL. Si el material no trae un dato, "
-    "la frase se construye sin él o se hace constar que NO CONSTA. Nunca se "
-    "rellena un hueco con texto genérico ni con conocimiento general.\n"
-    "2. Los identificadores se copian tal cual y COMPLETOS: técnicas Txxxx, "
-    "run_id, SHA-256, identificadores de evidencia y de hallazgo. La redacción "
-    "se valida contra el material y UNA sola invención rechaza el informe "
-    "entero.\n"
-    "2.bis. Lo que NO tiene identificador en el material no lo recibe de ti: se "
-    "nombra por su descripción. En particular, el informe que estás redactando "
-    "todavía no existe como documento (no tiene identificador ni SHA-256), así "
-    "que no cites ninguno para él; tampoco inventes referencias de expediente, "
-    "de sesión ni de trabajo. Ante la duda entre citar un identificador y "
-    "describir la cosa, describe.\n"
-    "3. Los bloques `code` están RESERVADOS a los comandos auditados: su texto "
-    "debe ser exactamente un `argv_literal` de `trabajos`, copiado carácter a "
-    "carácter. Cualquier otra cosa (un endpoint, una ruta, un fragmento de "
-    "salida) va en prosa, no en un bloque `code`. Un `code` que no coincida con "
-    "un comando auditado rechaza el informe entero.\n"
-    "4. Toda marca temporal se escribe en UTC explícito, como aparece en el "
-    "material.\n"
-    "5. Una sección sin dato SE ESCRIBE IGUALMENTE, diciendo qué falta y quién "
-    "debe aportarlo. Nunca se omite, ni se deja vacía, ni se rellena.\n"
-    "6. Los dos ejes de la correlación ATT&CK no se funden: la técnica que el "
-    "análisis PROPONE y el VEREDICTO del perito son cosas distintas, y una "
-    "técnica propuesta sin dictamen no está confirmada.\n"
-    "7. No alteras ninguna severidad, confianza, recuento ni código de salida "
-    "del material.\n"
-    "8. Las referencias cruzadas entre secciones se citan por el número y el "
-    "nombre del apartado: «apartado 6.2», «la sección 9, Conclusiones y "
-    "limitaciones». El signo § está PROHIBIDO: no aparece en ninguna parte del "
-    "informe, ni en el cuerpo, ni en una tabla, ni en un pie.\n"
-    "9. Tipografía del informe: prosa pericial en texto plano. NO se usa el "
-    "guion largo «—» en ningún caso; los incisos van entre comas, entre "
-    "paréntesis o tras dos puntos. NO se usa ningún emoji ni pictograma "
-    "decorativo, tampoco en tablas ni en listas: donde otro pondría un símbolo "
-    "de correcto o de aviso, tú escribes la palabra.\n"
-)
+def _reglas() -> str:
+    """Las nueve reglas innegociables, en el idioma del informe."""
+    return t("writer.rules")
 
-_BLOQUES_DOC = (
-    "TIPOS DE BLOQUE DISPONIBLES (no hay otros)\n"
-    '- {"t":"p","text":"…"}: párrafo de prosa.\n'
-    '- {"t":"h3","text":"…"}: subencabezado dentro de la sección.\n'
-    '- {"t":"quote","text":"…"}: cita o contexto aportado por terceros.\n'
-    '- {"t":"list","items":["…"],"ordered":false}: lista.\n'
-    '- {"t":"code","text":"…"}: SOLO un argv auditado, literal.\n'
-    '- {"t":"kv","pairs":[{"k":"Campo","v":"valor"}]}: ficha de campos.\n'
-    '- {"t":"table","headers":["…"],"rows":[["…"]]}: tabla; todas las filas '
-    "con tantas celdas como cabeceras.\n"
-    '- {"t":"finding","sev":"critical|high|medium|low","title":"…","text":"…",'
-    '"tags":["…"],"meta":"…"}: un hallazgo; `meta` es su línea de '
-    "procedencia.\n"
-)
+
+def _bloques_doc() -> str:
+    """Los tipos de bloque que `DocumentStore` valida, en el idioma del informe."""
+    return t("writer.blockTypes")
 
 
 def _contrato_de_respuesta() -> str:
-    secciones = ", ".join(f'"{n}"' for n in NUMS)
-    return (
-        "FORMATO DE RESPUESTA (OBLIGATORIO)\n"
-        "Responde ÚNICAMENTE con un objeto JSON, sin texto antes ni después y "
-        "sin fences de markdown:\n"
-        '{"resumen": "una o dos frases que resumen el informe", '
-        '"secciones": [{"num": "1", "titulo": "Control de versiones", '
-        '"bloques": [ … ]}, … ]}\n'
-        f"`secciones` debe traer EXACTAMENTE estas, en este orden: {secciones}. "
-        "Cada `num` y cada `titulo` se copian literalmente del índice de arriba; "
-        "ninguna sección puede faltar, sobrar, repetirse ni quedarse sin "
-        "bloques.\n"
-        f"`resumen` no pasa de {MAX_CHARS_RESUMEN} caracteres."
+    """El formato EXACTO de la respuesta, en el idioma del informe.
+
+    Va el ÚLTIMO del prompt a propósito: es lo que sostiene el parseo estricto,
+    y el ejemplo de `titulo` se toma del índice del idioma para que el modelo
+    copie el título que la puerta 1 va a comparar.
+    """
+    canon = titulos()
+    return t(
+        "writer.responseContract",
+        first_title=canon[NUMS[0]],
+        sections=", ".join(NUMS),
+        max=MAX_CHARS_RESUMEN,
     )
 
 
@@ -264,16 +214,14 @@ def build_prompt(material: dict[str, Any]) -> str:
     contrato de respuesta AL FINAL, porque es lo que sostiene el parseo estricto.
     """
     return (
-        _IDENTIDAD
-        + "\nÍNDICE DEL INFORME (fijo: es lo único que este informe comparte con "
-        "cualquier otro; el contenido de cada apartado es de este caso)\n\n"
+        _identidad()
+        + t("writer.indexHeader")
         + contrato_del_indice()
         + "\n\n"
-        + _REGLAS
+        + _reglas()
         + "\n"
-        + _BLOQUES_DOC
-        + "\nMATERIAL DEL CASO (JSON con todo lo que la investigación ha "
-        "registrado; es tu única fuente)\n"
+        + _bloques_doc()
+        + t("writer.materialHeader")
         + json.dumps(material, ensure_ascii=False, default=str)
         + "\n\n"
         + _contrato_de_respuesta()
@@ -292,17 +240,17 @@ def _parse_reply(text: str) -> dict[str, Any]:
     start = candidate.find("{")
     if start == -1:
         raise ReportWriteError(
-            "el ejecutor no devolvió el objeto JSON del contrato de redacción. "
-            f"Respuesta (muestra): {(text or '').strip()[:300]!r}"
+            Mensaje("writer.noJson", sample=repr((text or "").strip()[:300]))
         )
     try:
         envelope, _ = json.JSONDecoder().raw_decode(candidate[start:])
     except json.JSONDecodeError as exc:
         raise ReportWriteError(
-            f"no se pudo parsear el JSON del informe ({exc}). La respuesta puede "
-            "haberse cortado: revisa el presupuesto de tiempo del ejecutor y "
-            "vuelve a finalizar la investigación. "
-            f"Respuesta (muestra): {(text or '').strip()[:300]!r}"
+            Mensaje(
+                "writer.badJson",
+                error=exc,
+                sample=repr((text or "").strip()[:300]),
+            )
         ) from exc
     if not isinstance(envelope, dict):
         raise ReportWriteError("la respuesta del informe no es un objeto JSON")
@@ -319,33 +267,32 @@ def _validar_indice(raw: Any) -> list[dict[str, Any]]:
     dos informes comparten: si el modelo lo mueve, no hay informe (RULE 2)."""
     if not isinstance(raw, list) or not raw:
         raise ReportWriteError(
-            "la respuesta no trae la lista `secciones` del contrato de redacción"
+            Mensaje("writer.noSections")
         )
     nums = [str(s.get("num", "")).strip() if isinstance(s, dict) else "" for s in raw]
     if nums != list(NUMS):
         faltan = [n for n in NUMS if n not in nums]
         sobran = [n for n in nums if n not in NUMS]
-        detalle = f"se recibió {nums}, se esperaba {list(NUMS)}"
+        detalle = str(Mensaje("writer.indexDetail", got=nums, want=list(NUMS)))
         if faltan:
             detalle += f"; faltan {faltan}"
         if sobran:
-            detalle += f"; no pertenecen al índice {sobran}"
+            detalle += str(Mensaje("writer.indexExtra", extra=sobran))
         raise ReportWriteError(
-            "el informe no cubre el índice canónico en su orden exacto: el "
-            f"índice es lo único común a todos los informes ({detalle}). "
-            "Redacción rechazada entera (RULE 2)."
+            Mensaje("writer.indexBroken", detail=detalle)
         )
 
+    # Los títulos del IDIOMA del informe: la puerta 1 compara contra el índice
+    # de la lengua en la que se está redactando, no contra una constante.
+    canon = titulos()
     out: list[dict[str, Any]] = []
     for section in raw:
         num = str(section["num"]).strip()
         titulo = str(section.get("titulo", "")).strip()
-        canonico = TITULOS[num]
+        canonico = canon[num]
         if titulo != canonico:
             raise ReportWriteError(
-                f"la sección {num} llega titulada «{titulo}» y el índice "
-                f"canónico la titula «{canonico}»: los títulos no se reescriben "
-                "(RULE 2)."
+                Mensaje("writer.titleRewritten", num=num, got=titulo, want=canonico)
             )
         bloques = _normalizar_bloques(num, section.get("bloques"))
         out.append({"num": num, "title": canonico, "blocks": bloques})
@@ -361,8 +308,13 @@ def _texto(num: str, tipo: str, raw: Any) -> str:
         raise ReportWriteError(f"apartado {num}: un bloque `{tipo}` llega sin texto")
     if len(text) > MAX_CHARS_BLOQUE:
         raise ReportWriteError(
-            f"apartado {num}: un bloque `{tipo}` trae {len(text)} caracteres (máximo "
-            f"{MAX_CHARS_BLOQUE})"
+            Mensaje(
+                "writer.blockTooLong",
+                num=num,
+                type=tipo,
+                length=len(text),
+                max=MAX_CHARS_BLOQUE,
+            )
         )
     return text
 
@@ -373,12 +325,16 @@ def _normalizar_bloques(num: str, raw: Any) -> list[dict[str, Any]]:
     no llega al almacén, y una forma inválida falla aquí con el motivo."""
     if not isinstance(raw, list) or not raw:
         raise ReportWriteError(
-            f"apartado {num} llega sin bloques; una sección sin dato se escribe "
-            "igualmente diciendo qué falta (RULE 2)"
+            Mensaje("writer.noBlocks", num=num)
         )
     if len(raw) > MAX_BLOQUES_POR_SECCION:
         raise ReportWriteError(
-            f"apartado {num} trae {len(raw)} bloques (máximo {MAX_BLOQUES_POR_SECCION})"
+            Mensaje(
+                "writer.tooManyBlocks",
+                num=num,
+                count=len(raw),
+                max=MAX_BLOQUES_POR_SECCION,
+            )
         )
 
     out: list[dict[str, Any]] = []
@@ -396,12 +352,16 @@ def _normalizar_bloques(num: str, raw: Any) -> list[dict[str, Any]]:
                 raise ReportWriteError(f"apartado {num}: un bloque `list` llega sin `items`")
             if len(items_raw) > MAX_ITEMS_LISTA:
                 raise ReportWriteError(
-                    f"apartado {num}: una lista trae {len(items_raw)} elementos (máximo "
-                    f"{MAX_ITEMS_LISTA})"
+                    Mensaje(
+                        "writer.tooManyItems",
+                        num=num,
+                        count=len(items_raw),
+                        max=MAX_ITEMS_LISTA,
+                    )
                 )
             items = [str(i).strip() for i in items_raw if str(i).strip()]
             if not items:
-                raise ReportWriteError(f"apartado {num}: un bloque `list` llega vacío")
+                raise ReportWriteError(Mensaje("writer.emptyList", num=num))
             out.append({
                 "t": "list",
                 "items": items,
@@ -414,8 +374,12 @@ def _normalizar_bloques(num: str, raw: Any) -> list[dict[str, Any]]:
                 raise ReportWriteError(f"apartado {num}: un bloque `kv` llega sin `pairs`")
             if len(pairs_raw) > MAX_PARES_KV:
                 raise ReportWriteError(
-                    f"apartado {num}: un `kv` trae {len(pairs_raw)} pares (máximo "
-                    f"{MAX_PARES_KV})"
+                    Mensaje(
+                        "writer.tooManyPairs",
+                        num=num,
+                        count=len(pairs_raw),
+                        max=MAX_PARES_KV,
+                    )
                 )
             pairs: list[dict[str, str]] = []
             for pair in pairs_raw:
@@ -434,15 +398,23 @@ def _normalizar_bloques(num: str, raw: Any) -> list[dict[str, Any]]:
                 raise ReportWriteError(f"apartado {num}: una `table` llega sin `headers`")
             if len(headers_raw) > MAX_COLUMNAS_TABLA:
                 raise ReportWriteError(
-                    f"apartado {num}: una tabla trae {len(headers_raw)} columnas (máximo "
-                    f"{MAX_COLUMNAS_TABLA})"
+                    Mensaje(
+                        "writer.tooManyColumns",
+                        num=num,
+                        count=len(headers_raw),
+                        max=MAX_COLUMNAS_TABLA,
+                    )
                 )
             if not isinstance(rows_raw, list):
                 raise ReportWriteError(f"apartado {num}: `rows` de una `table` no es una lista")
             if len(rows_raw) > MAX_FILAS_TABLA:
                 raise ReportWriteError(
-                    f"apartado {num}: una tabla trae {len(rows_raw)} filas (máximo "
-                    f"{MAX_FILAS_TABLA})"
+                    Mensaje(
+                        "writer.tooManyRows",
+                        num=num,
+                        count=len(rows_raw),
+                        max=MAX_FILAS_TABLA,
+                    )
                 )
             headers = [str(h).strip() for h in headers_raw]
             rows: list[list[str]] = []
@@ -485,8 +457,7 @@ def _normalizar_bloques(num: str, raw: Any) -> list[dict[str, Any]]:
 
         else:
             raise ReportWriteError(
-                f"apartado {num}: tipo de bloque desconocido {tipo!r}. Los tipos válidos "
-                "son p, h3, quote, list, code, kv, table y finding."
+                Mensaje("writer.unknownBlock", num=num, type=repr(tipo))
             )
 
     return out
@@ -513,7 +484,11 @@ def _lista_de_fallos(fallos: list[str]) -> str:
     validación: se han comprobado todos, se nombran los primeros."""
     visibles = "; ".join(fallos[:MAX_VIOLACIONES_LISTADAS])
     resto = len(fallos) - MAX_VIOLACIONES_LISTADAS
-    return f"{visibles} (y {resto} más)" if resto > 0 else visibles
+    return (
+        str(Mensaje("writer.andMore", visible=visibles, rest=resto))
+        if resto > 0
+        else visibles
+    )
 
 
 def _validar_referentes(
@@ -532,7 +507,7 @@ def _validar_referentes(
     for tid in sorted(set(_TECH_RE.findall(text))):
         if tid.lower() not in permitidos["tecnica"]:
             fallos.append(
-                f"la técnica ATT&CK {tid} no aparece en el material del caso"
+                str(Mensaje("writer.techniqueAbsent", id=tid))
             )
     for uid in sorted(set(_UUID_RE.findall(text))):
         if uid.lower() not in permitidos["uuid"]:
@@ -540,15 +515,11 @@ def _validar_referentes(
     for token in sorted(set(_HEX_RE.findall(text.lower()))):
         if not any(h.startswith(token) for h in permitidos["hex"]):
             fallos.append(
-                f"la cadena hexadecimal «{token}» no corresponde a ningún hash, "
-                "run ni identificador del material"
+                str(Mensaje("writer.hexAbsent", token=token))
             )
     if fallos:
         raise ReportWriteError(
-            "el informe cita referentes que no existen en el material del caso: "
-            f"{_lista_de_fallos(fallos)}. Un dato que el material no trae no se "
-            "escribe (se describe la cosa sin su identificador, o se hace "
-            "constar que no consta). Redacción rechazada entera (RULE 2)."
+            Mensaje("writer.referentsAbsent", failures=_lista_de_fallos(fallos))
         )
 
 
@@ -578,17 +549,18 @@ def _validar_comandos(sections: list[dict[str, Any]], argvs: set[str]) -> None:
         return
     if not argvs:
         raise ReportWriteError(
-            f"el informe incluye {len(fallos)} bloque(s) `code` "
-            f"[{_lista_de_fallos(fallos)}] pero el caso no tiene ninguna "
-            "ejecución de herramienta auditada que citar: sin comando auditado "
-            "no hay bloque `code`. Redacción rechazada entera (RULE 2)."
+            Mensaje(
+                "writer.codeWithoutRuns",
+                count=len(fallos),
+                failures=_lista_de_fallos(fallos),
+            )
         )
     raise ReportWriteError(
-        f"{len(fallos)} bloque(s) `code` no coinciden con ningún comando "
-        f"auditado del caso [{_lista_de_fallos(fallos)}]. El informe cita el "
-        "argv literal del log de auditoría, no una reconstrucción ni una ruta "
-        "ni un fragmento de salida (FORENSIC INVARIANT 4). Redacción "
-        "rechazada entera."
+        Mensaje(
+            "writer.codeNotAudited",
+            count=len(fallos),
+            failures=_lista_de_fallos(fallos),
+        )
     )
 
 
@@ -690,8 +662,7 @@ def _resumen(raw: Any) -> str:
         raise ReportWriteError("la respuesta no trae el `resumen` del informe")
     if len(resumen) > MAX_CHARS_RESUMEN:
         raise ReportWriteError(
-            f"el `resumen` trae {len(resumen)} caracteres (máximo "
-            f"{MAX_CHARS_RESUMEN})"
+            Mensaje("writer.summaryTooLong", length=len(resumen), max=MAX_CHARS_RESUMEN)
         )
     return resumen
 
@@ -707,27 +678,9 @@ def _prompt_de_correccion(motivo: str, prompt_original: str | None) -> str:
     evitando exactamente el fallo.
     """
     if prompt_original is None:
-        return (
-            "TU RESPUESTA ANTERIOR HA SIDO RECHAZADA POR LA VALIDACIÓN DE "
-            "CUSTODIA Y NO SE HA PUBLICADO NADA.\n\n"
-            f"Motivo del rechazo:\n{motivo}\n\n"
-            "Corrige EXACTAMENTE eso y conserva el resto del informe tal y como "
-            "lo escribiste: la misma narrativa, las mismas secciones y el mismo "
-            "nivel de detalle. Un identificador, un hash o un comando que no "
-            "esté en el MATERIAL no se arregla escribiéndolo de otra forma: se "
-            "ELIMINA de la frase, o se sustituye por la descripción de aquello "
-            "que nombra. Vuelve a responder con el objeto JSON COMPLETO del "
-            "contrato (`resumen` y las secciones enteras del índice), sin texto "
-            "antes ni después."
-        )
+        return t("writer.repairDelta", reason=motivo)
     return (
-        prompt_original
-        + "\n\nAVISO: un intento anterior de redactar ESTE MISMO informe fue "
-        "rechazado por la validación de custodia.\n"
-        f"Motivo del rechazo:\n{motivo}\n"
-        "Redáctalo de nuevo evitando exactamente ese fallo. Recuerda que un "
-        "identificador, un hash o un comando que no esté en el MATERIAL no se "
-        "escribe: se describe la cosa sin él, o se hace constar que no consta."
+        prompt_original + t("writer.repairFull", reason=motivo)
     )
 
 
@@ -782,10 +735,7 @@ def write_report(
 
     if not mat.get("hallazgos"):
         raise ReportWriteError(
-            "el caso no tiene ningún hallazgo registrado: no hay investigación "
-            "que informar. Analiza la evidencia con el agente (los hallazgos se "
-            "registran con record_finding) antes de finalizar la investigación "
-            "Agentopsy no redacta un informe que nada sostiene (RULE 2)."
+            Mensaje("writer.noFindings")
         )
 
     prompt = build_prompt(mat)
@@ -828,10 +778,7 @@ def write_report(
             motivo = str(exc)
             if intentos > MAX_REPARACIONES:
                 raise ReportWriteError(
-                    f"{motivo} Es el intento {intentos}: al modelo ya se le "
-                    "devolvió el motivo del rechazo anterior y su corrección "
-                    "tampoco pasó la validación, así que no se publica nada. "
-                    "Puedes volver a finalizar la investigación."
+                    Mensaje("writer.repairFailed", reason=motivo, attempts=intentos)
                 ) from exc
             # Ronda de CORRECCIÓN: mismo ejecutor, mismo contrato, con el motivo
             # exacto del rechazo. No se publica nada distinto ni degradado: o
@@ -893,7 +840,7 @@ def write_report(
         # La identidad del documento (título, tipo, versión, autor) es metadato
         # del expediente, no contenido del informe: la fija Agentopsy para que
         # la lista de documentos del caso siga siendo legible.
-        "title": f"Informe pericial forense: {nombre_caso}",
+        "title": t("report.docTitle", case=nombre_caso),
         "type": "pericial",
         "summary": resumen,
         # Un informe pericial consolida TODAS las evidencias del caso, así que no
@@ -906,7 +853,7 @@ def write_report(
 
 
 __all__ = [
-    "ENCARGO",
+    "encargo",
     "MAX_BLOQUES_POR_SECCION",
     "MAX_CHARS_BLOQUE",
     "MAX_CHARS_RESUMEN",

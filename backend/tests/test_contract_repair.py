@@ -28,7 +28,10 @@ from typing import Any
 import pytest
 
 from _agent_pkg import make_package
+from forensia.i18n import t
 from forensia.agent.agent import MAX_REPARACIONES_CONTRATO, ForensicAgent
+
+
 from forensia.models.base import (
     Action,
     ExecutorBackend,
@@ -38,6 +41,21 @@ from forensia.models.base import (
     ResponseContractError,
     ToolCall,
 )
+
+
+def _marca(clave: str) -> str:
+    """El marcador distintivo de un bloque del prompt, EN EL IDIOMA EN CURSO.
+
+    Los bloques del prompt se rotulan desde el catálogo, así que un test los
+    nombra por su CLAVE y no por su texto castellano: lo que fija es que el
+    marcador está, no con qué palabra se escribe. Para los que abren con una
+    etiqueta entre corchetes (`[Presupuesto]`, `[Reminder]`) devuelve esa
+    etiqueta; para el resto, el primer trozo de la primera línea.
+    """
+    texto = t(clave).strip()
+    if texto.startswith("["):
+        return texto[: texto.index("]") + 1]
+    return texto.split("\n")[0].split(",")[0].strip()
 
 
 class _FakeEvidence:
@@ -91,7 +109,7 @@ def _correccion_en(mensajes: list[dict[str, Any]]) -> list[str]:
     return [
         str(m.get("content", ""))
         for m in mensajes
-        if "[Contrato de respuesta]" in str(m.get("content", ""))
+        if _marca("agentLoop.repairHead") in str(m.get("content", ""))
     ]
 
 
@@ -160,10 +178,14 @@ def test_two_consecutive_violations_abort_the_run() -> None:
     result = agent.run("analiza", case_id="c", evidence_id="e")
 
     assert "tarde" not in result["reply"]
-    assert "contrato de respuesta" in result["reply"]
-    # No se relaja nada: la segunda vez se corta, y se dice que se conserva lo
-    # ya persistido en caliente.
-    assert "conservan" in result["reply"]
+    # El aviso al perito sale en el idioma en curso, así que se fija por la
+    # entrada del catálogo: dice que el contrato se incumplió DOS veces y que lo
+    # ya persistido en caliente se conserva. No se relaja nada.
+    # El aviso sale en el idioma en curso: se comprueba contra la PLANTILLA del
+    # catálogo, trozo fijo a trozo fijo, en vez de contra una frase castellana.
+    plantilla = t("agent.contractBroken", None, model="\x00", iteration="\x00", error="\x00")
+    for trozo in (parte for parte in plantilla.split("\x00") if parte.strip()):
+        assert trozo in result["reply"]
 
 
 def test_the_allowance_is_consecutive_not_per_run(

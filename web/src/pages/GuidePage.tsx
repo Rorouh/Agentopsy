@@ -2,6 +2,7 @@ import type { ViewId } from "../navigation/navItems";
 import { usePublishShellHeader } from "../layout/shellHeader";
 import { useActiveCase } from "../state/activeCase";
 import { useCaseFacts } from "../state/caseFacts";
+import { useLang, type MessageKey } from "../i18n";
 
 interface GuidePageProps {
   onNavigate?: (view: ViewId) => void;
@@ -9,47 +10,41 @@ interface GuidePageProps {
 
 type StepState = "done" | "now" | "todo";
 
-const STATE_LABEL: Record<StepState, string> = {
-  done: "Hecho",
-  now: "En curso",
-  todo: "Pendiente",
+const STATE_KEY: Record<StepState, MessageKey> = {
+  done: "guide.state.done",
+  now: "guide.state.now",
+  todo: "guide.state.todo",
 };
 
-const LOGIN_COMMANDS = [
-  { note: "Claude Code", cmd: "docker compose exec -it api claude auth login" },
-  { note: "Codex CLI · device-code", cmd: "docker compose exec -it api codex login --device-auth" },
-  { note: "Gemini CLI · URL + código", cmd: "docker compose exec -it -e NO_BROWSER=true api gemini" },
+// El COMANDO es literal y no se traduce nunca: es lo que hay que teclear. Lo que
+// se traduce es la nota que lo nombra, y la de Claude Code es un nombre propio.
+const LOGIN_COMMANDS: { noteKey: MessageKey | null; note?: string; cmd: string }[] = [
+  { noteKey: null, note: "Claude Code", cmd: "docker compose exec -it api claude auth login" },
+  { noteKey: "guide.cmd.codex", cmd: "docker compose exec -it api codex login --device-auth" },
+  { noteKey: "guide.cmd.gemini", cmd: "docker compose exec -it -e NO_BROWSER=true api gemini" },
 ];
 
-const NOTES = [
-  {
-    title: "Ejecutor cloud y privacidad (RGPD)",
-    body: "Al elegir un ejecutor cloud los prompts incluyen contenido derivado de la evidencia (posibles datos personales reales) y sale a ese proveedor bajo tu propia suscripción. La alternativa 100 % local es Ollama, que nunca envía nada fuera del equipo.",
-  },
-  {
-    title: "Principios forenses",
-    body: "La evidencia nunca se toca directamente: todo acceso pasa por un handle hash-verificado y de solo lectura a nivel de bloque. Cada acción queda en un log de auditoría encadenado por hash.",
-  },
-  {
-    title: "Alcance académico",
-    body: "Agentopsy es post-mortem y de escritorio: no realiza forensia en vivo ni adquisición desde el equipo original. Sin validez legal certificada, pero con rigor forense real.",
-  },
+const NOTES: { titleKey: MessageKey; bodyKey: MessageKey }[] = [
+  { titleKey: "guide.note1.title", bodyKey: "guide.note1.body" },
+  { titleKey: "guide.note2.title", bodyKey: "guide.note2.body" },
+  { titleKey: "guide.note3.title", bodyKey: "guide.note3.body" },
 ];
 
 export function GuidePage({ onNavigate }: GuidePageProps) {
   const { activeCase } = useActiveCase();
   const facts = useCaseFacts();
+  const { t } = useLang();
 
   usePublishShellHeader(
     {
-      title: "Guía de uso",
+      title: t("guide.title"),
       action: onNavigate ? (
         <button type="button" onClick={() => onNavigate("repository")}>
-          {activeCase ? "Ir a Evidencia →" : "Empezar: crear caso →"}
+          {activeCase ? `${t("guide.goToEvidence")} →` : `${t("guide.start")} →`}
         </button>
       ) : undefined,
     },
-    [activeCase?.id, onNavigate],
+    [activeCase?.id, onNavigate, t],
   );
 
   // El estado de cada paso REFLEJA el caso activo. Sin caso o sin datos
@@ -58,29 +53,29 @@ export function GuidePage({ onNavigate }: GuidePageProps) {
   const steps: { n: string; title: string; desc: string; state: StepState; view?: ViewId }[] = [
     {
       n: "01",
-      title: "Crear caso / repositorio",
-      desc: "Registra un nuevo caso y define el examinador responsable antes de tocar evidencia.",
+      title: t("guide.step1.title"),
+      desc: t("guide.step1.desc"),
       state: activeCase ? "done" : "now",
       view: "repository",
     },
     {
       n: "02",
-      title: "Registrar evidencia",
-      desc: "Sube la imagen, el volcado o los ficheros que te hayan entregado; Agentopsy calcula el hash baseline y los deja en solo lectura.",
+      title: t("guide.step2.title"),
+      desc: t("guide.step2.desc"),
       state: has(facts.evidenceTotal) ? "done" : activeCase ? "now" : "todo",
       view: "repository",
     },
     {
       n: "03",
-      title: "Investigar con el agente",
-      desc: "Conversa con el agente, que ejecuta el maletín de herramientas forenses sobre la evidencia verificada.",
+      title: t("guide.step3.title"),
+      desc: t("guide.step3.desc"),
       state: has(facts.findings) ? "done" : has(facts.evidenceTotal) ? "now" : "todo",
       view: "investigation",
     },
     {
       n: "04",
-      title: "Correlacionar con ATT&CK",
-      desc: "Vincula los hallazgos con tácticas y técnicas conocidas para dar contexto al informe final.",
+      title: t("guide.step4.title"),
+      desc: t("guide.step4.desc"),
       // Hecho cuando la matriz tiene al menos una técnica tocada (propuesta del
       // agente, dictamen del perito o ambas), que es la MISMA cifra que usa la
       // escalera del sidebar: los dos estados no pueden contradecirse.
@@ -89,8 +84,8 @@ export function GuidePage({ onNavigate }: GuidePageProps) {
     },
     {
       n: "05",
-      title: "Revisar el timeline",
-      desc: "La capa de entrada, Hallazgos, es la línea de tiempo del incidente: qué pasó en el dispositivo investigado, un evento por hallazgo con la marca temporal del artefacto, y se exporta como imagen PNG para adjuntarla. Las otras tres reconstruyen la actividad de la investigación y del sistema de ficheros, y se leen como lista y se exportan como hoja de cálculo.",
+      title: t("guide.step5.title"),
+      desc: t("guide.step5.desc"),
       // Hecho cuando la capa del incidente sitúa al menos un evento en el eje:
       // es la capa de entrada y la que se lleva al informe. Lo que no se puede
       // situar no cuenta, y por eso el sidebar lo enuncia contado.
@@ -99,15 +94,15 @@ export function GuidePage({ onNavigate }: GuidePageProps) {
     },
     {
       n: "06",
-      title: "Extraer los grafos de relaciones",
-      desc: "El grafo responde a qué se conecta con qué: el modelo que elijas lee el texto de cada hallazgo y propone qué cuentas, ficheros, equipos, dominios e IP intervienen, y el grafo del caso los funde por entidad para enseñar lo que ata unos hallazgos con otros. Es una propuesta del modelo, no un hecho verificado, y así se etiqueta; la figura se exporta como PNG para adjuntarla al informe.",
+      title: t("guide.step6.title"),
+      desc: t("guide.step6.desc"),
       state: has(facts.graphs) ? "done" : has(facts.findings) ? "now" : "todo",
       view: "graphs",
     },
     {
       n: "07",
-      title: "Finalizar la investigación y firmar el informe",
-      desc: "Pulsa «Finalizar investigación» y el modelo seleccionado redactará el informe pericial completo desde los hallazgos y las evidencias del caso. Verifica su integridad y fírmalo como versión final.",
+      title: t("guide.step7.title"),
+      desc: t("guide.step7.desc"),
       state: has(facts.documents) ? "done" : has(facts.findings) ? "now" : "todo",
       view: "document-viewer",
     },
@@ -118,10 +113,10 @@ export function GuidePage({ onNavigate }: GuidePageProps) {
       <div className="view-stack view-stack--820">
         <div className="section-stack">
           <div className="rule-label">
-            <span className="eyebrow eyebrow--section">Flujo de trabajo</span>
+            <span className="eyebrow eyebrow--section">{t("guide.workflow")}</span>
             <span className="rule" />
             <span className="rule-count">
-              {activeCase ? "refleja el caso activo" : "sin caso activo"}
+              {t(activeCase ? "guide.reflectsCase" : "guide.noActiveCase")}
             </span>
           </div>
           <div className="guide-steps">
@@ -139,7 +134,7 @@ export function GuidePage({ onNavigate }: GuidePageProps) {
                 ) : (
                   <div className="guide-step-title">{s.title}</div>
                 )}
-                <div className={`tag guide-step-state is-${s.state}`}>{STATE_LABEL[s.state]}</div>
+                <div className={`tag guide-step-state is-${s.state}`}>{t(STATE_KEY[s.state])}</div>
                 <div className="guide-step-desc">{s.desc}</div>
               </div>
             ))}
@@ -148,41 +143,38 @@ export function GuidePage({ onNavigate }: GuidePageProps) {
 
         <div className="section-stack">
           <div className="rule-label">
-            <span className="eyebrow eyebrow--section">Iniciar sesión en un ejecutor</span>
+            <span className="eyebrow eyebrow--section">{t("guide.loginSection")}</span>
             <span className="rule" />
           </div>
           <div className="guide-prose">
-            Agentopsy no usa API keys. <strong>Ollama</strong> funciona sin nada más. Para un
-            ejecutor cloud necesitas tu propia sesión: en el primer arranque el stack intenta
-            reutilizar la del host y, si no la hay, inicias sesión una única vez dentro del
-            contenedor. La sesión persiste en el volumen{" "}
+            {t("guide.loginProseA")} <strong>Ollama</strong> {t("guide.loginProseB")}{" "}
             <span className="mono">forensia-cli-auth</span>.
           </div>
           {/* Bloque de comandos: oscuro en AMBOS temas, es una terminal. */}
           <div className="code-block">
             {LOGIN_COMMANDS.map((c) => (
               <div className="code-line" key={c.cmd}>
-                <div className="code-note">{c.note}</div>
+                <div className="code-note">{c.noteKey ? t(c.noteKey) : c.note}</div>
                 <div className="code-cmd">{c.cmd}</div>
               </div>
             ))}
           </div>
           <div className="guide-prose guide-prose--sm">
-            Comprueba el estado en <strong>Configuración → Motor de análisis</strong>. Para
-            revocar la sesión: <span className="mono">docker compose down -v</span>.
+            {t("guide.loginNoteA")} <strong>{t("guide.settingsPath")}</strong>.{" "}
+            {t("guide.loginNoteB")} <span className="mono">docker compose down -v</span>.
           </div>
         </div>
 
         <div className="section-stack">
           <div className="rule-label">
-            <span className="eyebrow eyebrow--section">Lo que debes saber</span>
+            <span className="eyebrow eyebrow--section">{t("guide.notesSection")}</span>
             <span className="rule" />
           </div>
           <div className="guide-notes">
             {NOTES.map((n) => (
-              <div className="guide-note" key={n.title}>
-                <div className="guide-note-title">{n.title}</div>
-                <div className="guide-note-body">{n.body}</div>
+              <div className="guide-note" key={n.titleKey}>
+                <div className="guide-note-title">{t(n.titleKey)}</div>
+                <div className="guide-note-body">{t(n.bodyKey)}</div>
               </div>
             ))}
           </div>

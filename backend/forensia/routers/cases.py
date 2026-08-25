@@ -14,6 +14,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from forensia.i18n import t, traducir_excepcion
 from forensia.cases.manager import case_manager
 from forensia.evidence import evidence_manager
 from forensia.evidence_jobs import register_job_registry
@@ -88,7 +89,7 @@ def create_case(req: CreateCaseRequest) -> dict[str, Any]:
             notes=req.notes,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
     return _case_dict(case)
 
 
@@ -102,9 +103,9 @@ def get_case(case_id: str) -> dict[str, Any]:
     try:
         case = case_manager.load(case_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
     return _case_dict(case)
 
 
@@ -119,9 +120,9 @@ def get_case_pulse(case_id: str) -> dict[str, Any]:
     try:
         return case_pulse(case_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
 
 
 @router.post("/api/cases/{case_id}/os-profile", dependencies=[Depends(require_token)])
@@ -133,9 +134,9 @@ def anchor_os_profile(case_id: str, req: AnchorOsProfileRequest) -> dict[str, An
     try:
         case = case_manager.anchor_os_profile(case_id, req.os_profile)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
     return _case_dict(case)
 
 
@@ -144,9 +145,9 @@ def close_case(case_id: str) -> dict[str, Any]:
     try:
         case = case_manager.close(case_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
     return _case_dict(case)
 
 
@@ -157,9 +158,9 @@ def reopen_case(case_id: str) -> dict[str, Any]:
     try:
         case = case_manager.reopen(case_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
     return _case_dict(case)
 
 
@@ -172,9 +173,9 @@ def update_case(case_id: str, req: UpdateCaseRequest) -> dict[str, Any]:
             case_id, name=req.name, examiner=req.examiner, notes=req.notes
         )
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
     return _case_dict(case)
 
 
@@ -188,9 +189,9 @@ def delete_case(case_id: str, req: DeleteCaseRequest) -> dict[str, Any]:
     try:
         case_manager.delete_case(case_id, req.confirm_name)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=traducir_excepcion(exc)) from exc
     return {"deleted": True, "case_id": case_id}
 
 
@@ -202,9 +203,9 @@ def register_evidence(case_id: str, req: RegisterEvidenceRequest) -> dict[str, A
     try:
         handle = evidence_manager.register(case_id, req.source_path)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
     return _evidence_dict(handle)
 
 
@@ -226,15 +227,14 @@ def register_evidence_async(case_id: str, req: RegisterEvidenceRequest) -> dict[
     if not req.source_path or not req.source_path.strip():
         raise HTTPException(
             status_code=422,
-            detail="source_path is required: elige la evidencia de la bandeja "
-                   "(Agentopsy no asume 'la única' ni 'la más reciente', RULE 2).",
+            detail=t("api.sourcePathRequired"),
         )
     try:
         case_manager.load(case_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
 
     job = register_job_registry.submit(case_id, req.source_path, manager=evidence_manager)
     return job.public()
@@ -258,11 +258,11 @@ def get_evidence_job(case_id: str, job_id: str) -> dict[str, Any]:
     error (mensaje accionable). Job inexistente — o de otro caso — → 404."""
     snap = register_job_registry.snapshot(job_id)
     if snap is None:
-        raise HTTPException(status_code=404, detail=f"job {job_id} not found")
+        raise HTTPException(status_code=404, detail=t("api.jobNotFound", job_id=job_id))
     if snap.get("case_id") != case_id:
         raise HTTPException(
             status_code=404,
-            detail=f"job {job_id} does not belong to case {case_id}",
+            detail=t("api.jobNotInCase", job_id=job_id, case_id=case_id),
         )
     return snap
 
@@ -272,9 +272,9 @@ def list_evidence(case_id: str) -> list[dict[str, Any]]:
     try:
         handles = evidence_manager.list(case_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
     return [_evidence_dict(h) for h in handles]
 
 
@@ -289,9 +289,9 @@ def verify_evidence(case_id: str, evidence_id: str) -> dict[str, Any]:
         # ``last_verification`` block (verify() wrote verification.json).
         handle = evidence_manager.get(case_id, evidence_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
     payload = _evidence_dict(handle)
     payload["verified"] = bool(verified)
     return payload
@@ -316,7 +316,7 @@ def redetect_evidence_os(case_id: str, evidence_id: str) -> dict[str, Any]:
         handle = evidence_manager.redetect_os(case_id, evidence_id)
         case = case_manager.load(case_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
     return {"evidence": _evidence_dict(handle), "case": _case_dict(case)}

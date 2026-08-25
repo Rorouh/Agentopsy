@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { Capabilities, ExecutorId, ExecutorStatus } from "../api/types";
 import { usePublishShellHeader } from "../layout/shellHeader";
+import { useT } from "../i18n";
 import { useActiveCase } from "../state/activeCase";
 import { GraphSection, type GraphResumen } from "./graphs/GraphSection";
 
@@ -71,6 +72,7 @@ export function GraphsPage() {
   };
 
   const onResumen = useCallback((r: GraphResumen) => setResumen(r), []);
+  const t = useT();
 
   const executorStatus: ExecutorStatus | null =
     executor && caps ? caps.executors[executor] ?? null : null;
@@ -80,16 +82,16 @@ export function GraphsPage() {
 
   usePublishShellHeader(
     {
-      title: "Grafos de relaciones",
+      title: t("graphs.title"),
       // Sin hallazgos no se enuncia nada: la propia figura ya dice «0 nodos ·
       // 0 aristas» y explica debajo que aparecerá en cuanto haya uno.
       meta: !activeCase
-        ? "sin caso seleccionado"
+        ? t("common.noCase")
         : resumen && resumen.hallazgos > 0
-          ? `${resumen.conGrafo} de ${resumen.hallazgos} hallazgos con grafo`
+          ? t("graphs.meta", { done: resumen.conGrafo, total: resumen.hallazgos })
           : undefined,
     },
-    [activeCase?.id, resumen?.conGrafo, resumen?.hallazgos],
+    [activeCase?.id, resumen?.conGrafo, resumen?.hallazgos, t],
   );
 
   if (casesPhase === "loading") {
@@ -97,7 +99,7 @@ export function GraphsPage() {
       <div className="view-scroll">
         <div className="loading-state">
           <span className="spinner" aria-hidden="true" />
-          <span>Cargando los grafos del caso…</span>
+          <span>{t("graphs.loading")}</span>
         </div>
       </div>
     );
@@ -107,7 +109,7 @@ export function GraphsPage() {
     return (
       <div className="view-scroll">
         <div className="error-state">
-          <strong>No se pudieron cargar los grafos:</strong> {casesError}
+          <strong>{t("graphs.loadFailed")}</strong> {casesError}
         </div>
       </div>
     );
@@ -117,11 +119,8 @@ export function GraphsPage() {
     return (
       <div className="view-scroll">
         <div className="empty-rail">
-          <div className="empty-rail-title">Sin caso abierto</div>
-          <div className="empty-rail-body">
-            El grafo se extrae del texto de los hallazgos de un caso. Abre uno desde el
-            lateral.
-          </div>
+          <div className="empty-rail-title">{t("findings.noCase")}</div>
+          <div className="empty-rail-body">{t("graphs.noCaseBody")}</div>
         </div>
       </div>
     );
@@ -131,17 +130,10 @@ export function GraphsPage() {
     <div className="view-scroll">
       <div className="graphs-page">
         <div className="graphs-intro">
-          <div className="graphs-intro-text">
-            Donde la línea de tiempo responde cuándo pasó, el grafo responde qué se conecta
-            con qué: qué cuentas, ficheros, equipos, dominios e IP intervienen en cada
-            hallazgo y con qué relación. El grafo del caso funde los de todos los hallazgos
-            por entidad, y esa fusión no gasta ninguna llamada al modelo. Es una propuesta
-            del modelo, no un hecho verificado, y así viaja etiquetada también dentro de la
-            imagen exportada.
-          </div>
+          <div className="graphs-intro-text">{t("graphs.intro")}</div>
           <div className="field graphs-intro-field">
             <label className="eyebrow" htmlFor="graphs-executor">
-              Modelo que extrae
+              {t("graphs.extractingModel")}
             </label>
             {/* Selección EXPLÍCITA del operador. Un ejecutor no disponible se
                 lista deshabilitado con su nombre, nunca se sustituye por otro
@@ -152,17 +144,17 @@ export function GraphsPage() {
               value={executor}
               onChange={(e) => seleccionar(e.target.value as ExecutorId | "")}
             >
-              <option value="">Elige un ejecutor…</option>
+              <option value="">{t("executor.pick")}</option>
               {executorEntries.map(([id, st]) => (
                 <option key={id} value={id} disabled={!st.available}>
-                  {st.available ? st.name : `${st.name} (no disponible)`}
-                  {st.local ? " · local" : ""}
+                  {st.available ? st.name : t("executor.unavailable", { name: st.name })}
+                  {st.local ? ` · ${t("executor.local")}` : ""}
                 </option>
               ))}
             </select>
             {executorStatus && !executorStatus.available && (
               <div className="inline-note">
-                {executorStatus.reason ?? `${executorStatus.name} no está disponible.`}
+                {executorStatus.reason ?? t("executor.notAvailable", { name: executorStatus.name })}
               </div>
             )}
           </div>

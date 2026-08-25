@@ -14,6 +14,7 @@ from typing import Any
 from fpdf import FPDF
 from fpdf.fonts import FontFace
 
+from forensia.i18n import t
 from forensia.reports.store import Document
 
 _INK = (20, 23, 29)       # #14171d
@@ -93,7 +94,7 @@ def render_pdf(doc: Document) -> bytes:
 def _cover(pdf: _Report, doc: Document) -> None:
     pdf.set_font("Courier", "B", 9)
     pdf.set_text_color(*_ACCENT)
-    pdf.cell(0, 6, _s("DOCUMENTO PERICIAL CONFIDENCIAL"), new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 6, _s(t("pdf.confidential")), new_x="LMARGIN", new_y="NEXT")
     pdf.ln(2)
     pdf.set_font("Helvetica", "B", 24)
     pdf.set_text_color(*_INK)
@@ -106,13 +107,13 @@ def _cover(pdf: _Report, doc: Document) -> None:
     pdf.ln(4)
 
     rows = [
-        ("Perito", doc.author),
-        ("Tipo de informe", doc.type),
-        ("Version", doc.version),
-        ("Fecha del informe", doc.created_at),
-        ("Identificador del caso", doc.case_id),
-        ("Evidencia", doc.evidence_id or "-"),
-        ("SHA-256 del documento", doc.sha256),
+        (t("pdf.examiner"), doc.author),
+        (t("pdf.reportType"), doc.type),
+        (t("pdf.version"), doc.version),
+        (t("pdf.reportDate"), doc.created_at),
+        (t("pdf.caseId"), doc.case_id),
+        (t("pdf.evidence"), doc.evidence_id or "-"),
+        (t("pdf.docHash"), doc.sha256),
     ]
     _meta_table(pdf, rows)
 
@@ -141,7 +142,7 @@ def _meta_table(pdf: _Report, rows: list[tuple[str, str]]) -> None:
 def _toc(pdf: _Report, doc: Document) -> None:
     if not doc.sections:
         return
-    _h2(pdf, "Indice de contenidos", num="")
+    _h2(pdf, t("pdf.toc"), num="")
     pdf.set_font("Helvetica", "", 11)
     pdf.set_text_color(*_BODY)
     for sec in doc.sections:
@@ -295,8 +296,11 @@ def _signature(pdf: _Report, doc: Document) -> None:
     pdf.ln(3)
     pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(*_FAINT)
-    status = "FIRMADO - version final" if doc.status == "final" else "BORRADOR - sin firmar"
-    pdf.multi_cell(0, 5, _s(f"Generado por Agentopsy - {status} - {doc.created_at}"),
+    status = t("pdf.signedFull") if doc.status == "final" else t("pdf.draftFull")
+    pdf.multi_cell(
+        0,
+        5,
+        _s(t("pdf.footer", status=status, date=doc.created_at)),
                    new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Courier", "", 8)
     pdf.multi_cell(0, 5, _s(f"SHA-256 {doc.sha256}"), new_x="LMARGIN", new_y="NEXT",

@@ -6,6 +6,7 @@
 // en X-Forensia-Token en cada llamada. Nunca se persiste (ni localStorage ni
 // cookies), vive solo en memoria de la pestaña.
 
+import { LANG_HEADER, getLang, tr } from "../i18n/state";
 import type {
   AdjudicateRequest,
   AgentFinding,
@@ -76,12 +77,9 @@ export const GATEWAY_STATUS: ReadonlySet<number> = new Set([502, 503, 504]);
 // («<html><head><title>502 Bad Gateway...») en vez de saber qué pasó.
 function gatewayDetail(status: number): string {
   if (status === 504) {
-    return `HTTP 504: el api no respondió a tiempo a través del proxy.`;
+    return tr("http.gateway504");
   }
-  return (
-    `HTTP ${status}: el proxy no pudo hablar con el servicio api. ` +
-    `Puede estar arrancando o reiniciándose (docker compose ps api).`
-  );
+  return tr("http.gateway", { status });
 }
 
 async function readDetail(res: Response): Promise<string> {
@@ -96,13 +94,28 @@ async function readDetail(res: Response): Promise<string> {
       // Cualquier otra respuesta HTML tampoco es del api: nombra el estado en vez
       // de pintar la página de error de quien la haya generado.
       if (text.trimStart().toLowerCase().startsWith("<")) {
-        return `HTTP ${res.status}: respuesta no-JSON desde ${res.url || "el api"}.`;
+        return tr("http.notJson", {
+          status: res.status,
+          source: res.url || tr("http.theApi"),
+        });
       }
       return text;
     } catch {
       return res.statusText;
     }
   }
+}
+
+// Cabeceras que lleva TODA petición: el token de sesión y el idioma en el que
+// se quiere la respuesta. Se resuelven en una sola función a propósito. Hay
+// cinco puntos de salida en este fichero (el `request` central, la descarga por
+// blob, la subida por XHR, el stream del chat y el PDF), y sembrar la cabecera a
+// mano en los cinco es exactamente como se olvida uno.
+//
+// `getLang()` se lee EN CADA LLAMADA, no al cargar el módulo: cambiar el idioma
+// tiene que afectar a la siguiente petición sin recargar la página.
+function baseHeaders(token: string): Record<string, string> {
+  return { "X-Forensia-Token": token, [LANG_HEADER]: getLang() };
 }
 
 let tokenPromise: Promise<string> | null = null;
@@ -129,7 +142,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     fetch(path, {
       ...init,
       headers: {
-        "X-Forensia-Token": token,
+        ...baseHeaders(token),
         ...(init?.body !== undefined ? { "Content-Type": "application/json" } : {}),
       },
     });
@@ -153,7 +166,7 @@ function post<T>(path: string, body: unknown): Promise<T> {
 // del Content-Disposition del backend; `fallback` si el servidor no lo manda.
 async function download(path: string, fallback: string): Promise<void> {
   const token = await getToken();
-  const res = await fetch(path, { headers: { "X-Forensia-Token": token } });
+  const res = await fetch(path, { headers: baseHeaders(token) });
   if (!res.ok) throw new ApiError(res.status, await readDetail(res));
   const blob = await res.blob();
   const cd = res.headers.get("Content-Disposition") ?? "";
@@ -185,7 +198,9 @@ function upload<T>(
       form.append("file", file, file.name);
       const xhr = new XMLHttpRequest();
       xhr.open("POST", path);
-      xhr.setRequestHeader("X-Forensia-Token", token);
+      for (const [nombre, valor] of Object.entries(baseHeaders(token))) {
+        xhr.setRequestHeader(nombre, valor);
+      }
       xhr.upload.onprogress = (e) => {
         if (onProgress && e.lengthComputable) onProgress(e.loaded / e.total);
       };
@@ -195,7 +210,7 @@ function upload<T>(
           try {
             resolve(JSON.parse(text) as T);
           } catch {
-            reject(new ApiError(xhr.status, "Respuesta no válida del servidor."));
+            reject(new ApiError(xhr.status, tr("http.badResponse")));
           }
           return;
         }
@@ -265,7 +280,7 @@ export const api = {
     const doFetch = (token: string) =>
       fetch("/api/agent/query/stream", {
         method: "POST",
-        headers: { "X-Forensia-Token": token, "Content-Type": "application/json" },
+        headers: { ...baseHeaders(token), "Content-Type": "application/json" },
         body: JSON.stringify(req),
         signal,
       });
@@ -275,7 +290,7 @@ export const api = {
       res = await doFetch(await getToken());
     }
     if (!res.ok) throw new ApiError(res.status, await readDetail(res));
-    if (!res.body) throw new ApiError(0, "el api no devolvió cuerpo de streaming");
+    if (!res.body) throw new ApiError(0, tr("http.noStreamBody"));
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -538,7 +553,7 @@ export const api = {
       const token = await getToken();
       const res = await fetch(
         `/api/cases/${encodeURIComponent(caseId)}/documents/${encodeURIComponent(docId)}/pdf`,
-        { headers: { "X-Forensia-Token": token } },
+        { headers: baseHeaders(token) },
       );
       if (!res.ok) throw new ApiError(res.status, await readDetail(res));
       const blob = await res.blob();

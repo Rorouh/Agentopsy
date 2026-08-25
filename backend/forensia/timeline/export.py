@@ -29,33 +29,42 @@ from __future__ import annotations
 
 from typing import Any
 
+from forensia.i18n import t
 from forensia.export_hoja import NO_APLICA, build_workbook, iso_utc_ahora, unir
 from forensia.timeline.vocabulario import (
-    KIND_LABEL,
-    SEVERITY_LABEL,
-    STATUS_LABEL,
+    KIND_KEY,
+    SEVERITY_KEY,
+    STATUS_KEY,
     etiqueta,
 )
 
 #: Cabecera de la tabla del timeline. Orden estable, es un contrato que los tests
 #: fijan. Cubre los dos tipos de evento (``tool_run`` y ``finding``); cada fila
 #: rellena los campos que le aplican y escribe ``n/d`` en los que no.
-HOJA_HEADER: tuple[str, ...] = (
-    "N",
-    "Marca temporal (UTC)",
-    "Tipo de evento",
-    "Herramienta",
-    "Estado",
-    "Código de salida",
-    "Hallazgo",
-    "Severidad",
-    "Detalle del hallazgo",
-    "Técnicas ATT&CK propuestas",
-    "Evidencia",
-    "Identificador del evento",
-    "Ficheros de salida",
-    "Comando ejecutado (argv literal auditado)",
+#: Las CLAVES de la cabecera, en su orden estable. El orden es el contrato que
+#: los tests fijan; el rótulo de cada columna lo resuelve `hoja_header()` en el
+#: idioma de la hoja.
+HOJA_HEADER_KEYS: tuple[str, ...] = (
+    "tlSheet.col.n",
+    "tlSheet.col.ts",
+    "tlSheet.col.kind",
+    "tlSheet.col.tool",
+    "tlSheet.col.status",
+    "tlSheet.col.exit",
+    "tlSheet.col.finding",
+    "tlSheet.col.severity",
+    "tlSheet.col.detail",
+    "tlSheet.col.techniques",
+    "tlSheet.col.evidence",
+    "tlSheet.col.eventId",
+    "tlSheet.col.outputs",
+    "tlSheet.col.argv",
 )
+
+
+def hoja_header() -> tuple[str, ...]:
+    """La cabecera de la tabla, en el idioma de la hoja."""
+    return tuple(t(k) for k in HOJA_HEADER_KEYS)
 
 def timeline_to_hoja(
     events: list[dict[str, Any]],
@@ -88,26 +97,24 @@ def timeline_to_hoja(
     )
 
     procedencia: list[tuple[str, str]] = [
-        ("Agentopsy", "Línea temporal de la investigación"),
-        ("Caso", case_name),
-        ("Identificador del caso", case_id),
-        ("Exportado (UTC)", exported_at or iso_utc_ahora()),
-        ("Zona horaria de las marcas", timezone),
-        ("Eventos en la hoja", str(len(events))),
+        ("Agentopsy", t("tlSheet.prov.title")),
+        (t("tlSheet.prov.case"), case_name),
+        (t("tlSheet.prov.caseId"), case_id),
+        (t("tlSheet.prov.exported"), exported_at or iso_utc_ahora()),
+        (t("tlSheet.prov.timezone"), timezone),
+        (t("tlSheet.prov.events"), str(len(events))),
         (
-            "Composición",
-            f"{ejecuciones} ejecuciones de herramienta "
-            f"({fallidas} con error), {hallazgos} hallazgos",
+            t("tlSheet.prov.composition"),
+            t(
+                "tlSheet.prov.compositionValue",
+                runs=ejecuciones,
+                failed=fallidas,
+                findings=hallazgos,
+            ),
         ),
-        ("Primer evento", primero),
-        ("Último evento", ultimo),
-        (
-            "Cómo se lee",
-            "Cada ejecución se reproduce con el comando de la última columna, que "
-            "es el argv literal del log de auditoría encadenado del caso, no una "
-            "reconstrucción. Ordena por la columna de la marca temporal: está en "
-            "ISO 8601 y ordena igual como texto que como fecha.",
-        ),
+        (t("tlSheet.prov.first"), primero),
+        (t("tlSheet.prov.last"), ultimo),
+        (t("tlSheet.prov.howToRead"), t("tlSheet.prov.howToReadValue")),
     ]
 
     filas: list[list[Any]] = []
@@ -120,12 +127,12 @@ def timeline_to_hoja(
         filas.append([
             n,
             ev.get("ts") or "",
-            etiqueta(KIND_LABEL, kind),
+            etiqueta(KIND_KEY, kind),
             ev.get("tool_id") or "",
-            etiqueta(STATUS_LABEL, ev.get("status")) if es_run else NO_APLICA,
+            etiqueta(STATUS_KEY, ev.get("status")) if es_run else NO_APLICA,
             NO_APLICA if not es_run else ("" if exit_code is None else exit_code),
             ev.get("title") or (NO_APLICA if es_run else ""),
-            etiqueta(SEVERITY_LABEL, ev.get("severity")) if not es_run else NO_APLICA,
+            etiqueta(SEVERITY_KEY, ev.get("severity")) if not es_run else NO_APLICA,
             ev.get("summary") or (NO_APLICA if es_run else ""),
             unir(ev.get("mitre_hints") or []) if not es_run else NO_APLICA,
             ev.get("evidence_id") or "",
@@ -135,10 +142,10 @@ def timeline_to_hoja(
         ])
     return build_workbook(
         procedencia=procedencia,
-        cabecera=HOJA_HEADER,
+        cabecera=hoja_header(),
         filas=filas,
-        titulo="Linea temporal",
+        titulo=t("tlSheet.tabTitle"),
     )
 
 
-__all__ = ["HOJA_HEADER", "timeline_to_hoja"]
+__all__ = ["HOJA_HEADER_KEYS", "hoja_header", "timeline_to_hoja"]

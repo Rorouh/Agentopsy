@@ -17,6 +17,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from forensia.i18n import t, traducir_excepcion
 from forensia.knowledge import knowledge_store
 from forensia.security import require_token
 
@@ -32,9 +33,9 @@ def list_nodes(case_id: str) -> list[dict[str, Any]]:
     try:
         return [asdict(n) for n in knowledge_store.index(case_id)]
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
 
 
 @router.get(
@@ -46,12 +47,12 @@ def read_node(case_id: str, doc_id: str) -> dict[str, Any]:
     try:
         node = knowledge_store.read(case_id, doc_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
     if node is None:
         raise HTTPException(
-            status_code=404, detail=f"el caso no tiene un nodo {doc_id!r}"
+            status_code=404, detail=t("api.noKnowledgeNode", doc_id=repr(doc_id))
         )
     return asdict(node)
 
@@ -69,6 +70,6 @@ def read_history(case_id: str, doc_id: str) -> list[dict[str, Any]]:
     try:
         return [b.as_dict() for b in knowledge_store.history(case_id, doc_id)]
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc

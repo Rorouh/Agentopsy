@@ -10,6 +10,8 @@
 // así que renombrar `document-viewer` → `report` mandaría a la vista por defecto
 // a todo el que tuviera la app abierta, sin ganancia funcional.
 
+import type { MessageKey } from "../i18n/en";
+
 export type ViewId =
   | "guide"
   | "repository"
@@ -25,7 +27,7 @@ export type NavSection = "primary" | "secondary";
 
 export interface NavItem {
   id: ViewId;
-  label: string;
+  labelKey: MessageKey;
   section: NavSection;
 }
 
@@ -35,7 +37,7 @@ export interface NavItem {
 // informe.
 export interface PhaseItem {
   id: ViewId;
-  label: string;
+  labelKey: MessageKey;
   // Alimenta el eyebrow de la cabecera contextual: «Fase N de 7».
   index: number;
 }
@@ -46,22 +48,22 @@ export interface PhaseItem {
 // informe que se elabora a partir de los hallazgos ya leídos, y porque cuesta
 // dinero: se decide y se lanza aparte, no de paso mientras se redacta.
 export const PHASES: PhaseItem[] = [
-  { id: "repository", label: "Evidencia", index: 1 },
-  { id: "investigation", label: "Investigación", index: 2 },
-  { id: "mitre", label: "Correlación ATT&CK", index: 3 },
-  { id: "timeline", label: "Timeline", index: 4 },
-  { id: "findings", label: "Hallazgos", index: 5 },
-  { id: "graphs", label: "Grafos", index: 6 },
-  { id: "document-viewer", label: "Informe pericial", index: 7 },
+  { id: "repository", labelKey: "nav.repository", index: 1 },
+  { id: "investigation", labelKey: "nav.investigation", index: 2 },
+  { id: "mitre", labelKey: "nav.mitre", index: 3 },
+  { id: "timeline", labelKey: "nav.timeline", index: 4 },
+  { id: "findings", labelKey: "nav.findings", index: 5 },
+  { id: "graphs", labelKey: "nav.graphs", index: 6 },
+  { id: "document-viewer", labelKey: "nav.report", index: 7 },
 ];
 
 export const UTILITIES: NavItem[] = [
-  { id: "settings", label: "Configuración", section: "secondary" },
-  { id: "guide", label: "Guía", section: "secondary" },
+  { id: "settings", labelKey: "nav.settings", section: "secondary" },
+  { id: "guide", labelKey: "nav.guide", section: "secondary" },
 ];
 
 export const NAV_ITEMS: NavItem[] = [
-  ...PHASES.map((p) => ({ id: p.id, label: p.label, section: "primary" as const })),
+  ...PHASES.map((p) => ({ id: p.id, labelKey: p.labelKey, section: "primary" as const })),
   ...UTILITIES,
 ];
 
@@ -72,13 +74,12 @@ export const NAV_ITEMS: NavItem[] = [
 // que decir en una fase. Las utilidades (Configuración, Guía) devuelven cadena
 // vacía y el armazón no pinta la línea: rotularlas «Servicio» no informaba de
 // nada que el propio título no dijera ya.
-export function viewEyebrow(view: ViewId): string {
-  const phase = PHASES.find((p) => p.id === view);
-  return phase ? `Fase ${phase.index} de ${PHASES.length}` : "";
+export function viewPhase(view: ViewId): PhaseItem | undefined {
+  return PHASES.find((p) => p.id === view);
 }
 
-export function viewLabel(view: ViewId): string {
-  return NAV_ITEMS.find((n) => n.id === view)?.label ?? "";
+export function viewLabelKey(view: ViewId): MessageKey | undefined {
+  return NAV_ITEMS.find((n) => n.id === view)?.labelKey;
 }
 
 // El flujo real empieza por el caso: primero se crea/selecciona y se registra

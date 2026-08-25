@@ -24,12 +24,13 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from forensia.i18n import t
 from forensia.cases import case_manager
 from forensia.export_hoja import export_basename, iso_utc_ahora
 from forensia.findings.store import Finding, finding_store
 from forensia.mitre import catalog
 from forensia.mitre.coverage import coverage_store
-from forensia.timeline.vocabulario import SEVERITY_LABEL, etiqueta
+from forensia.timeline.vocabulario import SEVERITY_KEY, etiqueta
 
 #: Cota de los valores literales de ``observed_at`` que no se pudieron leer y que se
 #: devuelven para que el perito vea QUÉ se escribió. Se declara el recorte
@@ -148,7 +149,7 @@ def assemble_findings_timeline(
             "_orden": momento,
             "title": finding.title,
             "severity": finding.severity,
-            "severity_label": etiqueta(SEVERITY_LABEL, finding.severity),
+            "severity_label": etiqueta(SEVERITY_KEY, finding.severity),
             "evidence_id": finding.evidence_id,
             "run_id": finding.run_id,
             "mitre": _mitre_of(tecnicas),
@@ -185,32 +186,18 @@ def _mensaje(
     if eventos:
         return None
     if total == 0:
-        return (
-            "El caso no tiene hallazgos registrados todavía. La línea de tiempo del "
-            "incidente se construye con ellos: analiza la evidencia desde "
-            "Investigación y el agente los irá registrando."
-        )
+        return t("incidentTl.noFindings")
     partes = []
     if sin_observed_at:
-        partes.append(
-            f"{sin_observed_at} sin marca temporal del artefacto"
-        )
+        partes.append(t("incidentTl.noObservedAt", count=sin_observed_at))
     if no_parseable:
-        partes.append(
-            f"{no_parseable} con una marca que no se puede leer como fecha con zona"
-        )
+        partes.append(t("incidentTl.unparseable", count=no_parseable))
     sujeto = (
-        "El único hallazgo del caso no se puede situar"
+        t("incidentTl.subjectOne")
         if total == 1
-        else f"Ninguno de los {total} hallazgos del caso se puede situar"
+        else t("incidentTl.subjectMany", count=total)
     )
-    return (
-        f"{sujeto} en el tiempo "
-        f"({', '.join(partes)}). Un hallazgo entra en esta línea de tiempo por su "
-        "observed_at, la hora del hecho en el dispositivo investigado; fecharlo con "
-        "la hora del análisis falsearía el incidente, así que se queda fuera y se "
-        "declara aquí."
-    )
+    return t("incidentTl.explain", subject=sujeto, reasons=", ".join(partes))
 
 
 def build_findings_timeline(case_id: str) -> dict[str, Any]:

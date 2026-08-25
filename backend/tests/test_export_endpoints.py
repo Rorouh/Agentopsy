@@ -23,6 +23,7 @@ import pytest
 from fastapi.testclient import TestClient
 from openpyxl import load_workbook
 
+from forensia.i18n import t
 from forensia.cases.manager import CaseManager
 from forensia.export_hoja import MEDIA_TYPE
 from forensia.findings.store import FindingStore
@@ -143,7 +144,7 @@ def test_the_sheet_carries_the_real_coverage_of_the_case(client, auth, cases) ->
 
     assert "T1055" in texto
     assert "Process Injection" in texto
-    assert "Técnicas en la hoja	1" in texto
+    assert f'{t("mitreSheet.prov.techniques")}\t1' in texto
 
 
 @pytest.mark.parametrize(

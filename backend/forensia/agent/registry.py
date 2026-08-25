@@ -22,7 +22,12 @@ import logging
 import os
 from pathlib import Path
 
-from forensia.agent.loader import AgentPackageError, load_packages
+from forensia.agent.loader import (
+    AgentPackageError,
+    agent_md_filename,
+    load_packages,
+)
+from forensia.i18n import current_lang
 from forensia.agent.package import AgentPackage
 
 logger = logging.getLogger(__name__)
@@ -47,61 +52,90 @@ def _default_agents_dir() -> Path:
 
 
 class AgentRegistry:
-    """Carga única en construcción. Re-cargar requiere reinstanciar."""
+    """Carga PEREZOSA por idioma, cacheada. Re-cargar requiere reinstanciar.
+
+    El agente se configura con un fichero de comportamiento POR IDIOMA
+    (``agent.md`` / ``agent.en.md``), así que el registro no puede ser una sola
+    tabla: guarda una por idioma y carga la del idioma en curso la primera vez
+    que se le pide. Cargar en el constructor volvía a fijar el idioma de
+    arranque para toda la vida del proceso, y el perito puede cambiarlo sin
+    reiniciar nada.
+
+    Un idioma cuyo fichero falte deja SU tabla vacía, no la de los demás: la UI
+    degrada explícitamente para ese idioma (RULE 2, sin agente de repuesto).
+    """
 
     def __init__(self, root: Path | None = None) -> None:
         self.root: Path = Path(root).resolve() if root is not None else _default_agents_dir()
-        self._by_id: dict[str, AgentPackage] = {}
-        self._by_profile: dict[str, AgentPackage] = {}
-        self._load()
+        self._por_idioma: dict[str, tuple[dict[str, AgentPackage], dict[str, AgentPackage]]] = {}
+        # La del idioma de partida se carga ya: `capabilities` la consulta en el
+        # primer arranque y un registro vacío ahí se leería como «sin agente».
+        self._tablas()
 
     # ---- public API --------------------------------------------------------
 
     def list(self) -> list[AgentPackage]:
-        return sorted(self._by_id.values(), key=lambda a: a.id)
+        por_id, _ = self._tablas()
+        return sorted(por_id.values(), key=lambda a: a.id)
 
     def get(self, agent_id: str) -> AgentPackage:
+        por_id, _ = self._tablas()
         try:
-            return self._by_id[agent_id]
+            return por_id[agent_id]
         except KeyError as exc:
             raise KeyError(f"unknown agent id: {agent_id!r}") from exc
 
     def has_profile(self, os_profile: str) -> bool:
-        return os_profile in self._by_profile
+        _, por_perfil = self._tablas()
+        return os_profile in por_perfil
 
     def get_for_profile(self, os_profile: str) -> AgentPackage:
+        _, por_perfil = self._tablas()
         try:
-            return self._by_profile[os_profile]
+            return por_perfil[os_profile]
         except KeyError as exc:
             raise KeyError(
                 f"no agent loaded for os_profile={os_profile!r}. "
-                f"Drop an '{'agent.md'}' under {self.root} (see agentes/README.md)."
+                f"Drop an '{agent_md_filename()}' under {self.root} "
+                "(see agentes/README.md)."
             ) from exc
 
     # ---- internals ---------------------------------------------------------
 
-    def _load(self) -> None:
+    def _tablas(self) -> tuple[dict[str, AgentPackage], dict[str, AgentPackage]]:
+        """Las dos tablas del idioma en curso, cargándolas si es la primera vez."""
+        idioma = current_lang()
+        if idioma not in self._por_idioma:
+            self._por_idioma[idioma] = self._load()
+        return self._por_idioma[idioma]
+
+    def _load(self) -> tuple[dict[str, AgentPackage], dict[str, AgentPackage]]:
+        por_id: dict[str, AgentPackage] = {}
+        por_perfil: dict[str, AgentPackage] = {}
         if not self.root.is_dir():
             logger.warning(
                 "agentes dir %s does not exist, no agent loaded; the UI will degrade "
                 "explicitly (no fallback agent, RULE 2).",
                 self.root,
             )
-            return
+            return por_id, por_perfil
         try:
             packages = load_packages(self.root)
         except AgentPackageError as exc:
-            # agent.md ausente o vacío: registry vacía, la UI degrada (sin fallback).
+            # El fichero del idioma falta o está vacío: SU tabla queda vacía y la
+            # UI degrada (sin agente de repuesto ni caída al otro idioma).
             logger.warning("no agent loaded from %s: %s", self.root, exc)
-            return
+            return por_id, por_perfil
         for profile, pkg in packages.items():
-            self._by_profile[profile] = pkg
-            self._by_id[pkg.id] = pkg
+            por_perfil[profile] = pkg
+            por_id[pkg.id] = pkg
         logger.info(
-            "loaded agent from %s for profiles: %s",
+            "loaded agent from %s (%s) for profiles: %s",
             self.root,
-            ", ".join(sorted(self._by_profile)),
+            agent_md_filename(),
+            ", ".join(sorted(por_perfil)),
         )
+        return por_id, por_perfil
 
 
 # Singleton usado por los routers / capabilities. Reinstanciar para recargar.

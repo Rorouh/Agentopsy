@@ -3,6 +3,7 @@
 // lo de aquí sólo evita hacer subir un fichero que el backend va a rechazar.
 
 import type { EvidenceHandle } from "../api/types";
+import type { MessageKey } from "../i18n/en";
 
 // ── Las dos familias de evidencia ────────────────────────────────────────────
 // La distinción no es burocrática, cambia lo que Agentopsy hace después:
@@ -143,12 +144,13 @@ export const FILE_INPUT_ACCEPT_EXTENSIONS = Array.from(
   ]),
 );
 
-// Etiquetas de la clasificación de triage (detected_kind) para la tabla de
-// evidencias. El valor lo computa el backend DESPUÉS de registrar.
-export const DETECTED_KIND_LABEL: Record<EvidenceHandle["detected_kind"], string> = {
-  disk: "Imagen de disco",
-  memory: "Volcado de memoria",
-  container_disk: "Disco VM",
-  document: "Fichero aportado",
-  unknown: "Desconocido",
+// Clasificación de triage (detected_kind) para la tabla de evidencias. El VALOR
+// lo computa el backend después de registrar (es un dato del caso, determinado
+// por contenido); lo que hay aquí es sólo cómo se NOMBRA en cada idioma.
+export const DETECTED_KIND_KEY: Record<EvidenceHandle["detected_kind"], MessageKey> = {
+  disk: "kind.disk",
+  memory: "kind.memory",
+  container_disk: "kind.container_disk",
+  document: "kind.document",
+  unknown: "kind.unknown",
 };

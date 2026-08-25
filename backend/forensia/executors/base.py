@@ -37,6 +37,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
 
+from forensia.i18n import Mensaje, t
 from forensia.config import CONFIG_DIR, config
 
 # Designed parameter default (allowed by RULE 2). 300 s, recalibrated against a
@@ -81,12 +82,7 @@ def validate_model_id(model: str) -> str:
     enumerate a cloud CLI's models without an API key — SECURITY INVARIANT 7).
     """
     if not isinstance(model, str) or not _MODEL_ID_RE.match(model):
-        raise ExecutorError(
-            f"id de modelo inválido {model!r}: debe empezar por un carácter "
-            "alfanumérico y usar solo [A-Za-z0-9 . _ : / -] (máx. 128). Agentopsy lo "
-            "rechaza para que no pueda colarse como un flag del CLI (SECURITY "
-            "INVARIANT 5)."
-        )
+        raise ExecutorError(Mensaje("executor.badModelId", model=repr(model)))
     return model
 
 
@@ -330,9 +326,7 @@ def resolve_timeout(context: dict[str, Any]) -> int:
         value = 0
     if value <= 0:
         raise ExecutorError(
-            f"timeout de ejecutor inválido en {source}: {raw!r}. Debe ser un "
-            "entero de segundos > 0, Agentopsy no lo sustituye por el default "
-            "(RULE 2)."
+            Mensaje("executor.badTimeout", source=source, raw=repr(raw))
         )
     return value
 
@@ -350,11 +344,7 @@ class CliPromptExecutor(PromptExecutor):
         if shutil.which(self.binary) is None:
             return ExecutorAvailability(
                 available=False,
-                reason=(
-                    f"El CLI `{self.binary}` no está en el PATH del servicio api. "
-                    "Reconstruye la imagen (`docker compose build api`): los tres "
-                    "CLIs se instalan fijados por versión en docker/api/Dockerfile."
-                ),
+                reason=t("executor.notOnPath", binary=self.binary),
             )
         return self._check_auth()
 
@@ -375,13 +365,19 @@ class CliPromptExecutor(PromptExecutor):
                 stdin=subprocess.DEVNULL,
             )
         except subprocess.TimeoutExpired:
-            return False, f"`{' '.join(argv)}` no respondió en {AUTH_PROBE_TIMEOUT_S}s"
+            return False, t(
+                "executor.probeTimeout",
+                argv=" ".join(argv),
+                seconds=AUTH_PROBE_TIMEOUT_S,
+            )
         except OSError as exc:
             return False, f"no se pudo ejecutar `{argv[0]}`: {exc}"
         if proc.returncode == 0:
             return True, ""
         detail = (proc.stderr or proc.stdout or "").strip()[:300]
-        return False, detail or f"`{' '.join(argv)}` devolvió exit code {proc.returncode}"
+        return False, detail or t(
+            "executor.probeExit", argv=" ".join(argv), code=proc.returncode
+        )
 
     # ---- subclass hooks -----------------------------------------------------
 
@@ -475,11 +471,7 @@ class CliPromptExecutor(PromptExecutor):
                 f"'session_id' del contexto debe ser str o None, no {type(session_id).__name__}"
             )
         if session_id is not None and not self.supports_session_resume:
-            raise ExecutorError(
-                f"{self.name} no soporta reanudación de sesión, así que Agentopsy "
-                "no puede enviarle solo el delta de la conversación. Envía el "
-                "contexto completo (RULE 2: no se degrada en silencio)."
-            )
+            raise ExecutorError(Mensaje("executor.noResume", name=self.name))
         if session_id is not None:
             # The id reaches the CLI as its own argv element, so it can never spawn
             # a subshell — but a value starting with `-` would be read as a FLAG.
@@ -546,7 +538,7 @@ class CliPromptExecutor(PromptExecutor):
                 estimated_input_tokens=len(prompt) // _ESTIMATE_CHARS_PER_TOKEN,
             )
             raise ExecutorError(
-                f"{self.name} superó el timeout de {timeout}s sin responder"
+                Mensaje("executor.timedOut", name=self.name, seconds=timeout)
             ) from exc
         except OSError as exc:
             self._audit_finish(audit, case_id, exit_code=None, duration_ms=_ms(started),
@@ -563,12 +555,23 @@ class CliPromptExecutor(PromptExecutor):
             reason = (
                 detail.strip()
                 if detail and detail.strip()
-                else f"stderr: {(proc.stderr or '').strip()[:2000] or '(vacío)'}"
+                else str(
+                    Mensaje(
+                        "executor.stderrEmpty",
+                        detail=(proc.stderr or "").strip()[:2000]
+                        or str(Mensaje("executor.emptyMark")),
+                    )
+                )
             )
             self._audit_finish(audit, case_id, exit_code=proc.returncode,
                                duration_ms=duration_ms, error=reason[:2000])
             raise ExecutorError(
-                f"{self.name} terminó con exit code {proc.returncode}. {reason[:2000]}"
+                Mensaje(
+                    "executor.nonZeroExit",
+                    name=self.name,
+                    code=proc.returncode,
+                    reason=reason[:2000],
+                )
             )
 
         try:

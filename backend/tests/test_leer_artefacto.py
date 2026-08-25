@@ -25,12 +25,28 @@ from typing import Any
 
 import pytest
 
+from forensia.i18n import t
 from forensia.agent.agent import ForensicAgent
 from _agent_pkg import make_package
 from forensia.agent.tool_schemas import internal_tool_specs
 from forensia.artifacts.store import ArtifactStore
 from forensia.cases.manager import CaseManager
 from forensia.models.base import FinalAnswer, ModelBackend, ModelCapabilities, ToolCall
+
+def _marca(clave: str) -> str:
+    """El marcador distintivo de un bloque del prompt, EN EL IDIOMA EN CURSO.
+
+    Los bloques del prompt se rotulan desde el catálogo, así que un test los
+    nombra por su CLAVE y no por su texto castellano: lo que fija es que el
+    marcador está, no con qué palabra se escribe. Para los que abren con una
+    etiqueta entre corchetes (`[Presupuesto]`, `[Reminder]`) devuelve esa
+    etiqueta; para el resto, el primer trozo de la primera línea.
+    """
+    texto = t(clave).strip()
+    if texto.startswith("["):
+        return texto[: texto.index("]") + 1]
+    return texto.split("\n")[0].split(",")[0].strip()
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 AGENTES_DIR = REPO_ROOT / "agentes"
@@ -264,7 +280,7 @@ def test_el_agente_lee_su_salida_y_le_vuelve_marcada_no_confiable(
     )
     assert "testuser" in served
     # Son bytes derivados de la evidencia: DATO, nunca instrucción.
-    assert "EVIDENCIA_NO_CONFIABLE" in served
+    assert _marca("agentLoop.untrustedOpen") in served
 
 
 def test_un_run_id_inventado_no_tumba_el_run(store_run, monkeypatch) -> None:

@@ -18,6 +18,7 @@ from typing import Any
 
 from _agent_pkg import make_package
 
+from forensia.i18n import t
 from forensia.agent.agent import ForensicAgent
 from forensia.models.base import FinalAnswer, ModelBackend, ModelCapabilities, ToolCall
 
@@ -83,7 +84,8 @@ def test_system_prompt_lists_both_evidences() -> None:
             (DISK_ID, "original.vmdk · container_disk"),
         ],
     )
-    assert "TIENES VARIAS" in text
+    # El bloque de varias evidencias viaja entero, en el idioma del agente.
+    assert t("agentCtx.multiEvidence").strip().splitlines()[0] in text
     assert RAM_ID in text and DISK_ID in text
     assert "memory" in text and "container_disk" in text
 

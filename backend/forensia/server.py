@@ -28,6 +28,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from forensia._version import __version__
+from forensia.i18n import LANG_HEADER, LanguageMiddleware
 from forensia.routers import (
     agent,
     artifacts,
@@ -62,6 +63,12 @@ def create_app(port: int, ui_origins: Sequence[str] = ()) -> FastAPI:
     app.state.port = port
 
     ui_hosts = {urlsplit(origin).netloc for origin in ui_origins if urlsplit(origin).netloc}
+    # Starlette envuelve al REVÉS de como se añaden: el último registrado queda
+    # el más externo. El de idioma se registra el primero a propósito, para ser
+    # el más interno (el último antes de los routers): así resuelve el idioma
+    # sobre una petición que ya pasó el Host-check y la comprobación de origen,
+    # y no fija contexto para una petición que se va a rechazar.
+    app.add_middleware(LanguageMiddleware)
     app.add_middleware(HostHeaderMiddleware, hosts=allowed_hosts(port) | ui_hosts)
     app.add_middleware(
         CORSMiddleware,
@@ -71,7 +78,7 @@ def create_app(port: int, ui_origins: Sequence[str] = ()) -> FastAPI:
             *ui_origins,
         ],
         allow_methods=["GET", "POST", "DELETE"],
-        allow_headers=["X-Forensia-Token", "Content-Type"],
+        allow_headers=["X-Forensia-Token", LANG_HEADER, "Content-Type"],
         allow_credentials=False,
     )
 

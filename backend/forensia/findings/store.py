@@ -15,6 +15,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from forensia.i18n import Mensaje
 from forensia.cases import CaseManager, case_manager
 from forensia.mitre import catalog
 
@@ -225,10 +226,7 @@ class FindingStore:
         # que puede no tener un ArtifactRun con salida útil.
         if finding_kind != "descarte" and not run_id:
             raise ValueError(
-                "finding afirmativo requiere procedencia: pasa `run_id` con el "
-                "ArtifactRun que lo sostiene, o marca `finding_kind=\"descarte\"` si "
-                "documentas una vía descartada (RULE 2, sin procedencia no se registra "
-                "una afirmación sobre la evidencia)."
+                Mensaje("findings.needProvenance")
             )
 
         finding = Finding(

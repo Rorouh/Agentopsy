@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from forensia.i18n import t
 from forensia.artifact_ref import artifact_ref_json_schema
 from forensia.knowledge import DOC_ID_PATTERN, MAX_BLOCK_CHARS, MAX_SECTION_CHARS
 
@@ -22,9 +23,7 @@ from forensia.knowledge import DOC_ID_PATTERN, MAX_BLOCK_CHARS, MAX_SECTION_CHAR
 # derivado (el dispatcher re-hashea el artefacto antes de ejecutar). Omítelo y
 # Agentopsy inyecta el path de la evidencia directamente.
 _EZ_INPUT_DESC = (
-    "ArtifactRef {{run_id, relpath}} emitida por un `tsk_icat` previo que extrajo "
-    "{what}. Encadena tsk_icat.output → esta tool. Omítelo para correr sobre la "
-    "evidencia que Agentopsy inyecta."
+    t("schema.ezInput")
 )
 
 # Schemas de parámetros por tool_id. Solo los params QUE EL LLM PUEDE ELEGIR.
@@ -463,8 +462,7 @@ TOOL_PARAM_SCHEMAS: dict[str, dict[str, Any]] = {
                 "type": "string",
                 "enum": ["Kroll_Batch.reb"],
                 "description": (
-                    "RECmd batch file NAME from the BatchExamples/ shipped in the "
-                    "maletín (e.g. Kroll_Batch.reb). A bare name, never a path."
+                    t("schema.recmdBatch")
                 ),
             },
             "is_directory": {
@@ -648,7 +646,7 @@ _INTERNAL_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                     "credenciales", "ssh", "historial", "persistencia",
                     "ejecutable_temporal", "web", "logs", "binario_sistema",
                 ],
-                "description": "Filtra por categoría de relevancia (p. ej. `web` = artefactos web).",
+                "description": t("schema.activityCategory")
             },
             "path_contains": {
                 "type": "string",
@@ -658,7 +656,7 @@ _INTERNAL_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 500,
-                "description": "Máximo de eventos a devolver (por defecto 100).",
+                "description": t("schema.activityLimit")
             },
         },
         "additionalProperties": False,
@@ -676,7 +674,7 @@ _INTERNAL_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 "type": "string",
                 "minLength": 4,
                 "maxLength": 4000,
-                "description": "1–3 frases que explican el hallazgo y CÓMO lo dedujiste.",
+                "description": t("schema.findingSummary")
             },
             "severity": {
                 "type": "string",
@@ -689,9 +687,7 @@ _INTERNAL_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "run_id": {
                 "type": "string",
                 "description": (
-                    "UUID4 del ArtifactRun que respalda este hallazgo. OBLIGATORIO "
-                    "para un hallazgo afirmativo (procedencia): sin él se rechaza el "
-                    "registro, salvo que marques finding_kind=\"descarte\"."
+                    t("schema.findingRunId")
                 ),
             },
             # Los prompts de los paquetes YA prescriben estos campos («Esquema de
@@ -704,23 +700,13 @@ _INTERNAL_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 "minimum": 0,
                 "maximum": 1,
                 "description": (
-                    "Confianza CALIBRADA (0..1) en el hallazgo. 1.0 = evidencia "
-                    "directa e inequívoca; valores bajos para inferencias. Opcional."
+                    t("schema.findingConfidence")
                 ),
             },
             "observed_at": {
                 "type": "string",
                 "description": (
-                    "Marca temporal del ARTEFACTO que sostiene el hallazgo: cuándo "
-                    "ocurrió el HECHO en el dispositivo investigado, nunca cuándo lo "
-                    "analizas. ISO-8601 con la zona EXPLÍCITA, offset o Z "
-                    "(p. ej. 2026-07-15T13:42:00Z); sin zona se rechaza el hallazgo "
-                    "entero. Rellénalo SIEMPRE que el artefacto tenga marca temporal: "
-                    "es lo que sitúa el hallazgo en la línea de tiempo del incidente, "
-                    "y sin él no entra en ella. Si el artefacto da hora LOCAL (MFT, "
-                    "registro, logs de Windows), conviértela a UTC y di en el summary "
-                    "de qué zona venía. Si no puedes determinar la zona del sistema "
-                    "investigado, déjalo VACÍO: no la inventes ni la aproximes."
+                    t("schema.findingObservedAt")
                 ),
             },
             "artifact_sha256": {
@@ -736,23 +722,14 @@ _INTERNAL_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 "type": "string",
                 "enum": ["afirmacion", "descarte"],
                 "description": (
-                    "`afirmacion` (por defecto) afirma algo sobre la evidencia y EXIGE "
-                    "run_id. `descarte` documenta que una vía NO aportó (queda exento "
-                    "de procedencia). Úsalo solo para descartes reales, no para eludir "
-                    "el requisito de run_id de una afirmación."
+                    t("schema.findingKind")
                 ),
             },
             "mitre_hints": {
                 "type": "array",
                 "items": {"type": "string"},
                 "description": (
-                    "Técnicas ATT&CK que sostiene este hallazgo, p. ej. "
-                    "[\"T1547.001\"]. ENUM CERRADA: sólo ids de la semilla "
-                    "(_orchestrator/knowledge/mitre_attack_seed.md). Un id fuera de "
-                    "la semilla RECHAZA el hallazgo entero, no inventes ids. Mapea "
-                    "a sub-técnica cuando la evidencia lo permita; si no, a la "
-                    "técnica padre. Omite el campo si el hallazgo no sostiene "
-                    "ninguna técnica."
+                    t("schema.findingHints")
                 ),
             },
         },
@@ -765,24 +742,19 @@ _INTERNAL_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "finding_id": {
                 "type": "string",
                 "description": (
-                    "UUID de un hallazgo YA registrado (el `finding_id` que devolvió "
-                    "`record_finding`) que sostiene estas técnicas."
+                    t("schema.annotateFindingId")
                 ),
             },
             "mitre_hints": {
                 "type": "array",
                 "items": {"type": "string"},
                 "description": (
-                    "Técnicas ATT&CK que sostiene el hallazgo, p. ej. [\"T1055\", "
-                    "\"T1056.001\"]. ENUM CERRADA: sólo ids de la semilla "
-                    "(_orchestrator/knowledge/mitre_attack_seed.md); un id fuera de "
-                    "la semilla RECHAZA la anotación. Envía la lista COMPLETA: "
-                    "reemplaza la anterior de ese hallazgo (lista vacía la retira)."
+                    t("schema.annotateHints")
                 ),
             },
             "note": {
                 "type": "string",
-                "description": "Por qué el hallazgo sostiene esas técnicas (opcional).",
+                "description": t("schema.annotateNote")
             },
         },
         "required": ["finding_id", "mitre_hints"],
@@ -795,26 +767,21 @@ _INTERNAL_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 "type": "string",
                 "maxLength": 200,
                 "description": (
-                    "Qué vía das por cerrada, en concreto. P. ej. «tsk_fls sobre el "
-                    "disco para fechar los documentos»."
+                    t("schema.pivotClosed")
                 ),
             },
             "motivo": {
                 "type": "string",
                 "maxLength": 1000,
                 "description": (
-                    "Por qué está cerrada, CON el sostén: el exit code y el stderr, o "
-                    "el `run_id` que lo demuestra. No vale «no funcionó»."
+                    t("schema.pivotReason")
                 ),
             },
             "via_alternativa": {
                 "type": "string",
                 "maxLength": 1000,
                 "description": (
-                    "Por dónde vas a seguir y qué esperas obtener. P. ej. «volcar los "
-                    "hives desde la RAM con volatility3 hivelist y pasarlos por "
-                    "regripper: da huso horario, cuentas y documentos recientes sin "
-                    "tocar el disco»."
+                    t("schema.pivotAlternative")
                 ),
             },
         },
@@ -827,8 +794,7 @@ _INTERNAL_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "run_id": {
                 "type": "string",
                 "description": (
-                    "UUID4 del run cuya salida quieres leer (el que devolvió la "
-                    "herramienta al ejecutarse)."
+                    t("schema.readRunId")
                 ),
             },
             "fichero": {
@@ -841,25 +807,21 @@ _INTERNAL_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "buscar": {
                 "type": "string",
                 "description": (
-                    "SUBCADENA literal, sin distinguir mayúsculas. Devuelve solo las "
-                    "líneas que la contienen, como un `grep`. Omítela para leer "
-                    "secuencialmente."
+                    t("schema.readSearch")
                 ),
             },
             "desde": {
                 "type": "integer",
                 "minimum": 1,
                 "description": (
-                    "Línea por la que empezar, 1-based, contando SOLO las relevantes "
-                    "(las que casan con `buscar`). Para paginar usa el "
-                    "`siguiente_desde` que devuelve la llamada anterior."
+                    t("schema.readFrom")
                 ),
             },
             "lineas": {
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 400,
-                "description": "Cuántas líneas devolver (por defecto 200, máximo 400).",
+                "description": t("schema.readLimit")
             },
         },
         "required": ["run_id"],
@@ -872,29 +834,21 @@ _INTERNAL_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 "type": "string",
                 "pattern": DOC_ID_PATTERN,
                 "description": (
-                    "Id del nodo del grafo de ESTE caso. Usa uno del núcleo listado "
-                    "en «Conocimiento de este caso» (system prompt) cuando encaje; "
-                    "si no, crea uno nuevo en minúsculas-con-guiones. Es un ID, "
-                    "NUNCA una ruta: Agentopsy decide dónde se guarda."
+                    t("schema.docId")
                 ),
             },
             "section": {
                 "type": "string",
                 "maxLength": MAX_SECTION_CHARS,
                 "description": (
-                    "Tema dentro del nodo, p. ej. `zona-horaria`. Es la CLAVE: "
-                    "escribir otra vez la misma sección SUSTITUYE su contenido en la "
-                    "vista (la versión anterior se conserva en el registro). Úsalo "
-                    "para corregirte sin duplicar."
+                    t("schema.docSection")
                 ),
             },
             "content": {
                 "type": "string",
                 "maxLength": MAX_BLOCK_CHARS,
                 "description": (
-                    "La CONCLUSIÓN y el puntero que la sostiene (`run_id`, ruta del "
-                    "artefacto, hash). NUNCA el volcado entero de una herramienta: "
-                    "si no cabe, resume y cita el run_id."
+                    t("schema.docContent")
                 ),
             },
         },
@@ -905,21 +859,10 @@ _INTERNAL_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
 
 _INTERNAL_DESCRIPTIONS: dict[str, str] = {
     "consultar_conocimiento": (
-        "LEE bajo demanda un documento de referencia del «Mapa de memoria» (system "
-        "prompt): detalle por-herramienta, catálogo de artefactos por SO, etc. NO "
-        "cargues todo de antemano, consulta solo el doc que necesites para la tarea "
-        "en curso (economía de contexto). `doc_id` debe ser uno de los ids listados en "
-        "el Mapa de memoria; un id desconocido se rechaza con la lista de ids válidos."
+        t("schema.consultDesc")
     ),
     "consultar_actividad": (
-        "CONSULTA la super-timeline del sistema de ficheros YA generada de la evidencia "
-        "activa, sin re-ejecutar tsk_fls. Úsala para responder «¿qué actividad hubo entre "
-        "X e Y?», «¿hubo algún registro el <fecha>?» o «enséñame los artefactos web»: lee "
-        "el bodyfile hasheado del run de fls y filtra TODOS sus eventos MACB por rango de "
-        "fechas, categoría de relevancia y/o subcadena de ruta. Es una proyección "
-        "determinista y exhaustiva, no infiere. Si la super-timeline aún no existe, te lo "
-        "dice (status=no_timeline) para que la generes primero en vez de adivinar. Prefiere "
-        "esto a re-lanzar tsk_fls/tsk_mactime cuando la timeline ya está construida."
+        t("schema.activityDesc")
     ),
     "record_finding": (
         "PERSIST a structured finding for this case. Call this BEFORE composing your "
@@ -947,44 +890,13 @@ _INTERNAL_DESCRIPTIONS: dict[str, str] = {
         "reach the board on its own."
     ),
     "declarar_pivote": (
-        "DECLARA que una vía está cerrada y por dónde sigues. Úsala cuando una "
-        "herramienta o una cadena entera no puede darte lo que buscabas (formato no "
-        "soportado, plugin ausente, el disco no abre) y vas a atacar el mismo objetivo "
-        "por OTRO artefacto.\n"
-        "No es rendirse ni es cambiar de tema: es la jugada que resuelve casos reales "
-        ", «el disco no abre → vuelco los hives desde la RAM y respondo igual». Lo que "
-        "NO puedes hacer es cambiar de vía en silencio: el perito tiene que ver que "
-        "descartaste algo, con qué prueba y qué haces en su lugar. Queda registrado en "
-        "el log de custodia.\n"
-        "Cita SIEMPRE el sostén (exit code, stderr o `run_id`): un descarte sin prueba "
-        "no vale, y podría estar ocultando un fallo puntual en vez de una vía cerrada."
+        t("schema.pivotDesc")
     ),
     "leer_artefacto": (
-        "LEE la salida COMPLETA de una herramienta que ya ejecutaste, filtrándola por "
-        "líneas, es tu `grep`/`head` sobre tus propios resultados. Lo que ves al "
-        "ejecutar una tool es solo una MUESTRA recortada: si la salida importa "
-        "(un árbol de `fls`, las cuentas de `regripper`, un CSV de `mftecmd`, las "
-        "conexiones de `netscan`), LÉELA con esta tool antes de concluir nada.\n"
-        "Úsala también en vez de re-ejecutar una herramienta «para volver a mirar»: "
-        "el run ya está en disco, releerlo es gratis y re-ejecutar no lo es.\n"
-        "`buscar` filtra por subcadena (una IP, un nombre de usuario, `Confidential`, "
-        "un EID). Si `hay_mas` es true, vuelve a llamar con el `siguiente_desde` que "
-        "te devuelve. Un fichero binario no se sirve aquí: usa `strings_head`/"
-        "`xxd_head` o el parser que corresponda."
+        t("schema.readDesc")
     ),
     "anotar_conocimiento": (
-        "ESCRIBE en el grafo de conocimiento de ESTE caso: lo que has averiguado, "
-        "dónde está y qué queda abierto. Es tu memoria entre turnos, el contexto se "
-        "recorta, esto no. Anota EN CALIENTE, en cuanto una herramienta te da algo "
-        "que vas a necesitar después: el perfil del sistema y el huso horario, las "
-        "cuentas, un hito de la cronología, y sobre todo el `run_id` de un artefacto "
-        "que tendrás que citar más tarde (así no dependes de recordarlo ni "
-        "re-ejecutas la herramienta). Reescribir la misma `section` te CORRIGE sin "
-        "duplicar. Los nodos y sus secciones aparecen en «Conocimiento de este caso» "
-        "y se releen con `consultar_conocimiento(doc_id)`.\n"
-        "NO es un hallazgo pericial: un hallazgo va a `record_finding` con su "
-        "procedencia. Aquí van notas de trabajo. Y NO vuelques salidas enteras: la "
-        "conclusión y el puntero."
+        t("schema.annotateDesc")
     ),
 }
 
@@ -1018,11 +930,7 @@ def _with_evidence_selector(
     props["evidence_id"] = {
         "type": "string",
         "enum": [eid for eid, _ in evidence_choices],
-        "description": (
-            "Sobre qué evidencia del caso corre esta herramienta. Elígela por su "
-            f"tipo: {catalogo}. Omítelo para usar la evidencia primaria. La memoria "
-            "se analiza con volatility3; el disco con tsk_*/regripper."
-        ),
+        "description": t("schema.evidenceChoice", catalog=catalogo),
     }
     return {**schema, "properties": props}
 

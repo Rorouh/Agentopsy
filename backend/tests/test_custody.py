@@ -13,6 +13,7 @@ import hashlib
 
 import pytest
 
+from forensia.i18n import t
 from forensia.audit.log import AuditLog
 from forensia.cases.manager import CaseManager
 from forensia.custody import build_custody_act
@@ -89,8 +90,14 @@ class TestMetadata:
         # RULE 2: read-only level is the level actually enforced (fs / chmod),
         # never an over-claimed "block".
         assert meta["read_only_level"] == READ_ONLY_LEVEL == "fs"
+        # El NIVEL es dato de custodia; el RÓTULO es texto de producto y sale en
+        # el idioma en curso, así que se fija por la entrada del catálogo. Lo que
+        # el test protege no cambia: que el acta dice que el bloqueo a nivel de
+        # bloque está pendiente y no se atribuye una garantía que no se aplica.
+        assert meta["read_only_label"] == t("custody.readOnlyFs")
         assert "chmod 0444" in meta["read_only_label"]
-        assert "bloque" in meta["read_only_label"]  # mentions block-level is pending
+        assert "block-level" in t("custody.readOnlyFs", "en")
+        assert "bloque" in t("custody.readOnlyFs", "es")
         # No verification run yet.
         assert meta["verification"] is None
 

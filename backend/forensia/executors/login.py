@@ -49,6 +49,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from forensia.i18n import Mensaje, t
 from forensia.executors.base import ExecutorAvailability
 
 # Cloud executors that own a login flow. Ollama is 100% local (no login) and is
@@ -133,13 +134,7 @@ LOGIN_SPECS: dict[str, LoginSpec] = {
         relay_supported=False,
         manual_command="docker compose exec -it -e NO_BROWSER=true api gemini",
         code_re=None,
-        reason=(
-            "El login interactivo de Gemini CLI para cuentas individuales lo rechaza "
-            "Google en el servidor (IneligibleTierError: cliente no soportado para el "
-            "tier gratuito) y no emite una URL relayable. Ejecuta el comando en una "
-            "terminal; si tu cuenta es elegible (Workspace/Vertex) completará el login "
-            "y podrás pulsar «Comprobar»."
-        ),
+        reason=t("login.geminiIneligible"),
     ),
 }
 
@@ -225,22 +220,21 @@ class _LoginSession:
             text = "\n".join(list(self._lines)[-6:]).strip()
         # NEVER surface the one-time code even on an error path.
         if redact:
-            text = text.replace(redact, "«código»")
+            text = text.replace(redact, t("login.codeMask"))
         if self.code:
-            text = text.replace(self.code, "«código»")
+            text = text.replace(self.code, t("login.codeMask"))
         return text[:400]
 
     def submit_code(self, code: str) -> None:
         stdin = self.proc.stdin
         if stdin is None:  # pragma: no cover — we always create a pipe
-            raise LoginError("el proceso de login no acepta entrada de código")
+            raise LoginError(Mensaje("login.noStdin"))
         try:
             stdin.write(code + "\n")
             stdin.flush()
         except (BrokenPipeError, OSError) as exc:
             raise LoginError(
-                "el proceso de login ya no acepta el código (¿terminó o caducó?). "
-                "Inicia el login de nuevo."
+                Mensaje("login.stdinClosed")
             ) from exc
         with self._lock:
             self.code_submitted = True
@@ -283,8 +277,11 @@ def _require_cloud_id(executor_id: str) -> LoginSpec:
     spec = LOGIN_SPECS.get(executor_id)
     if spec is None:
         raise ValueError(
-            f"ejecutor {executor_id!r} no admite login web. Válidos: "
-            f"{', '.join(CLOUD_EXECUTOR_IDS)} (RULE 2: Agentopsy no sustituye)."
+            Mensaje(
+                "login.notWebCapable",
+                id=repr(executor_id),
+                ids=", ".join(CLOUD_EXECUTOR_IDS),
+            )
         )
     return spec
 
@@ -341,9 +338,7 @@ def start_login(executor_id: str, *, force: bool = False) -> dict[str, object]:
         availability = _availability(executor_id)
         if availability.available:
             raise LoginError(
-                f"{executor_id} ya tiene sesión iniciada; no hay nada que conectar. "
-                "Si la sesión ha caducado y quieres renovarla sin borrar el volumen, "
-                "usa «Renovar sesión» en Configuración, Ejecutores / IA."
+                Mensaje("login.alreadyLoggedIn", id=executor_id)
             )
 
     with _REGISTRY_LOCK:
@@ -385,12 +380,20 @@ def start_login(executor_id: str, *, force: bool = False) -> dict[str, object]:
         detail = session.tail()
         if exit_code is not None and exit_code != 0:
             raise LoginError(
-                f"el login de {executor_id} terminó (exit {exit_code}) sin emitir una "
-                f"URL. Salida: {detail or '(vacía)'}"
+                Mensaje(
+                    "login.endedNoUrl",
+                    id=executor_id,
+                    code=exit_code,
+                    detail=detail or str(Mensaje("login.emptyOutput")),
+                )
             )
         raise LoginError(
-            f"el login de {executor_id} no emitió una URL en {START_TIMEOUT_S}s. "
-            f"Salida: {detail or '(vacía)'}"
+            Mensaje(
+                "login.noUrlInTime",
+                id=executor_id,
+                seconds=START_TIMEOUT_S,
+                detail=detail or str(Mensaje("login.emptyOutput")),
+            )
         )
 
     with _REGISTRY_LOCK:
@@ -422,7 +425,7 @@ def login_status(executor_id: str) -> dict[str, object]:
             executor_id,
             "error",
             False,
-            "No hay ningún login en curso para este ejecutor. Inícialo de nuevo.",
+            t("login.noneRunning"),
             spec,
         )
 
@@ -435,7 +438,7 @@ def login_status(executor_id: str) -> dict[str, object]:
                 executor_id,
                 "expired",
                 False,
-                "El código de un solo uso caducó (>15 min). Inicia el login de nuevo.",
+                t("login.codeExpired"),
                 spec,
             )
         return _status(executor_id, "waiting", False, None, spec, session=session)
@@ -452,8 +455,12 @@ def login_status(executor_id: str) -> dict[str, object]:
         executor_id,
         "error",
         False,
-        f"el login de {executor_id} terminó con exit {poll}. Salida: "
-        f"{session.tail() or '(vacía)'}",
+        t(
+            "login.endedWithExit",
+            id=executor_id,
+            code=poll,
+            detail=session.tail() or t("login.emptyOutput"),
+        ),
         spec,
     )
 
@@ -463,19 +470,17 @@ def submit_code(executor_id: str, code: str) -> dict[str, object]:
     spec = _require_cloud_id(executor_id)
     if not spec.needs_code_input:
         raise LoginError(
-            f"{executor_id} no requiere pegar ningún código: introdúcelo en el "
-            "navegador tras abrir la URL. (RULE 2: no hay un paso que no exista.)"
+            Mensaje("login.noCodeStep", id=executor_id)
         )
     code = (code or "").strip()
     if not code:
-        raise LoginError("el código está vacío")
+        raise LoginError(Mensaje("login.codeEmpty"))
 
     with _REGISTRY_LOCK:
         session = _ACTIVE.get(executor_id)
     if session is None or session.proc.poll() is not None:
         raise LoginError(
-            "no hay un login en curso esperando el código (¿caducó o terminó?). "
-            "Inicia el login de nuevo."
+            Mensaje("login.noneWaiting")
         )
     session.submit_code(code)
     return {"ok": True, "executor": executor_id}

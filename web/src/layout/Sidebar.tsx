@@ -1,7 +1,7 @@
-import type { Case } from "../api/types";
 import { useActiveCase } from "../state/activeCase";
 import { useCaseFacts } from "../state/caseFacts";
 import { PHASES, UTILITIES, type ViewId } from "../navigation/navItems";
+import { useLang } from "../i18n";
 import { Icon } from "../ui/Icon";
 
 interface SidebarProps {
@@ -16,11 +16,6 @@ interface SidebarProps {
 // Estado de una fase DEL CASO, independiente de la vista abierta.
 type PhaseState = "done" | "current" | "next" | "pending";
 
-const STATUS_LABEL: Record<Case["status"], string> = {
-  active: "abierto",
-  closed: "cerrado",
-};
-
 export function Sidebar({
   activeView,
   onViewChange,
@@ -32,6 +27,7 @@ export function Sidebar({
   // cifras salen del MISMO hook que la Guía, para que no se contradigan.
   const { activeCase } = useActiveCase();
   const facts = useCaseFacts();
+  const { t, tn } = useLang();
 
   // Estado del CASO por fase. Sin caso, todo pendiente: no hay nada que
   // presumir.
@@ -74,44 +70,46 @@ export function Sidebar({
     if (!activeCase || !facts.loaded) return "";
     switch (id) {
       case "repository":
-        if (facts.evidenceTotal === 0) return "sin evidencia";
-        return `${facts.evidenceTotal} ${facts.evidenceTotal === 1 ? "fichero" : "ficheros"} · ${facts.evidenceVerified} verificados`;
+        if (facts.evidenceTotal === 0) return t("phase.evidence.none");
+        return `${tn("count.files", facts.evidenceTotal)} · ${t("phase.evidence.verified", {
+          count: facts.evidenceVerified,
+        })}`;
       case "investigation":
-        if (facts.findings === 0) return "sin hallazgos";
-        return `${facts.findings} ${facts.findings === 1 ? "hallazgo" : "hallazgos"}`;
+        if (facts.findings === 0) return t("phase.findings.none");
+        return tn("count.findings", facts.findings);
       case "mitre": {
         if (facts.findings === 0) return "";
-        if (facts.mitreTechniques === 0) return "hallazgos por correlacionar";
-        const tecnicas = `${facts.mitreTechniques} ${facts.mitreTechniques === 1 ? "técnica" : "técnicas"}`;
+        if (facts.mitreTechniques === 0) return t("phase.mitre.toCorrelate");
+        const tecnicas = tn("count.techniques", facts.mitreTechniques);
         // Los dos ejes se enuncian por separado, nunca fundidos: una técnica
         // propuesta por el agente no es un dictamen del perito.
         return facts.mitreAdjudicated === 0
-          ? `${tecnicas} · sin dictaminar`
-          : `${tecnicas} · ${facts.mitreAdjudicated} con dictamen`;
+          ? `${tecnicas} · ${t("phase.mitre.noVerdict")}`
+          : `${tecnicas} · ${t("phase.mitre.withVerdict", { count: facts.mitreAdjudicated })}`;
       }
       case "timeline": {
         if (facts.findings === 0) return "";
         // Lo que no se puede situar en el eje viaja CONTADO, aquí también: un
         // hallazgo sin fecha explica por qué la fase no está hecha.
         if (facts.incidentEvents === 0) {
-          if (facts.incidentUndated === 0) return "sin eventos en el eje";
-          return `${facts.incidentUndated} sin fecha situable`;
+          if (facts.incidentUndated === 0) return t("phase.timeline.noEvents");
+          return t("phase.timeline.allUndated", { count: facts.incidentUndated });
         }
-        const eventos = `${facts.incidentEvents} ${facts.incidentEvents === 1 ? "evento" : "eventos"}`;
+        const eventos = tn("count.events", facts.incidentEvents);
         return facts.incidentUndated === 0
           ? eventos
-          : `${eventos} · ${facts.incidentUndated} sin fecha`;
+          : `${eventos} · ${t("phase.timeline.undated", { count: facts.incidentUndated })}`;
       }
       case "findings":
-        if (facts.findings === 0) return "sin hallazgos";
-        return `${facts.findings} ${facts.findings === 1 ? "hallazgo" : "hallazgos"}`;
+        if (facts.findings === 0) return t("phase.findings.none");
+        return tn("count.findings", facts.findings);
       case "graphs":
         if (facts.findings === 0) return "";
-        if (facts.graphs === 0) return "sin grafos";
-        return `${facts.graphs} de ${facts.findings} con grafo`;
+        if (facts.graphs === 0) return t("phase.graphs.none");
+        return t("phase.graphs.some", { done: facts.graphs, total: facts.findings });
       case "document-viewer":
-        if (facts.documents === 0) return "sin documentos";
-        return `${facts.documents} ${facts.documents === 1 ? "documento" : "documentos"}`;
+        if (facts.documents === 0) return t("phase.documents.none");
+        return tn("count.documents", facts.documents);
       default:
         return "";
     }
@@ -137,13 +135,19 @@ export function Sidebar({
           onClick={onOpenCaseSearch}
           disabled={!onOpenCaseSearch}
           // El nombre completo, por si ni con dos renglones cabe.
-          title={activeCase ? `${activeCase.name} · cambiar de caso` : "Elegir un caso"}
+          title={
+            activeCase
+              ? t("sidebar.changeCase", { name: activeCase.name })
+              : t("sidebar.pickCase")
+          }
         >
           <span className={`case-picker-name${activeCase ? "" : " is-empty"}`}>
-            {activeCase ? activeCase.name : "Elige un caso"}
+            {/* El NOMBRE del caso es dato del expediente: se pinta tal cual,
+                nunca traducido. */}
+            {activeCase ? activeCase.name : t("sidebar.pickCase")}
           </span>
           {activeCase?.status === "closed" && (
-            <span className="case-picker-closed">{STATUS_LABEL.closed}</span>
+            <span className="case-picker-closed">{t("case.status.closed")}</span>
           )}
           <svg
             className="case-picker-icon"
@@ -177,13 +181,13 @@ export function Sidebar({
               <line x1="12" y1="5" x2="12" y2="19" />
               <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
-            crear caso
+            {t("sidebar.newCase")}
           </button>
         )}
       </div>
 
       <div className="sidebar-phases">
-        <div className="eyebrow">Fases del caso</div>
+        <div className="eyebrow">{t("sidebar.phases")}</div>
         {/* DOS señales independientes: el PUNTO dice dónde está el CASO y no
             depende de la vista abierta; la FILA (barra izquierda + peso de la
             etiqueta) dice dónde estás TÚ. */}
@@ -208,7 +212,7 @@ export function Sidebar({
                   aria-current={selected ? "page" : undefined}
                   onClick={() => onViewChange(p.id)}
                 >
-                  <span className="phase-label">{p.label}</span>
+                  <span className="phase-label">{t(p.labelKey)}</span>
                   {meta && <span className="phase-meta">{meta}</span>}
                 </button>
               </div>
@@ -226,7 +230,7 @@ export function Sidebar({
             aria-current={activeView === u.id ? "page" : undefined}
             onClick={() => onViewChange(u.id)}
           >
-            {u.label}
+            {t(u.labelKey)}
           </button>
         ))}
       </div>

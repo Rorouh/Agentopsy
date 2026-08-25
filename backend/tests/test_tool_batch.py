@@ -21,6 +21,7 @@ from typing import Any
 
 import pytest
 
+from forensia.i18n import t
 from forensia.agent.agent import ForensicAgent
 from _agent_pkg import make_package
 from forensia.models.base import (
@@ -87,7 +88,9 @@ def test_el_contrato_le_explica_al_modelo_cuando_usar_el_lote() -> None:
         [{"role": "user", "content": "x"}], [{"function": {"name": "f"}}]
     )
     assert "tool_batch" in prompt
-    assert "cuestan mucho menos" in prompt or "menos que" in prompt
+    # El contrato explica POR QUÉ conviene el lote (cada turno reenvía la
+    # conversación entera). Se comprueba contra el catálogo, en el idioma que sea.
+    assert t("agentContract.format") in prompt
 
 
 # ── el loop ejecuta el lote entero en una iteración ─────────────────────────

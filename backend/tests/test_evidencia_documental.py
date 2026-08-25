@@ -33,6 +33,7 @@ import zipfile
 
 import pytest
 
+from forensia.i18n import _LANG_ACTUAL, set_current_lang
 from forensia.cases.manager import CaseManager
 from forensia.evidence import (
     EvidenceManager,
@@ -347,8 +348,14 @@ class TestNaturalezaEnElInforme:
     ):
         # Un informe pericial dice «documento PDF», no «document». Y lo que no se
         # reconoce se queda en la categoría general: no se adivina (RULE 2).
+        # La naturaleza se escribe en el idioma del INFORME, así que el caso
+        # castellano se comprueba fijando esa lengua.
         class _Handle:
             detected_kind = "document"
             original_path = tmp_path / name
 
-        assert naturaleza(_Handle()) == esperado
+        token = set_current_lang("es")
+        try:
+            assert naturaleza(_Handle()) == esperado
+        finally:
+            _LANG_ACTUAL.reset(token)

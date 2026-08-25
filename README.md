@@ -23,6 +23,7 @@ Un investigador carga evidencias ya extraídas, tanto imágenes de un sistema en
 - **Sin API keys.** Los prompts de la sección *Investigación* se ejecutan con el **ejecutor** que elija el usuario: **Claude Code** (`claude -p`), **Codex CLI** (`codex exec`), **Gemini CLI** (`gemini -p`) u **Ollama** (servicio del propio compose). Los CLIs consumen la suscripción del propio usuario mediante la sesión guardada en un volumen local del stack (`forensia-cli-auth`), *seeded* una única vez desde las credenciales del host o creada con un login directo en el contenedor; ninguna clave de proveedor existe en el proyecto, y las sesiones nunca salen de tu máquina, no se escriben en logs ni se exponen por la API.
 - **Privacidad explícita.** Ollama es la opción 100 % local. Si el usuario elige un ejecutor respaldado por cloud (Claude Code, Codex, Gemini), la aplicación lo advierte y lo registra en el audit log. Sin ejecutor seleccionado no hay análisis — nunca un default silencioso (RULE 2).
 - **Cadena de custodia.** Lectura a nivel de bloque en solo lectura, hash SHA-256 baseline en la ingesta, audit log encadenado por hash, comando literal (argv) registrado por cada ejecución.
+- **En inglés o en castellano.** Todo lo que la herramienta pone delante de una persona (la interfaz, los mensajes del backend, el informe pericial con sus anexos y lo que escribe el agente) se emite en el idioma que elija el perito, en *Configuración → Apariencia → Idioma*. Por defecto, inglés. Lo que **no** se traduce nunca es el contenido del caso: el nombre que le pusiste, el título de un hallazgo o el resumen que escribió el agente viajan tal cual, porque traducir un dato del expediente sería inventarlo.
 - **Maletín completo en el compose.** Las herramientas forenses viajan en las imágenes `toolkit-windows` y `toolkit-unix` que construye el propio compose (RULE 1).
 
 ## Instalación
@@ -99,7 +100,8 @@ La sesión persiste entre reinicios. Comprueba el estado en *Ajustes → Ejecuto
 Documentación técnica:
 
 - [Maletín contenedorizado](docker/README.md) — los dos toolkits, uso y seguridad del contenedor.
-- Comportamiento del agente: [`agentes/README.md`](agentes/README.md) y [`agentes/agent.md`](agentes/agent.md).
+- Comportamiento del agente: [`agentes/README.md`](agentes/README.md) y sus dos ficheros por idioma,
+  [`agentes/agent.md`](agentes/agent.md) (castellano) y [`agentes/agent.en.md`](agentes/agent.en.md) (inglés).
 - Invariantes de arquitectura, forenses y de seguridad: [`CLAUDE.md`](CLAUDE.md).
 - Lo pendiente, medido: [`hoja-de-ruta.md`](hoja-de-ruta.md) — el plan de coste del informe pericial.
 

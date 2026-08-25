@@ -11,10 +11,11 @@ from __future__ import annotations
 
 import json
 
+from forensia.i18n import t
 from forensia.agent.agent import (
     _MAX_TOOL_RESULT_CHARS,
     _UNTRUSTED_CLOSE,
-    _UNTRUSTED_OPEN,
+    _untrusted_open,
     ForensicAgent,
     _bounded_json,
 )
@@ -189,15 +190,21 @@ class TestUntrustedToolResultSpotlighting:
     def test_evidence_tool_result_is_wrapped(self) -> None:
         body = {"tool_id": "tsk_fls", "exit_code": 0, "run_id": "r1"}
         msg = ForensicAgent._tool_result_msg(self._call(), body, untrusted=True)
-        assert msg["content"].startswith(_UNTRUSTED_OPEN)
+        assert msg["content"].startswith(_untrusted_open())
         assert msg["content"].rstrip().endswith(_UNTRUSTED_CLOSE)
-        assert "EVIDENCIA_NO_CONFIABLE" in _UNTRUSTED_OPEN
-        assert "DATOS" in _UNTRUSTED_OPEN and "NUNCA" in _UNTRUSTED_OPEN
+        assert _untrusted_open() == t("agentLoop.untrustedOpen")
+        # La marca dice que lo que sigue son DATOS y que NUNCA son
+        # instrucciones. Se comprueba en los dos idiomas, porque es una barrera
+        # de seguridad y no puede aflojarse en ninguno.
+        assert "DATA" in t("agentLoop.untrustedOpen", "en")
+        assert "NEVER" in t("agentLoop.untrustedOpen", "en")
+        assert "DATOS" in t("agentLoop.untrustedOpen", "es")
+        assert "NUNCA" in t("agentLoop.untrustedOpen", "es")
 
     def test_internal_tool_result_is_not_wrapped(self) -> None:
         body = {"finding_id": "f1", "stored": True}
         msg = ForensicAgent._tool_result_msg(self._call(), body)  # untrusted defaults False
-        assert not msg["content"].startswith(_UNTRUSTED_OPEN)
+        assert not msg["content"].startswith(_untrusted_open())
         assert json.loads(msg["content"]) == body
 
     def test_windowing_still_extracts_metadata_from_a_wrapped_result(self) -> None:

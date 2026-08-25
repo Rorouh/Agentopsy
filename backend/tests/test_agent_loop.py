@@ -14,9 +14,25 @@ from typing import Any
 
 import pytest
 
+from forensia.i18n import t
 from forensia.agent.agent import ForensicAgent, _max_tool_attempts
 from _agent_pkg import make_package
 from forensia.models.base import ModelBackend, ModelCapabilities, ToolCall
+
+def _marca(clave: str) -> str:
+    """El marcador distintivo de un bloque del prompt, EN EL IDIOMA EN CURSO.
+
+    Los bloques del prompt se rotulan desde el catálogo, así que un test los
+    nombra por su CLAVE y no por su texto castellano: lo que fija es que el
+    marcador está, no con qué palabra se escribe. Para los que abren con una
+    etiqueta entre corchetes (`[Presupuesto]`, `[Reminder]`) devuelve esa
+    etiqueta; para el resto, el primer trozo de la primera línea.
+    """
+    texto = t(clave).strip()
+    if texto.startswith("["):
+        return texto[: texto.index("]") + 1]
+    return texto.split("\n")[0].split(",")[0].strip()
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 AGENTES_DIR = REPO_ROOT / "agentes"
@@ -197,7 +213,7 @@ def test_records_nudge_injected_after_tools_without_finding(
         def next_action(self, state, tools):  # noqa: ANN001
             msgs = state.get("messages", [])
             if any(
-                isinstance(m, dict) and "[Recordatorio]" in str(m.get("content", ""))
+                isinstance(m, dict) and _marca("agentLoop.findingReminder") in str(m.get("content", ""))
                 for m in msgs
             ):
                 seen.append(len(msgs))
@@ -248,11 +264,11 @@ def test_budget_nudges_demand_a_final_before_exhaustion(
 
     assert len(backend.states) == 4
     # Las dos primeras iteraciones trabajan sin presión de presupuesto…
-    assert not any("[Presupuesto]" in c for c in backend.states[0])
-    assert not any("[Presupuesto]" in c for c in backend.states[1])
+    assert not any(_marca("agentLoop.budgetTwoLeft") in c for c in backend.states[0])
+    assert not any(_marca("agentLoop.budgetTwoLeft") in c for c in backend.states[1])
     # …a 2 del límite se le pide cerrar, y en la última se le exige el `final`.
-    assert any("Quedan 2 iteraciones" in c for c in backend.states[2])
-    assert any("ÚLTIMA iteración" in c for c in backend.states[3])
+    assert any(t("agentLoop.budgetTwoLeft") in c for c in backend.states[2])
+    assert any(t("agentLoop.budgetLast") in c for c in backend.states[3])
 
 
 def test_budget_nudge_skips_single_iteration_runs(
@@ -282,4 +298,4 @@ def test_budget_nudge_skips_single_iteration_runs(
     )
     agent.run("lista la raíz", case_id="c", evidence_id="e")
 
-    assert not any("[Presupuesto]" in c for c in seen)
+    assert not any(_marca("agentLoop.budgetTwoLeft") in c for c in seen)

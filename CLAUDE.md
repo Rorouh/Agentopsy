@@ -31,7 +31,8 @@ web    (React frontend)           served by its own container — the UI in the 
    │                              http://127.0.0.1:5173, identical on Windows / macOS / Linux
    ▼  HTTP on the compose-internal network — published ports bind 127.0.0.1 ONLY
 api    (backend/, FastAPI)        forensia/ = ALL the logic. routers/ are thin adapters over it.
-   │                              agentes/ mounted into the container (agent.md — single behavioral file)
+   │                              agentes/ mounted into the container (agent.md / agent.en.md,
+   │                              one behavioral file PER LANGUAGE)
    ├─▶ EXECUTION LAYER            operator-selected per RULE 2 — never a default:
    │     claude -p | codex exec | gemini -p    CLIs installed in the api image; sessions live
    │                                           in the forensia-cli-auth volume — seeded once
@@ -41,7 +42,8 @@ api    (backend/, FastAPI)        forensia/ = ALL the logic. routers/ are thin a
    ▼
 toolkit-windows / toolkit-unix    the forensic toolkits ("maletines") — images built by the
                                   compose; evidence mounted read-only
-agentes/agent.md                  the ONE behavioral file the agent reads
+agentes/agent.md                  the ONE behavioral file the agent reads, in Spanish
+agentes/agent.en.md               its English twin, picked by the language axis
 ```
 
 Five compose services (`web`, `api`, `ollama`, `toolkit-windows`, `toolkit-unix`), all Linux
@@ -84,17 +86,22 @@ alongside `POST …/evidence/{id}/redetect-os`, which re-runs the whole
 determination for an evidence registered while the maletín was down. With no
 evidence selected there is nothing to route.
 
-The agent is configured by a **single behavioral file** (as of 2026-07-28): the
-whole of `agentes/agent.md` is the ONE file the agent reads — provider-neutral
-(hence `agent.md`, not `CLAUDE.md`). Agentopsy reads it at startup
+The agent is configured by a **single behavioral file PER LANGUAGE** (one file
+since 2026-07-28, one per language since 2026-08-25): the whole of
+`agentes/agent.md` (Spanish) or `agentes/agent.en.md` (English) is the ONE file
+the agent reads — provider-neutral (hence `agent.md`, not `CLAUDE.md`). The
+loader picks it from the language of the request and NEVER falls back to the
+other one (RULE 2): loading the Spanish file when English was asked for would
+leave the examiner with an agent writing in a language they did not choose, and
+that text ends up in the expert report. Agentopsy reads it at startup
 (`forensia.agent.loader.load_packages`) and builds **one `AgentPackage` per
 `os_profile`** (`unix`, `windows`) that share that text and differ only in the
 tool allowlist — the **catalog filtered by profile** (`catalog.for_profile`),
 not a hand-written list. The registry (`forensia.agent.registry`) indexes them
 by profile. The old per-directory contract (`agent.yaml` + `prompts/` +
-`policy/` + `objetivos` + `knowledge/`) was **retired**. When `agent.md` is
-missing/empty, the registry is empty and `/api/agent/query` returns 503 — never
-a fallback agent. The per-case "spiderweb" (FICHA/REGISTRO, hallazgos, salidas
+`policy/` + `objetivos` + `knowledge/`) was **retired**. When the file OF THE CHOSEN LANGUAGE is
+missing/empty, that language's registry is empty and `/api/agent/query` returns
+503 — never a fallback agent and never the other language. The per-case "spiderweb" (FICHA/REGISTRO, hallazgos, salidas
 crudas, entregables) maps onto the case stores (`forensia.knowledge` graph,
 `findings.jsonl` + audit, artifacts, `documents/`) written by the agent's
 in-process tools. See `agentes/README.md` for the agent contract.
@@ -242,6 +249,15 @@ text in the web app — is written without three characters:
   is written with commas, parentheses or a colon.
 - **emojis and decorative pictograms**, in prose, tables and lists alike. Where another
   document would put a check or a warning symbol, this one writes the word.
+
+Since 2026-08-25 the product ships in TWO languages, and the rule holds in
+both: also in English, where the long dash is ordinary punctuation. It is a
+PRODUCT rule, not a typographic preference of Spanish. The «no data» blank is
+`n/d` in Spanish and `n/a` in English. The gate covers BOTH behavioural files
+(`agent.md` and `agent.en.md`), each excluding its own rule 9, which names the
+three characters in order to forbid them: the English twin is the text the model
+reads and imitates when the examiner works in English, so leaving it unchecked
+would let a dash into the `summary` of every finding it writes.
 
 It applies to three layers, and each enforces it differently:
 
@@ -1062,6 +1078,82 @@ cifra a cero, como las otras tres). El hook observa además los flujos
 anclar una correlación repinta la escalera sin F5. Los pasos 04 y 05 de la Guía
 leen las MISMAS cifras, que es la razón de que existan en un solo sitio: estaban
 fijados a «En curso» para siempre y ahora dicen lo mismo que el sidebar.
+
+**El producto habla dos idiomas, con un selector (2026-08-25,
+`forensia.i18n` + `web/src/i18n`)**: todo lo que Agentopsy pone delante de un
+humano se emite en INGLÉS o en CASTELLANO, y el perito lo elige en
+Configuración, Apariencia, arriba del panel (es el único ajuste que alguien
+puede necesitar cuando NO entiende el resto de la interfaz). Por defecto sale en
+inglés. Cubre las cuatro capas: el chrome de la SPA, los mensajes que devuelve
+el api, el informe pericial con sus anexos, y lo que ESCRIBE el agente. Lo que
+NO se traduce nunca es el contenido del CASO, el nombre que puso el perito, el
+título de un hallazgo, el resumen que escribió el agente: traducir un dato del
+expediente sería inventarlo.
+
+El eje es una preferencia de PRESENTACIÓN, del mismo rango que el tema y la
+paleta: vive en `localStorage`, no toca un solo dato de la cadena de custodia, y
+por eso su default DECLARADO (`en`) no contradice RULE 2, que prohíbe adivinar un
+valor de configuración cuya adivinanza taparía un fallo. Siempre hay que pintar
+en ALGÚN idioma y equivocarse no falsea nada. El cliente lo manda en
+`X-Forensia-Lang` (declarada en la allowlist exacta de CORS) y un middleware lo
+deja en un `ContextVar` por petición. Los TRABAJOS DE FONDO lo capturan al
+crearse y lo fijan dentro del hilo: un `ContextVar` no se hereda al crear un
+hilo, así que sin eso un registro o una redacción habrían salido en el idioma de
+partida y no en el que tenía la interfaz al pulsar el botón.
+
+**Lo que hace que no se pudra son dos gates, no la disciplina.** En la SPA,
+`es.ts` es un `Record<MessageKey, string>` derivado de `en.ts`: una clave sin
+traducir Y una clave de más son errores de `npm run typecheck`, que es gate de
+CI (RULE 6). En el backend, `test_i18n.py` exige que toda entrada del catálogo
+traiga los dos idiomas, que ninguna declare uno que no existe, y que toda
+plantilla con parámetros se pueda formatear (una llave literal sin doblar rompía
+`str.format` en caliente). Una clave que no existe LEVANTA en vez de devolverse a
+sí misma: un hueco es un fallo del catálogo, no algo que disimular delante del
+perito (RULE 2). No hay respaldo al otro idioma en ninguna capa.
+
+**El problema difícil era el mensaje de error, y se resolvió sin tocar el
+audit.** El texto que levanta un motor de `forensia/*` tiene dos destinos que no
+quieren lo mismo: el log de auditoría encadenado (y a veces el propio modelo) lo
+reciben, y ahí NO puede depender del idioma de quien mirase la pantalla, porque
+dos entradas del audit del mismo caso dirían cosas distintas y el audit registra
+lo que OCURRIÓ (FORENSIC INVARIANT 4). La interfaz, en cambio, sí quiere el
+idioma del perito. La solución es `i18n.Mensaje`, una subclase de `str` cuyo
+VALOR es siempre la entrada CASTELLANA del catálogo, que es el idioma canónico
+del registro y el que ya está escrito en los expedientes existentes, y que
+además lleva dentro el CÓDIGO con el que la superficie lo re-renderiza
+(`traducir_excepcion`, en los 106 `detail=` de los routers). Como el canónico se
+renderiza del catálogo, no puede desviarse de la entrada castellana: son la misma
+cadena por construcción. Y como sigue siendo un `str`, `str(exc)`,
+`"algo" in str(exc)` y `pytest.raises(match=...)` funcionan igual que antes, así
+que los 31 tests que afirmaban sobre el texto castellano siguieron verdes sin
+tocarlos; los que sí se tocaron pasaron a afirmar sobre el CÓDIGO, que es más
+robusto que una frase.
+
+**El informe sigue al selector**, que es la decisión de producto tomada: el
+índice canónico (`reports.indice`) deja de ser una constante de texto y pasa a
+llevar CLAVES, de modo que la puerta 1 del redactor compara los títulos contra el
+índice DEL IDIOMA en que se está redactando; el `num` no cambia, que es lo que
+mantiene comparable la estructura entre los dos. Un documento ya persistido
+conserva su idioma sin necesidad de un campo nuevo, porque su texto se guarda
+literal y nada lo re-renderiza: añadir `lang` al contenido habría cambiado el
+`_content_sha256` y roto la verificación de los informes existentes. Las dos
+hojas `.xlsx`, el PNG del timeline, el PNG del grafo, el PDF y el acta de
+adquisición van por el mismo eje.
+
+**El agente tiene un fichero de comportamiento por idioma** (`agent.md` /
+`agent.en.md`), y el registro los cachea por separado y carga el del idioma en
+curso la primera vez que se le pide: cargar en el constructor fijaba el idioma de
+arranque para toda la vida del proceso. `test_agent_registry.py` fija que los dos
+ficheros conservan el mismo esqueleto de apartados, porque si uno gana una
+sección y el otro no, Agentopsy se comportaría distinto según la lengua del
+perito, y eso es justo lo que una herramienta forense no puede hacer.
+
+Fuera de alcance, a propósito: los COMENTARIOS y la documentación del repo (este
+fichero incluido) siguen en castellano, porque son documentación de desarrollo y
+no salida de producto, que es la misma frontera que ya trazaba RULE 7. Y los
+motivos que `session_guard` y `cache_health` escriben en el audit se quedan
+canónicos: no llegan a ninguna pantalla, y traducirlos sólo cambiaría el
+registro.
 
 **Lo pendiente vive en `hoja-de-ruta.md`** (2026-08-06): el plan de coste del
 informe pericial, medido sobre la redacción real del caso LoneWolf: **1,0659 USD

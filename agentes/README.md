@@ -1,11 +1,26 @@
 # `agentes/` — el agente forense de Agentopsy
 
-Desde 2026-07-28 el agente se configura con **un único archivo de comportamiento**:
+Desde 2026-07-28 el agente se configura con **un único archivo de comportamiento**, y
+desde 2026-08-25 hay **uno por idioma**:
 
-- **[`agent.md`](agent.md)** — las instrucciones que lee el agente para saber **cómo
-  comportarse**. Es lo único que Agentopsy carga de esta carpeta. Vale para cualquier
-  proveedor de IA (Claude Code, Codex CLI, Gemini CLI, Ollama): por eso se llama
-  `agent.md` y no `CLAUDE.md`.
+- **[`agent.md`](agent.md)** — las instrucciones en CASTELLANO.
+- **[`agent.en.md`](agent.en.md)** — su gemelo INGLÉS.
+
+Es lo único que Agentopsy carga de esta carpeta. Vale para cualquier proveedor de IA
+(Claude Code, Codex CLI, Gemini CLI, Ollama): por eso se llama `agent.md` y no
+`CLAUDE.md`.
+
+**Los dos son el MISMO método escrito dos veces**, no una traducción automática: el
+`title` y el `summary` de cada hallazgo viajan tal cual al informe pericial, así que
+ese texto se escribe con el cuidado de un texto de producto. Si tocas uno, toca el otro:
+`tests/test_agent_registry.py` comprueba que conservan el mismo esqueleto de apartados,
+porque si uno gana una sección y el otro no, Agentopsy se comportaría distinto según el
+idioma de la interfaz, que es justo lo que una herramienta forense no puede hacer.
+
+**No hay respaldo al otro idioma** (RULE 2). Si falta el fichero del idioma elegido, el
+registro de ESE idioma queda vacío y `/api/agent/query` responde 503; nunca se carga el
+castellano cuando se pidió el inglés, porque eso dejaría al perito con un agente que
+escribe en un idioma que no eligió.
 
 Ya **no hay** el contrato de paquetes anterior (`agent.yaml`, `prompts/`, `policy/`,
 `objetivos`, `knowledge/`). Fue retirado: masticaba demasiada estructura declarativa
@@ -13,9 +28,10 @@ para lo que aporta, y el método real cabe en un solo documento.
 
 ## Cómo lo consume Agentopsy
 
-Al arrancar, el `api` lee `agent.md` (o el que fije `FORENSIA_AGENTS_DIR`) y construye
+El `api` lee el fichero del idioma de la petición (de `FORENSIA_AGENTS_DIR`) y construye
 **un agente por perfil de SO** (`windows`, `unix`) que comparten ese texto como base de
-su system prompt. En cada corrida, Agentopsy añade el contexto del caso:
+su system prompt. La carga es perezosa y cacheada POR IDIOMA: el perito puede cambiarlo
+sin reiniciar nada. En cada corrida, Agentopsy añade el contexto del caso:
 
 - La **evidencia anclada** (verificada por hash, montada solo lectura a nivel de bloque).
 - El **triage** (`detected_os`, `detected_kind`) — determinado por el contenido, no por

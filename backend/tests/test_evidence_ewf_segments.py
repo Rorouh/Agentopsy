@@ -30,6 +30,7 @@ import sys
 import pytest
 from _symlink_support import requires_symlinks
 
+from forensia.i18n import codigo_de
 from forensia.cases.manager import CaseManager
 from forensia.evidence import (
     EvidenceManager,
@@ -342,8 +343,9 @@ class TestIncompleteSetRejected:
     ):
         _write_ewf_set(tmp_path, "disk", 3)
         before = _evidence_dirs(cases, case.id)
-        with pytest.raises(ValueError, match="non-first EWF segment"):
+        with pytest.raises(ValueError) as exc:
             manager.register(case.id, str(tmp_path / "disk.E02"))
+        assert codigo_de(exc.value) == "evidence.notFirstSegment"
         assert _evidence_dirs(cases, case.id) == before
 
     @requires_symlinks

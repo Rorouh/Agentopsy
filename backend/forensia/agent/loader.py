@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from forensia.i18n import Mensaje, current_lang
 from forensia.agent.package import (
     AgentPackage,
     AgentPackageModel,
@@ -33,7 +34,28 @@ from forensia.agent.package import (
 from forensia.toolkit.catalog import for_profile as tools_for_profile
 
 #: El único archivo que Agentopsy carga de ``agentes/``.
-AGENT_MD_FILENAME = "agent.md"
+#: El fichero de comportamiento POR IDIOMA. Es el mismo método escrito dos
+#: veces, no una traducción automática: el agente redacta el `title` y el
+#: `summary` de cada hallazgo, y ese texto viaja tal cual al informe, así que
+#: tiene que estar escrito con el cuidado de un texto de producto.
+#:
+#: No hay respaldo al otro idioma (RULE 2): si falta el fichero del idioma
+#: elegido, el registro queda vacío y `/api/agent/query` responde 503. Cargar el
+#: castellano cuando se pidió el inglés dejaría al perito con un agente que
+#: escribe en un idioma que no eligió, y ese texto acaba en el informe.
+AGENT_MD_FILENAMES: dict[str, str] = {
+    "es": "agent.md",
+    "en": "agent.en.md",
+}
+
+#: El del castellano, que es el canónico del proyecto. Se conserva como nombre
+#: propio porque `agentes/README.md` y los tests lo citan.
+AGENT_MD_FILENAME = AGENT_MD_FILENAMES["es"]
+
+
+def agent_md_filename(lang: str | None = None) -> str:
+    """El nombre del fichero de comportamiento del idioma en curso."""
+    return AGENT_MD_FILENAMES.get(lang or current_lang(), AGENT_MD_FILENAME)
 
 #: Perfiles de SO para los que Agentopsy construye un agente. El texto de ``agent.md``
 #: es común; lo que cambia por perfil es la allowlist de herramientas.
@@ -91,7 +113,11 @@ def default_allowed_tools(os_profile: str) -> tuple[str, ...]:
     """
     if os_profile not in VALID_OS_PROFILES:
         raise AgentPackageError(
-            f"os_profile inválido: {os_profile!r}. Debe ser uno de {list(VALID_OS_PROFILES)}."
+            Mensaje(
+                "agent.badOsProfile",
+                profile=repr(os_profile),
+                valid=list(VALID_OS_PROFILES),
+            )
         )
     return tuple(t.id for t in tools_for_profile(os_profile))
 
@@ -100,15 +126,20 @@ def read_instructions(agents_dir: Path) -> str:
     """Lee el texto de ``agent.md`` bajo ``agents_dir``. Falla en seco si no existe o
     está vacío — un agente sin instrucciones no es un estado válido (RULE 2)."""
     agents_dir = Path(agents_dir).resolve()
-    md_path = agents_dir / AGENT_MD_FILENAME
+    nombre = agent_md_filename()
+    md_path = agents_dir / nombre
     if not md_path.is_file():
         raise AgentPackageError(
-            f"{md_path} no existe. El agente se configura con un único archivo "
-            f"'{AGENT_MD_FILENAME}' en {agents_dir} (ver agentes/README.md)."
+            Mensaje(
+                "agent.mdMissing",
+                path=md_path,
+                filename=nombre,
+                dir=agents_dir,
+            )
         )
     text = md_path.read_text(encoding="utf-8").strip()
     if not text:
-        raise AgentPackageError(f"{md_path} está vacío: no hay instrucciones que cargar.")
+        raise AgentPackageError(Mensaje("agent.mdEmpty", path=md_path))
     return text
 
 
@@ -132,11 +163,11 @@ def build_package(
     conocimiento POR CASO lo escribe el agente en runtime, no el paquete.
     """
     if not isinstance(instructions, str) or not instructions.strip():
-        raise AgentPackageError("las instrucciones (agent.md) no pueden estar vacías")
+        raise AgentPackageError(Mensaje("agent.instructionsEmpty"))
     allowed = tuple(allowed_tools) if allowed_tools is not None else default_allowed_tools(os_profile)
     if not allowed:
         raise AgentPackageError(
-            f"el catálogo no declara ninguna herramienta para os_profile={os_profile!r}"
+            Mensaje("agent.noToolsForProfile", profile=repr(os_profile))
         )
     return AgentPackage(
         id=f"forensia-{os_profile}",

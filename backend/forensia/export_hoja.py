@@ -37,6 +37,8 @@ Puro (CLAUDE.md RULE 3): sin I/O ni acceso a disco; recibe datos, devuelve bytes
 
 from __future__ import annotations
 
+from forensia.i18n import t
+
 import io
 import re
 import unicodedata
@@ -62,7 +64,15 @@ SUBSEPARADOR = " | "
 #: Lo que se escribe donde un campo NO APLICA a esa fila (una fila de hallazgo no
 #: tiene código de salida). Igual que en la interfaz, «n/d», nunca un cero ni un
 #: guion que se pueda leer como un dato.
+#: El blanco de «sin dato» de una hoja. Es una CONSTANTE del castellano por
+#: compatibilidad con lo ya exportado; quien escribe una celda usa `no_aplica()`,
+#: que lo resuelve en el idioma de la hoja.
 NO_APLICA = "n/d"
+
+
+def no_aplica() -> str:
+    """El blanco de «sin dato» en el idioma de la hoja (`n/a` o `n/d`)."""
+    return t("sheet.na")
 
 # Paleta del producto (la misma del informe en PDF): papel, tinta y terracota.
 _ACENTO = "A3271F"
@@ -113,7 +123,7 @@ def celda(valor: Any) -> str:
     if valor is None:
         return ""
     if isinstance(valor, bool):  # antes de int: un bool es un int en Python
-        return "Sí" if valor else "No"
+        return t("sheet.yes") if valor else t("sheet.no")
     return str(valor)
 
 
@@ -133,7 +143,7 @@ def _valor_de_celda(valor: Any) -> Any:
     if valor is None:
         return ""
     if isinstance(valor, bool):
-        return "Sí" if valor else "No"
+        return t("sheet.yes") if valor else t("sheet.no")
     if isinstance(valor, int):
         return valor
     return str(valor)
@@ -264,6 +274,7 @@ __all__ = [
     "MAX_SLUG",
     "MEDIA_TYPE",
     "NO_APLICA",
+    "no_aplica",
     "SUBSEPARADOR",
     "build_workbook",
     "celda",

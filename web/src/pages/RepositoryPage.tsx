@@ -16,7 +16,8 @@ import { ErrorState } from "../ui/ErrorState";
 import { LoadingState } from "../ui/LoadingState";
 import { Modal } from "../ui/Modal";
 import { usePublishShellHeader } from "../layout/shellHeader";
-import { formatBytes, formatDate, shortHash } from "../utils/format";
+import { useFormat } from "../utils/format";
+import { useLang, type MessageKey } from "../i18n";
 import { isEwfFirstSegment } from "../utils/evidence";
 import { Icon } from "../ui/Icon";
 
@@ -24,12 +25,12 @@ function evidenceFileName(ev: EvidenceHandle): string {
   return ev.original_path.split("/").pop() ?? ev.original_path;
 }
 
-const KIND_LABEL: Record<EvidenceHandle["detected_kind"], string> = {
-  disk: "imagen de disco",
-  container_disk: "imagen contenedor",
-  memory: "volcado de memoria",
-  document: "fichero aportado",
-  unknown: "formato no identificado",
+const KIND_KEY: Record<EvidenceHandle["detected_kind"], MessageKey> = {
+  disk: "evidence.kind.disk",
+  container_disk: "evidence.kind.container_disk",
+  memory: "evidence.kind.memory",
+  document: "evidence.kind.document",
+  unknown: "evidence.kind.unknown",
 };
 
 // Un fichero APORTADO (un PDF, una foto, un correo, un log) no es el sistema
@@ -118,6 +119,8 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
   // Fallo al leer la BANDEJA (./evidence), que no es la lista de evidencias
   // registradas ni el registro.
   const [sourcesError, setSourcesError] = useState<string | null>(null);
+  const { t, locale } = useLang();
+  const { formatBytes, formatDate, shortHash } = useFormat();
 
   // Evidencia cuya FICHA está abierta bajo la tabla. Sin selección explícita se
   // abre la primera. Con una sola evidencia (el caso normal), obligar a un clic
@@ -162,14 +165,17 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
     setRegisterSuccess(
       done
         ? done.segment_count > 1
-          ? `Evidencia registrada: ${done.segment_count} segmentos, ${formatBytes(done.total_size)} en total`
-          : `Evidencia registrada: ${formatBytes(done.total_size)}`
-        : "Evidencia registrada",
+          ? t("evidence.registeredSet", {
+              segments: done.segment_count,
+              size: formatBytes(done.total_size),
+            })
+          : t("evidence.registeredSize", { size: formatBytes(done.total_size) })
+        : t("evidence.registeredPlain"),
     );
     window.clearTimeout(successTimer.current);
     // Nombrar el conjunto es un dato que se lee, no un destello: 6 s, no 2.
     successTimer.current = window.setTimeout(() => setRegisterSuccess(null), 6000);
-  }, [registeredSeq, evidence, lastRegisteredId]);
+  }, [registeredSeq, evidence, lastRegisteredId, t, formatBytes]);
 
   // Devuelve la bandeja recién leída (además de fijarla en el estado) para que
   // quien la refresca pueda decidir sobre la lista NUEVA sin esperar al render.
@@ -235,12 +241,17 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
       const notes: string[] = [];
       if (uploaded.length > 0) {
         notes.push(
-          `${uploaded.length} ${uploaded.length === 1 ? "fichero subido" : "ficheros subidos"} a la bandeja`,
+          t(uploaded.length === 1 ? "evidence.uploadedOne" : "evidence.uploadedMany", {
+            count: uploaded.length,
+          }),
         );
       }
       if (already.length > 0) {
         notes.push(
-          `${already.length} ya ${already.length === 1 ? "estaba" : "estaban"} en la bandeja (${already.join(", ")}); no se sobrescribe evidencia`,
+          t(already.length === 1 ? "evidence.alreadyOne" : "evidence.alreadyMany", {
+            count: already.length,
+            names: already.join(", "),
+          }),
         );
       }
       setUploadNotice(notes.length > 0 ? `${notes.join(" · ")}.` : null);
@@ -258,7 +269,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
         (files.length === 1 ? inBatch[0] : undefined);
       if (entry) setSelectedSourcePath(entry.path);
     },
-    [loadSources],
+    [loadSources, t],
   );
 
   const verifyOne = useCallback(
@@ -433,12 +444,12 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
   // tiene que ejecutarse en todos los renders.
   usePublishShellHeader(
     {
-      title: "Evidencia",
+      title: t("nav.repository"),
       // Sin meta con un caso abierto o cerrado: «bandeja ./evidence · solo
       // lectura» describía el funcionamiento interno, y el caso cerrado ya lo
       // enuncia la zona de registro, que además dice qué hacer al respecto
       // («Reabre el caso para registrar más evidencia»).
-      meta: activeCase ? undefined : "sin caso seleccionado",
+      meta: activeCase ? undefined : t("common.noCase"),
       // La cabecera lleva el AVANCE DE FASE, como las otras seis. «Registrar
       // evidencia» estaba aquí duplicando el botón que ya vive al pie de la
       // bandeja, a unos 600px de la fila que lo activa: se elegía el fichero
@@ -450,12 +461,12 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
             disabled={evidence.length === 0}
             title={
               evidence.length === 0
-                ? "Registra primero una evidencia: el agente solo trabaja sobre un handle hash-verificado"
+                ? t("evidence.needEvidenceFirst")
                 : undefined
             }
             onClick={() => onNavigate("investigation")}
           >
-            Pasar a Investigación →
+            {t("evidence.goToInvestigation")} →
           </button>
         ) : undefined,
     },
@@ -465,13 +476,14 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
       caseClosed,
       evidence.length,
       onNavigate,
+      t,
     ],
   );
 
   if (casesPhase === "loading") {
     return (
       <div className="view-scroll">
-        <LoadingState label="Cargando casos…" />
+        <LoadingState label={t("evidence.loadingCases")} />
       </div>
     );
   }
@@ -481,10 +493,10 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
       <div className="view-scroll">
         {/* RULE 2: el fallo del listado se muestra aquí mismo, no solo dentro
             del diálogo de casos que quizá nadie abra. */}
-        <ErrorState message={casesError ?? "no se pudo listar los casos"} />
+        <ErrorState message={casesError ?? t("evidence.casesFailed")} />
         <div className="cta-row">
           <button type="button" className="link-action" onClick={() => void reloadCases()}>
-            Reintentar
+            {t("common.retry")}
           </button>
         </div>
       </div>
@@ -495,12 +507,8 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
     return (
       <div className="view-scroll">
         <div className="empty-rail">
-          <div className="empty-rail-title">Sin caso activo</div>
-          <div className="empty-rail-body">
-            Abre uno con «Nuevo caso» o elige otro con «cambiar caso», en el lateral. La
-            evidencia se registra siempre dentro de un caso: es lo que ancla la cadena de
-            custodia.
-          </div>
+          <div className="empty-rail-title">{t("evidence.noActiveCase")}</div>
+          <div className="empty-rail-body">{t("evidence.noActiveCaseBody")}</div>
         </div>
       </div>
     );
@@ -512,28 +520,28 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
         {/* 1 · Cifras del caso */}
         <div className="stat-row">
           <div className="stat">
-            <div className="eyebrow">Registradas</div>
+            <div className="eyebrow">{t("evidence.statRegistered")}</div>
             <div className="stat-value">{evidence.length}</div>
           </div>
           <div className="stat">
-            <div className="eyebrow">Hash verificado</div>
+            <div className="eyebrow">{t("evidence.statVerified")}</div>
             <div className="stat-value stat-value--ok">{verifiedCount}</div>
           </div>
           <div className="stat">
-            <div className="eyebrow">Pendientes</div>
+            <div className="eyebrow">{t("evidence.statPending")}</div>
             <div className={`stat-value${pendingCount > 0 ? " stat-value--accent" : ""}`}>
               {pendingCount}
             </div>
           </div>
           <div className="stat">
-            <div className="eyebrow">Examinador</div>
+            <div className="eyebrow">{t("evidence.statExaminer")}</div>
             <div className="stat-text">{activeCase.examiner}</div>
           </div>
         </div>
 
         {/* 2 · Alta de evidencia */}
         <div className="section-stack">
-          <div className="eyebrow eyebrow--section">Añadir evidencia</div>
+          <div className="eyebrow eyebrow--section">{t("evidence.addSection")}</div>
           <EvidenceInbox
             caseClosed={caseClosed}
             sources={sources}
@@ -554,7 +562,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
             onUploadFiles={uploadSources}
           />
           {sourcesError && (
-            <ErrorState message={`No se pudo leer la bandeja: ${sourcesError}`} />
+            <ErrorState message={t("evidence.inboxFailed", { detail: sourcesError })} />
           )}
         </div>
 
@@ -567,7 +575,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
         {evidence.length !== 1 && (
           <div className="section-stack">
             <div className="rule-label">
-              <span className="eyebrow eyebrow--section">Evidencias del caso</span>
+              <span className="eyebrow eyebrow--section">{t("evidence.listSection")}</span>
               <span className="rule" />
               <span className="rule-count">{evidence.length}</span>
             </div>
@@ -576,7 +584,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
                 un caso sin leer con un registro fallido. */}
             {evidenceListError && (
               <ErrorState
-                message={`No se pudo listar la evidencia del caso: ${evidenceListError}`}
+                message={t("evidence.listFailed", { detail: evidenceListError })}
               />
             )}
             <EvidenceTable
@@ -593,12 +601,10 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
         {/* Con una sola evidencia no hay tabla, así que sus dos fallos (leer la
             lista y verificar) se pintan aquí o se perderían. */}
         {evidence.length === 1 && evidenceListError && (
-          <ErrorState
-            message={`No se pudo listar la evidencia del caso: ${evidenceListError}`}
-          />
+          <ErrorState message={t("evidence.listFailed", { detail: evidenceListError })} />
         )}
         {evidence.length === 1 && verifyError && (
-          <ErrorState message={`No se pudo verificar la evidencia: ${verifyError}`} />
+          <ErrorState message={t("evidence.verifyFailed", { detail: verifyError })} />
         )}
 
         {/* 3.bis · FICHA de la evidencia elegida.
@@ -619,7 +625,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
               </span>
               <span className="rule" />
               <span className="rule-count">
-                {KIND_LABEL[selectedEvidence.detected_kind]}
+                {t(KIND_KEY[selectedEvidence.detected_kind])}
               </span>
             </div>
 
@@ -635,8 +641,8 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
                   hashCopied ? " is-copied" : ""
                 }`}
                 onClick={() => void copySha(selectedEvidence.sha256)}
-                title="Copiar el SHA-256 completo"
-                aria-label="Copiar el SHA-256 completo"
+                title={t("evidenceTable.copyHash")}
+                aria-label={t("evidenceTable.copyHashLabel")}
               >
                 <span>{selectedEvidence.sha256}</span>
                 <span className="hash-copy-icon" aria-hidden="true">
@@ -644,57 +650,54 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
                 </span>
               </button>
 
-              <span className="evidence-card-k">tamaño</span>
+              <span className="evidence-card-k">{t("evidence.kSize")}</span>
               <span className="evidence-card-v is-mono">
                 {formatBytes(selectedEvidence.total_size)}
                 {selectedEvidence.segment_count > 1 &&
-                  ` en ${selectedEvidence.segment_count} segmentos`}
+                  ` ${t("evidence.inSegments", { count: selectedEvidence.segment_count })}`}
               </span>
 
-              <span className="evidence-card-k">integridad</span>
+              <span className="evidence-card-k">{t("evidence.kIntegrity")}</span>
               <span className="evidence-card-v is-mono">
                 {selectedEvidence.last_verification === null ? (
-                  "sin re-verificar"
+                  t("evidence.notReverified")
                 ) : selectedEvidence.last_verification.verified ? (
-                  <span className="custody-meta--ok">hash re-verificado</span>
+                  <span className="custody-meta--ok">{t("evidence.reverified")}</span>
                 ) : (
                   <span className="custody-meta--danger">
-                    <Icon name="alert" size={12} /> hash mismatch
+                    <Icon name="alert" size={12} /> {t("evidenceTable.mismatch")}
                   </span>
                 )}
               </span>
 
-              <span className="evidence-card-k">sistema operativo</span>
+              <span className="evidence-card-k">{t("evidence.kOs")}</span>
               <span className="evidence-card-v is-mono">
                 {!hasOperatingSystem(selectedEvidence) ? (
                   <>
-                    no aplica
+                    {t("evidence.osNotApplicable")}
                     <span className="evidence-card-note">
-                      un fichero aportado es material sobre el sistema investigado, no el
-                      sistema; aquí el perfil elige el maletín, no el SO
+                      {t("evidence.osNotApplicableNote")}
                     </span>
                   </>
                 ) : selectedEvidence.detected_os === "unknown" ? (
                   <>
-                    sin determinar
+                    {t("evidence.osUndetermined")}
                     <button
                       type="button"
                       className="link-action os-action"
                       disabled={redetecting !== null}
-                      title="Volver a abrir la imagen y determinar su sistema operativo"
+                      title={t("evidence.osRedetectTitle")}
                       onClick={() => void redetectOs(selectedEvidence.evidence_id)}
                     >
                       {redetecting === selectedEvidence.evidence_id
-                        ? "Determinando…"
-                        : "Reintentar"}
+                        ? t("evidence.osDetermining")
+                        : t("common.retry")}
                     </button>
                   </>
                 ) : (
                   <>
                     {selectedEvidence.detected_os}
-                    <span className="evidence-card-note">
-                      determinado del contenido de la imagen, no del equipo anfitrión
-                    </span>
+                    <span className="evidence-card-note">{t("evidence.osFromContent")}</span>
                   </>
                 )}
               </span>
@@ -711,17 +714,17 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
                 onClick={() => verifyOne(selectedEvidence.evidence_id)}
               >
                 {verifyingIds.has(selectedEvidence.evidence_id)
-                  ? "Verificando…"
+                  ? t("evidenceTable.verifyingBtn")
                   : selectedEvidence.last_verification
-                    ? "Re-verificar"
-                    : "Verificar ahora"}
+                    ? t("evidenceTable.reverify")
+                    : t("evidenceTable.verifyNow")}
               </button>
               <button
                 type="button"
                 className="link-action"
                 onClick={() => void openActa(selectedEvidence)}
               >
-                Acta de adquisición
+                {t("evidence.acquisitionRecord")}
               </button>
             </div>
 
@@ -732,24 +735,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
                 la huella delante, no en mitad del chat. */}
             {activeCase.os_profile === null && redetecting === null && (
               <div className="note-rail">
-                {onlyMaterial ? (
-                  <>
-                    Este caso sólo tiene ficheros aportados, y un fichero no es el sistema
-                    investigado: no hay sistema operativo que determinarle. Aun así el agente
-                    necesita un perfil, porque es lo que elige el maletín donde corren las
-                    herramientas. Las que leen un fichero suelto (file, strings,
-                    bulk_extractor, yara, hashdeep) están en los dos, así que para material
-                    aportado cualquiera de los dos sirve; elige el del sistema del que
-                    proceda el material si lo sabes:
-                  </>
-                ) : (
-                  <>
-                    La determinación automática no ha podido cerrar el sistema operativo de
-                    este caso, o la imagen contiene señales de más de un SO, o el maletín que
-                    la abre no está disponible. El agente no se enruta hasta que haya un
-                    perfil, así que puedes anclarlo tú:
-                  </>
-                )}
+                {t(onlyMaterial ? "evidence.anchorOnlyMaterial" : "evidence.anchorUndetermined")}
                 <div className="anchor-actions">
                   <button
                     type="button"
@@ -757,7 +743,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
                     disabled={anchoring !== null}
                     onClick={() => void anchorProfile("unix")}
                   >
-                    {anchoring === "unix" ? "Anclando…" : "unix"}
+                    {anchoring === "unix" ? t("evidence.anchoring") : "unix"}
                   </button>
                   <button
                     type="button"
@@ -765,10 +751,10 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
                     disabled={anchoring !== null}
                     onClick={() => void anchorProfile("windows")}
                   >
-                    {anchoring === "windows" ? "Anclando…" : "windows"}
+                    {anchoring === "windows" ? t("evidence.anchoring") : "windows"}
                   </button>
                 </div>
-                El anclaje es final y queda en el log de auditoría del caso.
+                {t("evidence.anchorFinal")}
               </div>
             )}
 
@@ -782,12 +768,12 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
 
       <Modal
         open={actaEvidence !== null}
-        eyebrow="Cadena de custodia"
-        title="Acta de adquisición"
+        eyebrow={t("evidence.custodyEyebrow")}
+        title={t("evidence.acquisitionRecord")}
         subtitle={actaEvidence ? evidenceFileName(actaEvidence) : undefined}
         onClose={() => setActaEvidence(null)}
         panelClassName="acta-modal"
-        footerHint="esc para cerrar"
+        footerHint={t("evidence.escToClose")}
         footer={
           <>
             <button
@@ -796,56 +782,56 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
               disabled={!acta}
               onClick={downloadActa}
             >
-              Descargar acta (JSON)
+              {t("evidence.downloadRecord")}
             </button>
             <button
               type="button"
               className="modal-action modal-action--quiet"
               onClick={() => setActaEvidence(null)}
             >
-              Cerrar
+              {t("common.close")}
             </button>
           </>
         }
       >
         {actaLoading ? (
-          <LoadingState label="Generando acta…" />
+          <LoadingState label={t("evidence.generatingRecord")} />
         ) : actaError ? (
           <ErrorState message={actaError} />
         ) : acta && actaMeta ? (
           <div className="acta-rows">
             <div className="acta-row">
-              <div className="eyebrow">Caso</div>
+              <div className="eyebrow">{t("acta.case")}</div>
               <div className="acta-value">
                 {acta.case.name} · {acta.case.examiner}
               </div>
             </div>
             <div className="acta-row">
-              <div className="eyebrow">Origen</div>
+              <div className="eyebrow">{t("acta.source")}</div>
               <div className="acta-value acta-value--mono">
-                {acta.evidence.source_path ?? "n/d"}
+                {acta.evidence.source_path ?? t("common.na")}
               </div>
             </div>
             <div className="acta-row">
-              <div className="eyebrow">SHA-256 (baseline)</div>
+              <div className="eyebrow">{t("acta.baselineHash")}</div>
               <div className="acta-value acta-value--mono">
                 {acta.evidence.sha256}
                 {acta.evidence.segment_count > 1 && (
-                  <span className="acta-note">
-                    cubre el primer segmento; cada uno tiene el suyo, abajo
-                  </span>
+                  <span className="acta-note">{t("acta.baselineNote")}</span>
                 )}
               </div>
             </div>
             <div className="acta-row">
-              <div className="eyebrow">Tamaño</div>
+              <div className="eyebrow">{t("acta.size")}</div>
               <div className="acta-value acta-value--mono">
                 {acta.evidence.total_size_human} (
-                {acta.evidence.total_size_bytes.toLocaleString("es-ES")} bytes)
+                {acta.evidence.total_size_bytes.toLocaleString(locale)} {t("acta.bytes")})
                 {acta.evidence.segment_count > 1 && (
                   <span className="acta-note">
-                    {acta.evidence.segment_count} segmentos ingeridos como una sola
-                    evidencia; el primero pesa {acta.evidence.size_human}
+                    {t("acta.sizeNote", {
+                      count: acta.evidence.segment_count,
+                      size: acta.evidence.size_human,
+                    })}
                   </span>
                 )}
               </div>
@@ -856,7 +842,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
             {acta.evidence.segments.length > 1 && (
               <div className="acta-row">
                 <div className="eyebrow">
-                  Segmentos ({acta.evidence.segments.length})
+                  {t("acta.segments", { count: acta.evidence.segments.length })}
                 </div>
                 <div className="acta-value">
                   <div className="segment-rows">
@@ -874,30 +860,32 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
               </div>
             )}
             <div className="acta-row">
-              <div className="eyebrow">Registrada</div>
+              <div className="eyebrow">{t("acta.registered")}</div>
               <div className="acta-value acta-value--mono">
                 {formatDate(acta.evidence.registered_at)}
               </div>
             </div>
             <div className="acta-row">
-              <div className="eyebrow">Nivel de solo-lectura</div>
+              <div className="eyebrow">{t("acta.readOnlyLevel")}</div>
               <div className="acta-value">{actaMeta.read_only_label}</div>
             </div>
             <div className="acta-row">
-              <div className="eyebrow">Cadena de custodia</div>
+              <div className="eyebrow">{t("evidence.custodyEyebrow")}</div>
               <div
                 className={`acta-value acta-value--mono${
                   acta.chain_of_custody.hash_chain_verified ? " is-ok" : " is-bad"
                 }`}
               >
-                entry_hash {acta.chain_of_custody.register_entry_hash ?? "n/d"} ·{" "}
-                {acta.chain_of_custody.hash_chain_verified
-                  ? "cadena verificada"
-                  : "la cadena NO verifica"}
+                entry_hash {acta.chain_of_custody.register_entry_hash ?? t("common.na")} ·{" "}
+                {t(
+                  acta.chain_of_custody.hash_chain_verified
+                    ? "acta.chainVerified"
+                    : "acta.chainNotVerified",
+                )}
               </div>
             </div>
             <div className="acta-row">
-              <div className="eyebrow">Verificación</div>
+              <div className="eyebrow">{t("acta.verification")}</div>
               <div
                 className={`acta-value acta-value--mono${
                   acta.verification?.verified ? " is-ok" : acta.verification ? " is-bad" : ""
@@ -905,13 +893,13 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
               >
                 {acta.verification
                   ? acta.verification.verified
-                    ? `Verificada ${formatDate(acta.verification.verified_at)}`
-                    : "Hash MISMATCH"
-                  : "Sin verificar"}
+                    ? t("acta.verifiedAt", { date: formatDate(acta.verification.verified_at) })
+                    : t("acta.hashMismatch")
+                  : t("acta.unverified")}
               </div>
             </div>
             <div className="acta-row">
-              <div className="eyebrow">Herramienta</div>
+              <div className="eyebrow">{t("acta.tool")}</div>
               <div className="acta-value">
                 {acta.tool.name} {acta.tool.version} · {acta.tool.method}
               </div>

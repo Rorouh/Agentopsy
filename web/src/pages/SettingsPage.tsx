@@ -8,7 +8,9 @@ import type {
   ExecutorStatus,
 } from "../api/types";
 import type { ViewId } from "../navigation/navItems";
-import { PALETTES, useTheme } from "../ThemeProvider";
+import { PALETTE_IDS, useTheme } from "../ThemeProvider";
+import { LANGS, useLang } from "../i18n";
+import type { MessageKey } from "../i18n";
 import { usePublishShellHeader } from "../layout/shellHeader";
 import { ExecutorLoginModal } from "../components/ExecutorLoginModal";
 import { Icon } from "../ui/Icon";
@@ -21,10 +23,10 @@ interface SettingsPageProps {
 
 type TabId = "executors" | "system" | "appearance";
 
-const TABS: { id: TabId; label: string }[] = [
-  { id: "executors", label: "Motor de análisis" },
-  { id: "system", label: "Sistema · Maletín" },
-  { id: "appearance", label: "Apariencia" },
+const TABS: { id: TabId; labelKey: MessageKey }[] = [
+  { id: "executors", labelKey: "settings.tab.executors" },
+  { id: "system", labelKey: "settings.tab.system" },
+  { id: "appearance", labelKey: "settings.tab.appearance" },
 ];
 
 // Clave de configuración del modelo POR proveedor (espejo de
@@ -41,6 +43,7 @@ const SAVED_MS = 2000;
 
 export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
   const { theme, setTheme, palette, setPalette } = useTheme();
+  const { lang, setLang, t } = useLang();
   const [activeTab, setActiveTab] = useState<TabId>("executors");
   const [config, setConfig] = useState<ConfigSnapshot | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
@@ -116,16 +119,16 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
 
   usePublishShellHeader(
     {
-      title: "Configuración",
+      title: t("nav.settings"),
       // Sin meta: la versión del api y el «sin secretos» seguían visibles en la
       // pestaña Sistema / Maletín, que es donde se consultan a propósito.
       action: onCapsRefresh ? (
         <button type="button" disabled={refreshingCaps} onClick={() => void refreshCaps()}>
-          {refreshingCaps ? "Actualizando…" : "Actualizar estado"}
+          {t(refreshingCaps ? "settings.refreshing" : "settings.refresh")}
         </button>
       ) : undefined,
     },
-    [refreshingCaps, onCapsRefresh],
+    [refreshingCaps, onCapsRefresh, t],
   );
 
   const executors: [ExecutorId, ExecutorStatus][] = caps
@@ -137,7 +140,7 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
   return (
     <div className="settings">
       <div className="settings-bar">
-        <div className="tab-row" role="tablist" aria-label="Secciones de configuración">
+        <div className="tab-row" role="tablist" aria-label={t("settings.tabsLabel")}>
           {TABS.map((tab) => (
             <button
               key={tab.id}
@@ -149,7 +152,7 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
               className={`tab${activeTab === tab.id ? " is-active" : ""}`}
               onClick={() => setActiveTab(tab.id)}
             >
-              {tab.label}
+              {t(tab.labelKey)}
             </button>
           ))}
         </div>
@@ -166,14 +169,12 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
               className="view-stack settings-stack"
             >
               <div className="section-stack">
-                <div className="settings-lede">
-                  Quién ejecuta el análisis. Elige uno: Agentopsy no lo hace por ti.
-                </div>
+                <div className="settings-lede">{t("settings.lede")}</div>
 
                 {!caps ? (
                   <div className="loading-state">
                     <span className="spinner" aria-hidden="true" />
-                    <span>Consultando capacidades del servicio api…</span>
+                    <span>{t("settings.queryingCaps")}</span>
                   </div>
                 ) : (
                   <div className="engine-rows">
@@ -183,8 +184,8 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
                       const providerModels = models[id];
                       const configured = config?.keys[MODEL_CONFIG_KEY[id]]?.preview ?? "";
                       const modelLabel = status.available
-                        ? configured || "por defecto"
-                        : "conectar →";
+                        ? configured || t("settings.modelDefault")
+                        : `${t("settings.connectArrow")} →`;
                       // Potencia (nivel de razonamiento): solo la ofrecen los
                       // ejecutores que declaran clave, y los niveles dependen
                       // del MODELO elegido: no hay una lista global válida.
@@ -247,9 +248,7 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
                                   title del bloque. */}
                               {status.available && (
                                 <div className="engine-note">
-                                  {status.local
-                                    ? "No sale nada de tu máquina."
-                                    : "Usa tu propia suscripción; el prompt sale a ese proveedor."}
+                                  {t(status.local ? "settings.localNote" : "settings.cloudNote")}
                                 </div>
                               )}
 
@@ -272,7 +271,7 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
                                         disabled={savingKey === MODEL_CONFIG_KEY[id]}
                                         onClick={() => void saveKey(MODEL_CONFIG_KEY[id], "")}
                                       >
-                                        Por defecto del CLI
+                                        {t("settings.cliDefault")}
                                       </button>
                                     )}
                                     {(providerModels.models ?? []).map((m) => (
@@ -293,7 +292,7 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
                                         className="visually-hidden"
                                         htmlFor={`model-${id}`}
                                       >
-                                        Id de modelo para {status.name}
+                                        {t("settings.modelIdFor", { name: status.name })}
                                       </label>
                                       <input
                                         id={`model-${id}`}
@@ -316,11 +315,11 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
                                           void saveKey(MODEL_CONFIG_KEY[id], modelDraft)
                                         }
                                       >
-                                        Guardar
+                                        {t("common.save")}
                                       </button>
                                       {savedKey === MODEL_CONFIG_KEY[id] && (
                                         <span className="tag tag--ok" aria-live="polite">
-                                          <Icon name="check" size={12} /> guardado
+                                          <Icon name="check" size={12} /> {t("settings.saved")}
                                         </span>
                                       )}
                                     </div>
@@ -328,12 +327,12 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
 
                                   {reasoning && (
                                     <>
-                                      <div className="eyebrow engine-sublabel">Potencia</div>
+                                      <div className="eyebrow engine-sublabel">{t("settings.power")}</div>
                                       {efforts.length === 0 ? (
                                         <div className="engine-note">
                                           {configured
-                                            ? `El catálogo no declara niveles de razonamiento para ${configured}.`
-                                            : "Elige antes un modelo: los niveles disponibles dependen de él."}
+                                            ? t("settings.noEfforts", { model: configured })
+                                            : t("settings.pickModelFirst")}
                                         </div>
                                       ) : (
                                         <>
@@ -346,7 +345,7 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
                                                 void saveKey(reasoning.config_key, "")
                                               }
                                             >
-                                              Por defecto del CLI
+                                              {t("settings.cliDefault")}
                                             </button>
                                             {efforts.map((eff) => (
                                               <button
@@ -365,9 +364,9 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
                                           </div>
                                           {effortMismatch && (
                                             <div className="engine-note">
-                                              El nivel guardado (<code>{configuredEffort}</code>) no
-                                              lo admite {configured}: el turno fallaría. Elige uno
-                                              de los de arriba.
+                                              {t("settings.effortMismatchA")}
+                                              <code>{configuredEffort}</code>
+                                              {t("settings.effortMismatchB", { model: configured })}
                                             </div>
                                           )}
                                         </>
@@ -380,8 +379,7 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
 
                               {status.available && providerModels && !providerModels.editable && (
                                 <div className="engine-note">
-                                  {providerModels.note ??
-                                    "El modelo lo gestiona el CLI de este proveedor."}
+                                  {providerModels.note ?? t("settings.modelByCli")}
                                 </div>
                               )}
 
@@ -408,7 +406,7 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
                                     }
                                     onClick={() => void saveKey("OLLAMA_HOST", ollamaHostDraft)}
                                   >
-                                    Guardar host
+                                    {t("settings.saveHost")}
                                   </button>
                                 </div>
                               )}
@@ -421,7 +419,7 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
                                     disabled={isDefault || savingKey === "DEFAULT_EXECUTOR"}
                                     onClick={() => void saveKey("DEFAULT_EXECUTOR", id)}
                                   >
-                                    {isDefault ? "es el motor por defecto" : "usar por defecto"}
+                                    {t(isDefault ? "settings.isDefaultEngine" : "settings.useAsDefault")}
                                   </button>
                                   {/* Reconectar SIEMPRE alcanzable en los ejecutores cloud, no
                                       solo cuando el sondeo los da por caídos: el CLI puede
@@ -435,7 +433,7 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
                                       className="link-action"
                                       onClick={() => setLoginExecutor(id)}
                                     >
-                                      Renovar sesión de {status.name}
+                                      {t("settings.renewSession", { name: status.name })}
                                     </button>
                                   )}
                                 </>
@@ -445,11 +443,11 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
                                   className="link-action"
                                   onClick={() => setLoginExecutor(id)}
                                 >
-                                  Conectar {status.name} →
+                                  {t("settings.connectName", { name: status.name })} →
                                 </button>
                               ) : (
                                 <span className="engine-note">
-                                  Levanta el servicio ollama del compose para usarlo.
+                                  {t("settings.startOllama")}
                                 </span>
                               )}
                             </div>
@@ -462,7 +460,7 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
               </div>
 
               <div className="settings-inline">
-                <div className="eyebrow settings-inline-label">Tiempo máximo</div>
+                <div className="eyebrow settings-inline-label">{t("settings.timeout")}</div>
                 <div className="engine-models">
                   {TIMEOUT_OPTIONS.map((v) => (
                     <button
@@ -480,12 +478,12 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
 
               {configError && (
                 <div className="error-state" role="alert" aria-live="polite">
-                  No se pudo guardar: {configError}
+                  {t("settings.saveFailed", { detail: configError })}
                 </div>
               )}
 
               <div className="settings-foot">
-                sin API keys · sesiones y ajustes solo en tu máquina
+                {t("settings.foot")}
                 {config ? ` · ${config.config_file}` : ""}
               </div>
             </div>
@@ -501,17 +499,14 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
             >
               {!caps ? (
                 <div className="empty-rail">
-                  <div className="empty-rail-title">Sin conexión con el servicio api</div>
-                  <div className="empty-rail-body">
-                    No se pudo obtener el diagnóstico del stack. Comprueba que el compose está
-                    levantado.
-                  </div>
+                  <div className="empty-rail-title">{t("settings.noApi")}</div>
+                  <div className="empty-rail-body">{t("settings.noApiBody")}</div>
                 </div>
               ) : (
                 <>
                   <div className="section-stack">
                     <div className="rule-label">
-                      <span className="eyebrow eyebrow--section">Maletines</span>
+                      <span className="eyebrow eyebrow--section">{t("settings.toolkits")}</span>
                       <span className="rule" />
                     </div>
                     <div className="toolkit-rows">
@@ -523,11 +518,13 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
                             className={`tag${m.running === true ? " tag--ok" : " tag--muted"}`}
                             title={m.running === true ? m.container : m.reason ?? ""}
                           >
-                            {m.running === true
-                              ? "en ejecución"
-                              : m.running === false
-                                ? "detenido / inaccesible"
-                                : "no consultable desde el api"}
+                            {t(
+                              m.running === true
+                                ? "settings.toolkitRunning"
+                                : m.running === false
+                                  ? "settings.toolkitStopped"
+                                  : "settings.toolkitUnknown",
+                            )}
                           </span>
                         </div>
                       ))}
@@ -536,7 +533,7 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
 
                   <div className="section-stack">
                     <div className="rule-label">
-                      <span className="eyebrow eyebrow--section">Herramientas del catálogo</span>
+                      <span className="eyebrow eyebrow--section">{t("settings.catalogTools")}</span>
                       <span className="rule" />
                     </div>
                     <div className="tool-chips">
@@ -570,19 +567,55 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
                   temperamento, el modo elige claro u oscuro. Cada paleta trae
                   sus dos modos, así que trabajar de noche no obliga a renunciar
                   a la identidad que prefieras. */}
+              {/* IDIOMA. Va el primero del panel a propósito: es el único
+                  ajuste de esta pestaña que alguien puede necesitar cuando NO
+                  entiende el resto de la interfaz, así que tiene que ser lo
+                  primero que encuentre al llegar. */}
               <div className="section-stack">
                 <div className="rule-label">
-                  <span className="eyebrow eyebrow--section">Paleta</span>
+                  <span className="eyebrow eyebrow--section">{t("settings.language.title")}</span>
                   <span className="rule" />
                 </div>
-                <div className="palette-choices" role="group" aria-label="Paleta de la interfaz">
-                  {PALETTES.map((p) => (
+                <div
+                  className="theme-choices"
+                  role="group"
+                  aria-label={t("settings.language.group")}
+                >
+                  {LANGS.map((id) => (
                     <button
-                      key={p.id}
+                      key={id}
                       type="button"
-                      className={`palette-choice${palette === p.id ? " is-active" : ""}`}
-                      aria-pressed={palette === p.id}
-                      onClick={() => setPalette(p.id)}
+                      className={`theme-choice${lang === id ? " is-active" : ""}`}
+                      aria-pressed={lang === id}
+                      lang={id}
+                      onClick={() => setLang(id)}
+                    >
+                      {/* Cada idioma se nombra EN SÍ MISMO: quien no entiende la
+                          interfaz actual tiene que reconocer el suyo en la lista. */}
+                      {t(`lang.${id}` as MessageKey)}
+                    </button>
+                  ))}
+                </div>
+                <div className="field-hint">{t("settings.language.hint")}</div>
+              </div>
+
+              <div className="section-stack">
+                <div className="rule-label">
+                  <span className="eyebrow eyebrow--section">{t("settings.appearance.palette")}</span>
+                  <span className="rule" />
+                </div>
+                <div
+                  className="palette-choices"
+                  role="group"
+                  aria-label={t("settings.appearance.paletteGroup")}
+                >
+                  {PALETTE_IDS.map((id) => (
+                    <button
+                      key={id}
+                      type="button"
+                      className={`palette-choice${palette === id ? " is-active" : ""}`}
+                      aria-pressed={palette === id}
+                      onClick={() => setPalette(id)}
                     >
                       {/* Muestra de la paleta REAL, no un icono: se elige por
                           cómo se ve, así que hay que verla. Los cuatro tonos son
@@ -590,7 +623,7 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
                           y el verde de «verificada». */}
                       <span
                         className="palette-swatch"
-                        data-palette={p.id}
+                        data-palette={id}
                         aria-hidden="true"
                       >
                         <span className="palette-swatch-shell" />
@@ -599,8 +632,12 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
                         <span className="palette-swatch-ok" />
                       </span>
                       <span className="palette-choice-text">
-                        <span className="palette-choice-name">{p.name}</span>
-                        <span className="palette-choice-desc">{p.description}</span>
+                        <span className="palette-choice-name">
+                          {t(`palette.${id}.name` as MessageKey)}
+                        </span>
+                        <span className="palette-choice-desc">
+                          {t(`palette.${id}.desc` as MessageKey)}
+                        </span>
                       </span>
                     </button>
                   ))}
@@ -609,25 +646,29 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
 
               <div className="section-stack">
                 <div className="rule-label">
-                  <span className="eyebrow eyebrow--section">Modo</span>
+                  <span className="eyebrow eyebrow--section">{t("settings.appearance.mode")}</span>
                   <span className="rule" />
                 </div>
-                <div className="theme-choices" role="group" aria-label="Modo de la interfaz">
-                  {(["light", "dark"] as const).map((t) => (
+                <div
+                  className="theme-choices"
+                  role="group"
+                  aria-label={t("settings.appearance.modeGroup")}
+                >
+                  {(["light", "dark"] as const).map((tt) => (
                     <button
-                      key={t}
+                      key={tt}
                       type="button"
-                      className={`theme-choice${theme === t ? " is-active" : ""}`}
-                      aria-pressed={theme === t}
-                      onClick={() => setTheme(t)}
+                      className={`theme-choice${theme === tt ? " is-active" : ""}`}
+                      aria-pressed={theme === tt}
+                      onClick={() => setTheme(tt)}
                     >
-                      {t === "light" ? "Claro" : "Oscuro"}
+                      {tt === "light"
+                        ? t("settings.appearance.light")
+                        : t("settings.appearance.dark")}
                     </button>
                   ))}
                 </div>
-                <div className="field-hint">
-                  Paleta y modo se guardan en este navegador y se aplican a toda la aplicación.
-                </div>
+                <div className="field-hint">{t("settings.appearance.hint")}</div>
               </div>
             </div>
           )}

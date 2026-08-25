@@ -30,6 +30,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from forensia.i18n import codigo_de, t
 from forensia.config import config
 from forensia.executors import (
     DEFAULT_TIMEOUT_S,
@@ -50,6 +51,12 @@ from forensia.executors import (
 )
 from forensia.executors import base as executors_base
 from forensia.server import create_app
+
+
+def _gemini_hint() -> str:
+    """La pista de login que el ejecutor concatena a su motivo."""
+    return t("gemini.loginHint")
+
 
 PORT = 50997
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -146,7 +153,11 @@ def test_claude_unavailable_when_status_probe_hangs(
     monkeypatch.setattr(executors_base.subprocess, "run", hang)
     availability = ClaudeCodeExecutor().is_available()
     assert availability.available is False
-    assert "no respondió" in availability.reason
+    # El motivo lo compone el sondeo en el idioma en curso; lo que el test fija
+    # es que dice que el CLI no respondió, no la frase concreta.
+    assert t("executor.probeTimeout", None, argv="claude auth status", seconds=15) in (
+        availability.reason
+    )
 
 
 def test_codex_unavailable_without_session_names_device_auth(
@@ -195,7 +206,7 @@ def test_gemini_unavailable_when_session_expired_without_refresh(
     )
     availability = _gemini_with_home(monkeypatch, tmp_path).is_available()
     assert availability.available is False
-    assert "caducado" in availability.reason
+    assert availability.reason == t("gemini.expiredSession", None, hint=_gemini_hint())
 
 
 def test_gemini_unavailable_when_creds_file_corrupt(
@@ -206,7 +217,7 @@ def test_gemini_unavailable_when_creds_file_corrupt(
     creds.write_text("esto no es JSON", encoding="utf-8")
     availability = _gemini_with_home(monkeypatch, tmp_path).is_available()
     assert availability.available is False
-    assert "corrupta" in availability.reason
+    assert availability.reason == t("gemini.corruptSession", None, hint=_gemini_hint())
 
 
 def test_run_aborts_fast_without_session(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -624,7 +635,7 @@ def test_executor_models_codex_degrades_without_catalog(tmp_path: Path, monkeypa
     res = executor_models("codex")
     assert res["models"] == []
     assert res["model_details"] == []
-    assert "todavía no ha cacheado" in str(res["note"])
+    assert str(res["note"]).startswith(t("codex.noCacheYet", None, path="")[:24])
     # El selector de potencia sigue existiendo: el ejecutor SÍ soporta nivel.
     assert res["reasoning"] is not None
 
@@ -650,8 +661,9 @@ def test_executor_models_ollama_degrades_on_host_error(monkeypatch: pytest.Monke
 
 
 def test_executor_models_unknown_id_fails_loud() -> None:
-    with pytest.raises(ValueError, match="desconocido"):
+    with pytest.raises(ValueError) as exc_unknown:
         executor_models("gpt5")
+    assert codigo_de(exc_unknown.value) == "executor.unknown"
 
 
 # --------------------------------------------------------------------------- #
@@ -663,8 +675,9 @@ def test_model_config_key_covers_every_executor() -> None:
 
 @pytest.mark.parametrize("bad", ["--dangerously-skip-permissions", "-m", "a b", "a;b", "", "/x"])
 def test_validate_model_id_rejects_flag_injection(bad: str) -> None:
-    with pytest.raises(ExecutorError, match="id de modelo inválido"):
+    with pytest.raises(ExecutorError) as exc_model:
         validate_model_id(bad)
+    assert codigo_de(exc_model.value) == "executor.badModelId"
 
 
 @pytest.mark.parametrize("ok", ["opus", "claude-fable-5", "gpt-5.5", "llama3.1:8b", "hf.co/u/m:Q4"])
@@ -733,12 +746,19 @@ def test_codex_rejects_an_effort_the_model_cannot_take(tmp_path: Path, monkeypat
     )
     monkeypatch.setenv("CODEX_HOME", str(tmp_path))
     codex = CodexExecutor()
-    with pytest.raises(ExecutorError, match="no admite el nivel"):
+    with pytest.raises(ExecutorError) as exc_effort:
         codex.run("hola", {"model": "gpt-5.5", "reasoning_effort": "ultra"})
+    assert codigo_de(exc_effort.value) == "codex.effortNotAllowed"
     # Modelo fuera del catálogo: no se sabe, así que no se decide aquí. Llega a
     # la puerta de disponibilidad (el CLI no está instalado en el test).
-    with pytest.raises(ExecutorError, match="no está en el PATH|sesión iniciada"):
+    # El motivo sale en el idioma en curso: se fija por las dos entradas del
+    # catálogo que pueden explicar que no se pueda ejecutar.
+    with pytest.raises(ExecutorError) as exc_path:
         codex.run("hola", {"model": "modelo-que-no-esta", "reasoning_effort": "ultra"})
+    assert str(exc_path.value) in (
+        t("executor.notOnPath", None, binary="codex"),
+        t("codex.noSession", None, hint=t("codex.loginHint")),
+    )
 
 
 def test_claude_argv_strips_the_cli_harness() -> None:
@@ -752,7 +772,9 @@ def test_claude_argv_strips_the_cli_harness() -> None:
         assert argv[argv.index("--tools") + 1] == ""
         assert argv[argv.index("--setting-sources") + 1] == ""
         system = argv[argv.index("--system-prompt") + 1]
-        assert "Agentopsy" in system and "contrato" in system
+        # La identidad va en el idioma del agente: se compara con la entrada
+        # del catálogo, no con una palabra castellana.
+        assert system == t("claude.systemPrompt")
     assert "--resume" in ex._build_argv("hi", None, "sid-1")
 
 
@@ -830,7 +852,9 @@ def test_cloud_model_key_set_and_unset(client: TestClient, clean_config: None) -
 def test_cloud_model_key_rejects_flag_injection(client: TestClient, clean_config: None) -> None:
     r = _set_config(client, "CODEX_MODEL", "--dangerously-skip-permissions")
     assert r.status_code == 422
-    assert "id de modelo inválido" in r.json()["detail"]
+    assert r.json()["detail"] == t(
+        "executor.badModelId", "en", model=repr("--dangerously-skip-permissions")
+    )
 
 
 def test_reasoning_effort_key_set_unset_and_validated(
@@ -873,7 +897,9 @@ def test_models_endpoint_unknown_id_is_400(client: TestClient) -> None:
         headers={"X-Forensia-Token": client.app.state.token},
     )
     assert r.status_code == 400
-    assert "desconocido" in r.json()["detail"]
+    assert r.json()["detail"] == t(
+        "executor.unknown", "en", id=repr("nope"), ids=", ".join(EXECUTOR_IDS)
+    )
 
 
 def test_stream_endpoint_requires_executor_like_query(

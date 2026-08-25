@@ -27,6 +27,7 @@ from typing import Any
 
 import pytest
 
+from forensia.i18n import t as traducir
 from forensia.agent.agent import ForensicAgent
 from _agent_pkg import make_package
 from forensia.agent.tool_schemas import internal_tool_specs
@@ -195,4 +196,10 @@ def test_la_tool_se_ofrece_y_exige_los_tres_campos() -> None:
     assert params["additionalProperties"] is False
     # La descripción tiene que dejar claro que exige el sostén.
     desc = specs["declarar_pivote"]["description"]
-    assert "run_id" in desc and "silencio" in desc
+    # La descripción exige el SOSTÉN y prohíbe cambiar de vía en silencio. Se
+    # comprueba en los DOS idiomas: es la garantía de la tool, no una frase.
+    assert desc == traducir("schema.pivotDesc")
+    assert "run_id" in traducir("schema.pivotDesc", "es")
+    assert "silencio" in traducir("schema.pivotDesc", "es")
+    assert "run_id" in traducir("schema.pivotDesc", "en")
+    assert "silently" in traducir("schema.pivotDesc", "en")

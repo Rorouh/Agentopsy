@@ -22,6 +22,8 @@ motivo accionable — nunca se sustituye por una lista "por defecto" (RULE 2).
 
 from __future__ import annotations
 
+from forensia.i18n import t as traducir
+
 import json
 import logging
 import os
@@ -90,12 +92,37 @@ _TACTIC_PHASE: dict[str, str] = {
     "TA0040": "goal",
 }
 
-PHASES: tuple[tuple[str, str], ...] = (
-    ("access", "Acceso"),
-    ("root", "Persistencia y evasión"),
-    ("act", "Acción interna"),
-    ("goal", "Objetivo"),
+#: Las cuatro fases de la agrupación editorial de Agentopsy. La CLAVE es el
+#: dato (la usa el color de la matriz y viaja en `enterprise.json`); el rótulo lo
+#: resuelve el catálogo de idiomas al serializar, para que la matriz se lea en el
+#: idioma del perito. Una clave que este mapa no declare conserva el rótulo que
+#: traiga el fichero, tal cual (RULE 2): no se le inventa una traducción.
+#: Cómo se NOMBRA cada fase, para todas las que puede pintar la matriz. Incluye
+#: `prep`, que NO forma parte de la agrupación de la semilla pero sí viene en el
+#: catálogo Enterprise (`enterprise.json`): sin declararla, su rótulo viajaba tal
+#: cual y salía en castellano con la interfaz en inglés. Que eso ocurriera es la
+#: regla funcionando (RULE 2: un valor que no se declara no se traduce a ojo);
+#: declararla es el arreglo.
+PHASE_KEYS: dict[str, str] = {
+    "prep": "mitre.phase.prep",
+    "access": "mitre.phase.access",
+    "root": "mitre.phase.root",
+    "act": "mitre.phase.act",
+    "goal": "mitre.phase.goal",
+}
+
+#: La agrupación editorial de la SEMILLA: cuatro fases, sin `prep`. Es un dato
+#: del producto distinto del mapa de rótulos de arriba, y por eso se declara
+#: aparte en vez de derivarse de él.
+PHASES: tuple[tuple[str, str], ...] = tuple(
+    (clave, clave) for clave in ("access", "root", "act", "goal")
 )
+
+
+def phase_label(key: str, fallback: str) -> str:
+    """El rótulo de una fase en el idioma en curso, o ``fallback`` tal cual."""
+    clave = PHASE_KEYS.get(key)
+    return traducir(clave) if clave else fallback
 
 
 @dataclass(frozen=True)
@@ -238,7 +265,7 @@ def as_dict() -> dict:
         "available": cat.available,
         "reason": unavailable_reason(),
         "source": str(cat.source) if cat.source else None,
-        "phases": [{"key": k, "label": label} for k, label in PHASES],
+        "phases": [{"key": k, "label": phase_label(k, label)} for k, label in PHASES],
         "tactics": [
             {
                 "id": t.id,
@@ -365,7 +392,7 @@ def enterprise_as_dict() -> dict:
         "available": cat.available,
         "reason": enterprise_unavailable_reason(),
         "source": str(cat.source) if cat.source else None,
-        "phases": [{"key": k, "label": label} for k, label in cat.phases],
+        "phases": [{"key": k, "label": phase_label(k, label)} for k, label in cat.phases],
         "tactics": [
             {
                 "id": t.id,

@@ -22,16 +22,30 @@ from typing import Any
 import pytest
 from openpyxl import load_workbook
 
+from forensia.i18n import CATALOGO, t
 from forensia.cases import CaseManager
 from forensia.findings.store import FindingStore
 from forensia.mitre.coverage import CoverageStore
 from forensia.mitre.export import (
-    HOJA_HEADER,
     NAVIGATOR_LAYER_VERSION,
-    SIN_DICTAMEN,
+    sin_dictamen,
     coverage_to_hoja,
     coverage_to_navigator_layer,
+    hoja_header,
 )
+
+def _col(nombre_es: str) -> str:
+    """El rótulo de una columna (o de una fila de procedencia) EN EL IDIOMA EN
+    CURSO, nombrándola por su texto castellano.
+
+    El test sigue leyéndose en castellano, que es la lengua del proyecto, pero no
+    se rompe cuando la hoja se exporta en inglés: lo que fija es QUÉ columna, no
+    con qué palabra se escribe.
+    """
+    for clave, entrada in CATALOGO.items():
+        if entrada.get("es") == nombre_es:
+            return t(clave)
+    return nombre_es
 
 
 #: Procedencia válida (UUID4) para hallazgos afirmativos — el store la exige
@@ -83,16 +97,16 @@ def test_sheet_opens_as_a_spreadsheet_and_declares_its_provenance(tmp_case) -> N
     assert blob[:2] == b"PK"
     hoja = _sheet(blob)
     procedencia = dict((r[0], r[1]) for r in hoja[:_PROCEDENCIA_FILAS])
-    assert procedencia["Caso"] == "Caso export"
-    assert procedencia["Identificador del caso"] == case_id
-    assert procedencia["Exportado (UTC)"] == "2026-08-06T13:05:42Z"
-    assert procedencia["Técnicas en la hoja"] == "1"
+    assert procedencia[_col("Caso")] == "Caso export"
+    assert procedencia[_col("Identificador del caso")] == case_id
+    assert procedencia[_col("Exportado (UTC)")] == "2026-08-06T13:05:42Z"
+    assert procedencia[_col("Técnicas en la hoja")] == "1"
     # El texto viaja en UTF-8 dentro del paquete, no transliterado.
     assert "ó" in _rows(blob)[1][-1]
     # Una línea vacía separa la procedencia de la tabla: es el contrato para
     # quien lea la hoja con un programa.
     assert all(v is None for v in hoja[_PROCEDENCIA_FILAS])
-    assert _rows(blob)[0] == list(HOJA_HEADER)
+    assert _rows(blob)[0] == list(hoja_header())
 
 
 def test_sheet_empty_case_is_header_only(tmp_case) -> None:
@@ -100,7 +114,7 @@ def test_sheet_empty_case_is_header_only(tmp_case) -> None:
     cases, case_id = tmp_case
     coverage = CoverageStore(cases, FindingStore(cases))
     rows = _rows(coverage_to_hoja(coverage.coverage(case_id)))
-    assert rows == [list(HOJA_HEADER)]
+    assert rows == [list(hoja_header())]
 
 
 def test_sheet_row_for_an_agent_proposal(tmp_case) -> None:
@@ -115,21 +129,21 @@ def test_sheet_row_for_an_agent_proposal(tmp_case) -> None:
         "mitre_hints": ["T1055"],
     })
     rows = _rows(coverage_to_hoja(coverage.coverage(case_id)))
-    assert rows[0] == list(HOJA_HEADER)
-    idx = {name: i for i, name in enumerate(HOJA_HEADER)}
-    body = {r[idx["ID de la técnica"]]: r for r in rows[1:]}
+    assert rows[0] == list(hoja_header())
+    idx = {name: i for i, name in enumerate(hoja_header())}
+    body = {r[idx[_col("ID de la técnica")]]: r for r in rows[1:]}
     row = body["T1055"]
-    assert row[idx["N"]] == "1"
+    assert row[idx[_col('N')]] == "1"
     # Nombre y táctica salen del catálogo Enterprise, NO inventados.
-    assert row[idx["Técnica"]] == "Process Injection"
-    assert row[idx["ID de la táctica"]] == "TA0005"
-    assert row[idx["Táctica"]] != ""
-    assert row[idx["Propuesta por el análisis"]] == "Sí"
-    assert row[idx["Hallazgos que la proponen"]] == "1"
+    assert row[idx[_col('Técnica')]] == "Process Injection"
+    assert row[idx[_col('ID de la táctica')]] == "TA0005"
+    assert row[idx[_col('Táctica')]] != ""
+    assert row[idx[_col('Propuesta por el análisis')]] == t("sheet.yes")
+    assert row[idx[_col('Hallazgos que la proponen')]] == "1"
     # Sin dictamen se DICE que está pendiente: en blanco se leería «no aplica».
-    assert row[idx["Veredicto del perito"]] == SIN_DICTAMEN
-    assert row[idx["Identificadores de hallazgo"]] == f.id
-    assert row[idx["Celda de la matriz"]] == "T1055"
+    assert row[idx[_col('Veredicto del perito')]] == sin_dictamen()
+    assert row[idx[_col('Identificadores de hallazgo')]] == f.id
+    assert row[idx[_col('Celda de la matriz')]] == "T1055"
 
 
 def test_sheet_carries_the_examiner_verdict_and_rationale(tmp_case) -> None:
@@ -145,12 +159,12 @@ def test_sheet_carries_the_examiner_verdict_and_rationale(tmp_case) -> None:
         case_id, "T1055", "confirmada", "RWX + shellcode.", related_finding_ids=[f.id]
     )
     rows = _rows(coverage_to_hoja(coverage.coverage(case_id)))
-    idx = {name: i for i, name in enumerate(HOJA_HEADER)}
-    row = {r[idx["ID de la técnica"]]: r for r in rows[1:]}["T1055"]
-    assert row[idx["Veredicto del perito"]] == "Confirmada"
-    assert row[idx["Motivo del veredicto"]] == "RWX + shellcode."
-    assert row[idx["Propuesta por el análisis"]] == "Sí"
-    assert row[idx["Fecha del veredicto (UTC)"]] != ""
+    idx = {name: i for i, name in enumerate(hoja_header())}
+    row = {r[idx[_col("ID de la técnica")]]: r for r in rows[1:]}["T1055"]
+    assert row[idx[_col('Veredicto del perito')]] == "Confirmada"
+    assert row[idx[_col('Motivo del veredicto')]] == "RWX + shellcode."
+    assert row[idx[_col('Propuesta por el análisis')]] == t("sheet.yes")
+    assert row[idx[_col('Fecha del veredicto (UTC)')]] != ""
 
 
 def test_sheet_row_for_a_verdict_without_an_agent_proposal(tmp_case) -> None:
@@ -159,11 +173,11 @@ def test_sheet_row_for_a_verdict_without_an_agent_proposal(tmp_case) -> None:
     coverage = CoverageStore(cases, FindingStore(cases))
     coverage.adjudicate(case_id, "T1070", "descartada", "Los logs están intactos.")
     rows = _rows(coverage_to_hoja(coverage.coverage(case_id)))
-    idx = {name: i for i, name in enumerate(HOJA_HEADER)}
-    row = {r[idx["ID de la técnica"]]: r for r in rows[1:]}["T1070"]
-    assert row[idx["Propuesta por el análisis"]] == "No"
-    assert row[idx["Veredicto del perito"]] == "Descartada"
-    assert row[idx["Identificadores de hallazgo"]] == ""
+    idx = {name: i for i, name in enumerate(hoja_header())}
+    row = {r[idx[_col("ID de la técnica")]]: r for r in rows[1:]}["T1070"]
+    assert row[idx[_col('Propuesta por el análisis')]] == "No"
+    assert row[idx[_col('Veredicto del perito')]] == "Descartada"
+    assert row[idx[_col('Identificadores de hallazgo')]] == ""
 
 
 def test_punctuation_in_a_rationale_survives_without_escaping(tmp_case) -> None:
@@ -175,9 +189,9 @@ def test_punctuation_in_a_rationale_survives_without_escaping(tmp_case) -> None:
         case_id, "T1055", "sospechosa", 'Motivo; con punto y coma y "comillas".'
     )
     rows = _rows(coverage_to_hoja(coverage.coverage(case_id)))
-    idx = {name: i for i, name in enumerate(HOJA_HEADER)}
-    row = {r[idx["ID de la técnica"]]: r for r in rows[1:]}["T1055"]
-    assert row[idx["Motivo del veredicto"]] == 'Motivo; con punto y coma y "comillas".'
+    idx = {name: i for i, name in enumerate(hoja_header())}
+    row = {r[idx[_col("ID de la técnica")]]: r for r in rows[1:]}["T1055"]
+    assert row[idx[_col('Motivo del veredicto')]] == 'Motivo; con punto y coma y "comillas".'
 
 
 # ── ATT&CK Navigator layer ───────────────────────────────────────────────────

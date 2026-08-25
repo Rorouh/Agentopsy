@@ -26,6 +26,7 @@ from forensia.agent.loader import (
     read_instructions,
 )
 from forensia.agent.registry import AgentRegistry
+from forensia.i18n import set_current_lang
 from forensia.server import create_app
 
 PORT = 50999
@@ -37,18 +38,66 @@ AGENTES_DIR = REPO_ROOT / "agentes"
 # ---- read_instructions -----------------------------------------------------
 
 
-def test_reads_the_single_agent_md() -> None:
+@pytest.fixture
+def _castellano():
+    """Fija el castellano para el bloque: el fichero de comportamiento es POR
+    IDIOMA (`agent.md` / `agent.en.md`) y el de partida del producto es inglés."""
+    token = set_current_lang("es")
+    yield
+    from forensia.i18n import _LANG_ACTUAL
+
+    _LANG_ACTUAL.reset(token)
+
+
+def test_reads_the_single_agent_md(_castellano) -> None:
     text = read_instructions(AGENTES_DIR)
     assert text.startswith("# agent.md")
     assert "perito forense" in text.lower()
 
 
-def test_missing_agent_md_fails_loud(tmp_path: Path) -> None:
+def test_the_english_twin_is_the_one_read_in_english() -> None:
+    """El agente tiene un fichero POR IDIOMA y se elige por el de la petición.
+
+    No es una traducción automática del castellano: es el mismo método escrito
+    dos veces, porque el `title` y el `summary` que el agente escribe viajan tal
+    cual al informe pericial.
+    """
+    token = set_current_lang("en")
+    try:
+        text = read_instructions(AGENTES_DIR)
+        assert text.startswith("# agent.en.md")
+        assert "forensics examiner" in text.lower()
+    finally:
+        from forensia.i18n import _LANG_ACTUAL
+
+        _LANG_ACTUAL.reset(token)
+
+
+def test_the_missing_file_of_a_language_never_falls_back_to_the_other(
+    tmp_path: Path,
+) -> None:
+    """RULE 2: con el fichero inglés ausente NO se carga el castellano.
+
+    Caer al otro idioma dejaría al perito con un agente que escribe en un idioma
+    que no eligió, y ese texto acaba en el informe pericial.
+    """
+    (tmp_path / "agent.md").write_text("# agent.md\ncontenido", encoding="utf-8")
+    token = set_current_lang("en")
+    try:
+        with pytest.raises(AgentPackageError, match="agent.en.md"):
+            read_instructions(tmp_path)
+    finally:
+        from forensia.i18n import _LANG_ACTUAL
+
+        _LANG_ACTUAL.reset(token)
+
+
+def test_missing_agent_md_fails_loud(tmp_path: Path, _castellano) -> None:
     with pytest.raises(AgentPackageError, match="no existe"):
         read_instructions(tmp_path)
 
 
-def test_empty_agent_md_fails_loud(tmp_path: Path) -> None:
+def test_empty_agent_md_fails_loud(tmp_path: Path, _castellano) -> None:
     (tmp_path / "agent.md").write_text("   \n", encoding="utf-8")
     with pytest.raises(AgentPackageError, match="vacío"):
         read_instructions(tmp_path)
@@ -74,7 +123,7 @@ def test_invalid_profile_rejected() -> None:
 # ---- build_package ---------------------------------------------------------
 
 
-def test_build_package_shape() -> None:
+def test_build_package_shape(_castellano) -> None:
     pkg = build_package("windows", read_instructions(AGENTES_DIR))
     assert pkg.id == "forensia-windows"
     assert pkg.os_profile == "windows"
@@ -170,3 +219,42 @@ def test_query_empty_prompt(client: TestClient) -> None:
         json={"prompt": "   "},
     )
     assert r.status_code == 422
+
+
+# ---- los dos ficheros de comportamiento no pueden divergir ------------------
+
+
+def test_the_two_behaviour_files_keep_the_same_sections() -> None:
+    """`agent.md` y `agent.en.md` son el MISMO método escrito dos veces.
+
+    Si uno gana una sección y el otro no, Agentopsy se comporta distinto según
+    el idioma de la interfaz, que es exactamente lo que una herramienta forense
+    no puede hacer: el método no depende de la lengua del perito. Se comparan
+    los ENCABEZADOS numerados, que son el esqueleto; la prosa de cada apartado
+    es de cada lengua y no se compara.
+    """
+    import re
+
+    def numeros(texto: str) -> list[str]:
+        return [m.group(1) for m in re.finditer(r"^## (\d+)\.", texto, re.M)]
+
+    es = (AGENTES_DIR / "agent.md").read_text(encoding="utf-8")
+    en = (AGENTES_DIR / "agent.en.md").read_text(encoding="utf-8")
+
+    assert numeros(es) == numeros(en), (
+        "los dos agent.md han divergido en su esqueleto de apartados"
+    )
+    assert numeros(es), "el esqueleto de apartados no se está detectando"
+
+
+def test_the_english_twin_says_it_writes_in_english() -> None:
+    """La línea que decide el idioma de lo que el agente ESCRIBE.
+
+    El `title` y el `summary` de cada hallazgo viajan tal cual al informe, así
+    que si el fichero inglés no lo dice, el modelo puede responder en la lengua
+    del último texto que haya visto.
+    """
+    en = (AGENTES_DIR / "agent.en.md").read_text(encoding="utf-8")
+    es = (AGENTES_DIR / "agent.md").read_text(encoding="utf-8")
+    assert "in English" in en
+    assert "en español" in es

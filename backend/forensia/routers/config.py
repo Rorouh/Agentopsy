@@ -36,6 +36,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from forensia.i18n import t, traducir_excepcion
 from forensia.config import CONFIG_DIR, CONFIG_FILE, config
 from forensia.executors import (
     EXECUTOR_IDS,
@@ -100,37 +101,37 @@ def set_config(req: SetConfigRequest) -> dict[str, Any]:
     if key not in _EDITABLE_KEYS:
         raise HTTPException(
             status_code=422,
-            detail=f"key {key!r} is not editable. Allowed: {list(_EDITABLE_KEYS)}",
+            detail=t("api.keyNotEditable", key=repr(key), allowed=list(_EDITABLE_KEYS)),
         )
     value = req.value.strip()
     if not value:
         if key in _UNSETTABLE_KEYS:
             return _unset_key(key)
-        raise HTTPException(status_code=422, detail=f"value for {key!r} is empty")
+        raise HTTPException(status_code=422, detail=t("api.valueEmpty", key=repr(key)))
 
     if key == "DEFAULT_EXECUTOR":
         if value not in EXECUTOR_IDS:
             raise HTTPException(
                 status_code=422,
-                detail=f"DEFAULT_EXECUTOR must be one of {list(EXECUTOR_IDS)}",
+                detail=t("api.defaultExecutorEnum", ids=list(EXECUTOR_IDS)),
             )
     elif key == "OLLAMA_HOST":
         if not _HTTP_URL_RE.match(value):
             raise HTTPException(
                 status_code=422,
-                detail="OLLAMA_HOST must be an http(s):// URL",
+                detail=t("api.ollamaHostUrl"),
             )
     elif key == "OLLAMA_MODEL":
         # Cualquier tag válido de Ollama (llama3.1:8b, mistral, …). Validación blanda.
         if len(value) > 128:
-            raise HTTPException(status_code=422, detail="OLLAMA_MODEL too long")
+            raise HTTPException(status_code=422, detail=t("api.ollamaModelLong"))
     elif key in _CLOUD_MODEL_KEYS:
         # Becomes a --model argv flag: reject anything that could masquerade as a
         # CLI flag (SECURITY INVARIANT 5) — same gate as the executor layer.
         try:
             validate_model_id(value)
         except ExecutorError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
+            raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
     elif key in _REASONING_KEYS:
         # Form first (it becomes an argv token), then the catalog the CLI itself
         # cached — the only list Agentopsy trusts. An unreadable catalog does NOT
@@ -139,15 +140,18 @@ def set_config(req: SetConfigRequest) -> dict[str, Any]:
         try:
             validate_reasoning_effort(value)
         except ExecutorError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
+            raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
         catalog, _note = read_model_catalog()
         known = {eff for entry in catalog for eff, _desc in entry.efforts}
         if known and value not in known:
             raise HTTPException(
                 status_code=422,
                 detail=(
-                    f"nivel de razonamiento {value!r} desconocido para el catálogo "
-                    f"de Codex. Niveles declarados: {', '.join(sorted(known))}."
+                    t(
+                        "api.reasoningUnknown",
+                        value=repr(value),
+                        known=", ".join(sorted(known)),
+                    )
                 ),
             )
     elif key == "FORENSIA_EXECUTOR_TIMEOUT":
@@ -156,7 +160,7 @@ def set_config(req: SetConfigRequest) -> dict[str, Any]:
         if not value.isdigit() or int(value) <= 0:
             raise HTTPException(
                 status_code=422,
-                detail="FORENSIA_EXECUTOR_TIMEOUT debe ser un entero de segundos > 0",
+                detail=t("api.timeoutInteger"),
             )
 
     # Read current file (or start empty), set the key, write atomically.
@@ -219,4 +223,4 @@ def list_models(executor_id: str) -> dict[str, Any]:
     try:
         return executor_models(executor_id)
     except ValueError as exc:  # unknown executor id
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=traducir_excepcion(exc)) from exc

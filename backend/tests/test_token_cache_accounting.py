@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 
+from forensia.i18n import t
 from forensia.executors.base import Usage
 from forensia.executors.cache_health import CacheHealthMonitor
 from forensia.executors.claude_code import ClaudeCodeExecutor
@@ -34,6 +35,16 @@ from forensia.executors.session_guard import (
     verify_session,
 )
 from forensia.models.base import ExecutorBackend
+
+def _bloque(clave: str) -> str:
+    """El encabezado de un bloque del prompt, EN EL IDIOMA EN CURSO.
+
+    Los bloques se rotulan desde el catálogo (`agentContract.*`), así que un test
+    que fija el ORDEN del prompt tiene que nombrarlos por su clave y no por su
+    texto castellano: lo que se protege es la posición, no la palabra.
+    """
+    return t(clave).strip().splitlines()[0].strip()
+
 
 # Shape verified against `claude` 2.1.220 on 2026-07-29.
 _ENVELOPE = {
@@ -281,24 +292,24 @@ def _messages():
 
 def test_stable_blocks_precede_the_transcript():
     prompt = ExecutorBackend._render_prompt(_messages(), [{"name": "tsk_fls"}])
-    assert prompt.index("## SISTEMA") < prompt.index("## HERRAMIENTAS DISPONIBLES")
-    assert prompt.index("## HERRAMIENTAS DISPONIBLES") < prompt.index("## USUARIO")
+    assert prompt.index("## SISTEMA") < prompt.index(_bloque("agentContract.toolsHeader"))
+    assert prompt.index(_bloque("agentContract.toolsHeader")) < prompt.index("## USUARIO")
 
 
 def test_response_contract_stays_last():
     """It is what holds `_parse_action`'s strict envelope together; a parse
     failure costs a whole retry turn."""
     prompt = ExecutorBackend._render_prompt(_messages(), [{"name": "tsk_fls"}])
-    assert prompt.rstrip().endswith(
-        "paths absolutos en params, Agentopsy los inyecta."
-    )
-    assert prompt.index("## FORMATO DE RESPUESTA") > prompt.index("## RESULTADO DE TOOL")
+    # El contrato cierra el prompt, sea cual sea el idioma: se compara con su
+    # última línea del catálogo, no con una frase castellana.
+    assert prompt.rstrip().endswith(t("agentContract.format").rstrip().splitlines()[-1])
+    assert prompt.index(_bloque("agentContract.format")) > prompt.index("## RESULTADO DE TOOL")
 
 
 def test_reordering_preserves_content():
     """Same blocks, different order — nothing is dropped from what the model sees."""
     prompt = ExecutorBackend._render_prompt(_messages(), [{"name": "tsk_fls"}])
-    for fragment in ("CONDUCTA", "analiza", "salida", "tsk_fls", "## FORMATO DE RESPUESTA"):
+    for fragment in ("CONDUCTA", "analiza", "salida", "tsk_fls", _bloque("agentContract.format")):
         assert fragment in prompt
 
 
@@ -307,6 +318,6 @@ def test_delta_omits_the_static_blocks_but_keeps_the_contract():
         [{"role": "tool", "tool_call_id": "c9", "content": "nueva salida"}]
     )
     assert "nueva salida" in delta
-    assert "## HERRAMIENTAS DISPONIBLES" not in delta
+    assert _bloque("agentContract.toolsHeader") not in delta
     assert "## SISTEMA" not in delta
-    assert delta.rstrip().endswith("paths absolutos en params, Agentopsy los inyecta.")
+    assert delta.rstrip().endswith(t("agentContract.format").rstrip().splitlines()[-1])

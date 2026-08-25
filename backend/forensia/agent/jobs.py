@@ -18,6 +18,8 @@ sí, porque van a disco). Acotado para no crecer sin límite.
 
 from __future__ import annotations
 
+from forensia.i18n import current_lang, set_current_lang
+
 import threading
 import uuid
 from collections import OrderedDict
@@ -103,7 +105,16 @@ class JobRegistry:
                 if len(job.events) > _MAX_EVENTS:
                     del job.events[: len(job.events) - _MAX_EVENTS]
 
+        idioma = current_lang()
+
         def _run() -> None:
+            # El idioma de la PETICIÓN que lanzó el job, fijado dentro del
+            # hilo. Un `ContextVar` no se hereda al crear un hilo (empieza con
+            # su valor por defecto), así que sin esto un trabajo de fondo
+            # redactaría sus mensajes en el idioma de partida y no en el que
+            # tenía la interfaz cuando el perito pulsó el botón. Se captura
+            # FUERA (al crear el job) y se aplica DENTRO.
+            set_current_lang(idioma)
             try:
                 result = fn(emit, job._cancel.is_set)
                 with self._lock:

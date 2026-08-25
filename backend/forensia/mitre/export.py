@@ -25,6 +25,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from forensia.i18n import current_lang, t
 from forensia.export_hoja import build_workbook, iso_utc_ahora, unir
 from forensia.mitre import catalog
 
@@ -51,33 +52,53 @@ _VERDICT_LABEL: dict[str, str] = {
 #: Lo que se escribe en la columna del veredicto cuando el perito no ha
 #: dictaminado. No es lo mismo que «ausente»: la técnica está en la hoja porque
 #: el análisis la propuso, y sigue sin evaluar.
+#: Constante del castellano, conservada por compatibilidad con lo ya exportado.
+#: Quien escribe una celda usa `sin_dictamen()`, que la resuelve en el idioma de
+#: la hoja.
 SIN_DICTAMEN = "No dictaminada"
+
+
+def sin_dictamen() -> str:
+    """Lo que dice la columna de veredicto cuando el perito no ha dictaminado."""
+    return t("mitreSheet.noVerdict")
 
 #: Cabecera de la tabla de cobertura. Orden estable, es un contrato que los tests
 #: fijan. En castellano porque la hoja la lee una persona (el canal de máquina es
 #: el layer del Navigator, que no cambia). Las dos primeras columnas de datos son
 #: las que identifican la técnica; el motivo del veredicto va al final porque es
 #: la única de longitud libre y arrastraría el ancho de las demás.
-HOJA_HEADER: tuple[str, ...] = (
-    "N",
-    "ID de la técnica",
-    "Técnica",
-    "ID de la táctica",
-    "Táctica",
-    "Celda de la matriz",
-    "Propuesta por el análisis",
-    "Hallazgos que la proponen",
-    "Veredicto del perito",
-    "Fecha del veredicto (UTC)",
-    "Identificadores de hallazgo",
-    "Motivo del veredicto",
+#: Las CLAVES de la cabecera, en su orden estable (el orden es el contrato que
+#: los tests fijan). El rótulo lo resuelve `hoja_header()` en el idioma de la
+#: hoja; el canal de MÁQUINA (el layer del Navigator) no cambia.
+HOJA_HEADER_KEYS: tuple[str, ...] = (
+    "tlSheet.col.n",
+    "mitreSheet.col.techniqueId",
+    "mitreSheet.col.technique",
+    "mitreSheet.col.tacticId",
+    "mitreSheet.col.tactic",
+    "mitreSheet.col.cell",
+    "mitreSheet.col.proposed",
+    "mitreSheet.col.proposers",
+    "mitreSheet.col.verdict",
+    "mitreSheet.col.verdictDate",
+    "mitreSheet.col.findingIds",
+    "mitreSheet.col.rationale",
 )
+
+
+def hoja_header() -> tuple[str, ...]:
+    """La cabecera de la tabla, en el idioma de la hoja."""
+    return tuple(t(k) for k in HOJA_HEADER_KEYS)
 
 
 def _tactic_names() -> dict[str, str]:
     """``tactic_id -> nombre`` desde el catálogo Enterprise. Vacío si no está montado."""
     ent = catalog.load_enterprise()
-    return {t.id: (t.name_es or t.name) for t in ent.tactics}
+    # El nombre OFICIAL de una táctica ATT&CK es el inglés; el castellano es la
+    # traducción del catálogo. La hoja usa el del idioma en que se exporta.
+    if current_lang() == "es":
+        return {tac.id: (tac.name_es or tac.name) for tac in ent.tactics}
+    return {tac.id: tac.name for tac in ent.tactics}
 
 
 def _technique_name(technique_id: str) -> str:
@@ -129,24 +150,22 @@ def coverage_to_hoja(
     propuestas = sum(1 for e in entries if e.get("proposed_by"))
 
     procedencia: list[tuple[str, str]] = [
-        ("Agentopsy", "Correlación MITRE ATT&CK Enterprise del caso"),
-        ("Caso", case_name),
-        ("Identificador del caso", case_id),
-        ("Exportado (UTC)", exported_at or iso_utc_ahora()),
-        ("Técnicas en la hoja", str(len(entries))),
-        ("Propuestas por el análisis", str(propuestas)),
+        ("Agentopsy", t("mitreSheet.prov.title")),
+        (t("tlSheet.prov.case"), case_name),
+        (t("tlSheet.prov.caseId"), case_id),
+        (t("tlSheet.prov.exported"), exported_at or iso_utc_ahora()),
+        (t("mitreSheet.prov.techniques"), str(len(entries))),
+        (t("mitreSheet.prov.proposed"), str(propuestas)),
         (
-            "Dictaminadas por el perito",
-            f"{confirmadas} confirmadas, {sospechosas} sospechosas, "
-            f"{descartadas} descartadas",
+            t("mitreSheet.prov.adjudicated"),
+            t(
+                "mitreSheet.prov.adjudicatedValue",
+                confirmed=confirmadas,
+                suspected=sospechosas,
+                discarded=descartadas,
+            ),
         ),
-        (
-            "Cómo se lee",
-            "La propuesta del análisis y el veredicto del perito son ejes "
-            "independientes: una técnica propuesta sin dictamen no está "
-            "confirmada. Una técnica que no figura en esta hoja no ha sido "
-            "evaluada, que no es lo mismo que descartada.",
-        ),
+        (t("tlSheet.prov.howToRead"), t("mitreSheet.prov.howToReadValue")),
     ]
 
     filas: list[list[Any]] = []
@@ -164,16 +183,16 @@ def coverage_to_hoja(
             catalog.enterprise_display_id(technique_id) if technique_id else "",
             bool(proposed),
             len(proposed),
-            _VERDICT_LABEL.get(status, status) if status else SIN_DICTAMEN,
+            _VERDICT_LABEL.get(status, status) if status else sin_dictamen(),
             entry.get("adjudicated_at") or "",
             unir(_findings_for(entry)),
             entry.get("rationale") or "",
         ])
     return build_workbook(
         procedencia=procedencia,
-        cabecera=HOJA_HEADER,
+        cabecera=hoja_header(),
         filas=filas,
-        titulo="Cobertura ATT&CK",
+        titulo=t("mitreSheet.tabTitle"),
     )
 
 
@@ -234,11 +253,8 @@ def coverage_to_navigator_layer(
         "name": name[:255],
         "versions": {"layer": NAVIGATOR_LAYER_VERSION},
         "domain": "enterprise-attack",
-        "description": (
-            "Cobertura MITRE ATT&CK del caso Agentopsy "
-            f"{case_name or case_id}. Rojo = confirmada, ámbar = sospechosa, "
-            "gris = descartada (dictamen del perito); azul = propuesta del agente "
-            "sin dictaminar. Los dos ejes no se funden."
+        "description": t(
+            "mitreSheet.layerDescription", case=case_name or case_id
         ),
         "techniques": techniques,
         "legendItems": [

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { DragEvent, KeyboardEvent } from "react";
 import type { EvidenceRegisterJob, EvidenceSource } from "../api/types";
-import { formatBytes } from "../utils/format";
+import { useFormat } from "../utils/format";
+import { useT, type MessageKey } from "../i18n";
 import {
   FILE_INPUT_ACCEPT_EXTENSIONS,
   IMAGE_AND_DUMP_EXTENSIONS,
@@ -48,35 +49,37 @@ interface EvidenceInboxProps {
 // decidir si su fichero entra, y las imágenes y volcados se enumeran porque son
 // pocas y porque acertar el formato ahí sí importa.
 const IMAGE_FORMATS_HINT = IMAGE_AND_DUMP_EXTENSIONS.join(" · ");
-const MATERIAL_FORMATS_HINT =
-  "documentos (pdf, word, hojas de cálculo, presentaciones, texto, logs), " +
-  "correo, imagen y audiovisual, archivos comprimidos, capturas de red, " +
-  "artefactos sueltos de Windows y muestras";
 const FILE_INPUT_ACCEPT = FILE_INPUT_ACCEPT_EXTENSIONS.join(",");
 // Un EWF partido se sube ENTERO (todos sus segmentos); registrar sigue siendo
-// cosa del .E01, que ingiere el set completo en el backend.
-const EWF_HINT =
-  "Si la imagen es un EWF partido (.E01, .E02, …), suelta o selecciona TODOS " +
-  "sus segmentos: se registran desde el .E01 como una sola evidencia.";
+// cosa del .E01, que ingiere el set completo en el backend. La frase vive en el
+// catálogo (`inbox.ewfHint`); aquí sólo queda la lista de extensiones, que es
+// DATO y se escribe igual en los dos idiomas.
 
 // Fases REALES del hash-gate (backend/forensia/evidence.py PROGRESS_PHASES). El
 // progreso es observacional: describe las tres pasadas que ya se hacían, no
 // añade ninguna (FORENSIC INVARIANT 2).
-const PHASE_LABEL: Record<NonNullable<EvidenceRegisterJob["phase"]>, string> = {
-  hashing: "SHA-256 del origen",
-  copying: "copiando a la carpeta del caso",
-  verifying: "re-hash de la copia",
+const PHASE_KEY: Record<NonNullable<EvidenceRegisterJob["phase"]>, MessageKey> = {
+  hashing: "inbox.phase.hashing",
+  copying: "inbox.phase.copying",
+  verifying: "inbox.phase.verifying",
 };
 
-function registerProgressLabel(job: EvidenceRegisterJob | null): string {
+// Compone texto, así que recibe el traductor: la función sigue siendo pura y no
+// arrastra un hook a un módulo que se llama desde el render.
+function registerProgressLabel(
+  job: EvidenceRegisterJob | null,
+  t: (k: MessageKey, p?: Record<string, string | number>) => string,
+): string {
   if (!job || job.bytes_total <= 0) {
     // Aún validando (caso, ruta, conjunto EWF): no hay bytes que medir todavía.
-    return "Preparando el registro…";
+    return t("inbox.preparing");
   }
   const pct = Math.min(100, Math.round((job.bytes_done / job.bytes_total) * 100));
   const parts = [`${pct}%`];
-  if (job.seg_count > 1) parts.push(`segmento ${job.seg_index}/${job.seg_count}`);
-  if (job.phase) parts.push(PHASE_LABEL[job.phase]);
+  if (job.seg_count > 1) {
+    parts.push(t("inbox.segmentOf", { index: job.seg_index, total: job.seg_count }));
+  }
+  if (job.phase) parts.push(t(PHASE_KEY[job.phase]));
   return parts.join(" · ");
 }
 
@@ -107,6 +110,8 @@ export function EvidenceInbox({
   onRegister,
   onUploadFiles,
 }: EvidenceInboxProps) {
+  const t = useT();
+  const { formatBytes } = useFormat();
   const [dragActive, setDragActive] = useState(false);
   // Mensaje local si el usuario suelta/elige ficheros con formato no soportado
   // (feedback inmediato; el backend re-valida igualmente).
@@ -151,10 +156,8 @@ export function EvidenceInbox({
     return (
       <div className="dashed-panel">
         <div className="dashed-panel-main">
-          <div className="dashed-panel-title">Este caso está cerrado</div>
-          <div className="dashed-panel-body">
-            Reábrelo desde «cambiar caso» en el lateral para registrar más evidencia.
-          </div>
+          <div className="dashed-panel-title">{t("inbox.caseClosed")}</div>
+          <div className="dashed-panel-body">{t("inbox.caseClosedBody")}</div>
         </div>
       </div>
     );
@@ -165,19 +168,13 @@ export function EvidenceInbox({
     const picked = Array.from(files ?? []);
     if (picked.length === 0) {
       setRejectHint(
-        droppedFolder
-          ? "Has soltado una carpeta. Suelta los FICHEROS de imagen forense, no el " +
-            "directorio que los contiene."
-          : "No se ha recibido ningún fichero. Vuelve a intentarlo o usa «Examinar…».",
+        droppedFolder ? t("inbox.droppedFolder") : t("inbox.noFiles"),
       );
       return;
     }
     const hints: string[] = [];
     if (droppedFolder) {
-      hints.push(
-        "Se han ignorado las carpetas del arrastre: suelta los ficheros de imagen " +
-          "forense directamente.",
-      );
+      hints.push(t("inbox.foldersIgnored"));
     }
     // Se suben TODOS los ficheros subibles de la tanda (un EWF partido son N);
     // los no soportados se nombran, no se cuelan en silencio.
@@ -185,13 +182,11 @@ export function EvidenceInbox({
     const rejected = picked.filter((f) => !isUploadableEvidence(f.name));
     if (rejected.length > 0) {
       hints.push(
-        `La bandeja no reconoce la extensión de ${rejected
-          .map((f) => `«${f.name}»`)
-          .join(", ")}. Acepta imágenes y volcados (${IMAGE_FORMATS_HINT}), los ` +
-          `segmentos de un EWF partido, ficheros sin extensión, y material aportado: ` +
-          `${MATERIAL_FORMATS_HINT}. Si aun así aporta al caso, cópialo a la carpeta ` +
-          `./evidence del repositorio: la bandeja lista todo lo que hay ahí y desde ahí ` +
-          `se registra igual.`,
+        t("inbox.rejected", {
+          names: rejected.map((f) => `«${f.name}»`).join(", "),
+          images: IMAGE_FORMATS_HINT,
+          material: t("inbox.materialFormats"),
+        }),
       );
     }
     setRejectHint(hints.length > 0 ? hints.join(" ") : null);
@@ -268,14 +263,8 @@ export function EvidenceInbox({
             soltar, después las dos alternativas a arrastrar. */}
         <div className="dashed-panel-main">
           <Icon name="file-upload" size={26} className="dashed-panel-icon" />
-          <div className="dashed-panel-title">
-            Arrastra aquí la evidencia del caso
-          </div>
-          <div className="dashed-panel-body">
-            Agentopsy calcula el SHA-256 baseline y la deja en solo lectura antes de que
-            ninguna herramienta la toque, sea una imagen de un sistema entero o un fichero
-            que te han entregado.
-          </div>
+          <div className="dashed-panel-title">{t("inbox.dropTitle")}</div>
+          <div className="dashed-panel-body">{t("inbox.dropBody")}</div>
           <div className="dashed-panel-actions">
             {/* Los iconos separan dos cosas que el texto solo no distinguía:
                 buscar en TU equipo frente a mirar lo que ya está depositado en
@@ -287,7 +276,7 @@ export function EvidenceInbox({
               onClick={openFileDialog}
             >
               <Icon name="folder" size={14} />
-              Examinar…
+              {t("inbox.browse")}
             </button>
             <button
               type="button"
@@ -296,7 +285,7 @@ export function EvidenceInbox({
               onClick={onLoadSources}
             >
               <Icon name="inbox" size={14} />
-              {loadingSources ? "Buscando…" : "Examinar bandeja"}
+              {loadingSources ? t("inbox.searching") : t("inbox.browseInbox")}
             </button>
           </div>
           {/* Los formatos salen del párrafo: son decenas de extensiones metidas
@@ -306,12 +295,12 @@ export function EvidenceInbox({
               un fichero que te entregan entran por el mismo hash-gate pero se
               analizan distinto. */}
           <div className="dashed-panel-formats">
-            Imágenes y volcados: {IMAGE_FORMATS_HINT}
+            {t("inbox.imagesLabel")} {IMAGE_FORMATS_HINT}
           </div>
           <div className="dashed-panel-formats">
-            Material aportado: {MATERIAL_FORMATS_HINT}
+            {t("inbox.materialLabel")} {t("inbox.materialFormats")}
           </div>
-          <div className="dashed-panel-formats">{EWF_HINT}</div>
+          <div className="dashed-panel-formats">{t("inbox.ewfHint")}</div>
         </div>
       </div>
 
@@ -320,7 +309,7 @@ export function EvidenceInbox({
       {uploading && (
         <div className="progress-block" aria-live="polite">
           <div className="progress-head">
-            <span>Subiendo evidencia a la bandeja…</span>
+            <span>{t("inbox.uploading")}</span>
             <span className="mono">{Math.round(uploadProgress * 100)}%</span>
           </div>
           <div className="progress-track" aria-hidden="true">
@@ -329,7 +318,7 @@ export function EvidenceInbox({
               style={{ width: `${Math.round(uploadProgress * 100)}%` }}
             />
           </div>
-          <div className="progress-note">No cierres esta ventana hasta que termine.</div>
+          <div className="progress-note">{t("inbox.dontClose")}</div>
         </div>
       )}
 
@@ -340,14 +329,14 @@ export function EvidenceInbox({
         <div className="progress-block" aria-live="polite">
           <div className="progress-head">
             <span>
-              Registrando{" "}
+              {t("inbox.registeringName")}{" "}
               <span className="mono">
                 {selectedSource?.name ??
                   registerJob?.source_path.split(/[\\/]/).pop() ??
-                  "evidencia"}
+                  t("inbox.evidenceWord")}
               </span>
             </span>
-            <span className="mono">{registerProgressLabel(registerJob)}</span>
+            <span className="mono">{registerProgressLabel(registerJob, t)}</span>
           </div>
           {registerJob && registerJob.bytes_total > 0 && (
             <div className="progress-track" aria-hidden="true">
@@ -375,7 +364,7 @@ export function EvidenceInbox({
       {!busy && sources !== null && sources.length > 0 && (
         <div className="inbox-list">
           <div className="rule-label">
-            <span className="eyebrow">Bandeja ./evidence</span>
+            <span className="eyebrow">{t("inbox.title")}</span>
             <span className="rule" />
             <span className="rule-count">{sources.length}</span>
           </div>
@@ -408,13 +397,13 @@ export function EvidenceInbox({
                 >
                   <span className="source-row-name">{s.name}</span>
                   <span className="source-row-meta">
-                    {formatBytes(s.size)} · {fileExtension(s.name) || "sin extensión"}
+                    {formatBytes(s.size)} · {fileExtension(s.name) || t("inbox.noExtension")}
                   </span>
                   <span className="source-row-side">
                     {continuation ? (
-                      <span className="tag tag--muted">segmento EWF · se registra desde el .E01</span>
+                      <span className="tag tag--muted">{t("inbox.ewfContinuation")}</span>
                     ) : selected ? (
-                      <span className="tag tag--accent">seleccionada</span>
+                      <span className="tag tag--accent">{t("inbox.selected")}</span>
                     ) : null}
                   </span>
                 </div>
@@ -432,10 +421,10 @@ export function EvidenceInbox({
               onClick={onRegister}
             >
               {registering
-                ? "Registrando…"
+                ? t("inbox.registering")
                 : selectedSource && selectedRegistrable
-                  ? `Registrar ${selectedSource.name}`
-                  : "Registrar evidencia"}
+                  ? t("inbox.registerNamed", { name: selectedSource.name })
+                  : t("inbox.register")}
             </button>
             <button
               type="button"
@@ -443,7 +432,7 @@ export function EvidenceInbox({
               disabled={loadingSources}
               onClick={onLoadSources}
             >
-              Actualizar bandeja
+              {t("inbox.refresh")}
             </button>
           </div>
         </div>
@@ -451,8 +440,7 @@ export function EvidenceInbox({
 
       {!busy && sources !== null && sources.length === 0 && (
         <div className="inline-note" aria-live="polite">
-          La bandeja está vacía. Arrastra la imagen forense arriba para subirla, o cópiala a{" "}
-          <code>./evidence</code> en el host.
+          {t("inbox.emptyBefore")} <code>./evidence</code> {t("inbox.emptyAfter")}
         </div>
       )}
 
@@ -484,17 +472,17 @@ export function EvidenceInbox({
 
       {uploadError && !uploading && (
         <div className="error-state" aria-live="polite">
-          <strong>No se pudo subir la evidencia:</strong> {uploadError}
+          <strong>{t("inbox.uploadFailed")}</strong> {uploadError}
         </div>
       )}
 
       {registerError && !registering && (
         <div className="error-state" aria-live="polite">
-          <strong>No se pudo registrar la evidencia:</strong> {registerError}
+          <strong>{t("inbox.registerFailed")}</strong> {registerError}
           {selectedSourcePath && (
             <div className="cta-row">
               <button type="button" className="link-action" onClick={onRegister}>
-                Reintentar
+                {t("common.retry")}
               </button>
             </div>
           )}

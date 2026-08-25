@@ -4,7 +4,8 @@ import { api } from "../api/client";
 import type { Case } from "../api/types";
 import { Modal } from "../ui/Modal";
 import { ErrorState } from "../ui/ErrorState";
-import { formatDate } from "../utils/format";
+import { useFormat } from "../utils/format";
+import { useLang, type MessageKey } from "../i18n";
 import { Pagination } from "./Pagination";
 
 const CASE_PAGE_SIZE = 8;
@@ -16,10 +17,10 @@ type CaseSort = "recent" | "oldest" | "name-asc" | "name-desc";
 // único punto de entrada, así que editar / cerrar / eliminar viven aquí.
 type Pane = "search" | "edit" | "delete";
 
-const FILTER_LABEL: Record<CaseFilter, string> = {
-  all: "Todos",
-  active: "Abiertos",
-  closed: "Cerrados",
+const FILTER_KEY: Record<CaseFilter, MessageKey> = {
+  all: "caseSearch.filter.all",
+  active: "caseSearch.filter.active",
+  closed: "caseSearch.filter.closed",
 };
 
 interface CaseSearchModalProps {
@@ -51,6 +52,8 @@ export function CaseSearchModal({
   onCaseUpdated,
   onCaseDeleted,
 }: CaseSearchModalProps) {
+  const { t, tn } = useLang();
+  const { formatDate } = useFormat();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<CaseFilter>("all");
   const [sort, setSort] = useState<CaseSort>("recent");
@@ -235,10 +238,20 @@ export function CaseSearchModal({
     }
   };
 
-  const eyebrow =
-    pane === "edit" ? "Caso activo" : pane === "delete" ? "Irreversible" : "Casos del servicio";
-  const title =
-    pane === "edit" ? "Editar caso" : pane === "delete" ? "Eliminar caso" : "Buscar casos";
+  const eyebrow = t(
+    pane === "edit"
+      ? "caseSearch.eyebrow.edit"
+      : pane === "delete"
+        ? "caseSearch.eyebrow.delete"
+        : "caseSearch.eyebrow.list",
+  );
+  const title = t(
+    pane === "edit"
+      ? "caseSearch.title.edit"
+      : pane === "delete"
+        ? "caseSearch.title.delete"
+        : "caseSearch.title.list",
+  );
 
   return (
     <Modal
@@ -247,7 +260,7 @@ export function CaseSearchModal({
       title={title}
       onClose={onClose}
       panelClassName="case-search-modal"
-      footerHint={pane === "search" ? "esc cerrar · ↵ abrir" : "esc cerrar"}
+      footerHint={t(pane === "search" ? "caseSearch.hint.list" : "caseSearch.hint.other")}
       footer={
         pane === "edit" ? (
           <>
@@ -257,7 +270,7 @@ export function CaseSearchModal({
               disabled={!editValid || busy}
               onClick={() => void saveEdit()}
             >
-              {busy ? "Guardando…" : "Guardar cambios"}
+              {busy ? t("newCase.saving") : t("caseSearch.saveChanges")}
             </button>
             <button
               type="button"
@@ -277,7 +290,7 @@ export function CaseSearchModal({
               disabled={busy || deleteConfirmName !== (activeCase?.name ?? "")}
               onClick={() => void deleteCase()}
             >
-              {busy ? "Eliminando…" : "Eliminar permanentemente"}
+              {busy ? t("caseSearch.deleting") : t("caseSearch.deleteForever")}
             </button>
             <button
               type="button"
@@ -289,9 +302,7 @@ export function CaseSearchModal({
             </button>
           </>
         ) : (
-          <span className="modal-footer-count">
-            {visible.length} caso{visible.length === 1 ? "" : "s"}
-          </span>
+          <span className="modal-footer-count">{tn("count.cases", visible.length)}</span>
         )
       }
     >
@@ -301,22 +312,22 @@ export function CaseSearchModal({
         <div onKeyDown={onListKeyDown}>
           <div className="case-search-field">
             <label className="visually-hidden" htmlFor="case-search-input">
-              Buscar casos
+              {t("caseSearch.label")}
             </label>
             <input
               id="case-search-input"
               ref={inputRef}
               type="search"
               className="field-input"
-              placeholder="Buscar por nombre o examinador…"
+              placeholder={t("caseSearch.placeholder")}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
           </div>
 
           <div className="case-search-filters">
-            <div className="tab-row tab-row--inline" role="group" aria-label="Filtrar casos por estado">
-              {(Object.keys(FILTER_LABEL) as CaseFilter[]).map((f) => (
+            <div className="tab-row tab-row--inline" role="group" aria-label={t("caseSearch.filterGroup")}>
+              {(Object.keys(FILTER_KEY) as CaseFilter[]).map((f) => (
                 <button
                   key={f}
                   type="button"
@@ -324,12 +335,12 @@ export function CaseSearchModal({
                   aria-pressed={f === filter}
                   onClick={() => setFilter(f)}
                 >
-                  {FILTER_LABEL[f]}
+                  {t(FILTER_KEY[f])}
                 </button>
               ))}
             </div>
             <label className="visually-hidden" htmlFor="case-search-sort">
-              Ordenar por
+              {t("caseSearch.sortLabel")}
             </label>
             <select
               id="case-search-sort"
@@ -337,10 +348,10 @@ export function CaseSearchModal({
               value={sort}
               onChange={(e) => setSort(e.target.value as CaseSort)}
             >
-              <option value="recent">Más reciente</option>
-              <option value="oldest">Más antiguo</option>
-              <option value="name-asc">Nombre A-Z</option>
-              <option value="name-desc">Nombre Z-A</option>
+              <option value="recent">{t("caseSearch.sort.recent")}</option>
+              <option value="oldest">{t("caseSearch.sort.oldest")}</option>
+              <option value="name-asc">{t("caseSearch.sort.nameAsc")}</option>
+              <option value="name-desc">{t("caseSearch.sort.nameDesc")}</option>
             </select>
           </div>
 
@@ -350,25 +361,22 @@ export function CaseSearchModal({
                 <ErrorState message={error} />
                 <div className="cta-row">
                   <button type="button" className="link-action" onClick={onRetry}>
-                    Reintentar
+                    {t("common.retry")}
                   </button>
                 </div>
               </>
             ) : cases.length === 0 ? (
               <div className="empty-rail">
-                <div className="empty-rail-title">Aún no hay casos</div>
-                <div className="empty-rail-body">
-                  Pulsa «Nuevo caso» en el lateral para abrir el primero. Sin caso no hay
-                  dónde registrar evidencia.
-                </div>
+                <div className="empty-rail-title">{t("caseSearch.emptyTitle")}</div>
+                <div className="empty-rail-body">{t("caseSearch.emptyBody")}</div>
               </div>
             ) : visible.length === 0 ? (
               <div className="empty-rail">
-                <div className="empty-rail-title">Sin resultados</div>
+                <div className="empty-rail-title">{t("caseSearch.noResults")}</div>
                 <div className="empty-rail-body">
                   {query.trim()
-                    ? `Ningún caso coincide con «${query.trim()}».`
-                    : "Ningún caso coincide con el filtro."}
+                    ? t("caseSearch.noMatchQuery", { query: query.trim() })
+                    : t("caseSearch.noMatchFilter")}
                 </div>
               </div>
             ) : (
@@ -413,7 +421,7 @@ export function CaseSearchModal({
                             disabled={busy}
                             onClick={startEdit}
                           >
-                            Editar
+                            {t("caseSearch.edit")}
                           </button>
                           <button
                             type="button"
@@ -421,7 +429,7 @@ export function CaseSearchModal({
                             disabled={busy}
                             onClick={() => void toggleClosed()}
                           >
-                            {c.status === "active" ? "Cerrar" : "Reabrir"}
+                            {t(c.status === "active" ? "caseSearch.close" : "caseSearch.reopen")}
                           </button>
                           <button
                             type="button"
@@ -433,14 +441,14 @@ export function CaseSearchModal({
                               setPane("delete");
                             }}
                           >
-                            Borrar
+                            {t("common.delete")}
                           </button>
                         </span>
                       ) : (
                         <span
                           className={`tag${c.status === "active" ? " tag--ok" : " tag--muted"}`}
                         >
-                          {c.status === "active" ? "abierto" : "cerrado"}
+                          {t(c.status === "active" ? "case.status.active" : "case.status.closed")}
                         </span>
                       )}
                     </div>
@@ -456,7 +464,7 @@ export function CaseSearchModal({
               queda el error, que no pertenece a ninguna fila concreta. */}
           {activeCase && actionError && (
             <div className="error-state">
-              <strong>No se pudo completar la acción:</strong> {actionError}
+              <strong>{t("caseSearch.actionFailed")}</strong> {actionError}
             </div>
           )}
         </div>
@@ -466,7 +474,7 @@ export function CaseSearchModal({
         <div className="modal-form">
           <div className="field">
             <label className="eyebrow" htmlFor="edit-case-name">
-              Nombre del caso
+              {t("newCase.name")}
             </label>
             <input
               id="edit-case-name"
@@ -479,7 +487,7 @@ export function CaseSearchModal({
           </div>
           <div className="field">
             <label className="eyebrow" htmlFor="edit-case-examiner">
-              Examinador
+              {t("newCase.examiner")}
             </label>
             <input
               id="edit-case-examiner"
@@ -491,7 +499,7 @@ export function CaseSearchModal({
           </div>
           <div className="field">
             <label className="eyebrow" htmlFor="edit-case-notes">
-              Descripción · notas <span className="field-optional">opcional</span>
+              {t("newCase.notes")} <span className="field-optional">{t("newCase.optional")}</span>
             </label>
             <textarea
               id="edit-case-notes"
@@ -502,13 +510,10 @@ export function CaseSearchModal({
             />
           </div>
           {/* El os_profile no se edita: lo deriva el triage de la evidencia. */}
-          <div className="note-rail">
-            El perfil de sistema operativo no se edita aquí: lo deriva el orquestador del
-            contenido de la evidencia registrada.
-          </div>
+          <div className="note-rail">{t("caseSearch.osNotEditable")}</div>
           {actionError && (
             <div className="error-state">
-              <strong>No se pudo guardar:</strong> {actionError}
+              <strong>{t("caseSearch.saveFailed")}</strong> {actionError}
             </div>
           )}
         </div>
@@ -517,14 +522,12 @@ export function CaseSearchModal({
       {pane === "delete" && activeCase && (
         <div className="modal-form">
           <div className="danger-notice">
-            <strong>Esta acción es irreversible.</strong> Se borrará de forma PERMANENTE todo
-            el caso «{activeCase.name}» y con él su cadena de custodia completa: las copias de
-            evidencia registradas, el log de auditoría hash-encadenado, los hallazgos, los
-            artefactos, los chats y los informes. No hay papelera ni deshacer.
+            <strong>{t("caseSearch.dangerLead")}</strong>{" "}
+            {t("caseSearch.dangerBody", { name: activeCase.name })}
           </div>
           <div className="field">
             <label className="eyebrow" htmlFor="delete-case-confirm">
-              Escribe «{activeCase.name}» para confirmar
+              {t("caseSearch.typeToConfirm", { name: activeCase.name })}
             </label>
             <input
               id="delete-case-confirm"
@@ -538,7 +541,7 @@ export function CaseSearchModal({
           </div>
           {actionError && (
             <div className="error-state">
-              <strong>No se pudo eliminar el caso:</strong> {actionError}
+              <strong>{t("caseSearch.deleteFailed")}</strong> {actionError}
             </div>
           )}
         </div>

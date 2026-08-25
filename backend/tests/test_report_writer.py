@@ -19,10 +19,11 @@ import json
 
 import pytest
 
+from forensia.i18n import t
 from forensia.executors.base import ExecutorAvailability, ExecutorResult, PromptExecutor
-from forensia.reports.indice import NUMS, TITULOS
+from forensia.reports.indice import NUMS, titulos
 from forensia.reports.writer import (
-    ENCARGO,
+    encargo,
     ReportWriteError,
     build_prompt,
     write_report,
@@ -81,7 +82,7 @@ def _material() -> dict:
 def _reply(secciones=None, resumen="Informe del caso Murcielago.") -> str:
     if secciones is None:
         secciones = [
-            {"num": n, "titulo": TITULOS[n],
+            {"num": n, "titulo": titulos()[n],
              "bloques": [{"t": "p", "text": f"Contenido redactado de la seccion {n}."}]}
             for n in NUMS
         ]
@@ -136,7 +137,7 @@ def _write(text: str, material: dict | None = None, **kw):
 
 def test_the_report_is_what_the_model_wrote() -> None:
     secciones = [
-        {"num": n, "titulo": TITULOS[n], "bloques": [{"t": "p", "text": f"Prosa {n}."}]}
+        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": f"Prosa {n}."}]}
         for n in NUMS
     ]
     # Una sección larga y otra corta: la longitud la decide el modelo.
@@ -150,7 +151,9 @@ def test_the_report_is_what_the_model_wrote() -> None:
     doc, _, _ = _write(_reply(secciones))
 
     assert doc["type"] == "pericial"
-    assert doc["title"] == "Informe pericial forense: Murcielago"
+    # El título lo fija Agentopsy (metadato del expediente), en el idioma
+    # del informe: se compara con la entrada del catálogo.
+    assert doc["title"] == t("report.docTitle", None, case="Murcielago")
     assert doc["author"] == "Daniel Ramos"
     assert [s["num"] for s in doc["sections"]] == list(NUMS)
     assert doc["sections"][5]["blocks"][1]["t"] == "finding"
@@ -161,10 +164,13 @@ def test_prompt_carries_the_indice_and_the_material_not_prose() -> None:
     _, executor, _ = _write(_reply())
     prompt = executor.prompt or ""
     for num in NUMS:
-        assert f"{num}. {TITULOS[num]}" in prompt
+        assert f"{num}. {titulos()[num]}" in prompt
     assert "Murcielago" in prompt and ARGV in prompt
     # El contrato de respuesta va AL FINAL (sostiene el parseo estricto).
-    assert prompt.rindex("FORMATO DE RESPUESTA") > prompt.rindex("MATERIAL DEL CASO")
+    contrato = t("writer.responseContract", None, first_title="", sections="", max=0)
+    assert prompt.rindex(contrato.splitlines()[0]) > prompt.rindex(
+        t("writer.materialHeader").strip()
+    )
     # Presupuesto de tiempo propio de la redacción, no el del turno del agente.
     assert (executor.context or {}).get("timeout") == 900
 
@@ -206,7 +212,7 @@ def test_a_case_without_findings_produces_no_report() -> None:
 
 def test_a_missing_section_rejects_the_whole_report() -> None:
     secciones = [
-        {"num": n, "titulo": TITULOS[n], "bloques": [{"t": "p", "text": "x."}]}
+        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
         for n in NUMS if n != "8"
     ]
     with pytest.raises(ReportWriteError, match="índice canónico"):
@@ -215,7 +221,7 @@ def test_a_missing_section_rejects_the_whole_report() -> None:
 
 def test_an_extra_section_rejects_the_whole_report() -> None:
     secciones = [
-        {"num": n, "titulo": TITULOS[n], "bloques": [{"t": "p", "text": "x."}]}
+        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
         for n in NUMS
     ]
     secciones.append({"num": "11", "titulo": "Bibliografia",
@@ -228,7 +234,7 @@ def test_reordering_the_indice_rejects_the_whole_report() -> None:
     nums = list(NUMS)
     nums[2], nums[3] = nums[3], nums[2]
     secciones = [
-        {"num": n, "titulo": TITULOS[n], "bloques": [{"t": "p", "text": "x."}]}
+        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
         for n in nums
     ]
     with pytest.raises(ReportWriteError, match="orden exacto"):
@@ -237,7 +243,7 @@ def test_reordering_the_indice_rejects_the_whole_report() -> None:
 
 def test_a_renamed_section_title_is_rejected() -> None:
     secciones = [
-        {"num": n, "titulo": TITULOS[n], "bloques": [{"t": "p", "text": "x."}]}
+        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
         for n in NUMS
     ]
     secciones[1]["titulo"] = "Sumario para la direccion"
@@ -247,7 +253,7 @@ def test_a_renamed_section_title_is_rejected() -> None:
 
 def test_an_empty_section_is_rejected() -> None:
     secciones = [
-        {"num": n, "titulo": TITULOS[n], "bloques": [{"t": "p", "text": "x."}]}
+        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
         for n in NUMS
     ]
     secciones[9]["bloques"] = []
@@ -260,7 +266,7 @@ def test_an_empty_section_is_rejected() -> None:
 
 def test_an_invented_block_type_is_rejected() -> None:
     secciones = [
-        {"num": n, "titulo": TITULOS[n], "bloques": [{"t": "p", "text": "x."}]}
+        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
         for n in NUMS
     ]
     secciones[0]["bloques"].append({"t": "figura", "src": "grafico.png"})
@@ -270,7 +276,7 @@ def test_an_invented_block_type_is_rejected() -> None:
 
 def test_a_finding_block_needs_a_valid_severity() -> None:
     secciones = [
-        {"num": n, "titulo": TITULOS[n], "bloques": [{"t": "p", "text": "x."}]}
+        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
         for n in NUMS
     ]
     secciones[5]["bloques"] = [
@@ -282,7 +288,7 @@ def test_a_finding_block_needs_a_valid_severity() -> None:
 
 def test_a_row_wider_than_its_headers_is_rejected() -> None:
     secciones = [
-        {"num": n, "titulo": TITULOS[n], "bloques": [{"t": "p", "text": "x."}]}
+        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
         for n in NUMS
     ]
     secciones[3]["bloques"] = [
@@ -295,7 +301,7 @@ def test_a_row_wider_than_its_headers_is_rejected() -> None:
 
 def test_unknown_block_keys_never_reach_the_store() -> None:
     secciones = [
-        {"num": n, "titulo": TITULOS[n], "bloques": [{"t": "p", "text": "x."}]}
+        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
         for n in NUMS
     ]
     secciones[0]["bloques"] = [
@@ -310,7 +316,7 @@ def test_unknown_block_keys_never_reach_the_store() -> None:
 
 def test_an_invented_attck_technique_rejects_the_whole_report() -> None:
     secciones = [
-        {"num": n, "titulo": TITULOS[n], "bloques": [{"t": "p", "text": "x."}]}
+        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
         for n in NUMS
     ]
     secciones[3]["bloques"] = [{"t": "p", "text": "Se observa T1486 (Data Encrypted)."}]
@@ -320,7 +326,7 @@ def test_an_invented_attck_technique_rejects_the_whole_report() -> None:
 
 def test_an_invented_hash_rejects_the_whole_report() -> None:
     secciones = [
-        {"num": n, "titulo": TITULOS[n], "bloques": [{"t": "p", "text": "x."}]}
+        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
         for n in NUMS
     ]
     secciones[7]["bloques"] = [{"t": "p", "text": "Hash del binario: deadbeefcafe1234."}]
@@ -330,7 +336,7 @@ def test_an_invented_hash_rejects_the_whole_report() -> None:
 
 def test_a_hash_prefix_from_the_material_is_accepted() -> None:
     secciones = [
-        {"num": n, "titulo": TITULOS[n], "bloques": [{"t": "p", "text": "x."}]}
+        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
         for n in NUMS
     ]
     secciones[5]["bloques"] = [{"t": "p", "text": f"Artefacto {SHA_ART[:12]}…"}]
@@ -340,7 +346,7 @@ def test_a_hash_prefix_from_the_material_is_accepted() -> None:
 
 def test_a_foreign_uuid_rejects_the_whole_report() -> None:
     secciones = [
-        {"num": n, "titulo": TITULOS[n], "bloques": [{"t": "p", "text": "x."}]}
+        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
         for n in NUMS
     ]
     secciones[5]["bloques"] = [
@@ -352,7 +358,7 @@ def test_a_foreign_uuid_rejects_the_whole_report() -> None:
 
 def test_a_long_decimal_is_not_mistaken_for_a_hash() -> None:
     secciones = [
-        {"num": n, "titulo": TITULOS[n], "bloques": [{"t": "p", "text": "x."}]}
+        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
         for n in NUMS
     ]
     secciones[4]["bloques"] = [{"t": "p", "text": "La imagen ocupa 8589934592 bytes."}]
@@ -365,7 +371,7 @@ def test_a_long_decimal_is_not_mistaken_for_a_hash() -> None:
 
 def test_an_audited_argv_can_be_quoted_verbatim() -> None:
     secciones = [
-        {"num": n, "titulo": TITULOS[n], "bloques": [{"t": "p", "text": "x."}]}
+        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
         for n in NUMS
     ]
     secciones[6]["bloques"] = [
@@ -378,7 +384,7 @@ def test_an_audited_argv_can_be_quoted_verbatim() -> None:
 
 def test_a_rewritten_command_rejects_the_whole_report() -> None:
     secciones = [
-        {"num": n, "titulo": TITULOS[n], "bloques": [{"t": "p", "text": "x."}]}
+        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
         for n in NUMS
     ]
     # Un flag de más: el informe citaría un comando que NUNCA se ejecutó.
@@ -389,7 +395,7 @@ def test_a_rewritten_command_rejects_the_whole_report() -> None:
 
 def test_only_the_whitespace_is_normalised_when_matching_a_command() -> None:
     secciones = [
-        {"num": n, "titulo": TITULOS[n], "bloques": [{"t": "p", "text": "x."}]}
+        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
         for n in NUMS
     ]
     secciones[6]["bloques"] = [{"t": "code", "text": f"  {ARGV.replace(' ', '   ')}  "}]
@@ -424,11 +430,11 @@ def test_the_indice_is_the_only_thing_two_reports_share() -> None:
     """Dos casos, dos redacciones distintas: cambia el contenido y la longitud,
     NO el índice."""
     uno = [
-        {"num": n, "titulo": TITULOS[n], "bloques": [{"t": "p", "text": f"Caso A {n}."}]}
+        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": f"Caso A {n}."}]}
         for n in NUMS
     ]
     otro = [
-        {"num": n, "titulo": TITULOS[n], "bloques": [
+        {"num": n, "titulo": titulos()[n], "bloques": [
             {"t": "p", "text": f"Caso B, parrafo primero de {n}."},
             {"t": "p", "text": f"Caso B, parrafo segundo de {n}."},
         ]}
@@ -447,18 +453,19 @@ def test_the_button_is_equivalent_to_sending_the_operators_request() -> None:
     """Pulsar «Finalizar investigación» equivale a pedirle al modelo el informe
     completo: el encargo viaja LITERAL y por delante de todo lo demás."""
     prompt = build_prompt(_material())
-    assert prompt.startswith(f"ENCARGO: {ENCARGO}")
-    assert "informe de peritaje forense completo" in prompt
-    assert "todos los hallazgos y evidencias recopiladas" in prompt
+    # El prompt abre con el ENCARGO, en el idioma del informe.
+    assert prompt.startswith(t("writer.identity", None, encargo=encargo())[:40])
+    assert encargo() in prompt
 
 
 def test_build_prompt_has_no_prefabricated_prose_for_the_sections() -> None:
     """El prompt lleva el CONTRATO de cada sección, no su redacción: nada de lo
     que el modelo debe escribir viene ya escrito."""
     prompt = build_prompt(_material())
-    assert "plantilla" in prompt  # ...para decir que NO se rellena una
-    assert "No rellenas una plantilla" in prompt
-    assert "la LONGITUD de cada sección" in prompt
+    # La identidad dice EXPLÍCITAMENTE que no se rellena una plantilla y que la
+    # longitud la decide el caso. Se comprueba por la entrada del catálogo, que
+    # es lo que de verdad viaja, en el idioma que sea.
+    assert t("writer.identity", None, encargo=encargo()) in prompt
 
 
 # ── ronda de corrección ───────────────────────────────────────────────────────
@@ -495,7 +502,7 @@ class ScriptedExecutor(PromptExecutor):
 def _malo() -> str:
     """Una redacción con un identificador que no es de este caso."""
     secciones = [
-        {"num": n, "titulo": TITULOS[n], "bloques": [{"t": "p", "text": "x."}]}
+        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
         for n in NUMS
     ]
     secciones[0]["bloques"] = [
@@ -525,7 +532,10 @@ def test_a_rejected_report_is_returned_to_the_model_to_correct_it() -> None:
     assert len(executor.prompts) == 2
     # El segundo prompt lleva el motivo del rechazo, no un «reintenta».
     assert "99999999-8888-4777-8666-555555555555" in executor.prompts[1]
-    assert "RECHAZADA" in executor.prompts[1] or "rechazado" in executor.prompts[1]
+    # El segundo prompt es el de CORRECCIÓN, con el motivo dentro.
+    cabeza = t("writer.repairDelta", None, reason="\x00").split("\x00")[0]
+    cola = t("writer.repairFull", None, reason="\x00").split("\x00")[0]
+    assert cabeza in executor.prompts[1] or cola in executor.prompts[1]
     assert [s["num"] for s in doc["sections"]] == list(NUMS)
 
     reparaciones = [e for e in audit.events if e["action"] == "report_repair"]
@@ -566,7 +576,7 @@ def test_without_a_session_the_correction_resends_the_whole_encargo() -> None:
     _, audit = _run(executor)
 
     assert "session_id" not in executor.contexts[1]
-    assert "MATERIAL DEL CASO" in executor.prompts[1]
+    assert t("writer.materialHeader").strip() in executor.prompts[1]
     assert _reparacion(audit)["resume"] is False
 
 
@@ -574,7 +584,7 @@ def test_every_violated_referent_is_named_at_once() -> None:
     """Las puertas recogen TODAS sus violaciones: la corrección las arregla de
     una vez en lugar de descubrirlas de una en una."""
     secciones = [
-        {"num": n, "titulo": TITULOS[n], "bloques": [{"t": "p", "text": "x."}]}
+        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
         for n in NUMS
     ]
     secciones[5]["bloques"] = [
@@ -601,9 +611,10 @@ def test_the_prompt_forbids_the_section_sign_and_the_em_dash() -> None:
     _, executor, _ = _write(_reply())
     prompt = executor.prompt or ""
 
-    assert "El signo § está PROHIBIDO" in prompt
-    assert "guion largo «—» en ningún caso" in prompt
-    assert "NO se usa ningún emoji" in prompt
+    # Las reglas 8 y 9 viajan enteras, en el idioma del informe: prohíben el
+    # signo de sección, el guion largo y los emojis.
+    assert t("writer.rules") in prompt
+    assert "§" in t("writer.rules", "es") and "section sign" in t("writer.rules", "en")
     # El índice canónico se enuncia «1. Control de versiones», nunca «§1».
     for num in NUMS:
         assert f"§{num}" not in prompt
@@ -622,7 +633,7 @@ def test_trabajos_realizados_no_pide_una_ficha_por_ejecucion() -> None:
     """
     from forensia.reports.indice import INDICE
 
-    contrato = next(s for s in INDICE if s.num == "7").contrato
+    contrato = next(s for s in INDICE if s.num == "7").contrato("es")
 
     assert "NO enumeres las ejecuciones una por una" in contrato
     assert "ni un subapartado por evidencia" in contrato
@@ -643,7 +654,7 @@ def test_the_indice_itself_carries_no_forbidden_typography() -> None:
     indice = contrato_del_indice()
     assert "§" not in indice
     assert "—" not in indice
-    for titulo in TITULOS.values():
+    for titulo in titulos().values():
         assert "—" not in titulo and "§" not in titulo
 
 
@@ -651,7 +662,7 @@ def test_the_published_report_never_carries_a_dash_a_section_sign_or_an_emoji() 
     """Lo que el modelo escriba, el informe publicado no los lleva: la regla se
     pide en el prompt y se GARANTIZA sobre el texto ya validado."""
     secciones = [
-        {"num": n, "titulo": TITULOS[n], "bloques": [{"t": "p", "text": f"Prosa {n}."}]}
+        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": f"Prosa {n}."}]}
         for n in NUMS
     ]
     secciones[5]["bloques"] = [
@@ -687,7 +698,7 @@ def test_the_audited_command_keeps_its_literal_form() -> None:
     material["trabajos"][0]["argv"] = argv_con_raya.split()
 
     secciones = [
-        {"num": n, "titulo": TITULOS[n], "bloques": [{"t": "p", "text": f"Prosa {n}."}]}
+        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": f"Prosa {n}."}]}
         for n in NUMS
     ]
     secciones[6]["bloques"] = [{"t": "code", "text": argv_con_raya}]
@@ -714,7 +725,7 @@ def test_forbidden_typography_never_costs_the_report() -> None:
     """Una raya NO es una puerta de custodia: el material puede traerla escrita
     por el agente, y copiarla fielmente no puede tirar la redacción entera."""
     secciones = [
-        {"num": n, "titulo": TITULOS[n],
+        {"num": n, "titulo": titulos()[n],
          "bloques": [{"t": "p", "text": f"Prosa —{n}— con §{n}. ✅"}]}
         for n in NUMS
     ]

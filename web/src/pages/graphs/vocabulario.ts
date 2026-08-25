@@ -1,4 +1,5 @@
 import type { GraphEdgeType, GraphNodeType } from "../../api/types";
+import type { MessageKey } from "../../i18n/en";
 
 // Las etiquetas y los colores del grafo, en UNA tabla.
 //
@@ -8,39 +9,44 @@ import type { GraphEdgeType, GraphNodeType } from "../../api/types";
 // literal, que es feo y verdadero, en vez de una etiqueta inventada (RULE 2).
 //
 // Los `snake_case` son DATOS (la enum cerrada que valida el servidor), así que
-// se enseñan tal cual donde hace falta citarlos; las etiquetas en castellano son
-// para la leyenda y la ficha, que las lee una persona.
+// se enseñan tal cual donde hace falta citarlos; el ROTULO de cada uno vive en
+// el catálogo de idiomas, porque lo lee una persona en la leyenda y la ficha.
+//
+// La tabla es de CLAVES, no de texto, y las dos funciones devuelven `null` para
+// un tipo que no esté declarado: quien pinta lo interpreta como «enseña el valor
+// crudo». Es la misma regla de siempre y ahora es del TIPO: no hay forma de
+// devolver una etiqueta inventada.
 
-export const NODO_LABEL: Record<GraphNodeType, string> = {
-  ip: "Dirección IP",
-  domain: "Dominio",
-  hostname: "Equipo",
-  user: "Usuario",
-  file: "Fichero",
+export const NODO_KEY: Record<GraphNodeType, MessageKey> = {
+  ip: "graphNode.ip",
+  domain: "graphNode.domain",
+  hostname: "graphNode.hostname",
+  user: "graphNode.user",
+  file: "graphNode.file",
 };
 
-export const RELACION_LABEL: Record<GraphEdgeType, string> = {
-  connection: "Conexión",
-  process_spawn: "Creación de proceso",
-  network_connection: "Conexión de red",
-  lateral_move: "Movimiento lateral",
-  malware: "Código malicioso",
-  c2: "Mando y control",
-  exfiltration: "Exfiltración",
-  beacon: "Baliza",
-  persistence: "Persistencia",
-  priv_esc: "Escalada de privilegios",
-  rce: "Ejecución remota de código",
-  logon: "Inicio de sesión",
-  file_transfer: "Transferencia de ficheros",
+export const RELACION_KEY: Record<GraphEdgeType, MessageKey> = {
+  connection: "graphEdge.connection",
+  process_spawn: "graphEdge.process_spawn",
+  network_connection: "graphEdge.network_connection",
+  lateral_move: "graphEdge.lateral_move",
+  malware: "graphEdge.malware",
+  c2: "graphEdge.c2",
+  exfiltration: "graphEdge.exfiltration",
+  beacon: "graphEdge.beacon",
+  persistence: "graphEdge.persistence",
+  priv_esc: "graphEdge.priv_esc",
+  rce: "graphEdge.rce",
+  logon: "graphEdge.logon",
+  file_transfer: "graphEdge.file_transfer",
 };
 
-export function etiquetaNodo(tipo: string): string {
-  return NODO_LABEL[tipo as GraphNodeType] ?? tipo;
+export function claveNodo(tipo: string): MessageKey | null {
+  return NODO_KEY[tipo as GraphNodeType] ?? null;
 }
 
-export function etiquetaRelacion(tipo: string): string {
-  return RELACION_LABEL[tipo as GraphEdgeType] ?? tipo;
+export function claveRelacion(tipo: string): MessageKey | null {
+  return RELACION_KEY[tipo as GraphEdgeType] ?? null;
 }
 
 // ── color ─────────────────────────────────────────────────────────────────────

@@ -10,18 +10,11 @@ import type { ReactNode } from "react";
 type Theme = "light" | "dark";
 export type Palette = "papel" | "acero";
 
-export const PALETTES: { id: Palette; name: string; description: string }[] = [
-  {
-    id: "papel",
-    name: "Papel",
-    description: "Crema cálido y terracota. Expediente, archivo, papel.",
-  },
-  {
-    id: "acero",
-    name: "Acero",
-    description: "Gris frío y azul de instrumento. Sobria, de laboratorio.",
-  },
-];
+// Solo los IDS. El nombre y la descripción de cada paleta son texto de producto
+// y viven en el catálogo de idiomas (`i18n/en.ts`, claves `palette.<id>.*`),
+// como cualquier otra cadena que lee un humano. El id es el que viaja al CSS
+// (`data-palette`) y a localStorage, así que ese no se traduce nunca.
+export const PALETTE_IDS: readonly Palette[] = ["papel", "acero"];
 
 interface ThemeCtx {
   theme: Theme;
@@ -50,7 +43,7 @@ function getInitialTheme(): Theme {
 function getInitialPalette(): Palette {
   try {
     const stored = localStorage.getItem(PALETTE_KEY);
-    if (PALETTES.some((p) => p.id === stored)) return stored as Palette;
+    if (PALETTE_IDS.some((id) => id === stored)) return stored as Palette;
   } catch {}
   return "papel";
 }

@@ -26,6 +26,7 @@ import json
 import time
 from pathlib import Path
 
+from forensia.i18n import Mensaje, t
 from forensia.executors.base import (
     CliPromptExecutor,
     ExecutorAvailability,
@@ -35,14 +36,9 @@ from forensia.executors.base import (
     _find_key,
 )
 
-_LOGIN_HINT = (
-    "Inicia sesión con tu cuenta de Google: en el HOST, ejecuta `gemini` y "
-    "autentícate ANTES del primer `docker compose up` (el arranque seedea "
-    "`~/.gemini` al volumen forensia-cli-auth); o dentro del contenedor, "
-    "`docker compose exec -it -e NO_BROWSER=true api gemini`, imprime una "
-    "URL para abrir en el navegador del host y pide pegar el código de vuelta. "
-    "La sesión se revoca con `docker compose down -v`."
-)
+def _login_hint() -> str:
+    """El comando de login, en el idioma en curso (clave `gemini.loginHint`)."""
+    return t("gemini.loginHint")
 
 
 class GeminiExecutor(CliPromptExecutor):
@@ -56,10 +52,7 @@ class GeminiExecutor(CliPromptExecutor):
         if not creds.is_file():
             return ExecutorAvailability(
                 available=False,
-                reason=(
-                    "Gemini CLI no tiene sesión iniciada: no existe "
-                    f"`~/.gemini/oauth_creds.json`. {_LOGIN_HINT}"
-                ),
+                reason=t("gemini.noSession", hint=_login_hint()),
             )
         try:
             data = json.loads(creds.read_text(encoding="utf-8"))
@@ -68,11 +61,7 @@ class GeminiExecutor(CliPromptExecutor):
         if not isinstance(data, dict):
             return ExecutorAvailability(
                 available=False,
-                reason=(
-                    "La sesión de Gemini CLI está corrupta: "
-                    "`~/.gemini/oauth_creds.json` no es el JSON esperado. "
-                    f"Vuelve a autenticarte. {_LOGIN_HINT}"
-                ),
+                reason=t("gemini.corruptSession", hint=_login_hint()),
             )
         refresh_token = data.get("refresh_token")
         if isinstance(refresh_token, str) and refresh_token:
@@ -88,10 +77,7 @@ class GeminiExecutor(CliPromptExecutor):
             return ExecutorAvailability(available=True)
         return ExecutorAvailability(
             available=False,
-            reason=(
-                "La sesión de Gemini CLI ha caducado (sin refresh_token y con el "
-                f"access_token expirado). Vuelve a autenticarte. {_LOGIN_HINT}"
-            ),
+            reason=t("gemini.expiredSession", hint=_login_hint()),
         )
 
     def _build_argv(
@@ -116,16 +102,17 @@ class GeminiExecutor(CliPromptExecutor):
             envelope = json.loads(stdout)
         except json.JSONDecodeError as exc:
             raise ExecutorError(
-                "Gemini CLI no devolvió el JSON esperado con --output-format json. "
-                f"stdout (muestra): {stdout.strip()[:500]!r}"
+                Mensaje("gemini.noJson", sample=repr(stdout.strip()[:500]))
             ) from exc
         if not isinstance(envelope, dict):
             raise ExecutorError(
-                f"Gemini CLI devolvió {type(envelope).__name__} en vez de un objeto JSON"
+                Mensaje("gemini.notAnObject", kind=type(envelope).__name__)
             )
         error = envelope.get("error")
         if error:
-            raise ExecutorError(f"Gemini CLI reportó un error: {json.dumps(error)[:500]}")
+            raise ExecutorError(
+                Mensaje("gemini.reportedError", detail=json.dumps(error)[:500])
+            )
         response = envelope.get("response")
         if not isinstance(response, str):
             raise ExecutorError(

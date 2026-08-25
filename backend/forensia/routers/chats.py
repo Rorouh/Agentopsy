@@ -14,6 +14,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from forensia.i18n import traducir_excepcion
 from forensia.chats.store import ChatMessage, chat_store
 from forensia.security import require_token
 
@@ -40,9 +41,9 @@ def list_chat_sessions(case_id: str) -> list[str]:
     try:
         return chat_store.list_sessions(case_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
 
 
 @router.get(
@@ -53,9 +54,9 @@ def read_chat_session(case_id: str, session_id: str) -> list[dict[str, Any]]:
     try:
         messages = chat_store.read(case_id, session_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
     return [_msg_dict(m) for m in messages]
 
 
@@ -76,7 +77,7 @@ def append_chat_message(
     try:
         chat_store.append(case_id, session_id, message)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
     return _msg_dict(message)
