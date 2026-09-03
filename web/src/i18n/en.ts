@@ -557,6 +557,21 @@ export const en = {
   "graph.pressExtract":
     "Press «Extract» and the selected model will read the finding text to propose which entities take part and with what relation.",
   "graph.revisionMeta": "Revision v{rev} of {total}",
+
+  // --- exploración de la figura --------------------------------------------
+  // El zoom y el desplazamiento son de la VISTA: el PNG que se exporta lleva
+  // siempre la geometría calculada, mire el perito donde mire en ese momento.
+  "graph.zoomIn": "Zoom in",
+  "graph.zoomOut": "Zoom out",
+  "graph.fitView": "Fit to view",
+  "graph.zoomLevel": "{percent}%",
+  "graph.viewportLabel": "Graph, draggable and zoomable",
+  "graph.viewportHint":
+    "Drag to move, scroll to zoom, click a node to focus it. The exported PNG always carries the computed layout.",
+  "graph.layoutEnlarged":
+    "The figure did not fit the standard canvas: enlarged to {width} by {height}.",
+  "graph.layoutRelaxed": "{count} node pairs had to be separated so their labels would not overlap.",
+
   "count.attempts.one": "{count} attempt",
   "count.attempts.other": "{count} attempts",
 

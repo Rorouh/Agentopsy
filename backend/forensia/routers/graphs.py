@@ -39,7 +39,7 @@ from forensia.executors import (
 from forensia.export_hoja import export_basename, iso_utc_ahora
 from forensia.findings import finding_store
 from forensia.graph.fusion import merge_case_graph
-from forensia.graph.layout import ALTO, ANCHO, layout_caso, layout_hallazgo
+from forensia.graph.layout import layout_caso, layout_hallazgo
 from forensia.graph.lote import extraer_lote
 from forensia.graph.store import graph_store
 from forensia.security import require_token
@@ -125,6 +125,10 @@ def case_graph(case_id: str) -> dict[str, Any]:
     ])
     titulos = {f.id: f.title for f in finding_store.list(case_id)}
     exported_at = iso_utc_ahora()
+    # El LIENZO lo decide el layout, no una constante del módulo: una figura con
+    # muchos nodos crece en vez de comprimirse (RULE 2), y `notas` dice qué hubo
+    # que ampliar.
+    figura = layout_caso(case_id, fundido["nodos"], fundido["relaciones"])
     return {
         "case_id": case_id,
         "case_name": case.name,
@@ -133,12 +137,13 @@ def case_graph(case_id: str) -> dict[str, Any]:
         "export_basename": export_basename(
             case.name, EXPORT_KIND_CASO, exported_at=exported_at
         ),
-        "nodos": layout_caso(case_id, fundido["nodos"], fundido["relaciones"]),
+        "nodos": figura["nodos"],
         "relaciones": fundido["relaciones"],
         "hallazgos": [
             {"id": fid, "title": titulos.get(fid, "")} for fid in fundido["hallazgos"]
         ],
-        "lienzo": {"ancho": ANCHO, "alto": ALTO},
+        "lienzo": figura["lienzo"],
+        "notas_layout": figura["notas"],
     }
 
 
@@ -261,6 +266,7 @@ def get_graph(case_id: str, finding_id: str, revision: int | None = None) -> dic
 
     finding = next((f for f in finding_store.list(case_id) if f.id == finding_id), None)
     exported_at = iso_utc_ahora()
+    figura = layout_hallazgo(finding_id, g.nodos, g.relaciones)
     return {
         "case_id": case_id,
         "case_name": case.name,
@@ -275,9 +281,10 @@ def get_graph(case_id: str, finding_id: str, revision: int | None = None) -> dic
         "sha256": g.sha256,
         "extraction": g.extraction,
         "aviso": aviso_propuesta(),
-        "nodos": layout_hallazgo(finding_id, g.nodos, g.relaciones),
+        "nodos": figura["nodos"],
         "relaciones": g.relaciones,
-        "lienzo": {"ancho": ANCHO, "alto": ALTO},
+        "lienzo": figura["lienzo"],
+        "notas_layout": figura["notas"],
         "hallazgo": None if finding is None else {
             "id": finding.id,
             "title": finding.title,

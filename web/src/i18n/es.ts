@@ -530,6 +530,19 @@ export const es: Record<MessageKey, string> = {
   "graph.pressExtract":
     "Pulsa «Extraer» y el modelo seleccionado leerá el texto del hallazgo para proponer qué entidades intervienen y con qué relación.",
   "graph.revisionMeta": "Revisión v{rev} de {total}",
+
+  // --- exploración de la figura --------------------------------------------
+  "graph.zoomIn": "Acercar",
+  "graph.zoomOut": "Alejar",
+  "graph.fitView": "Ajustar a la vista",
+  "graph.zoomLevel": "{percent} %",
+  "graph.viewportLabel": "Grafo, se arrastra y se acerca",
+  "graph.viewportHint":
+    "Arrastra para mover, rueda para acercar, pulsa un nodo para enfocarlo. El PNG exportado lleva siempre la geometría calculada.",
+  "graph.layoutEnlarged":
+    "La figura no cabía en el lienzo estándar: ampliado a {width} por {height}.",
+  "graph.layoutRelaxed": "Hubo que separar {count} pares de nodos para que sus etiquetas no se pisaran.",
+
   "count.attempts.one": "{count} intento",
   "count.attempts.other": "{count} intentos",
 

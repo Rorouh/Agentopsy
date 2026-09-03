@@ -1038,6 +1038,47 @@ por el rasterizador del timeline, con la procedencia dentro de la imagen y el
 nombre resuelto por `export_hoja.export_basename`. Pinned by
 `tests/test_graph_relaciones.py`.
 
+**La figura dejó de ser una maraña, y sigue siendo reproducible (2026-09-03,
+`forensia.graph.layout` + `web/src/pages/graphs/`)**: sobre un caso real de 35
+nodos la figura salía ilegible, y las tres causas eran ARITMÉTICA, no gusto.
+(1) El radio era `min(ANCHO, ALTO) / 2 - _MARGEN`, o sea `min(1000, 700)/2 -
+110 = 240`: un círculo de 480 px de ancho en un lienzo de 1000, que
+desperdiciaba el **52 % del ancho** y apelmazaba el centro, porque el `min`
+convierte un lienzo apaisado en uno cuadrado. Ahora el anillo es una **elipse**
+(`_APAISADO`) y los nodos se reparten por **longitud de arco**, no por ángulo:
+en una elipse, pasos angulares iguales amontonan los nodos justo en los
+extremos del eje mayor. (2) El radio era `radio_max * (indice + 1) /
+len(presentes)`, que ignora cuántos nodos lleva el anillo; medido, el anillo de
+cuentas quedaba a radio 80 con 12 nodos (**42 px de arco por nodo**, cuando una
+etiqueta como `wilsonjimmy8…` necesita unos 90) y el de dominios a radio 160 con
+5 (201 px por nodo), o sea repartido al revés. Ahora cada anillo pide el
+perímetro que necesitan SUS etiquetas y empieza donde acaba el anterior. (3) El
+orden de anillos era la tupla fija `("user", "hostname", "ip", "domain",
+"file")`, con el razonamiento correcto de meter dentro lo que concentra aristas
+y el efecto contrario, porque las cuentas son también el tipo más numeroso: el
+tipo con más nodos acababa en la circunferencia más corta. Ahora manda el
+**grado medio real** de cada tipo en ESE grafo y `ANILLOS` se queda solo como
+desempate estable. El cero solapamientos lo garantiza un **relajador** de
+iteraciones FIJAS (`_ITERACIONES`, sin criterio de convergencia: uno por
+convergencia haría depender la figura de la coma flotante de la máquina) que
+sobre una figura bien dimensionada no mueve nada. Y cuando no cabe, **crece el
+lienzo**: `layout_caso`/`layout_hallazgo` devuelven ahora `{nodos, lienzo,
+notas}` en vez de una lista, el router publica ESE lienzo en vez de las
+constantes del módulo, y las `notas` (`lienzo_ampliado`, `solapes_corregidos`)
+se pintan en la vista, porque nada se comprime en silencio (RULE 2). Medido tras
+el cambio: 0 pares solapados, **91 % de ocupación del ancho** en el caso denso.
+La figura se puede **explorar** sin romper el informe: el zoom, el
+desplazamiento y el encuadre viven en `GraphViewport` como transformación CSS
+del CONTENEDOR, nunca como `transform` dentro del SVG, así que lo que se
+serializa al exportar es siempre la geometría canónica, mire el perito donde
+mire. Se acompaña de tres cambios de lectura copiados de los grafos de
+investigación comerciales: nodo de **dos líneas** (valor y, debajo en gris, el
+tipo, que antes solo se distinguía por forma y color), rótulos de relación
+**horizontales y en caja opaca** (iban girados siguiendo el ángulo de su línea,
+a 9,5 px, cruzando por encima de otros nodos, y en un PNG no hay hover que lo
+salve) y **enfoque**: pulsar un nodo deja su vecindad a plena tinta y apaga el
+resto sin ocultarlo. Pinned by `tests/test_graph_layout.py`.
+
 **Los grafos son una FASE, no un apartado del informe (2026-08-11)**: nacieron
 dentro del Informe pericial y ahí competían con «Finalizar investigación», la
 otra acción de esa pantalla que llama al modelo y cuesta dinero. Son ahora la

@@ -13,12 +13,17 @@ import { useLang } from "../../i18n";
 
 // La FIGURA del grafo de relaciones.
 //
-// Se lee como figura y no como tabla: sin zoom, sin brushing y sin arrastrar
-// nodos. La geometría NO se calcula aquí, viene resuelta del backend
+// La geometría NO se calcula aquí, viene resuelta del backend
 // (`forensia.graph.layout`), que es lo que hace que el mismo grafo dé la misma
 // imagen en cualquier máquina: una figura que se adjunta a un informe pericial
 // tiene que ser reproducible, y una simulación de fuerzas con semilla aleatoria
 // dibuja distinto lo mismo en cada render.
+//
+// Esto NO impide explorarla. El zoom y el desplazamiento van en el CONTENEDOR
+// (`GraphSection`), como transformación CSS de la vista, y no como un
+// `transform` dentro del SVG: así lo que se serializa al exportar el PNG es la
+// geometría canónica, mire el perito donde mire en ese momento. Son dos
+// momentos distintos y no se mezclan.
 //
 // Todo el texto entra como nodos de texto del SVG (React los escapa), nunca como
 // HTML: el valor de un nodo es contenido DERIVADO DE EVIDENCIA y puede venir
@@ -32,8 +37,27 @@ const CABECERA = 92;
 //: más líneas, crece con ellas (`pie`, calculado en el render).
 const PIE_BASE = 128;
 
+//: Tiene que coincidir con `RADIO_NODO` y `MAX_CHARS_ETIQUETA` de
+//: `forensia/graph/layout.py`: allí se reserva el sitio de cada nodo y aquí se
+//: pinta, así que si divergen la figura vuelve a solaparse.
 const RADIO_NODO = 19;
 const MAX_CHARS_ETIQUETA = 22;
+
+//: Las DOS líneas de etiqueta que van bajo el disco: el valor y, más pequeño y
+//: en gris, el tipo. Con una sola línea el tipo solo se distinguía por la forma
+//: y el color, lo que obliga a bajar a la leyenda en cada nodo.
+const LINEA_VALOR = RADIO_NODO + 15;
+const LINEA_TIPO = RADIO_NODO + 27;
+
+//: Ancho medio de carácter del rótulo de una relación, a 9,5px. Mismo criterio
+//: que `ANCHO_CARACTER`: estimado, no medido con el canvas, para que el PNG
+//: salga igual en cualquier máquina.
+const ANCHO_CARACTER_RELACION = 5.3;
+
+//: Cuánto se apaga lo que no es la vecindad del nodo enfocado. No se OCULTA: un
+//: nodo que desaparece al hacer clic en otro parece un fallo, y en un grafo
+//: forense lo que no está conectado también es un dato.
+const APAGADO = 0.22;
 
 // ── rejilla de la leyenda ─────────────────────────────────────────────────────
 //
@@ -181,6 +205,45 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
   const dy = CABECERA;
 
   const posicion = new Map(nodos.map((n) => [n.valor, n]));
+
+  // ENFOCAR un nodo: su vecindad inmediata queda a plena tinta y el resto se
+  // apaga. Es el punto de entrada que a un grafo denso le falta, y es lo que
+  // hace legible una figura que de un vistazo es una maraña.
+  const hayFoco = Boolean(seleccionado && posicion.has(seleccionado));
+  const vecindad = new Set<string>();
+  if (hayFoco && seleccionado) {
+    vecindad.add(seleccionado);
+    for (const r of relaciones) {
+      if (r.origen === seleccionado) vecindad.add(r.destino);
+      if (r.destino === seleccionado) vecindad.add(r.origen);
+    }
+  }
+
+  // La geometría de cada arista, resuelta UNA vez y compartida por las dos
+  // pasadas de pintado (líneas y rótulos).
+  const trazos = relaciones.flatMap((r, i) => {
+    const a = posicion.get(r.origen);
+    const b = posicion.get(r.destino);
+    if (!a || !b) return [];
+    const x1 = a.x + dx;
+    const y1 = a.y + dy;
+    const x2 = b.x + dx;
+    const y2 = b.y + dy;
+    return [
+      {
+        r,
+        i,
+        x1,
+        y1,
+        x2,
+        y2,
+        angulo: Math.atan2(y2 - y1, x2 - x1),
+        color: colorRelacion(r.tipo, oscuro),
+        tenue: hayFoco && r.origen !== seleccionado && r.destino !== seleccionado,
+      },
+    ];
+  });
+
   // Solo se pintan en la leyenda los tipos y las relaciones PRESENTES: una
   // leyenda con trece entradas de las que se usan dos no explica, estorba.
   const tiposPresentes = NODOS_LEYENDA.filter((t) => nodos.some((n) => n.tipo === t));
@@ -302,43 +365,26 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
         </text>
       )}
 
-      {/* aristas, debajo de los nodos */}
-      {relaciones.map((r, i) => {
-        const a = posicion.get(r.origen);
-        const b = posicion.get(r.destino);
-        if (!a || !b) return null;
-        const x1 = a.x + dx;
-        const y1 = a.y + dy;
-        const x2 = b.x + dx;
-        const y2 = b.y + dy;
-        const angulo = Math.atan2(y2 - y1, x2 - x1);
+      {/* Aristas, en DOS pasadas: primero todas las líneas y luego todos los
+          rótulos. Con una sola pasada, la línea de una arista posterior cruzaba
+          por encima del rótulo de la anterior y lo tachaba. */}
+      {trazos.map(({ r, i, x1, y1, x2, y2, angulo, color, tenue }) => {
         // La línea se acorta en los dos extremos para que la punta de flecha
         // toque el borde del nodo y no su centro.
         const ox = Math.cos(angulo) * (RADIO_NODO + 2);
         const oy = Math.sin(angulo) * (RADIO_NODO + 2);
         const px = x2 - ox;
         const py = y2 - oy;
-        const color = colorRelacion(r.tipo, oscuro);
-        // La etiqueta no va en el punto medio sino a dos tercios hacia el
-        // destino, y separada de la línea: en un concentrador (una cuenta con
-        // varias aristas) todas las etiquetas se juntaban sobre el nombre del
-        // nodo y no se leía ninguna.
-        const t = 0.66;
-        const mx = x1 + (x2 - x1) * t;
-        const my = y1 + (y2 - y1) * t;
-        // La etiqueta sigue el ángulo de su línea, pero nunca cabeza abajo.
-        let grados = (angulo * 180) / Math.PI;
-        if (grados > 90 || grados < -90) grados += 180;
         const punta = 7;
         return (
-          <g key={`${r.origen}-${r.destino}-${r.tipo}-${i}`}>
+          <g key={`linea-${r.origen}-${r.destino}-${r.tipo}-${i}`} opacity={tenue ? APAGADO : 1}>
             <line
               x1={x1 + ox}
               y1={y1 + oy}
               x2={px}
               y2={py}
               stroke={color}
-              strokeWidth={1.2}
+              strokeWidth={tenue ? 1 : 1.4}
             />
             <polygon
               points={[
@@ -348,16 +394,41 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
               ].join(" ")}
               fill={color}
             />
+          </g>
+        );
+      })}
+
+      {/* Los rótulos de relación, HORIZONTALES y en caja opaca. Antes iban
+          girados siguiendo el ángulo de su línea, a 9,5px, y cruzaban por encima
+          de otros nodos: en un PNG no hay hover que lo salve. */}
+      {trazos.map(({ r, i, x1, y1, x2, y2, tenue }) => {
+        const texto = rotuloRelacion(r.tipo);
+        const ancho = texto.length * ANCHO_CARACTER_RELACION + 10;
+        // A dos tercios hacia el destino, no en el medio: en un concentrador
+        // (una cuenta con varias aristas) todos los rótulos se juntaban sobre el
+        // nombre del nodo y no se leía ninguno.
+        const mx = x1 + (x2 - x1) * 0.62;
+        const my = y1 + (y2 - y1) * 0.62;
+        return (
+          <g key={`rotulo-${r.origen}-${r.destino}-${r.tipo}-${i}`} opacity={tenue ? APAGADO : 1}>
+            <rect
+              x={mx - ancho / 2}
+              y={my - 8}
+              width={ancho}
+              height={15}
+              fill={palette["--surface"]}
+              stroke={palette["--hair"]}
+              strokeWidth={0.8}
+            />
             <text
               x={mx}
-              y={my - 6}
+              y={my + 3}
               textAnchor="middle"
-              transform={`rotate(${grados.toFixed(1)} ${mx} ${my - 6})`}
-              fill={palette["--ink-3"]}
-              fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+              fill={palette["--ink-2"]}
+              fontFamily="ui-sans-serif, system-ui, sans-serif"
               fontSize={9.5}
             >
-              {rotuloRelacion(r.tipo)}
+              {texto}
             </text>
           </g>
         );
@@ -369,9 +440,14 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
         const x = n.x + dx;
         const y = n.y + dy;
         const activo = seleccionado === n.valor;
+        const tenue = hayFoco && !vecindad.has(n.valor);
         return (
           <g
             key={`${n.tipo}:${n.valor}`}
+            // Lo lee el visor para no confundir «pulsar un nodo» con «arrastrar
+            // la vista»: sin esto, hacer clic en un nodo empieza un arrastre.
+            data-nodo="1"
+            opacity={tenue ? APAGADO : 1}
             onClick={() => onSeleccionar?.(activo ? null : n.valor)}
             style={{ cursor: onSeleccionar ? "pointer" : "default" }}
           >
@@ -379,10 +455,10 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
               <circle
                 cx={x}
                 cy={y}
-                r={RADIO_NODO + 6}
+                r={RADIO_NODO + 7}
                 fill="none"
                 stroke={color}
-                strokeWidth={1}
+                strokeWidth={2}
               />
             )}
             {formaNodo(n.tipo, x, y, color)}
@@ -399,14 +475,24 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
             </text>
             <text
               x={x}
-              y={y + RADIO_NODO + 15}
+              y={y + LINEA_VALOR}
               textAnchor="middle"
-              fill={color}
+              fill={activo ? color : palette["--ink"]}
               fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
               fontSize={10.5}
-              fontWeight={600}
+              fontWeight={activo ? 700 : 600}
             >
               {recorta(n.valor)}
+            </text>
+            <text
+              x={x}
+              y={y + LINEA_TIPO}
+              textAnchor="middle"
+              fill={palette["--ink-3"]}
+              fontFamily="ui-sans-serif, system-ui, sans-serif"
+              fontSize={9}
+            >
+              {rotuloNodo(n.tipo)}
             </text>
           </g>
         );

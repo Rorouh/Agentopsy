@@ -839,9 +839,21 @@ export interface GraphEdge {
   notas?: string[];
 }
 
+// El lienzo lo CALCULA el layout, no es una constante: una figura que no cabe
+// hace crecer el `viewBox` en vez de comprimirse en silencio (RULE 2).
 export interface GraphCanvas {
   ancho: number;
   alto: number;
+}
+
+// Lo que el layout tuvo que hacer para que la figura cupiera. Va con el dato
+// porque una figura ampliada o con solapes corregidos no es lo mismo que una
+// que salió a la primera, y quien la lleva a un informe tiene derecho a saberlo.
+export interface GraphLayoutNote {
+  codigo: "lienzo_ampliado" | "solapes_corregidos";
+  ancho?: number;
+  alto?: number;
+  pares?: number;
 }
 
 export interface GraphFindingView {
@@ -872,6 +884,7 @@ export interface GraphFindingView {
   nodos: GraphNode[];
   relaciones: GraphEdge[];
   lienzo: GraphCanvas;
+  notas_layout: GraphLayoutNote[];
   hallazgo: {
     id: string;
     title: string;
@@ -899,6 +912,7 @@ export interface GraphCaseView {
   relaciones: GraphEdge[];
   hallazgos: { id: string; title: string }[];
   lienzo: GraphCanvas;
+  notas_layout: GraphLayoutNote[];
 }
 
 export interface GraphSummary {

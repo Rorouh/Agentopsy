@@ -260,8 +260,8 @@ def test_the_layout_is_deterministic_for_the_same_finding():
              {"tipo": "ip", "valor": "192.168.65.135"}]
     relaciones = [{"origen": "IEUser", "destino": "key.exe", "tipo": "process_spawn"}]
 
-    primera = layout_hallazgo(fid, nodos, relaciones)
-    segunda = layout_hallazgo(fid, list(reversed(nodos)), relaciones)
+    primera = layout_hallazgo(fid, nodos, relaciones)["nodos"]
+    segunda = layout_hallazgo(fid, list(reversed(nodos)), relaciones)["nodos"]
 
     # Misma figura aunque cambie el orden en que el modelo declaró los nodos: la
     # posición sale del contenido, no del orden de llegada.
@@ -269,7 +269,7 @@ def test_the_layout_is_deterministic_for_the_same_finding():
            {(n["valor"], n["x"], n["y"]) for n in segunda}
     # Y otro hallazgo con los mismos nodos no dibuja lo mismo (el desfase sale
     # del identificador), pero cada uno es estable consigo mismo.
-    otra = layout_hallazgo("00000000-0000-4000-8000-000000000001", nodos, relaciones)
+    otra = layout_hallazgo("00000000-0000-4000-8000-000000000001", nodos, relaciones)["nodos"]
     assert [(n["x"], n["y"]) for n in otra] != [(n["x"], n["y"]) for n in primera]
 
 
@@ -277,13 +277,18 @@ def test_the_case_layout_is_deterministic_and_rings_by_type():
     nodos = [{"tipo": "user", "valor": "IEUser"},
              {"tipo": "file", "valor": "a.exe"},
              {"tipo": "file", "valor": "b.exe"}]
-    a = layout_caso("caso-1", nodos, [])
-    b = layout_caso("caso-1", list(reversed(nodos)), [])
+    figura = layout_caso("caso-1", nodos, [])
+    a = figura["nodos"]
+    b = layout_caso("caso-1", list(reversed(nodos)), [])["nodos"]
     assert [(n["valor"], n["x"], n["y"]) for n in sorted(a, key=lambda n: n["valor"])] == \
            [(n["valor"], n["x"], n["y"]) for n in sorted(b, key=lambda n: n["valor"])]
 
-    # Los dos ficheros comparten anillo (misma distancia al centro) y la cuenta no.
-    radios = {n["valor"]: round(((n["x"] - 500) ** 2 + (n["y"] - 350) ** 2) ** 0.5, 1)
+    # Los dos ficheros comparten anillo y la cuenta no. El anillo es una ELIPSE,
+    # así que «mismo anillo» no es «misma distancia al centro» salvo por simetría:
+    # dos nodos opuestos en el arco sí la comparten, que es este caso.
+    cx = figura["lienzo"]["ancho"] / 2
+    cy = figura["lienzo"]["alto"] / 2
+    radios = {n["valor"]: round(((n["x"] - cx) ** 2 + (n["y"] - cy) ** 2) ** 0.5, 1)
               for n in a}
     assert radios["a.exe"] == radios["b.exe"]
     assert radios["IEUser"] != radios["a.exe"]

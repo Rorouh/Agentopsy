@@ -2535,7 +2535,33 @@ select option:disabled { color: var(--ink-5); }
 .graph-parte-fallo { display: flex; flex-direction: column; gap: 2px; }
 .graph-parte-motivo { color: var(--ink-3); font-size: var(--fs-1); }
 .graph-figure { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
-.graph-figure > svg { flex: 1 1 620px; min-width: 0; border: 1px solid var(--hair); }
+
+/* ── Visor del grafo: acercar, alejar y mover ─────────────────────────────
+   La transformación vive en `.graph-viewport-canvas`, NO dentro del `svg`: lo
+   que se exporta a PNG es la geometría calculada por el backend, no el encuadre
+   en el que el perito dejara la vista. */
+.graph-viewport { flex: 1 1 620px; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.graph-viewport-tools { display: flex; align-items: center; gap: 10px; }
+.graph-viewport-level { font-size: var(--fs-1); color: var(--ink-3); min-width: 52px; }
+.graph-viewport-tools .action-outline {
+  padding: 6px 12px;
+  letter-spacing: 0.06em;
+}
+.graph-viewport-frame {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--hair);
+  /* Alto fijo: el visor es una VENTANA sobre un lienzo que puede ser mucho
+     mayor. Sin tope, la página crecía con la figura y el zoom no servía de
+     nada porque no había nada que recortar. */
+  height: 620px;
+  cursor: grab;
+  touch-action: none;
+}
+.graph-viewport-frame.is-dragging { cursor: grabbing; }
+.graph-viewport-canvas { width: 100%; }
+.graph-viewport-canvas > svg { display: block; width: 100%; height: auto; }
+.graph-viewport-hint { margin: 0; font-size: var(--fs-1); color: var(--ink-3); }
 .graph-card {
   flex: 0 1 300px;
   min-width: 240px;

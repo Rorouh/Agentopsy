@@ -11,6 +11,7 @@ import type {
 } from "../../api/types";
 import { exportRailPng } from "../timeline/IncidentRail";
 import { useThemePalette } from "../timeline/themePalette";
+import { GraphViewport } from "./GraphViewport";
 import { RelationGraph } from "./RelationGraph";
 import { claveNodo, claveRelacion } from "./vocabulario";
 import { useLang } from "../../i18n";
@@ -399,8 +400,23 @@ export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
 
       {error && <div className="inline-note">{error}</div>}
 
+      {/* Lo que el layout tuvo que hacer para que la figura cupiera. Una figura
+          ampliada o con solapes corregidos no es lo mismo que una que salió a la
+          primera, y quien la lleva a un informe tiene derecho a saberlo
+          (RULE 2: nada se comprime en silencio). */}
+      {(activo?.notas_layout ?? []).map((n, i) => (
+        <div className="inline-note" key={`nota-${i}`}>
+          {n.codigo === "lienzo_ampliado"
+            ? t("graph.layoutEnlarged", { width: n.ancho ?? 0, height: n.alto ?? 0 })
+            : t("graph.layoutRelaxed", { count: n.pares ?? 0 })}
+        </div>
+      ))}
+
       {activo ? (
         <div className="graph-figure">
+          <GraphViewport
+            encuadreDe={vista.tipo === "caso" ? "caso" : vista.findingId}
+          >
           <RelationGraph
             ref={svgRef}
             titulo={t(vista.tipo === "caso" ? "graph.caseTitle" : "graph.findingTitle")}
@@ -426,6 +442,7 @@ export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
             seleccionado={nodo}
             onSeleccionar={setNodo}
           />
+          </GraphViewport>
 
           {/* La ficha del nodo. Su mitad de arriba es PROPUESTA del modelo y su
               mitad de abajo es dato VERIFICADO del hallazgo: van separadas
