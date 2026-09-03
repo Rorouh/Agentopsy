@@ -406,7 +406,9 @@ with a type-the-name confirm) lives in the shell's dialogs, reachable from any v
 `ActiveCaseProvider` is now the single store of the case list. The mock is the
 authoritative source of FORM; what it omits and the product keeps —async-register progress
 bar, case delete confirmation, the ATT&CK «descartada» state, pagination and the OS-profile
-mismatch banner— is justified in `plan-migracion.md` §5. The SPA talks to the api
+mismatch banner— is justified in the design history
+(`docs/diseno/rediseno-2026-07/plan-migracion.md` section 5, on `main`: this branch
+dropped the whole `docs/` tree in dc2dad7). The SPA talks to the api
 through
 `web/src/api/client.ts` (token from `GET /api/session`, memory-only), carries the
 executor selector (cloud-egress consent removed 2026-07-16 — the cloud warning now
@@ -469,8 +471,8 @@ longer restarts it from zero. **MITRE ATT&CK is wired end to end (2026-07-14)**
 (`backend/forensia/mitre/`): `record_finding` now accepts the `mitre_hints` the
 package prompts had been prescribing all along (the engine's `additionalProperties:
 false` was silently blocking them), validated server-side against a **closed enum
-parsed from `agentes/_orchestrator/knowledge/mitre_attack_seed.md`** — the same seed
-`mitre.md` authorises, never a second hand-typed list. **The matrix now paints the
+parsed from `agentes/_orchestrator/knowledge/mitre_attack_seed.md`**, which is the
+ONLY authority for it, never a second hand-typed list. **The matrix now paints the
 FULL ATT&CK Enterprise catalog** (2026-07-15, `forensia/mitre/enterprise.json`,
 ~240 parent techniques, shipped with the api image — RULE 1), a SECOND axis from
 the seed: the seed is the closed enum the AGENT may propose (anti-hallucination);
@@ -542,7 +544,8 @@ real code: **0,5491 → 0,1150 USD, −79,1 %**, `cache_read` growing 38.133 →
 48.500, `cache_creation` collapsed to ~1.500. Counter-intuitive but important:
 input TOKENS rise 13,5 % while cost falls 79 % (the session keeps the full
 history, but reads it at 0,1× instead of rewriting at 2×) — **counting tokens no
-longer measures cost**. `fase-turnos.md` shows windowing does not merely break
+longer measures cost**. The turn analysis
+(`docs/diseno/tokens-2026-07/fase-turnos.md`, on `main`) shows windowing does not merely break
 the cache but **manufactures turns** (32 of 71 calls were `leer_artefacto` and
 all 32 targeted a result the window had elided; one artifact was re-read 16
 times; 12 of 21 productive turns did nothing else ≈ 42 % of the run's input), and

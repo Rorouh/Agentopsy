@@ -1,9 +1,13 @@
 """The curated maletín. Each entry is a closed-enum Tool the agent may select.
 
-Tiers (see `docs/maletin/inventario-tools.md` — "Kit primeros 30 minutos"):
-- `core`: the 13-tool kit needed for a fast post-mortem. Required for the MVP.
+Tiers (the "kit primeros 30 minutos"; the exact core membership is pinned by
+`tests/test_catalog_integrity.py::test_core_tier_matches_expected_kit`):
+- `core`: the kit needed for a fast post-mortem. Required for the MVP.
 - `extended`: additional tools that ride along once the core is stable (Plaso, hashing,
   carving extras, mount helpers).
+
+Every tool here, and every binary the maletines carry WITHOUT exposing, is documented in
+`docker/docs/CATALOGO_MALETIN.md` (one invocation example per tool + pinned versions).
 
 Delivery (CLAUDE.md RULE 1): each tool declares the compose maletín image(s) that
 physically carry its binary via `toolkits=` — `toolkit-unix` / `toolkit-windows`. Tools
@@ -14,8 +18,8 @@ hayabusa, chainsaw, the Eric Zimmerman .NET tools) live only in `toolkit-windows
 RULE 2 forbids resolving a tool against any maletín it does not declare here.
 
 The legacy per-host-OS `delivery` + `container_image` fields are retained for the
-not-yet-realigned dispatcher execution path; unifying execution onto the maletines is
-tracked in `docs/operacion/proximos-pasos.md` §A/§B.
+not-yet-realigned dispatcher execution path; dropping them is the last item of the
+"Remaining" list in CLAUDE.md, section Status.
 """
 
 from __future__ import annotations
@@ -177,6 +181,66 @@ _NBD_DEVICE = PathParameter(
     bundled=(BundledPath("nbd0", "/dev/nbd0"),),
 )
 
+# =============================================================================
+# INSTALADO EN EL MALETÍN Y FUERA DEL CATÁLOGO, A PROPÓSITO
+# =============================================================================
+# Las imágenes traen bastantes más binarios de los que el catálogo expone. Un
+# binario que está en el maletín y no aquí NO es un olvido: cada uno tiene un
+# motivo, y están escritos para que quien audite el maletín encuentre la razón
+# sin reabrir el debate ni exponerlos por error. Auditoría 2026-09-03, hecha
+# contra las imágenes construidas, no contra el Dockerfile.
+#
+# Violan el invariante forense 3 (montar el sistema de ficheros de la evidencia):
+#   guestmount          Monta el FS de la imagen. El invariante 3 exige leer la
+#                       imagen SIN montarla (TSK/Volatility); `mount -o ro` no
+#                       basta, el replay del journal escribe en la imagen.
+#   guestfish, virt-*   Peor que guestmount: `virt-copy-in`, `virt-customize` y
+#                       `virt-sysprep` ESCRIBEN en la imagen. Los arrastra
+#                       `libguestfs-tools` sin que nadie los pidiera; quedan
+#                       fuera por escrito, no por olvido.
+#
+# Son el mecanismo interno de Agentopsy, no herramientas del agente:
+#   ewfmount            Lo usa `forensia.triage_deep` por el exec-agent para
+#   qemu-storage-daemon abrir un contenedor en RO a nivel de BLOQUE. Exponerlos
+#                       daría al modelo una vía de abrir la imagen fuera del
+#                       control de `EvidenceManager` (invariante forense 1).
+#   sha256sum           El hash-gate lo hace `EvidenceManager` en proceso; el
+#                       hash de un artefacto lo pone el artifact-store.
+#
+# Redundan con una tool que ya está en el catálogo (RULE 2: dos caminos para el
+# mismo artefacto es justo lo que no queremos que el modelo tenga que elegir):
+#   evtx_dump           EVTX -> `evtxecmd` (EvtxECmd, además aplica sus Maps/).
+#   lnkparse            .lnk -> `lecmd` (LECmd).
+#   regipy-*            Hives -> `recmd` (RECmd) y `regripper`.
+#   md5deep, sha1deep,  Hashing recursivo -> `hashdeep`, que es el mismo binario
+#   sha256deep, ...     de md5deep con otro nombre.
+#   psteal.py           log2timeline + psort en un paso -> ya cubierto por
+#                       `plaso_log2timeline` + `plaso_psort`, y más controlable.
+#
+# No se pueden ejecutar por el canal del exec-agent (argv sin shell, INVARIANTE
+# DE SEGURIDAD 4: no hay tuberías ni redirecciones):
+#   bstrings            En Linux solo procesa por stdin (`cat f | bstrings`);
+#                       sus modos -f/-d no procesan en no-Windows en el build
+#                       2026.5.0. Es de uso manual desde el maletín.
+#
+# Utilidad de operador, interactivas o sin valor pericial propio:
+#   rg, less, lnav      Búsqueda y navegación de logs a mano.
+#   journalctl          Journals exportados; se leen a mano o vía plaso.
+#   qemu-img, dumpe2fs, Inspección de contenedor y de sistema de ficheros a mano.
+#   debugfs, xfs_db
+#   volshell, yarac     Shell interactiva de Volatility y compilador de reglas.
+#
+# Candidatas RECONOCIDAS y todavía no expuestas (no son exclusiones, son deuda):
+#   fsstat              Tipo de FS, tamaño de sector y clúster, número de serie
+#                       del volumen y última vez montado. (La zona horaria del
+#                       sistema investigado NO sale de aquí: sale del hive
+#                       SYSTEM, TimeZoneInformation, que ya cubre `regripper`.)
+#   ewfverify           Verifica el hash interno del EWF contra el que escribió
+#                       quien adquirió: una afirmación de custodia citable que
+#                       Agentopsy no puede producir por otra vía.
+#   ntfsundelete,       Borrados y anti-forense.
+#   usnjls, ils
+# =============================================================================
 CATALOG: tuple[Tool, ...] = (
     # ====== CORE TIER — kit "primeros 30 minutos" ======
 
