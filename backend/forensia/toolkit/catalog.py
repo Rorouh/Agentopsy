@@ -79,6 +79,9 @@ from forensia.toolkit.wrappers import (
     hayabusa as _hayabusa,
 )
 from forensia.toolkit.wrappers import (
+    hindsight as _hindsight,
+)
+from forensia.toolkit.wrappers import (
     jlecmd as _jlecmd,
 )
 from forensia.toolkit.wrappers import (
@@ -779,6 +782,29 @@ CATALOG: tuple[Tool, ...] = (
         allowed_flags=_wxtcmd.ALLOWED_FLAGS,
         build_argv=_wxtcmd.build_argv,
         parse=_wxtcmd.parse,
+    ),
+    # --- Artefactos de navegador (pyhindsight, Python, maletín windows) ---
+    #     La ÚNICA tool de navegador del catálogo: el ejemplo canónico del encargo
+    #     («toda la navegación web del usuario entre dos fechas») no tenía ninguna.
+    #     Consume el DIRECTORIO de perfil, así que su ruta es DERIVED_INPUT y solo
+    #     eso: llega como ArtifactRef del `tsk_recover` que lo extrajo, y el
+    #     dispatcher lo re-hashea entero antes de ejecutar. Nunca una ruta libre.
+    #     El envoltorio fija además `-l` y `--temp_dir`, que por defecto escriben
+    #     junto al propio script, fuera del caso.
+    Tool(
+        "hindsight",
+        "hindsight.py",
+        ("windows",),
+        returns="artifact",
+        toolkits=_WINDOWS,
+        input_artifact_params=("profile_dir",),
+        path_parameters=(
+            _path("profile_dir", _D, PathKind.DIRECTORY),
+            _OUTPUT_DIR,
+        ),
+        allowed_flags=_hindsight.ALLOWED_FLAGS,
+        build_argv=_hindsight.build_argv,
+        parse=_hindsight.parse,
     ),
     Tool(
         "rbcmd",

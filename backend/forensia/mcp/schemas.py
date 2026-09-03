@@ -306,6 +306,38 @@ class PlasoPsortParams(_StrictModel):
     )
 
 
+class HindsightParams(_StrictModel):
+    """``hindsight.py`` — browser artifacts from a pre-extracted profile directory.
+
+    ``profile_dir`` is ONLY an ``ArtifactRef``: hindsight consumes a directory, and the
+    directory it consumes is the one ``tsk_recover`` extracted, never a free path. The
+    dispatcher resolves it and re-hashes the WHOLE subtree before the run.
+
+    The log path and the temp directory are NOT parameters: the wrapper pins both into
+    the run's ``out/`` because hindsight would otherwise write them next to its own
+    script, outside the case.
+    """
+
+    profile_dir: ArtifactRef
+    output_format: Literal["sqlite", "jsonl", "xlsx"] = Field(
+        default="sqlite",
+        description=(
+            "Dataset format. sqlite is the default and the one that carries the "
+            "browsing history: the jsonl writer was measured dropping it. xlsx is "
+            "for an annex."
+        ),
+    )
+    browser_type: Optional[
+        Literal["Chrome", "Edge", "Brave", "Vivaldi", "Firefox", "Tor"]
+    ] = Field(
+        default=None,
+        description=(
+            "Force the browser instead of letting hindsight detect each profile "
+            "from its files. Omit unless detection got it wrong."
+        ),
+    )
+
+
 class TskMactimeParams(_StrictModel):
     """``mactime`` — turn a body file (from `tsk_fls -m`) into a timeline."""
 
@@ -784,6 +816,9 @@ SCHEMA_BY_TOOL: dict[str, type[BaseModel]] = {
     "sbecmd": SBECmdParams,
     "wxtcmd": WxTCmdParams,
     "rbcmd": RBCmdParams,
+    # Artefactos de navegador (2026-09-03): estaba en el maletín desde el principio
+    # y fuera del catálogo, así que no había NINGUNA tool de navegador.
+    "hindsight": HindsightParams,
 }
 
 
@@ -814,6 +849,7 @@ __all__ = [
     "SBECmdParams",
     "WxTCmdParams",
     "RBCmdParams",
+    "HindsightParams",
     "RegRipperParams",
     "YaraParams",
     "JqParams",

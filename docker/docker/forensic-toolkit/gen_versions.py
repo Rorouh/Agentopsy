@@ -149,6 +149,10 @@ def resolve_version(binary: str, env: dict[str, str], ez: dict[str, str]) -> str
     """UNA fuente designada por binario (sin fallback entre fuentes distintas)."""
     if binary == "vol":
         return _pip_version("volatility3")
+    if binary == "hindsight.py":
+        # pyhindsight se instala por pip (requirements-windows.txt) y no lo conoce
+        # dpkg, así que su fuente designada es la metadata del paquete.
+        return _pip_version("pyhindsight")
     if binary == "ftkimager":
         return _recorded_file_version(FTKIMAGER_VERSION_FILE)
     if binary == "aff4imager":

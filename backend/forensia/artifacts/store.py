@@ -434,6 +434,86 @@ class ArtifactStore:
             )
         return target, sha256, size
 
+    def resolve_output_dir(
+        self, case_id: str, run_id: str, relpath: str
+    ) -> tuple[Path, str, int]:
+        """Resolve one output DIRECTORY of a run, re-hashing every file beneath it.
+
+        The sibling of ``resolve_output_file`` for a tool that consumes a FOLDER rather
+        than a file (``hindsight`` and a browser profile; ``tsk_recover`` is what
+        produces one). The manifest is file-granular, so a directory is not an entry in
+        it: it is the common prefix of one or more entries, and the custody gate has to
+        cover the WHOLE subtree, not a representative file.
+
+        Same confinement as the file variant (rejects absolute / ``..`` / symlink
+        escape), then re-computes the chunked SHA-256 of every manifest entry under the
+        prefix and compares each one. Returns ``(resolved_path, tree_sha256, total_size)``.
+
+        ``tree_sha256`` is a digest OF THE SUBTREE, not of any file: the SHA-256 of the
+        manifest entries sorted by relpath, one ``"<relpath>\0<sha256>\n"`` line each.
+        It is deterministic, it changes if any file changes, is added or is removed, and
+        it is what travels into the audit as the derived input's digest so a third party
+        can tell exactly which tree was consumed (FORENSIC INVARIANT 4).
+
+        Raises ``ValueError`` if ``relpath`` is not a confined relative path, ``KeyError``
+        if the run is unknown or no manifest entry lives under the prefix (or a file is
+        gone from disk), and ``ArtifactIntegrityError`` if any file no longer matches.
+        """
+        if not isinstance(relpath, str) or not relpath:
+            raise ValueError("relpath must be a non-empty string")
+        rel = PurePosixPath(relpath)
+        if rel.is_absolute() or ".." in rel.parts:
+            raise ValueError(
+                f"relpath must be relative and must not escape out/: {relpath!r}"
+            )
+        run = self.get_run(case_id, run_id)  # KeyError if unknown; validates the UUID
+        prefix = relpath.rstrip("/") + "/"
+        members = sorted(
+            (of for of in run.output_files if of.relpath.startswith(prefix)),
+            key=lambda of: of.relpath,
+        )
+        if not members:
+            raise KeyError(
+                f"run {run_id} for case {case_id} produced no output directory "
+                f"{relpath!r} (outputs: {[of.relpath for of in run.output_files]})"
+            )
+        out_dir = (self._run_dir(case_id, run_id) / "out").resolve()
+        target = (out_dir / rel).resolve()
+        # Defence in depth: the real path must live under out/ (no symlink escape).
+        if target != out_dir and out_dir not in target.parents:
+            raise ValueError(f"resolved artifact path escapes out/: {relpath!r}")
+        if not target.is_dir():
+            raise KeyError(
+                f"artifact directory {relpath!r} of run {run_id} is missing on disk"
+            )
+
+        tree = hashlib.sha256()
+        total_size = 0
+        for member in members:
+            member_path = (out_dir / PurePosixPath(member.relpath)).resolve()
+            if out_dir not in member_path.parents:
+                raise ValueError(
+                    f"resolved artifact path escapes out/: {member.relpath!r}"
+                )
+            if not member_path.is_file():
+                raise KeyError(
+                    f"artifact file {member.relpath!r} of run {run_id} is missing "
+                    "on disk"
+                )
+            sha256, size = _hash_file(member_path)
+            if sha256 != member.sha256:
+                raise ArtifactIntegrityError(
+                    f"derived artifact {member.relpath!r} of run {run_id} no longer "
+                    f"matches its manifest SHA-256 (expected {member.sha256}, got "
+                    f"{sha256})"
+                )
+            tree.update(member.relpath.encode("utf-8"))
+            tree.update(b"\0")
+            tree.update(sha256.encode("ascii"))
+            tree.update(b"\n")
+            total_size += size
+        return target, tree.hexdigest(), total_size
+
     def list_runs(self, case_id: str) -> list[ArtifactRun]:
         """Return every run with a manifest, sorted by ``started_at`` descending."""
         runs_dir = self._runs_dir(case_id)

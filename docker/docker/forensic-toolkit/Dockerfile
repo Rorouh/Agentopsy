@@ -375,6 +375,28 @@ RUN pip3 install --no-cache-dir -r /tmp/requirements-windows.txt \
  # pyhindsight instala hindsight.py como script de datos sin bit +x (defecto del paquete)
  && chmod +x /usr/local/bin/hindsight.py
 
+# --- datetime.UTC en Python 3.10: pyhindsight no arranca sin esto ----------------
+# pyhindsight 2026.06 usa `datetime.UTC` en 11 sitios, y esa constante existe a
+# partir de Python 3.11; la base es Ubuntu 22.04, que trae 3.10. El paquete declara
+# `requires-python >=3.9`, así que pip lo instala tan tranquilo y REVIENTA al fechar
+# el primer registro ("AttributeError: module 'datetime' has no attribute 'UTC'",
+# medido el 2026-09-03 sobre un perfil real): la herramienta no parsea NI UNA fila
+# de navegación, mientras `--help` responde y `capabilities` la da por disponible.
+#
+# No es un parche de comportamiento: en CPython `datetime.UTC` ES `datetime.timezone.utc`
+# (mismo objeto, `is` devuelve True), así que esto repone el alias que 3.11 añadió y
+# nada más. Va condicionado, de modo que en una base con 3.11+ es un no-op.
+#
+# El mecanismo es un `.pth` y no un `sitecustomize.py`: Ubuntu YA trae el suyo en
+# /usr/lib/python3.10/sitecustomize.py (el hook de apport), que gana la carrera del
+# import y dejaría el nuestro muerto sin avisar. Python ejecuta las líneas `import`
+# de un .pth al inicializar `site`, sin colisionar con nada.
+RUN printf '%s\n' \
+      'import datetime; datetime.UTC = getattr(datetime, "UTC", datetime.timezone.utc)' \
+      > /usr/local/lib/python3.10/dist-packages/zzz_forensia_datetime_utc.pth \
+ && python3 -c 'import datetime, sys; sys.exit(0 if datetime.UTC is datetime.timezone.utc else 1)' \
+ && echo "datetime.UTC repuesto para pyhindsight"
+
 # --- evtx_dump: wrapper vendorizado sobre python-evtx -------------------------
 # El wheel de PyPI de python-evtx (0.8.1) declara sus console_scripts contra un
 # paquete `scripts.*` que NO se incluye en el wheel: todos los entrypoints

@@ -40,6 +40,8 @@ from forensia.cases.manager import case_manager
 from forensia.evidence import evidence_manager
 from forensia.evidence_context import EvidenceContext
 from forensia.path_policy import (
+    PathKind,
+    PathParameter,
     PathPolicyError,
     PathRole,
     generated_run_output,
@@ -546,7 +548,7 @@ def _gate_path_parameters(
                 )
             ref = validate_artifact_ref(value)
             links.append(
-                _resolve_artifact_ref(spec.name, ref, case_id, params, evidence_context)
+                _resolve_artifact_ref(spec, ref, case_id, params, evidence_context)
             )
             continue
         if isinstance(value, dict):
@@ -634,13 +636,43 @@ def _gate_path_parameters(
     return links
 
 
+def _resolve_output_of_kind(
+    spec: PathParameter, case_id: str, ref: dict[str, Any]
+) -> tuple[Any, str, int]:
+    """Resolve the ref against the artifact store as a FILE or as a DIRECTORY.
+
+    Which one is decided by the kind the catalog DECLARES for the parameter, never by
+    trying one and falling back to the other (RULE 2). ``FILE_OR_DIRECTORY`` is the one
+    case with a genuine choice, and it is still resolved deterministically FROM THE
+    MANIFEST: an entry with exactly that relpath is a file, entries under it as a prefix
+    are a directory, and neither is an error naming both.
+    """
+    run_id, relpath = ref["run_id"], ref["relpath"]
+    if spec.kind is PathKind.DIRECTORY:
+        return artifact_store.resolve_output_dir(case_id, run_id, relpath)
+    if spec.kind is PathKind.FILE:
+        return artifact_store.resolve_output_file(case_id, run_id, relpath)
+
+    producer = artifact_store.get_run(case_id, run_id)
+    names = [of.relpath for of in producer.output_files]
+    if relpath in names:
+        return artifact_store.resolve_output_file(case_id, run_id, relpath)
+    if any(name.startswith(relpath.rstrip("/") + "/") for name in names):
+        return artifact_store.resolve_output_dir(case_id, run_id, relpath)
+    raise KeyError(
+        f"run {run_id} for case {case_id} produced neither an output file nor an "
+        f"output directory {relpath!r} (outputs: {names})"
+    )
+
+
 def _resolve_artifact_ref(
-    name: str,
+    spec: PathParameter,
     ref: dict[str, Any],
     case_id: str,
     params: dict[str, Any],
     evidence_context: EvidenceContext | None,
 ) -> dict[str, Any]:
+    name = spec.name
     # MANIFEST-LEVEL GATES FIRST (deterministic by run_id), before touching any bytes.
     try:
         producer = artifact_store.get_run(case_id, ref["run_id"])
@@ -715,9 +747,7 @@ def _resolve_artifact_ref(
     # Only now touch the bytes: confine under the producer's out/ and RE-HASH against
     # the digest its (successfully closed) manifest recorded (INVARIANTS 1-2).
     try:
-        path, sha256, size = artifact_store.resolve_output_file(
-            case_id, ref["run_id"], ref["relpath"]
-        )
+        path, sha256, size = _resolve_output_of_kind(spec, case_id, ref)
     except ArtifactIntegrityError as exc:
         raise ToolExecutionError(
             f"input derivado para {name!r}: {exc}, custodia rota; no se ejecuta"

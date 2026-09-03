@@ -41,6 +41,7 @@
     "appcompatcacheparser",
     "sbecmd",
     "wxtcmd",
-    "rbcmd"
+    "rbcmd",
+    "hindsight.py"
   ]
 }

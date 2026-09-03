@@ -33,6 +33,7 @@ from forensia.toolkit.wrappers import (
     ftkimager,
     hashdeep,
     hayabusa,
+    hindsight,
     jlecmd,
     jq,
     lecmd,
@@ -1661,6 +1662,224 @@ class TestQemuNbd:
 
     def test_parse_returns_note(self):
         out = qemu_nbd.parse("")
+        assert "note" in out
+
+
+# --------------------------------------------------------------------------- #
+# hindsight (artefactos de navegador; maletin windows)
+# --------------------------------------------------------------------------- #
+#: Parte de cierre REAL de hindsight 2026.06, capturado de la corrida sobre el perfil
+#: Firefox de 2020JimmyWilson.E01 (2026-09-03). Se conserva literal, con su dibujo de
+#: caja, su alineación a la derecha y el CORTE de las rutas largas en varias líneas,
+#: porque es exactamente lo que el parser tiene que saber leer.
+_HINDSIGHT_STDOUT = """
+────────────────────────────────── Processing ──────────────────────────────────
+      Start time  2026-09-03 20:59:49.860
+ Input directory  /cases/cases/dafc9846-db11-4806-b205-350dfd673db3/artifacts/8
+                  7ba30ea-c089-481a-8328-2b9e37816737/out/recovered
+  Profiles found  1
+    Browser type  Firefox (forced via -b)
+
+╭────────────────────────────────── Profile ───────────────────────────────────╮
+│   Path:                                                                      │
+│   /cases/cases/dafc9846-db11-4806-b205-350dfd673db3/artifacts/87ba30ea-c08   │
+│   9-481a-8328-2b9e37816737/out/recovered                                     │
+│   Detected Browser: Firefox vplaces schema v23                               │
+╰──────────────────────────────────────────────────────────────────────────────╯
+              User Activity                             Count
+                                      URL records    [      16 ]
+                                 Download records    [       0 ]
+                                 Bookmark records    [      13 ]
+                          Bookmark backup records    [       0 ]
+
+              Website Storage                           Count
+                                   Cookie records    [       0 ]
+
+              Browser Extensions                        Count
+                             Installed Extensions    [       1 ]
+
+              Configuration & Supporting Data           Count
+                                 Preference items    [     109 ]
+                               Permission records    [       0 ]
+─────────────────────────────── Running Plugins ────────────────────────────────
+
+           Chrome Extension Names (v20240428):   - 0 extension URLs parsed -
+                  Google Searches (v20160912):      - 3 searches parsed -
+──────────────────────────────── Writing Output ────────────────────────────────
+          Format  SQLITE
+     Total items  29
+    Elapsed time  0:00:00
+"""
+
+
+class TestHindsight:
+    def test_build_argv_minimum_valid(self):
+        argv = hindsight.build_argv(
+            {"profile_dir": "/cases/run/out/Default", "output_dir": "/cases/run/out"}
+        )
+        assert argv == [
+            "-i", "/cases/run/out/Default",
+            "-o", "/cases/run/out/navegacion",
+            "-f", "sqlite",
+            "-l", "/cases/run/out/hindsight.log",
+            "--temp_dir", "/cases/run/out/hindsight-temp",
+        ]
+
+    def test_log_and_temp_dir_are_pinned_inside_the_run(self):
+        """Sin `-l` y `--temp_dir` hindsight escribe junto a su propio script.
+
+        Medido en el maletín el 2026-09-03: el log sale en
+        `/usr/local/bin/hindsight.log` y la copia de trabajo del perfil en
+        `/usr/local/bin/hindsight-temp`, o sea fuera del caso, fuera del log
+        encadenado y en una ruta que el artifact-store no hashea nunca. Los dos
+        los fija el envoltorio, no son parámetros.
+        """
+        argv = hindsight.build_argv({"profile_dir": "/p/Default", "output_dir": "/o"})
+        assert argv[argv.index("-l") + 1] == "/o/hindsight.log"
+        assert argv[argv.index("--temp_dir") + 1] == "/o/hindsight-temp"
+
+    def test_output_basename_carries_no_extension(self):
+        """`-o` recibe el nombre SIN extensión: hindsight le añade la de `-f`."""
+        argv = hindsight.build_argv(
+            {"profile_dir": "/p", "output_dir": "/o", "output_format": "jsonl"}
+        )
+        assert argv[argv.index("-o") + 1] == "/o/navegacion"
+        assert argv[argv.index("-f") + 1] == "jsonl"
+
+    def test_default_format_is_the_one_that_carries_the_history(self):
+        """Medido sobre el perfil Firefox real de 2020JimmyWilson.E01: el escritor
+        jsonl emitió 123 filas y NINGUNA era de navegación, mientras que el sqlite
+        traía las 16 URLs visitadas con su marca de tiempo en la tabla `timeline`.
+        Con jsonl por defecto la herramienta parecería funcionar y tiraría justo lo
+        que existe para producir."""
+        argv = hindsight.build_argv({"profile_dir": "/p", "output_dir": "/o"})
+        assert argv[argv.index("-f") + 1] == "sqlite"
+
+    def test_build_argv_forces_a_browser(self):
+        argv = hindsight.build_argv(
+            {"profile_dir": "/p", "output_dir": "/o", "browser_type": "Edge"}
+        )
+        assert argv[-2:] == ["-b", "Edge"]
+
+    def test_build_argv_missing_profile_dir_raises(self):
+        with pytest.raises(ValueError, match="profile_dir"):
+            hindsight.build_argv({"output_dir": "/o"})
+
+    def test_build_argv_missing_output_dir_raises(self):
+        with pytest.raises(ValueError, match="output_dir"):
+            hindsight.build_argv({"profile_dir": "/p"})
+
+    def test_build_argv_bad_format_raises(self):
+        with pytest.raises(ValueError, match="output_format"):
+            hindsight.build_argv(
+                {"profile_dir": "/p", "output_dir": "/o", "output_format": "csv"}
+            )
+
+    def test_build_argv_bad_browser_raises(self):
+        with pytest.raises(ValueError, match="browser_type"):
+            hindsight.build_argv(
+                {"profile_dir": "/p", "output_dir": "/o", "browser_type": "Netscape"}
+            )
+
+    def test_build_argv_non_string_profile_dir_raises(self):
+        with pytest.raises(ValueError, match="profile_dir"):
+            hindsight.build_argv({"profile_dir": 42, "output_dir": "/o"})
+
+    @pytest.mark.parametrize(
+        "flag",
+        [
+            # Apaga la copia protectora: abrir la SQLite en su sitio puede reproducir
+            # su WAL y ESCRIBIR en el artefacto que el dispatcher acaba de re-hashear.
+            "--nocopy",
+            "--no_copy",
+            # Su propia ayuda llama «buggy» a los dos modos, y solo tienen sentido
+            # ejecutando en la misma máquina de la que salieron los datos.
+            "-d",
+            "--decrypt",
+            # Solo mueve las marcas de DISPLAY del xlsx: invita a una conversión
+            # equivocada de `observed_at` que no se ve desde el artefacto.
+            "-t",
+            "--timezone",
+            # La caché vive dentro del perfil; una ruta más es superficie de más.
+            "-c",
+            "--cache",
+        ],
+    )
+    def test_flag_left_out_on_purpose_is_not_allowed(self, flag):
+        assert flag not in hindsight.ALLOWED_FLAGS
+
+    def test_every_flag_the_wrapper_emits_is_allowed(self):
+        argv = hindsight.build_argv(
+            {
+                "profile_dir": "/p",
+                "output_dir": "/o",
+                "output_format": "xlsx",
+                "browser_type": "Brave",
+            }
+        )
+        emitted = {token for token in argv if token.startswith("-")}
+        assert emitted <= hindsight.ALLOWED_FLAGS, emitted - hindsight.ALLOWED_FLAGS
+
+    def test_parse_real_report(self):
+        out = hindsight.parse(_HINDSIGHT_STDOUT)
+        assert out["summary"]["profiles_found"] == "1"
+        assert out["summary"]["total_items"] == "29"
+        assert out["summary"]["format"] == "SQLITE"
+        assert out["artifacts"]["URL records"] == "16"
+        assert out["artifacts"]["Bookmark records"] == "13"
+        assert out["artifacts_failed"] == []
+        assert {p["name"] for p in out["plugins"]} == {
+            "Chrome Extension Names",
+            "Google Searches",
+        }
+
+    def test_section_headers_are_not_counted_as_artifacts(self):
+        """Las cuentas van agrupadas en secciones, y una cabecera de sección es una
+        fila cuyo valor es el literal `Count`. Sin esa regla, «Website Storage»,
+        «Browser Extensions» y «Configuration & Supporting Data» entran en las
+        cuentas como artefactos llamados «Count», y eso es lo que leería el modelo."""
+        out = hindsight.parse(_HINDSIGHT_STDOUT)
+        assert "Count" not in out["artifacts"].values()
+        for header in ("Website Storage", "Browser Extensions"):
+            assert header not in out["artifacts"]
+        assert out["artifacts_by_section"]["User Activity"] == [
+            "URL records",
+            "Download records",
+            "Bookmark records",
+            "Bookmark backup records",
+        ]
+        assert out["artifacts_by_section"]["Website Storage"] == ["Cookie records"]
+
+    def test_a_wrapped_path_is_joined_instead_of_read_as_empty(self):
+        """El panel parte los valores largos en varias líneas, y las rutas de
+        Agentopsy son largas (van dentro del `out/` del run), así que la del perfil
+        llega cortada en tres. Leída línea a línea sale «Path:» y nada más."""
+        out = hindsight.parse(_HINDSIGHT_STDOUT)
+        assert out["profiles"] == [
+            "Path:/cases/cases/dafc9846-db11-4806-b205-350dfd673db3/artifacts/"
+            "87ba30ea-c089-481a-8328-2b9e37816737/out/recovered",
+            "Detected Browser: Firefox vplaces schema v23",
+        ]
+
+    def test_output_path_is_not_reported(self):
+        """Es el campo que SIEMPRE se parte, y una ruta truncada presentada como
+        entera engaña. La exacta ya está en los `output_files` del run."""
+        assert "output_path" not in hindsight.parse(_HINDSIGHT_STDOUT)["summary"]
+
+    def test_parse_reports_a_failed_artifact_instead_of_zero(self):
+        """`[ Failed ]` es hindsight diciendo que la base no encajó con ninguna
+        versión de esquema que conozca. Contarlo como cero afirmaría que el
+        usuario no navegó, que es un hecho distinto y falso."""
+        stdout = _HINDSIGHT_STDOUT.replace("URL records    [      16 ]",
+                                           "URL records    [  Failed ]")
+        out = hindsight.parse(stdout)
+        assert out["artifacts_failed"] == ["URL records"]
+        assert out["artifacts"]["URL records"] == "Failed"
+
+    def test_parse_empty(self):
+        out = hindsight.parse("")
+        assert out["summary"] == {}
+        assert out["artifacts_failed"] == []
         assert "note" in out
 
 

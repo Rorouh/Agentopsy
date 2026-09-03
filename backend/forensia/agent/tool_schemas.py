@@ -367,6 +367,43 @@ TOOL_PARAM_SCHEMAS: dict[str, dict[str, Any]] = {
         },
         "additionalProperties": False,
     },
+    "hindsight": {
+        "type": "object",
+        "properties": {
+            "profile_dir": {
+                **artifact_ref_json_schema(),
+                "description": (
+                    "{run_id, relpath} reference to the browser PROFILE DIRECTORY a "
+                    "previous tsk_recover run extracted (for Chrome, "
+                    "'.../AppData/Local/Google/Chrome/User Data/Default'; for "
+                    "Firefox, '.../AppData/Roaming/Mozilla/Firefox/Profiles/<id>'). "
+                    "Point it at the profile itself; given a parent directory "
+                    "hindsight recurses and reports every profile under it. A free "
+                    "path is NOT accepted."
+                ),
+            },
+            "output_format": {
+                "type": "string",
+                "enum": ["sqlite", "jsonl", "xlsx"],
+                "default": "sqlite",
+                "description": (
+                    "Dataset format. Keep the default: the visited URLs live in the "
+                    "`timeline` table of the sqlite output, and the jsonl writer was "
+                    "measured dropping them."
+                ),
+            },
+            "browser_type": {
+                "type": "string",
+                "enum": ["Chrome", "Edge", "Brave", "Vivaldi", "Firefox", "Tor"],
+                "description": (
+                    "Force the browser instead of letting hindsight detect each "
+                    "profile from its files. Omit it unless detection got it wrong."
+                ),
+            },
+        },
+        "required": ["profile_dir"],
+        "additionalProperties": False,
+    },
     "hashdeep": {
         "type": "object",
         "properties": {
@@ -655,6 +692,7 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "foremost": "Carve files by header/footer signature from unallocated space, recovers deleted files whose metadata is gone. Writes carved files grouped by type plus an audit.txt into the run output.",
     "aff4imager": "List or extract streams from an AFF4 volume (e.g. a WinPmem 3.x RAM acquisition). Call WITHOUT params to list the stream URNs; call again with `stream`=<that URN> to export it into the run output, then feed the exported raw to volatility3 as {run_id, relpath}.",
     "tsk_recover": "Extract a whole DIRECTORY TREE from the disk evidence into the run output, preserving the folder structure, without mounting the filesystem. This is the step BEFORE any tool that consumes a FOLDER rather than a single file: tsk_icat gives you one file, this gives you the tree. Locate the directory with tsk_fls, then pass its inode as directory_inode plus the partition_offset from tsk_mmls. The recovered tree lands in recovered/; hand it on as {run_id, relpath}.",
+    "hindsight": "Browser forensics over an already-extracted PROFILE DIRECTORY (Chrome, Edge, Brave, Vivaldi, Firefox, Tor): history, downloads, cookies, autofill, bookmarks, local/session storage and search terms, all in one dataset. THE tool for any question about what the user browsed, searched or downloaded, and for dating that activity. First locate the profile with tsk_fls and extract the WHOLE DIRECTORY with tsk_recover, then pass that run as {run_id, relpath} in profile_dir. Timestamps come out in UTC in the `timeline` table of the sqlite output; filter a date range there.",
     "jq": "Filter JSON output from other tools.",
 }
 

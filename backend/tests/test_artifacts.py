@@ -340,3 +340,75 @@ class TestListAndGet:
         assert run.run_id == run_id
         assert run.exit_code == 0
         assert any(isinstance(of, OutputFile) for of in run.output_files)
+
+
+# --------------------------------------------------------------------------- #
+# resolve_output_dir — la custodia de un ARBOL derivado
+# --------------------------------------------------------------------------- #
+class TestResolveOutputDir:
+    """El manifiesto es por FICHERO, así que un directorio no es una entrada suya:
+    es el prefijo común de varias. Existe porque `hindsight` consume una CARPETA (un
+    perfil de navegador) y `tsk_recover` la produce; sin esto, una tool declarada con
+    `PathKind.DIRECTORY` quedaba expuesta con una entrada que nadie podía resolver."""
+
+    def _run_with_tree(self, store, case):
+        run_id, out = store.start_run(
+            case.id, "tsk_recover", argv=["tsk_recover"], **_PROV
+        )
+        (out / "recovered").mkdir()
+        (out / "recovered" / "places.sqlite").write_bytes(b"historial")
+        (out / "recovered" / "sub").mkdir()
+        (out / "recovered" / "sub" / "cookies.sqlite").write_bytes(b"galletas")
+        (out / "suelto.txt").write_text("no es del arbol")
+        store.finalize_run(case.id, run_id, exit_code=0, stdout="", stderr="")
+        return run_id, out
+
+    def test_resolves_a_directory_and_sums_its_subtree(self, store, case):
+        run_id, out = self._run_with_tree(store, case)
+        path, tree_sha, size = store.resolve_output_dir(case.id, run_id, "recovered")
+        assert path == (out / "recovered").resolve()
+        assert len(tree_sha) == 64
+        # Solo el subarbol: `suelto.txt` queda fuera.
+        assert size == len(b"historial") + len(b"galletas")
+
+    def test_digest_covers_the_whole_subtree_not_one_file(self, store, case):
+        """Cambiar CUALQUIER fichero del árbol tiene que cambiar el digest; si no,
+        el re-hash no protegería lo que de verdad se consume."""
+        run_id, out = self._run_with_tree(store, case)
+        _, before, _ = store.resolve_output_dir(case.id, run_id, "recovered")
+        run_id2, out2 = store.start_run(
+            case.id, "tsk_recover", argv=["tsk_recover"], **_PROV
+        )
+        (out2 / "recovered").mkdir()
+        (out2 / "recovered" / "places.sqlite").write_bytes(b"historial")
+        (out2 / "recovered" / "sub").mkdir()
+        (out2 / "recovered" / "sub" / "cookies.sqlite").write_bytes(b"OTRAS galletas")
+        store.finalize_run(case.id, run_id2, exit_code=0, stdout="", stderr="")
+        _, after, _ = store.resolve_output_dir(case.id, run_id2, "recovered")
+        assert before != after
+
+    def test_a_tampered_file_breaks_custody(self, store, case):
+        from forensia.artifacts.store import ArtifactIntegrityError
+
+        run_id, out = self._run_with_tree(store, case)
+        (out / "recovered" / "sub" / "cookies.sqlite").write_bytes(b"manipulado")
+        with pytest.raises(ArtifactIntegrityError, match="cookies.sqlite"):
+            store.resolve_output_dir(case.id, run_id, "recovered")
+
+    def test_unknown_directory_raises(self, store, case):
+        run_id, _ = self._run_with_tree(store, case)
+        with pytest.raises(KeyError, match="no output directory"):
+            store.resolve_output_dir(case.id, run_id, "inexistente")
+
+    def test_traversal_is_rejected(self, store, case):
+        run_id, _ = self._run_with_tree(store, case)
+        for bad in ("../..", "/etc", "recovered/../../..", ""):
+            with pytest.raises(ValueError):
+                store.resolve_output_dir(case.id, run_id, bad)
+
+    def test_a_file_is_not_a_directory(self, store, case):
+        """`suelto.txt` SÍ está en el manifiesto, pero como fichero: pedirlo como
+        directorio tiene que fallar, no devolverlo igualmente."""
+        run_id, _ = self._run_with_tree(store, case)
+        with pytest.raises(KeyError, match="no output directory"):
+            store.resolve_output_dir(case.id, run_id, "suelto.txt")

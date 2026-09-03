@@ -163,7 +163,7 @@ docker compose exec toolkit-windows vol -f /evidence/memoria.raw windows.pslist
 | LnkParse3 | `lnkparse` | Parser de accesos directos .lnk | — |
 | regipy | `regipy-dump` | Volcado/análisis del registro | — |
 | windowsprefetch | `prefetch.py` | Parser de Prefetch (.pf) | — |
-| pyhindsight | `hindsight.py` | Forense de navegadores Chromium/Chrome | — |
+| pyhindsight | `hindsight.py` | Forense de navegadores Chromium/Chrome | **En el catálogo desde 2026-09-03: `hindsight`, invocable por el agente** |
 
 Ejemplos (uno por herramienta):
 
@@ -189,8 +189,15 @@ docker compose exec toolkit-windows sh -c "regipy-dump /evidence/Windows/System3
 # prefetch.py — parsear un fichero Prefetch en formato CSV
 docker compose exec toolkit-windows prefetch.py -c -f /evidence/Windows/Prefetch/CMD.EXE-12345678.pf
 
-# hindsight.py — forense del navegador (perfil de Chrome montado)
-docker compose exec toolkit-windows hindsight.py -i "/cases/mnt/Users/jdoe/AppData/Local/Google/Chrome/User Data/Default" -o /cases/hindsight
+# hindsight.py — forense del navegador sobre un perfil YA EXTRAÍDO
+# (el mismo argv que compone el envoltorio del catálogo: `-l` y `--temp_dir` van
+#  fijados porque por defecto hindsight los escribe junto a su propio script, en
+#  /usr/local/bin/, o sea fuera del caso)
+docker compose exec toolkit-windows hindsight.py \
+  -i /cases/<caso>/artifacts/<run>/out/recovered \
+  -o /cases/<caso>/artifacts/<run>/out/navegacion -f sqlite \
+  -l /cases/<caso>/artifacts/<run>/out/hindsight.log \
+  --temp_dir /cases/<caso>/artifacts/<run>/out/hindsight-temp
 ```
 
 > **Defectos del self-test 2026-07-01 — CORREGIDOS y revalidados en Linux el
@@ -205,6 +212,75 @@ docker compose exec toolkit-windows hindsight.py -i "/cases/mnt/Users/jdoe/AppDa
 > pip 22.0.2 de Ubuntu siembra el build-isolation con setuptools 59.6,
 > anterior a PEP 621, y los paquetes solo-`pyproject.toml` construían como
 > `UNKNOWN`).
+
+### `hindsight`, la primera tool de navegador del catálogo (2026-09-03)
+
+`hindsight.py` llevaba en el maletín desde el principio y estaba fuera del
+catálogo, así que el agente no tenía NINGUNA herramienta de navegador: el ejemplo
+canónico del encargo, «recopila toda la información de navegación web del usuario
+entre dos fechas», no se podía resolver. Ahora sí.
+
+Consume un DIRECTORIO de perfil, no un fichero, y su parámetro de ruta es
+`DERIVED_INPUT` **y solo eso**: llega como `ArtifactRef` de una corrida previa que
+el dispatcher resuelve y **re-hashea entero** antes de ejecutar. Nunca una ruta
+libre. Su productor es `tsk_recover`. La cadena completa:
+
+```
+tsk_mmls                      -> offset de la partición
+tsk_fls    -o <off> -r        -> localiza el perfil y su inodo
+tsk_recover -o <off> -d <ino> -> el ÁRBOL, en out/recovered/
+hindsight  profile_dir={run_id, relpath}
+```
+
+Verificada de punta a punta sobre `2020JimmyWilson.E01`: 27 ficheros recuperados
+del perfil Firefox de «Jimmy Wilson» y 16 URLs visitadas con su marca de tiempo,
+13 marcadores y 109 preferencias.
+
+**La custodia de un árbol derivado.** El manifiesto del artifact-store es por
+FICHERO, así que un directorio no es una entrada suya: es el prefijo común de
+varias. `ArtifactStore.resolve_output_dir` re-hashea TODAS las entradas bajo el
+prefijo, las compara una a una con el manifiesto y devuelve un digest DEL
+SUBÁRBOL (SHA-256 de los pares ruta + hash ordenados), que es lo que viaja al log
+encadenado. El dispatcher elige fichero o directorio por el `PathKind` que el
+catálogo DECLARA, nunca probando uno y cayendo al otro (RULE 2).
+
+Tres banderas las fija el envoltorio en vez de exponerlas, y las tres se midieron
+contra hindsight 2026.06 dentro del maletín:
+
+- `-l` (log). A su aire escribe `/usr/local/bin/hindsight.log`, junto a su propio
+  script: fuera del caso, fuera del log encadenado y en una ruta que el
+  artifact-store no hashea. Se fija dentro del `out/` de la corrida.
+- `--temp_dir`. Mismo defecto y mismo sitio (`/usr/local/bin/hindsight-temp`), y
+  pesa más: hindsight COPIA el perfil antes de abrirlo, así que ese directorio
+  tiene los bytes que de verdad se parsean. También se fija dentro del `out/`.
+- `--nocopy` NO se ofrece. Es la bandera que apaga esa copia protectora, y abrir
+  en su sitio una base SQLite de Chromium puede reproducir su WAL y ESCRIBIR en
+  el fichero: sobre un artefacto derivado eso rompe el hash que el dispatcher
+  acaba de verificar.
+
+Quedan fuera además `-d/--decrypt`, cuya propia ayuda llama «buggy» a sus dos
+modos y que solo tiene sentido ejecutando en la misma máquina de la que salieron
+los datos (nunca un contenedor post-mortem), y `-t/--timezone`, que solo mueve
+las marcas de DISPLAY del xlsx: los hallazgos llevan `observed_at` en UTC con
+desfase explícito, y dejar que el modelo elija una zona de presentación aquí
+invita a una conversión equivocada que no se ve desde el artefacto.
+
+El formato por defecto es **`sqlite`**, y el motivo está medido, no es de estilo:
+sobre el perfil Firefox real, el escritor `jsonl` emitió 123 filas y **ninguna era
+de navegación**, mientras que el `sqlite` traía las 16 URLs visitadas con su marca
+de tiempo en la tabla `timeline`. Con `jsonl` por defecto la herramienta habría
+parecido funcionar tirando justo lo que existe para producir.
+
+**pyhindsight y Python 3.10.** La versión 2026.06 usa `datetime.UTC` en once
+sitios, y esa constante existe a partir de Python 3.11; la base del maletín es
+Ubuntu 22.04, que trae 3.10. El paquete declara `requires-python >=3.9`, así que
+pip lo instala sin protestar y REVIENTA al fechar el primer registro, con
+`--help` respondiendo y `capabilities` dándolo por disponible: no parsea ni una
+fila de navegación. El Dockerfile repone el alias con un `.pth` condicionado: en
+CPython `datetime.UTC` **es** `datetime.timezone.utc` (el mismo objeto), así que
+no cambia comportamiento, y en una base con 3.11+ queda en no-op. Es un `.pth` y
+no un `sitecustomize.py` porque Ubuntu ya trae el suyo (el hook de apport), que
+ganaría el import y dejaría el nuestro muerto sin avisar.
 
 ## EZ Tools (herramientas de los *Modules* de KAPE) — maletín `toolkit-windows`
 
