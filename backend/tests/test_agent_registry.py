@@ -111,7 +111,11 @@ def test_allowlist_comes_from_catalog_by_profile() -> None:
     windows = set(default_allowed_tools("windows"))
     assert "regripper" in windows and "regripper" not in unix
     assert "hayabusa" in windows and "hayabusa" not in unix
-    assert "foremost" in unix and "foremost" not in windows
+    # `qemu_nbd` es hoy la ÚNICA del catálogo exclusiva de unix (y no se expone al
+    # agente). `foremost` lo fue por error hasta el 2026-09-03: talla por firmas, así
+    # que sirve a los dos perfiles; ver `test_cross_tools_declare_both_os_profiles`.
+    assert "qemu_nbd" in unix and "qemu_nbd" not in windows
+    assert "foremost" in unix and "foremost" in windows
     assert "volatility3" in unix and "volatility3" in windows
 
 

@@ -497,10 +497,15 @@ CATALOG: tuple[Tool, ...] = (
         build_argv=_hashdeep.build_argv,
         parse=_hashdeep.parse,
     ),
+    # Talla por FIRMAS (cabecera/pie), así que el SO de la evidencia le es indiferente:
+    # declara los dos perfiles, como el resto de las cross. Hasta 2026-09-03 declaraba
+    # solo `unix` con `toolkits=_BOTH`, así que estaba instalada en los dos maletines
+    # pero un caso Windows no podía pedirla (los tipos que talla —exe, doc, ole, zip—
+    # son justamente de Windows). `test_cross_tools_declare_both_os_profiles` lo fija.
     Tool(
         "foremost",
         "foremost",
-        ("unix",),
+        ("unix", "windows"),
         returns="artifact",
         toolkits=_BOTH,
         path_parameters=(

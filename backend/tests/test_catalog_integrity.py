@@ -15,6 +15,11 @@ from forensia.toolkit.tool import _not_built
 # os_profile → the maletín that must carry a tool applicable to that profile.
 _PROFILE_MALETIN = {"unix": TOOLKIT_UNIX, "windows": TOOLKIT_WINDOWS}
 
+#: Tools del catálogo que a propósito NO se exponen al agente. `qemu_nbd` es
+#: `side_effecting` (conecta dispositivos de bloque): se opera a mano desde el
+#: maletín. Sacar algo de aquí exige darle schema; meterlo, justificarlo.
+_NOT_EXPOSED_TO_AGENT = frozenset({"qemu_nbd"})
+
 
 # --------------------------------------------------------------------------- #
 # Core-tier wiring
@@ -123,6 +128,38 @@ def test_toolkits_cover_every_os_profile_the_tool_serves() -> None:
             )
 
 
+def test_cross_tools_declare_both_os_profiles() -> None:
+    """La inversa de la anterior: una tool que vive en LOS DOS maletines tiene que
+    servir a los dos perfiles.
+
+    `toolkits` dice dónde está instalado el binario; `os_profiles` dice a qué casos
+    se le puede pedir, y es lo que filtra `catalog.for_profile`, o sea el allowlist
+    del sub-agente. Declarar `_BOTH` y un solo perfil deja una tool instalada en los
+    dos maletines que la mitad de los casos no puede pedir: capacidad pagada en el
+    build y no entregada. Le pasó a `foremost` hasta el 2026-09-03 (talla por firmas,
+    declaraba solo `unix`), así que un caso Windows no podía tallar pese a llevar
+    foremost en su maletín.
+
+    Se saltan las que NO se exponen al agente: su `os_profiles` no filtra ningún
+    allowlist, así que el argumento no aplica.
+    """
+    for tool in CATALOG:
+        if set(tool.toolkits) != set(MALETINES):
+            continue
+        if tool.id in _NOT_EXPOSED_TO_AGENT:
+            # `qemu_nbd` es el único: `side_effecting`, sin schema, se opera a mano
+            # desde el maletín. Sus `os_profiles` no llegan a ningún allowlist, así
+            # que estrecharlos no niega nada a nadie; ensancharlos, en cambio,
+            # anunciaría en `capabilities` una capacidad de conectar dispositivos de
+            # bloque que no queremos ofrecer de más.
+            continue
+        assert set(tool.os_profiles) == set(_PROFILE_MALETIN), (
+            f"{tool.id} vive en los dos maletines pero solo sirve a "
+            f"{sorted(tool.os_profiles)}: o declara los dos perfiles o declara "
+            f"un solo maletín"
+        )
+
+
 # --------------------------------------------------------------------------- #
 # Uniqueness and profile filtering
 # --------------------------------------------------------------------------- #
@@ -169,12 +206,6 @@ def test_tool_types_are_consistent() -> None:
 # --------------------------------------------------------------------------- #
 # Alcance real del agente: catálogo → allowlist → schema
 # --------------------------------------------------------------------------- #
-#: Tools del catálogo que a propósito NO se exponen al agente. `qemu_nbd` es
-#: `side_effecting` (conecta dispositivos de bloque): se opera a mano desde el
-#: maletín. Sacar algo de aquí exige darle schema; meterlo, justificarlo.
-_NOT_EXPOSED_TO_AGENT = frozenset({"qemu_nbd"})
-
-
 def test_every_allowed_tool_is_visible_to_the_llm() -> None:
     """Una tool permitida SIN schema es invisible: `tool_specs` la salta en silencio.
 
