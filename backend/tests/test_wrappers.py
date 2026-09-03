@@ -45,6 +45,7 @@ from forensia.toolkit.wrappers import (
     recmd,
     regripper,
     sbecmd,
+    sqlite_query,
     tsk_fls,
     tsk_icat,
     tsk_mactime,
@@ -1998,3 +1999,171 @@ class TestTskRecover:
         assert out["files_recovered"] is None
         assert out["recovered_nothing"] is False
         assert "note" in out
+
+
+# --------------------------------------------------------------------------- #
+# sqlite_query (una SELECT acotada sobre una base derivada)
+# --------------------------------------------------------------------------- #
+class TestSqliteQuery:
+    _BASE = {"database": "/run/out/navegacion.sqlite", "query": "SELECT url FROM timeline"}
+
+    def test_build_argv_minimum_valid(self):
+        argv = sqlite_query.build_argv(dict(self._BASE))
+        assert argv == [
+            "-readonly", "-safe", "-nofollow", "-batch", "-bail", "-json",
+            "file:/run/out/navegacion.sqlite?mode=ro",
+            "SELECT *, 200 AS _forensia_cap FROM (SELECT url FROM timeline) LIMIT 201",
+        ]
+
+    def test_the_three_read_only_guards_are_always_present(self):
+        """Medido en el maletín (sqlite3 3.37.2, 2026-09-03) con el SHA-256 de la
+        base idéntico antes y después: `-readonly` + `mode=ro` hacen fallar UPDATE,
+        INSERT y DROP con «attempt to write a readonly database»; `-safe` rechaza
+        ATTACH (y con él VACUUM INTO, que lo usa por debajo), las dot-commands que
+        salen del fichero y las funciones load_extension() y readfile();
+        `-nofollow` rechaza un symlink."""
+        argv = sqlite_query.build_argv(dict(self._BASE))
+        for guard in ("-readonly", "-safe", "-nofollow"):
+            assert guard in argv
+        assert "?mode=ro" in argv[-2]
+
+    def test_immutable_is_deliberately_absent(self):
+        """`immutable=1` evitaría escribir un solo byte y es INCORRECTO aquí:
+        medido sobre una base cuyo WAL no tenía checkpoint, respondió «no such
+        table: urls» a una tabla con dos filas, porque en modo WAL hasta el esquema
+        puede vivir en el `-wal`. Un perfil recuperado de una máquina apagada a lo
+        bruto es justo ese caso, y un falso negativo en un informe pericial es peor
+        que el efecto lateral que evita."""
+        argv = sqlite_query.build_argv(dict(self._BASE))
+        assert "immutable" not in argv[-2]
+
+    def test_the_path_is_percent_encoded_for_the_uri(self):
+        """Un artefacto recuperado hereda los nombres de la evidencia, que traen
+        espacios («Local Settings») y algún '#'. Medido: sin codificar, un '#'
+        trunca la URI y sqlite3 no abre la base."""
+        argv = sqlite_query.build_argv(
+            dict(self._BASE, database="/run/out/Local Settings/raro#1.db")
+        )
+        assert argv[-2] == "file:/run/out/Local%20Settings/raro%231.db?mode=ro"
+
+    def test_max_rows_bounds_the_query_and_asks_for_one_more(self):
+        argv = sqlite_query.build_argv(dict(self._BASE, max_rows=10))
+        assert argv[-1].endswith("LIMIT 11")
+        assert "10 AS _forensia_cap" in argv[-1]
+
+    # ---- lo que el envoltorio RECHAZA ------------------------------------- #
+    def test_missing_database_raises(self):
+        with pytest.raises(ValueError, match="database"):
+            sqlite_query.build_argv({"query": "SELECT 1"})
+
+    def test_missing_query_raises(self):
+        with pytest.raises(ValueError, match="query"):
+            sqlite_query.build_argv({"database": "/d.sqlite"})
+
+    @pytest.mark.parametrize(
+        "verb",
+        [
+            "UPDATE urls SET url='x'",
+            "INSERT INTO urls VALUES(1)",
+            "DELETE FROM urls",
+            "DROP TABLE urls",
+            "ATTACH '/etc/passwd' AS p",
+            "PRAGMA writable_schema=ON",
+            "VACUUM INTO '/tmp/copia.db'",
+            "CREATE TABLE t(x)",
+            "REPLACE INTO urls VALUES(1)",
+        ],
+    )
+    def test_only_a_read_query_is_accepted(self, verb):
+        with pytest.raises(ValueError, match="SELECT or WITH"):
+            sqlite_query.build_argv(dict(self._BASE, query=verb))
+
+    def test_dot_command_is_rejected(self):
+        with pytest.raises(ValueError, match="SELECT or WITH"):
+            sqlite_query.build_argv(dict(self._BASE, query=".shell id"))
+
+    def test_statement_chaining_is_rejected(self):
+        """Medido: sqlite3 ejecuta `SELECT 1; SELECT 2` tan tranquilo y emite DOS
+        documentos JSON, lo que rompe la forma del artefacto."""
+        with pytest.raises(ValueError, match="ONE statement"):
+            sqlite_query.build_argv(
+                dict(self._BASE, query="SELECT 1; DROP TABLE urls")
+            )
+
+    def test_a_single_trailing_semicolon_is_a_habit_not_a_statement(self):
+        argv = sqlite_query.build_argv(dict(self._BASE, query="SELECT url FROM t;  "))
+        assert argv[-1] == (
+            "SELECT *, 200 AS _forensia_cap FROM (SELECT url FROM t) LIMIT 201"
+        )
+
+    @pytest.mark.parametrize(
+        "query",
+        [
+            "SELECT 1 -- ; DROP TABLE urls",
+            "SELECT /* oculto */ 1",
+            "SELECT 1 --",
+        ],
+    )
+    def test_sql_comments_are_rejected(self, query):
+        """Se rechazan en vez de limpiarse: limpiarlos bien exige parsear los
+        literales de cadena, y equivocarse ahí por poco es justo como se cuela un
+        segundo verbo detrás de una comprobación de prefijo."""
+        with pytest.raises(ValueError, match="comments"):
+            sqlite_query.build_argv(dict(self._BASE, query=query))
+
+    @pytest.mark.parametrize("bad", [0, -1, 50_001, "500", 1.5, True])
+    def test_bad_max_rows_raises(self, bad):
+        with pytest.raises(ValueError, match="max_rows"):
+            sqlite_query.build_argv(dict(self._BASE, max_rows=bad))
+
+    def test_an_overlong_query_raises(self):
+        with pytest.raises(ValueError, match="too long"):
+            sqlite_query.build_argv(dict(self._BASE, query="SELECT " + "x" * 4100))
+
+    def test_every_flag_the_wrapper_emits_is_allowed(self):
+        argv = sqlite_query.build_argv(dict(self._BASE))
+        emitted = {tok for tok in argv if tok.startswith("-")}
+        assert emitted <= sqlite_query.ALLOWED_FLAGS, emitted - sqlite_query.ALLOWED_FLAGS
+
+    # ---- parse ------------------------------------------------------------ #
+    #: Salida REAL de sqlite3 3.37.2 con `-json` (2026-09-03). Fíjese en que las
+    #: filas van separadas por coma y salto de línea, no en una sola línea.
+    _JSON_2 = (
+        '[{"id":1,"url":"http://a.test","ts":100,"_forensia_cap":5},\n'
+        '{"id":2,"url":"http://b.test","ts":200,"_forensia_cap":5}]'
+    )
+
+    def test_parse_complete_result(self):
+        out = sqlite_query.parse(self._JSON_2)
+        assert out["truncated"] is False
+        assert out["row_count"] == 2
+        assert out["columns"] == ["id", "url", "ts"]
+        # El centinela no viaja al modelo.
+        assert all("_forensia_cap" not in row for row in out["rows"])
+
+    def test_parse_reports_the_truncation_and_drops_the_probe_row(self):
+        """La fila de más es lo que demuestra que hay más; se descarta y se avisa,
+        porque una respuesta incompleta que no lo diga es el fallo que este
+        envoltorio existe para evitar (RULE 2)."""
+        capped = self._JSON_2.replace('"_forensia_cap":5', '"_forensia_cap":1')
+        out = sqlite_query.parse(capped)
+        assert out["truncated"] is True
+        assert out["row_count"] == 1
+        assert "afina la consulta" in out["note"]
+
+    def test_parse_empty_output_is_zero_rows_not_an_error(self):
+        """Un resultado vacío no imprime `[]`, no imprime NADA."""
+        out = sqlite_query.parse("")
+        assert out["row_count"] == 0
+        assert out["truncated"] is False
+        assert "parse_error" not in out
+
+    def test_parse_flags_output_that_did_not_come_from_this_argv(self):
+        out = sqlite_query.parse('[{"id":1}]')
+        assert "parse_error" in out
+        assert out["row_count"] == 0
+
+    def test_parse_invalid_json(self):
+        out = sqlite_query.parse("Error: no such table: urls")
+        assert "parse_error" in out
+        assert out["row_count"] == 0

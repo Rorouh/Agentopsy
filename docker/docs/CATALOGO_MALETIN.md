@@ -80,6 +80,7 @@ adquirió), y `ntfsundelete` / `usnjls` / `ils` para borrados.
 | Carving | foremost | `foremost` | Recuperación de ficheros por cabeceras |
 | Línea temporal | plaso | `log2timeline.py`, `psort.py` | Supertimeline forense |
 | Memoria RAM | Volatility 3 | `vol` | Análisis de volcados de memoria |
+| Bases SQLite | sqlite3 | `sqlite3` | Consultar un artefacto SQLite (historial de navegador, ActivitiesCache.db, almacenes de aplicación). **En el catálogo desde 2026-09-03: `sqlite_query`, invocable por el agente** |
 
 Ejemplos (uno por herramienta):
 
@@ -145,12 +146,71 @@ docker compose exec toolkit-windows log2timeline.py --storage-file /cases/caso.p
 # psort.py — exportar la timeline a CSV
 docker compose exec toolkit-windows psort.py -o l2tcsv -w /cases/timeline.csv /cases/caso.plaso
 
+# sqlite3 — UNA consulta de lectura sobre una base derivada (el mismo argv que
+# compone el envoltorio del catálogo). `-safe` rechaza ATTACH, las dot-commands que
+# salen del fichero y load_extension()/readfile(); `-nofollow` rechaza un symlink.
+docker compose exec toolkit-unix sqlite3 -readonly -safe -nofollow -batch -bail -json \
+  "file:/cases/<caso>/artifacts/<run>/out/navegacion.sqlite?mode=ro" \
+  "SELECT url, timestamp FROM timeline WHERE type='url' ORDER BY timestamp"
+
 # vol — listar procesos de un volcado de memoria Windows
 docker compose exec toolkit-windows vol -f /evidence/memoria.raw windows.pslist
 ```
 
 > *scalpel* se relega a extra: en Ubuntu se solapa con *foremost* (mismo
 > propósito) y no siempre está empaquetado. Se puede añadir si se necesita.
+
+### `sqlite_query`: preguntarle a un artefacto SQLite (2026-09-03)
+
+Casi todo artefacto moderno es SQLite: el `places.sqlite` o el `History` de un
+navegador, el `ActivitiesCache.db` de Windows, la cuarentena de macOS, los
+almacenes de innumerables aplicaciones. Hasta ahora el agente podía extraer uno de
+esos ficheros y solo mirarlo: nada del catálogo sabía preguntarle. Es además la
+segunda mitad de `hindsight`, cuya salida por defecto ES una base SQLite con las
+URLs visitadas en su tabla `timeline`, así que la pregunta canónica del encargo
+(«toda la navegación entre dos fechas») acaba aquí, en un `WHERE`.
+
+La base llega **solo** como `ArtifactRef`, nunca como ruta. Y el solo-lectura está
+medido, con el SHA-256 de la base idéntico antes y después de cada intento
+(sqlite3 3.37.2 dentro del maletín):
+
+| Intento | Resultado |
+|---|---|
+| `SELECT` | funciona |
+| `UPDATE` / `INSERT` / `DROP TABLE` | exit 8, «attempt to write a readonly database» |
+| `ATTACH` otra base | «cannot run ATTACH in safe mode» |
+| `VACUUM INTO` (escribiría un fichero nuevo) | bloqueado: usa ATTACH por debajo |
+| `.shell`, `.system`, `.output`, `.import`, `.read` | «cannot run ... in safe mode» |
+| `load_extension()`, `readfile()` | «cannot use the ... function in safe mode» |
+| base a través de un symlink | rechazada por `-nofollow` |
+
+**`immutable=1` NO se usa, y es la decisión más afilada de este envoltorio.**
+Garantizaría que no se escribe ni un byte, y es incorrecta en forense: medido
+sobre una base cuyo WAL no tenía checkpoint, respondió **«no such table: urls»** a
+una tabla con dos filas, porque en modo WAL hasta el esquema puede vivir en el
+`-wal`. No es que pierda filas, es que la base parece VACÍA, y un perfil
+recuperado de una máquina apagada a lo bruto es justo ese caso. Un falso negativo
+en un informe pericial es peor que el efecto lateral que evita, y ese efecto es
+pequeño y también está medido: leer una base normal no crea nada, y solo una base
+en modo WAL a la que le falte su `-shm` ve aparecer sus sidecars al lado, que es
+precisamente el caso en que el WAL es el dato que veníamos a buscar.
+
+Del lado del SQL, el envoltorio admite **una sola sentencia** de lectura: nada de
+`;` encadenado (medido: sqlite3 ejecuta `SELECT 1; SELECT 2` sin protestar y emite
+dos documentos JSON, lo que rompe la forma del artefacto), nada de comentarios
+SQL (son la vía clásica para colar un segundo verbo detrás de una comprobación de
+prefijo, y se rechazan en vez de limpiarse porque limpiarlos bien exige parsear
+los literales de cadena) y nada de dot-commands.
+
+El resultado va acotado y **una truncadura nunca es silenciosa**. La consulta se
+envuelve como `SELECT *, <max_rows> AS _forensia_cap FROM (<consulta>) LIMIT
+<max_rows+1>`, verificado con CTEs, con `ORDER BY` y con una consulta que ya trae
+su propio `LIMIT`. La fila de más demuestra que hay más; la columna centinela es
+lo que permite al `parse` conocer la cota, porque un `parse` solo recibe stdout y
+si no no podría distinguir «justo las que pediste» de «más de las que pediste».
+Se descartan las dos y se informa `truncated`, para que el agente sepa que su
+respuesta está incompleta en vez de recibir un conjunto parcial con aspecto de
+entero.
 
 ## Artefactos Windows — maletín `toolkit-windows`
 

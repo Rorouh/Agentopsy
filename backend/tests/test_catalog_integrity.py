@@ -313,6 +313,7 @@ def test_path_parameter_inventory_is_exhaustive_and_explicit() -> None:
         "wxtcmd": {"target_path", "output_dir"},
         "rbcmd": {"target_path", "output_dir"},
         "hindsight": {"profile_dir", "output_dir"},
+        "sqlite_query": {"database"},
     }
     assert set(expected) == set(BY_ID)
     for tool_id, names in expected.items():

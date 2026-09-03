@@ -106,6 +106,9 @@ from forensia.toolkit.wrappers import (
     sbecmd as _sbecmd,
 )
 from forensia.toolkit.wrappers import (
+    sqlite_query as _sqlite_query,
+)
+from forensia.toolkit.wrappers import (
     tsk_fls as _tsk_fls,
 )
 from forensia.toolkit.wrappers import (
@@ -783,6 +786,32 @@ CATALOG: tuple[Tool, ...] = (
         build_argv=_wxtcmd.build_argv,
         parse=_wxtcmd.parse,
     ),
+    # --- Consulta de una base SQLite derivada (sqlite3, stage base) ---
+    #     Casi todo artefacto moderno es SQLite (`places.sqlite`, `History`,
+    #     `ActivitiesCache.db`), y hasta ahora el agente podía extraer uno y solo
+    #     mirarlo: nada del catálogo sabía preguntarle. Es además la segunda mitad
+    #     de `hindsight`, cuya salida por defecto ES una base SQLite con las URLs
+    #     visitadas en su tabla `timeline`.
+    #     La base llega SOLO como ArtifactRef (DERIVED_INPUT), nunca como ruta, y
+    #     el envoltorio acota la consulta a UNA sentencia de lectura.
+    #     El resultado vuelve INLINE, a propósito: `stdout_artifact_param` sirve
+    #     para un stdout que consume OTRA tool (el bodyfile de `tsk_fls -m` que
+    #     lee `mactime`), y devuelve una referencia al artefacto EN VEZ de las
+    #     filas. Aquí las filas son la respuesta y quien tiene que leerlas es el
+    #     modelo, así que la cota la pone `max_rows` y la procedencia la da el
+    #     `stdout_sha256` que el log encadenado ya registra de toda corrida.
+    Tool(
+        "sqlite_query",
+        "sqlite3",
+        ("unix", "windows"),
+        toolkits=_BOTH,
+        input_artifact_params=("database",),
+        path_parameters=(_path("database", _D, PathKind.FILE),),
+        allowed_flags=_sqlite_query.ALLOWED_FLAGS,
+        build_argv=_sqlite_query.build_argv,
+        parse=_sqlite_query.parse,
+    ),
+
     # --- Artefactos de navegador (pyhindsight, Python, maletín windows) ---
     #     La ÚNICA tool de navegador del catálogo: el ejemplo canónico del encargo
     #     («toda la navegación web del usuario entre dos fechas») no tenía ninguna.

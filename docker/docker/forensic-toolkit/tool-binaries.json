@@ -25,6 +25,7 @@
     "foremost",
     "qemu-nbd",
     "jq",
+    "sqlite3",
     "ftkimager",
     "aff4imager"
   ],

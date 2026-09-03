@@ -306,6 +306,36 @@ class PlasoPsortParams(_StrictModel):
     )
 
 
+class SqliteQueryParams(_StrictModel):
+    """``sqlite3`` — one bounded read-only SELECT over a derived SQLite database.
+
+    ``database`` is ONLY an ``ArtifactRef``: there is no way to point this at an
+    arbitrary file. The query is validated wrapper-side (one statement, SELECT/WITH
+    only, no comments) and the engine is opened read-only in safe mode, so a write
+    verb fails twice over.
+    """
+
+    database: ArtifactRef
+    query: str = Field(
+        min_length=1,
+        max_length=4000,
+        description=(
+            "ONE SELECT (or WITH ... SELECT) over the database. No ';', no SQL "
+            "comments, no dot-commands. Do your filtering here: a date range, a "
+            "LIKE, a GROUP BY."
+        ),
+    )
+    max_rows: int = Field(
+        default=200,
+        ge=1,
+        le=50_000,
+        description=(
+            "Row cap. The result says `truncated` when there are more, which means "
+            "the answer is incomplete and the query must be narrowed."
+        ),
+    )
+
+
 class HindsightParams(_StrictModel):
     """``hindsight.py`` — browser artifacts from a pre-extracted profile directory.
 
@@ -819,6 +849,9 @@ SCHEMA_BY_TOOL: dict[str, type[BaseModel]] = {
     # Artefactos de navegador (2026-09-03): estaba en el maletín desde el principio
     # y fuera del catálogo, así que no había NINGUNA tool de navegador.
     "hindsight": HindsightParams,
+    # Consulta acotada de una base SQLite derivada (2026-09-03): casi todo
+    # artefacto moderno es SQLite y nada del catalogo sabia preguntarle.
+    "sqlite_query": SqliteQueryParams,
 }
 
 
@@ -850,6 +883,7 @@ __all__ = [
     "WxTCmdParams",
     "RBCmdParams",
     "HindsightParams",
+    "SqliteQueryParams",
     "RegRipperParams",
     "YaraParams",
     "JqParams",
