@@ -149,6 +149,9 @@ def resolve_version(binary: str, env: dict[str, str], ez: dict[str, str]) -> str
     """UNA fuente designada por binario (sin fallback entre fuentes distintas)."""
     if binary == "vol":
         return _pip_version("volatility3")
+    if binary == "prefetch.py":
+        # windowsprefetch se instala por pip, igual que pyhindsight.
+        return _pip_version("windowsprefetch")
     if binary == "hindsight.py":
         # pyhindsight se instala por pip (requirements-windows.txt) y no lo conoce
         # dpkg, así que su fuente designada es la metadata del paquete.

@@ -43,6 +43,7 @@
     "sbecmd",
     "wxtcmd",
     "rbcmd",
-    "hindsight.py"
+    "hindsight.py",
+    "prefetch.py"
   ]
 }

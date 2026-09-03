@@ -40,6 +40,7 @@ from forensia.toolkit.wrappers import (
     mftecmd,
     plaso_log2timeline,
     plaso_psort,
+    prefetch,
     qemu_nbd,
     rbcmd,
     recmd,
@@ -2167,3 +2168,149 @@ class TestSqliteQuery:
         out = sqlite_query.parse("Error: no such table: urls")
         assert "parse_error" in out
         assert out["row_count"] == 0
+
+
+# --------------------------------------------------------------------------- #
+# prefetch (ejecucion de programas; maletin windows)
+# --------------------------------------------------------------------------- #
+#: Salida REAL de windowsprefetch 4.0.3 sobre el DLLHOST.EXE-766398D2.pf que
+#: `tsk_icat` extrajo de 2020JimmyWilson.E01 (2026-09-03), recortada pero con su
+#: FORMA intacta: las dos listas numeradas van en la misma sintaxis y solo las
+#: distingue su cabecera.
+_PREFETCH_REPORT = r"""
+=========================
+DLLHOST.EXE-766398D2.pf
+=========================
+
+Executable Name: DLLHOST.EXE
+
+Run count: 81
+
+Last Executed: 2014-02-20 14:30:26.106690
+
+Volume Information:
+   Volume Name: \DEVICE\HARDDISKVOLUME2
+   Creation Date: 2014-01-25 04:05:57.140778
+   Serial Number: 9ac0cc8b
+
+Directory Strings:
+   0: \DEVICE\HARDDISKVOLUME2\PROGRAMDATA{NUL}
+   1: \DEVICE\HARDDISKVOLUME2\USERS\JIMMY WILSON{NUL}
+
+Resources Loaded:
+   1: \DEVICE\HARDDISKVOLUME2\WINDOWS\SYSTEM32\KERNEL32.DLL
+   2: \DEVICE\HARDDISKVOLUME2\WINDOWS\SYSTEM32\DLLHOST.EXE""".replace("{NUL}", "\x00")
+
+#: El modo `-c`, tambien real.
+_PREFETCH_CSV = r"""Timestamp,Executable Name,MFT Seq Number,MFT Entry Number,Prefetch Hash,Run Count
+2014-02-20 14:30:26.106690,DLLHOST.EXE,766398d2,4,91045,81"""
+
+
+class TestPrefetch:
+    def test_build_argv_minimum_valid(self):
+        argv = prefetch.build_argv({"prefetch_path": "/run/out/CMD.EXE-12345678.pf"})
+        assert argv == ["-f", "/run/out/CMD.EXE-12345678.pf"]
+
+    def test_build_argv_csv(self):
+        argv = prefetch.build_argv(
+            {"prefetch_path": "/run/out/a.pf", "csv": True}
+        )
+        assert argv == ["-c", "-f", "/run/out/a.pf"]
+
+    def test_csv_false_emits_no_flag(self):
+        argv = prefetch.build_argv({"prefetch_path": "/run/out/a.pf", "csv": False})
+        assert "-c" not in argv
+
+    def test_build_argv_missing_path_raises(self):
+        with pytest.raises(ValueError, match="prefetch_path"):
+            prefetch.build_argv({})
+
+    def test_a_name_that_is_not_pf_is_refused_loudly(self):
+        """MEDIDO: con dos copias byte a byte del mismo Prefetch real, prefetch.py
+        parsea la llamada `DLLHOST.EXE-766398D2.pf` y de la llamada `stdout.bin` no
+        imprime NADA y sale con 0. Un vacio silencioso con codigo de exito es el
+        peor resultado posible en un paso forense: se lee igual que «ese programa
+        nunca se ejecuto». Por eso se rechaza aqui, y el mensaje dice por donde ir.
+
+        La consecuencia es que `tsk_icat` NO puede alimentar esta tool, porque
+        escribe siempre `out/stdout.bin`. El productor es `tsk_recover`, que
+        conserva los nombres reales."""
+        with pytest.raises(ValueError, match="NAMED \\*.pf"):
+            prefetch.build_argv({"prefetch_path": "/case/artifacts/r/out/stdout.bin"})
+
+    def test_the_message_names_the_producer_that_does_work(self):
+        with pytest.raises(ValueError, match="tsk_recover"):
+            prefetch.build_argv({"prefetch_path": "/case/artifacts/r/out/stdout.bin"})
+
+    def test_a_recovered_tree_keeps_the_name_and_is_accepted(self):
+        """Lo que `tsk_recover` deja en `out/recovered/` conserva el nombre real
+        (verificado sobre 2020JimmyWilson.E01: DLLHOST.EXE-766398D2.pf y nueve mas)."""
+        path = "/case/artifacts/r/out/recovered/DLLHOST.EXE-766398D2.pf"
+        assert prefetch.build_argv({"prefetch_path": path}) == ["-f", path]
+
+    def test_bad_csv_type_raises(self):
+        with pytest.raises(ValueError, match="csv"):
+            prefetch.build_argv({"prefetch_path": "/a.pf", "csv": "si"})
+
+    def test_every_flag_the_wrapper_emits_is_allowed(self):
+        argv = prefetch.build_argv({"prefetch_path": "/a.pf", "csv": True})
+        emitted = {tok for tok in argv if tok.startswith("-")}
+        assert emitted <= prefetch.ALLOWED_FLAGS, emitted - prefetch.ALLOWED_FLAGS
+
+    # ---- parse ------------------------------------------------------------ #
+    def test_parse_report_surfaces_the_execution_facts(self):
+        out = prefetch.parse(_PREFETCH_REPORT)
+        assert out["format"] == "report"
+        assert out["executable"] == "DLLHOST.EXE"
+        assert out["run_count"] == "81"
+        assert out["last_executed"] == ["2014-02-20 14:30:26.106690"]
+
+    def test_parse_keeps_the_two_numbered_lists_apart(self):
+        """`Directory Strings` (directorios que tocó al arrancar) y `Resources
+        Loaded` (DLLs y ficheros que abrió) van en la MISMA sintaxis numerada y
+        responden preguntas distintas: fundirlas en un solo saco perdería cuál es
+        cuál."""
+        out = prefetch.parse(_PREFETCH_REPORT)
+        assert out["directories_count"] == 2
+        assert out["resources_count"] == 2
+        assert all("SYSTEM32" in r for r in out["resources"])
+        assert any("JIMMY WILSON" in d for d in out["directories"])
+
+    def test_parse_strips_the_utf16_padding_from_the_paths(self):
+        """Cada entrada de `Directory Strings` sale con un NUL pegado al final: es
+        el relleno UTF-16 del `.pf` colandose por la salida de prefetch.py (medido,
+        21 en un solo fichero real). Estas rutas viajan al modelo y acaban citadas
+        en un hallazgo, y una ruta con un NUL pegado es texto corrupto presentado
+        como prueba."""
+        out = prefetch.parse(_PREFETCH_REPORT)
+        assert out["directories"], "el fixture debe traer directorios"
+        for d in out["directories"]:
+            assert "\x00" not in d
+        assert out["directories"][0].endswith("PROGRAMDATA")
+
+    def test_parse_collects_every_run_time(self):
+        """Win8 y posteriores guardan hasta OCHO marcas de ejecución, y el informe
+        las imprime como otras tantas líneas `Last Executed:`. Quedarse con la
+        última descartaría siete ejecuciones en silencio."""
+        ocho = _PREFETCH_REPORT.replace(
+            "Last Executed: 2014-02-20 14:30:26.106690",
+            "Last Executed: 2014-02-20 14:30:26.106690\n\n"
+            "Last Executed: 2014-02-19 09:00:00.000000",
+        )
+        out = prefetch.parse(ocho)
+        assert out["last_executed"] == [
+            "2014-02-20 14:30:26.106690",
+            "2014-02-19 09:00:00.000000",
+        ]
+
+    def test_parse_csv_mode(self):
+        out = prefetch.parse(_PREFETCH_CSV)
+        assert out["format"] == "csv"
+        assert out["executable"] == "DLLHOST.EXE"
+        assert out["run_count"] == "81"
+        assert out["last_executed"] == ["2014-02-20 14:30:26.106690"]
+
+    def test_parse_empty(self):
+        out = prefetch.parse("")
+        assert out["format"] == "empty"
+        assert out["last_executed"] == []

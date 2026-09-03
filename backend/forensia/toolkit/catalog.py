@@ -58,6 +58,9 @@ from forensia.toolkit.wrappers import (
     plaso_psort as _plaso_psort,
 )
 from forensia.toolkit.wrappers import (
+    prefetch as _prefetch,
+)
+from forensia.toolkit.wrappers import (
     qemu_nbd as _qemu_nbd,
 )
 from forensia.toolkit.wrappers import (
@@ -810,6 +813,28 @@ CATALOG: tuple[Tool, ...] = (
         allowed_flags=_sqlite_query.ALLOWED_FLAGS,
         build_argv=_sqlite_query.build_argv,
         parse=_sqlite_query.parse,
+    ),
+
+    # --- Prefetch (windowsprefetch, Python, maletín windows) ---
+    #     Ejecución de programas: cuántas veces corrió un ejecutable y CUÁNDO.
+    #     Cierra una promesa que el maletín llevaba haciendo sin cumplir: PECmd
+    #     está excluida porque aborta en Linux, y el comentario del Dockerfile
+    #     dice «Prefetch -> prefetch.py», pero prefetch.py tampoco estaba en el
+    #     catálogo, así que el artefacto quedaba descubierto.
+    #     UN fichero por corrida: la herramienta no tiene modo directorio.
+    Tool(
+        "prefetch",
+        "prefetch.py",
+        ("windows",),
+        toolkits=_WINDOWS,
+        # Derived handoff: el .pf suele ser el fichero byte a byte que extrajo un
+        # `tsk_icat` previo, así que acepta un ArtifactRef (re-hasheado antes de
+        # ejecutar); una ruta de evidencia inyectada sigue valiendo.
+        input_artifact_params=("prefetch_path",),
+        path_parameters=(_path("prefetch_path", _ED, PathKind.FILE),),
+        allowed_flags=_prefetch.ALLOWED_FLAGS,
+        build_argv=_prefetch.build_argv,
+        parse=_prefetch.parse,
     ),
 
     # --- Artefactos de navegador (pyhindsight, Python, maletín windows) ---

@@ -306,6 +306,23 @@ class PlasoPsortParams(_StrictModel):
     )
 
 
+class PrefetchParams(_StrictModel):
+    """``prefetch.py`` — parse ONE Windows Prefetch (.pf) file: program execution.
+
+    The `.pf` itself is not a parameter: it arrives as the evidence the MCP server
+    injects, or as the ArtifactRef of the run that extracted it. The tool has no
+    directory mode, so a Prefetch folder means one run per file.
+    """
+
+    csv: bool = Field(
+        default=False,
+        description=(
+            "Emit the one-line CSV (timestamp, executable, run count) instead of "
+            "the full report with the directories and resources the program touched."
+        ),
+    )
+
+
 class SqliteQueryParams(_StrictModel):
     """``sqlite3`` — one bounded read-only SELECT over a derived SQLite database.
 
@@ -852,6 +869,10 @@ SCHEMA_BY_TOOL: dict[str, type[BaseModel]] = {
     # Consulta acotada de una base SQLite derivada (2026-09-03): casi todo
     # artefacto moderno es SQLite y nada del catalogo sabia preguntarle.
     "sqlite_query": SqliteQueryParams,
+    # Ejecucion de programas por Prefetch (2026-09-03): PECmd esta excluida
+    # porque aborta en Linux y el Dockerfile decia que lo cubria prefetch.py,
+    # que tampoco estaba en el catalogo. El artefacto quedaba descubierto.
+    "prefetch": PrefetchParams,
 }
 
 
@@ -884,6 +905,7 @@ __all__ = [
     "RBCmdParams",
     "HindsightParams",
     "SqliteQueryParams",
+    "PrefetchParams",
     "RegRipperParams",
     "YaraParams",
     "JqParams",

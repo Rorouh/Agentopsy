@@ -222,7 +222,7 @@ entero.
 | python-evtx | `evtx_dump` | Volcado de .evtx a XML | — |
 | LnkParse3 | `lnkparse` | Parser de accesos directos .lnk | — |
 | regipy | `regipy-dump` | Volcado/análisis del registro | — |
-| windowsprefetch | `prefetch.py` | Parser de Prefetch (.pf) | — |
+| windowsprefetch | `prefetch.py` | Parser de Prefetch (.pf) | **En el catálogo desde 2026-09-03: `prefetch`, invocable por el agente** |
 | pyhindsight | `hindsight.py` | Forense de navegadores Chromium/Chrome | **En el catálogo desde 2026-09-03: `hindsight`, invocable por el agente** |
 
 Ejemplos (uno por herramienta):
@@ -272,6 +272,66 @@ docker compose exec toolkit-windows hindsight.py \
 > pip 22.0.2 de Ubuntu siembra el build-isolation con setuptools 59.6,
 > anterior a PEP 621, y los paquetes solo-`pyproject.toml` construían como
 > `UNKNOWN`).
+
+### `prefetch`: la promesa que el maletín llevaba sin cumplir (2026-09-03)
+
+El bloque de ARGs del Dockerfile excluye `PECmd` (aborta en Linux: necesita la
+descompresión Xpress de `ntdll`) y dice, literalmente, «Prefetch -> prefetch.py».
+Pero `prefetch.py` **tampoco estaba en el catálogo**, así que la ejecución de
+programas por Prefetch estaba descubierta mientras un comentario afirmaba lo
+contrario. Ya no.
+
+Prefetch es el registro de EJECUCIÓN de programas en Windows: por cada ejecutable
+guarda cuántas veces corrió, cuándo lo hizo por última vez (hasta ocho marcas en
+Win8 y posteriores) y qué directorios y ficheros tocó al arrancar.
+
+**Un fichero por corrida**, y es la forma de la propia herramienta, no una
+restricción añadida: `prefetch.py` solo tiene `-f FILE`, sin modo directorio
+(verificado contra windowsprefetch 4.0.3). Una carpeta Prefetch tiene un `.pf`
+por ejecutable, así que responder «qué se ejecutó en esta máquina» son varias
+corridas, cada una con su argv auditado y su hash.
+
+**El fichero además tiene que LLAMARSE `.pf`, y esto está medido.** Con dos copias
+byte a byte del mismo Prefetch real, `prefetch.py` parsea la llamada
+`DLLHOST.EXE-766398D2.pf` y de la llamada `stdout.bin` no imprime NADA y sale con
+0. Un vacío silencioso con código de éxito es el peor resultado posible en un paso
+forense: se lee exactamente igual que «ese programa nunca se ejecutó». El
+envoltorio rechaza por tanto un nombre que sabe que la herramienta va a ignorar en
+silencio, y el mensaje dice por dónde ir.
+
+La consecuencia importa: **`tsk_icat` no puede alimentar esta tool**, porque
+escribe siempre su extracción como `out/stdout.bin` y el nombre `.pf` no
+sobrevive. El productor es `tsk_recover`, que conserva los nombres reales
+(verificado: recuperar la carpeta Prefetch de `2020JimmyWilson.E01` da
+`DLLHOST.EXE-766398D2.pf` y nueve más). La cadena es:
+
+```
+tsk_fls     -o <off> -r        -> localiza Windows/Prefetch y su inodo
+tsk_recover -o <off> -d <ino>  -> la carpeta entera, con sus nombres
+prefetch    prefetch_path={run_id, relpath: "recovered/XXX.pf"}   (una por fichero)
+```
+
+Un `.pf` suelto registrado como evidencia también vale, porque esa ruta conserva
+su nombre.
+
+Dos detalles del `parse`, los dos medidos sobre el `DLLHOST.EXE-766398D2.pf` real
+de `2020JimmyWilson.E01` (81 ejecuciones, última el 2014-02-20 14:30:26):
+
+- El informe cierra con **dos** listas numeradas en la misma sintaxis, y solo las
+  distingue su cabecera: `Directory Strings` son los directorios que tocó al
+  arrancar y `Resources Loaded` los DLL y ficheros que abrió. Responden preguntas
+  distintas, así que se mantienen separadas en vez de fundirse en un saco.
+- Cada entrada de `Directory Strings` sale con un **NUL pegado al final**: es el
+  relleno UTF-16 del `.pf` colándose por la salida de la herramienta (21 en un
+  solo fichero). Se quita, porque esas rutas viajan al modelo y acaban citadas en
+  un hallazgo, y una ruta con un NUL pegado es texto corrupto presentado como
+  prueba.
+
+```bash
+# prefetch.py — ejecucion de programas, UN fichero .pf por corrida
+docker compose exec toolkit-windows prefetch.py -f /cases/<caso>/artifacts/<run>/out/stdout.bin
+docker compose exec toolkit-windows prefetch.py -c -f ...   # una linea CSV
+```
 
 ### `hindsight`, la primera tool de navegador del catálogo (2026-09-03)
 

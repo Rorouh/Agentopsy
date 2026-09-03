@@ -367,6 +367,30 @@ TOOL_PARAM_SCHEMAS: dict[str, dict[str, Any]] = {
         },
         "additionalProperties": False,
     },
+    "prefetch": {
+        "type": "object",
+        "properties": {
+            "prefetch_path": {
+                **artifact_ref_json_schema(),
+                "description": (
+                    "{run_id, relpath} reference to ONE .pf file a previous tsk_icat "
+                    "run extracted from C:/Windows/Prefetch. Omit it to use the "
+                    "evidence Agentopsy injects. There is NO directory mode: to "
+                    "cover the whole Prefetch folder, call this once per file."
+                ),
+            },
+            "csv": {
+                "type": "boolean",
+                "default": False,
+                "description": (
+                    "Emit the one-line CSV (timestamp, executable, run count) instead "
+                    "of the full report with the directories and files the program "
+                    "touched while starting."
+                ),
+            },
+        },
+        "additionalProperties": False,
+    },
     "sqlite_query": {
         "type": "object",
         "properties": {
@@ -732,6 +756,7 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "foremost": "Carve files by header/footer signature from unallocated space, recovers deleted files whose metadata is gone. Writes carved files grouped by type plus an audit.txt into the run output.",
     "aff4imager": "List or extract streams from an AFF4 volume (e.g. a WinPmem 3.x RAM acquisition). Call WITHOUT params to list the stream URNs; call again with `stream`=<that URN> to export it into the run output, then feed the exported raw to volatility3 as {run_id, relpath}.",
     "tsk_recover": "Extract a whole DIRECTORY TREE from the disk evidence into the run output, preserving the folder structure, without mounting the filesystem. This is the step BEFORE any tool that consumes a FOLDER rather than a single file: tsk_icat gives you one file, this gives you the tree. Locate the directory with tsk_fls, then pass its inode as directory_inode plus the partition_offset from tsk_mmls. The recovered tree lands in recovered/; hand it on as {run_id, relpath}.",
+    "prefetch": "Parse ONE Windows Prefetch (.pf) file: PROGRAM EXECUTION. Tells you which executable ran, HOW MANY TIMES, and WHEN (up to eight run times on Win8 and later), plus the directories and files it touched while starting. One of the first questions in almost any Windows case, and the tool for 'was this program ever run on this machine'. Extract the .pf with tsk_icat from C:/Windows/Prefetch and pass that run as {run_id, relpath}. There is no directory mode: one call per .pf file.",
     "sqlite_query": "Ask a QUESTION of a SQLite database a previous run produced: run one bounded read-only SELECT over it and get the rows back. Most modern artifacts are SQLite (a browser's places.sqlite or History, ActivitiesCache.db, application stores), and this is what turns 'I extracted the file' into 'here is what it says'. It is the second half of hindsight: its default output is a SQLite database whose `timeline` table holds the visited URLs with their timestamps, so a question like 'what did the user browse between two dates' is a WHERE on that table. Start with \"SELECT name, sql FROM sqlite_master WHERE type='table'\" if you do not know the schema. Check `truncated` in the result: true means there are more rows and your answer is incomplete.",
     "hindsight": "Browser forensics over an already-extracted PROFILE DIRECTORY (Chrome, Edge, Brave, Vivaldi, Firefox, Tor): history, downloads, cookies, autofill, bookmarks, local/session storage and search terms, all in one dataset. THE tool for any question about what the user browsed, searched or downloaded, and for dating that activity. First locate the profile with tsk_fls and extract the WHOLE DIRECTORY with tsk_recover, then pass that run as {run_id, relpath} in profile_dir. Timestamps come out in UTC in the `timeline` table of the sqlite output; filter a date range there.",
     "jq": "Filter JSON output from other tools.",
