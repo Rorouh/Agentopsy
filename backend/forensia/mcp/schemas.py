@@ -157,6 +157,50 @@ class TskFlsParams(_StrictModel):
     long_format: bool = Field(default=False, description="Long output format.")
 
 
+class TskRecoverParams(_StrictModel):
+    """``tsk_recover`` — extract a whole DIRECTORY TREE from the injected evidence.
+
+    The counterpart of ``icat``: where that one returns a single file's bytes, this
+    walks a directory and reproduces the tree in the run output, which is what a tool
+    consuming a FOLDER needs.
+    """
+
+    directory_inode: Optional[str] = Field(
+        default=None,
+        max_length=64,
+        pattern=r"^\d+(?:-\d+){0,2}$",
+        description=(
+            "TSK metadata address of the directory to recover, as `tsk_fls` printed "
+            "it (`68` or `68-144-6`). Omit it to walk the whole filesystem, which on "
+            "a real image is very large."
+        ),
+    )
+    partition_offset: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Partition start offset in sectors (from tsk_mmls). tsk_recover requires "
+            "it alongside directory_inode whenever the image has a volume system."
+        ),
+    )
+    scope: Literal["allocated", "all"] = Field(
+        default="allocated",
+        description=(
+            "`allocated` recovers live files only; `all` also recovers deleted ones. "
+            "Always stated explicitly so a report can say which was used."
+        ),
+    )
+    filesystem: Optional[
+        Literal[
+            "ntfs", "fat", "fat12", "fat16", "fat32", "ext2", "ext3",
+            "ext4", "hfs", "iso9660", "ufs", "yaffs2",
+        ]
+    ] = Field(default=None, description="Filesystem type if auto-detect fails.")
+    image_format: Optional[Literal["raw", "ewf", "aff", "vmdk", "vhd"]] = Field(
+        default=None, description="Container format of the image."
+    )
+
+
 class TskIcatParams(_StrictModel):
     """``icat`` — extract a file's raw bytes by TSK metadata address (inode).
 
@@ -724,6 +768,9 @@ SCHEMA_BY_TOOL: dict[str, type[BaseModel]] = {
     # DELIBERADAMENTE: es side_effecting (conecta dispositivos de bloque) y no se
     # expone al agente; se opera a mano desde el maletín.
     "tsk_icat": TskIcatParams,
+    # El productor de DIRECTORIOS que faltaba (2026-09-03): `tsk_icat` saca UN
+    # fichero, asi que nada podia construir una carpeta derivada.
+    "tsk_recover": TskRecoverParams,
     "hashdeep": HashdeepParams,
     "foremost": ForemostParams,
     "plaso_log2timeline": PlasoLog2TimelineParams,
@@ -754,6 +801,7 @@ __all__ = [
     "FtkImagerParams",
     "Aff4ImagerParams",
     "TskIcatParams",
+    "TskRecoverParams",
     "HashdeepParams",
     "ForemostParams",
     "PlasoLog2TimelineParams",

@@ -296,6 +296,7 @@ def test_path_parameter_inventory_is_exhaustive_and_explicit() -> None:
         "regripper": {"hive_path"},
         "jq": {"input_path"},
         "tsk_icat": {"image_path"},
+        "tsk_recover": {"image_path", "output_dir"},
         "plaso_log2timeline": {"image_path", "output_dir"},
         "plaso_psort": {"plaso_path", "output_dir"},
         "hashdeep": {"image_path"},

@@ -14,6 +14,7 @@
     "fls",
     "icat",
     "mactime",
+    "tsk_recover",
     "ewfinfo",
     "bulk_extractor",
     "yara",

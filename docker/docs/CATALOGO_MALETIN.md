@@ -75,7 +75,7 @@ adquirió), y `ntfsundelete` / `usnjls` / `ils` para borrados.
 | Imagen y montaje | libguestfs | `guestmount` | Montar los sistemas de ficheros de la imagen en solo lectura |
 | Integridad / hashing | coreutils | `sha256sum` | Hash de integridad (cadena de custodia) |
 | Integridad / hashing | md5deep | `hashdeep` | Hashing recursivo y verificación de conjuntos |
-| Sistema de ficheros | The Sleuth Kit | `fls`, `icat`, `mmls`, `mactime` | Listar ficheros, extraer por inodo, particiones, timeline MAC |
+| Sistema de ficheros | The Sleuth Kit | `fls`, `icat`, `mmls`, `mactime`, `tsk_recover` | Listar ficheros, extraer por inodo, particiones, timeline MAC, y recuperar un ÁRBOL de ficheros completo |
 | Carving | bulk_extractor | `bulk_extractor` | Extracción de features (correos, tarjetas, URLs...) |
 | Carving | foremost | `foremost` | Recuperación de ficheros por cabeceras |
 | Línea temporal | plaso | `log2timeline.py`, `psort.py` | Supertimeline forense |
@@ -123,6 +123,12 @@ docker compose exec toolkit-windows mmls /evidence/disco.raw
 
 # icat — extraer un fichero por su inodo (ej. inodo 12345) a /cases
 docker compose exec toolkit-windows sh -c "icat /evidence/disco.raw 12345 > /cases/fichero.bin"
+
+# tsk_recover — recuperar un DIRECTORIO entero (no un fichero) preservando el árbol.
+# OJO al -d: `fls` imprime el directorio como `d/d 68-144-6:`, pero tsk_recover quiere
+# SOLO el número. Con la forma completa recupera CERO ficheros y sale con 0, o sea un
+# vacío silencioso (medido sobre 2020JimmyWilson.E01: 0 frente a los 27 reales).
+docker compose exec toolkit-unix tsk_recover -o 65664 -a -d 68 /evidence/disco.raw /cases/perfil
 
 # mactime — timeline MAC a partir de un bodyfile generado con fls -m
 docker compose exec toolkit-windows sh -c "fls -r -m C: /evidence/disco.raw > /cases/bodyfile && mactime -b /cases/bodyfile -d > /cases/timeline_mac.csv"

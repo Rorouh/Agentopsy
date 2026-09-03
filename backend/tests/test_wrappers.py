@@ -48,6 +48,7 @@ from forensia.toolkit.wrappers import (
     tsk_icat,
     tsk_mactime,
     tsk_mmls,
+    tsk_recover,
     volatility3,
     wxtcmd,
     yara,
@@ -1660,4 +1661,121 @@ class TestQemuNbd:
 
     def test_parse_returns_note(self):
         out = qemu_nbd.parse("")
+        assert "note" in out
+
+
+# --------------------------------------------------------------------------- #
+# tsk_recover (extrae un ARBOL; el productor de directorios del catalogo)
+# --------------------------------------------------------------------------- #
+class TestTskRecover:
+    def test_build_argv_minimum_valid(self):
+        argv = tsk_recover.build_argv({"image_path": "/ev/i.raw", "output_dir": "/o"})
+        # Sin -d recorre el sistema de ficheros entero; el alcance va SIEMPRE explicito.
+        assert argv == ["-a", "/ev/i.raw", "/o/recovered"]
+
+    def test_build_argv_directory_and_partition(self):
+        argv = tsk_recover.build_argv(
+            {
+                "image_path": "/ev/i.raw",
+                "output_dir": "/o",
+                "partition_offset": 65664,
+                "directory_inode": 68,
+            }
+        )
+        assert argv == ["-o", "65664", "-a", "-d", "68", "/ev/i.raw", "/o/recovered"]
+
+    def test_full_tsk_address_is_reduced_to_its_leading_number(self):
+        """`tsk_fls` imprime `d/d 68-144-6:`, y pasarle esa forma entera a
+        tsk_recover hace que recupere CERO ficheros SIN fallar (medido sobre
+        2020JimmyWilson.E01 el 2026-09-03: `Files Recovered: 0`, exit 0, frente a
+        los 27 reales con `-d 68`). Un vacio silencioso es el peor resultado
+        posible en un paso forense, asi que el envoltorio acepta las dos formas y
+        emite solo el numero."""
+        argv = tsk_recover.build_argv(
+            {
+                "image_path": "/ev/i.raw",
+                "output_dir": "/o",
+                "partition_offset": 65664,
+                "directory_inode": "68-144-6",
+            }
+        )
+        assert argv[argv.index("-d") + 1] == "68"
+
+    def test_scope_all_includes_deleted(self):
+        argv = tsk_recover.build_argv(
+            {"image_path": "/ev/i.raw", "output_dir": "/o", "scope": "all"}
+        )
+        assert "-e" in argv and "-a" not in argv
+
+    def test_build_argv_missing_image_path_raises(self):
+        with pytest.raises(ValueError, match="image_path"):
+            tsk_recover.build_argv({"output_dir": "/o"})
+
+    def test_build_argv_missing_output_dir_raises(self):
+        with pytest.raises(ValueError, match="output_dir"):
+            tsk_recover.build_argv({"image_path": "/ev/i.raw"})
+
+    def test_build_argv_bad_scope_raises(self):
+        with pytest.raises(ValueError, match="scope"):
+            tsk_recover.build_argv(
+                {"image_path": "/i", "output_dir": "/o", "scope": "deleted"}
+            )
+
+    @pytest.mark.parametrize("bad", ["../../etc", "68; rm -rf /", "abc", "", "-1"])
+    def test_build_argv_bad_inode_raises(self, bad):
+        with pytest.raises(ValueError, match="directory_inode"):
+            tsk_recover.build_argv(
+                {"image_path": "/i", "output_dir": "/o", "directory_inode": bad}
+            )
+
+    def test_build_argv_bad_offset_raises(self):
+        with pytest.raises(ValueError, match="partition_offset"):
+            tsk_recover.build_argv(
+                {"image_path": "/i", "output_dir": "/o", "partition_offset": -1}
+            )
+
+    def test_build_argv_bad_filesystem_raises(self):
+        with pytest.raises(ValueError, match="filesystem"):
+            tsk_recover.build_argv(
+                {"image_path": "/i", "output_dir": "/o", "filesystem": "zfs"}
+            )
+
+    def test_build_argv_bad_image_format_raises(self):
+        with pytest.raises(ValueError, match="image_format"):
+            tsk_recover.build_argv(
+                {"image_path": "/i", "output_dir": "/o", "image_format": "qcow2"}
+            )
+
+    def test_every_flag_the_wrapper_emits_is_allowed(self):
+        argv = tsk_recover.build_argv(
+            {
+                "image_path": "/i",
+                "output_dir": "/o",
+                "partition_offset": 2048,
+                "directory_inode": "68-144-6",
+                "scope": "all",
+                "filesystem": "ntfs",
+                "image_format": "raw",
+            }
+        )
+        emitted = {tok for tok in argv if tok.startswith("-") and not tok[1:].isdigit()}
+        assert emitted <= tsk_recover.ALLOWED_FLAGS, emitted - tsk_recover.ALLOWED_FLAGS
+
+    def test_parse_counts_recovered_files(self):
+        out = tsk_recover.parse("Files Recovered: 27\n")
+        assert out["files_recovered"] == 27
+        assert out["recovered_nothing"] is False
+
+    def test_parse_flags_a_silent_empty_recovery(self):
+        """tsk_recover sale con 0 tambien cuando no recupera nada: un `-d` mal, un
+        `-o` mal y un directorio realmente vacio son indistinguibles desde el codigo
+        de salida, asi que el cero se marca aparte."""
+        out = tsk_recover.parse("Files Recovered: 0\n")
+        assert out["files_recovered"] == 0
+        assert out["recovered_nothing"] is True
+
+    def test_parse_empty(self):
+        out = tsk_recover.parse("")
+        assert out["files_recovered"] is None
+        assert out["recovered_nothing"] is False
         assert "note" in out

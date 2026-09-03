@@ -115,6 +115,9 @@ from forensia.toolkit.wrappers import (
     tsk_mmls as _tsk_mmls,
 )
 from forensia.toolkit.wrappers import (
+    tsk_recover as _tsk_recover,
+)
+from forensia.toolkit.wrappers import (
     volatility3 as _volatility3,
 )
 from forensia.toolkit.wrappers import (
@@ -516,6 +519,26 @@ CATALOG: tuple[Tool, ...] = (
         allowed_flags=_tsk_icat.ALLOWED_FLAGS,
         build_argv=_tsk_icat.build_argv,
         parse=_tsk_icat.parse,
+    ),
+
+    # Extracción de un ÁRBOL de ficheros (TSK, stage base). Es el productor que le
+    # faltaba al catálogo: `tsk_icat` saca UN fichero a `out/stdout.bin`, así que
+    # ninguna tool podía construir un DIRECTORIO derivado. Lee la imagen sin montar
+    # el sistema de ficheros, igual que el resto de la familia TSK.
+    Tool(
+        "tsk_recover",
+        "tsk_recover",
+        ("unix", "windows"),
+        returns="artifact",
+        toolkits=_BOTH,
+        image_param="image_path",
+        path_parameters=(
+            _path("image_path", _E, PathKind.FILE),
+            _OUTPUT_DIR,
+        ),
+        allowed_flags=_tsk_recover.ALLOWED_FLAGS,
+        build_argv=_tsk_recover.build_argv,
+        parse=_tsk_recover.parse,
     ),
 
     # Super-timeline (Plaso, stage base) — lento, kit "primera tarde"

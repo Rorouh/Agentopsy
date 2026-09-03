@@ -320,6 +320,53 @@ TOOL_PARAM_SCHEMAS: dict[str, dict[str, Any]] = {
         },
         "additionalProperties": False,
     },
+    "tsk_recover": {
+        "type": "object",
+        "properties": {
+            "directory_inode": {
+                "type": "string",
+                "pattern": r"^\d+(?:-\d+){0,2}$",
+                "description": (
+                    "TSK metadata address of the DIRECTORY to recover, exactly as "
+                    "tsk_fls printed it ('68' or '68-144-6'). Omit it and the whole "
+                    "filesystem is walked, which on a real image is very large: "
+                    "locate the subtree with tsk_fls first."
+                ),
+            },
+            "partition_offset": {
+                "type": "integer",
+                "minimum": 0,
+                "description": (
+                    "Partition start offset in sectors (from tsk_mmls). tsk_recover "
+                    "NEEDS it together with directory_inode when the image has a "
+                    "volume system, which a disk image normally does."
+                ),
+            },
+            "scope": {
+                "type": "string",
+                "enum": ["allocated", "all"],
+                "default": "allocated",
+                "description": (
+                    "'allocated' recovers live files only; 'all' also recovers "
+                    "deleted ones. Say which one you used when you report."
+                ),
+            },
+            "filesystem": {
+                "type": "string",
+                "enum": [
+                    "ntfs", "fat", "fat12", "fat16", "fat32", "ext2", "ext3",
+                    "ext4", "hfs", "iso9660", "ufs", "yaffs2",
+                ],
+                "description": "Filesystem type if auto-detect fails.",
+            },
+            "image_format": {
+                "type": "string",
+                "enum": ["raw", "ewf", "aff", "vmdk", "vhd"],
+                "description": "Container format of the image.",
+            },
+        },
+        "additionalProperties": False,
+    },
     "hashdeep": {
         "type": "object",
         "properties": {
@@ -607,6 +654,7 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "hashdeep": "Hash a file or a whole extracted tree with several algorithms at once (MD5/SHA-256/…). Use it to cross-check an image against its baseline, or to produce the hash set of extracted artifacts for the report.",
     "foremost": "Carve files by header/footer signature from unallocated space, recovers deleted files whose metadata is gone. Writes carved files grouped by type plus an audit.txt into the run output.",
     "aff4imager": "List or extract streams from an AFF4 volume (e.g. a WinPmem 3.x RAM acquisition). Call WITHOUT params to list the stream URNs; call again with `stream`=<that URN> to export it into the run output, then feed the exported raw to volatility3 as {run_id, relpath}.",
+    "tsk_recover": "Extract a whole DIRECTORY TREE from the disk evidence into the run output, preserving the folder structure, without mounting the filesystem. This is the step BEFORE any tool that consumes a FOLDER rather than a single file: tsk_icat gives you one file, this gives you the tree. Locate the directory with tsk_fls, then pass its inode as directory_inode plus the partition_offset from tsk_mmls. The recovered tree lands in recovered/; hand it on as {run_id, relpath}.",
     "jq": "Filter JSON output from other tools.",
 }
 
