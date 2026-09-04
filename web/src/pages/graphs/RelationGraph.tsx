@@ -1,7 +1,12 @@
 import { forwardRef } from "react";
 
-import type { GraphCanvas, GraphEdge, GraphNode } from "../../api/types";
-import { useThemePalette } from "../timeline/themePalette";
+import type {
+  GraphCanvas,
+  GraphEdge,
+  GraphInventory,
+  GraphNode,
+} from "../../api/types";
+import { useThemePalette, type Palette } from "../timeline/themePalette";
 import {
   NODOS_LEYENDA,
   colorNodo,
@@ -11,7 +16,7 @@ import {
 } from "./vocabulario";
 import { useLang } from "../../i18n";
 
-// La FIGURA del grafo de relaciones.
+// La FIGURA del grafo de relaciones, en sus DOS modos.
 //
 // La geometría NO se calcula aquí, viene resuelta del backend
 // (`forensia.graph.layout`), que es lo que hace que el mismo grafo dé la misma
@@ -19,23 +24,40 @@ import { useLang } from "../../i18n";
 // tiene que ser reproducible, y una simulación de fuerzas con semilla aleatoria
 // dibuja distinto lo mismo en cada render.
 //
-// Esto NO impide explorarla. El zoom y el desplazamiento van en el CONTENEDOR
-// (`GraphSection`), como transformación CSS de la vista, y no como un
-// `transform` dentro del SVG: así lo que se serializa al exportar el PNG es la
-// geometría canónica, mire el perito donde mire en ese momento. Son dos
-// momentos distintos y no se mezclan.
+// Los dos modos existen porque la PANTALLA y el PNG no son el mismo objeto:
+//
+// - `pantalla` dibuja SOLO el grafo (aristas, rótulos y nodos), en un lienzo del
+//   tamaño exacto que calculó el backend. Es lo único que el visor mueve y
+//   escala. El rótulo de la figura, el recuento y la leyenda quedan FUERA, como
+//   texto fijo de la interfaz, porque son el marco de lectura y no el dato:
+//   arrastrarlos con el dibujo sacaba el título de la ventana y dejaba la
+//   leyenda lejos de donde se la busca, que es lo que hacía que la sección no
+//   pareciese una herramienta acabada.
+// - `exportacion` compone la figura ENTERA (cabecera, dibujo, leyenda y
+//   procedencia) en un solo SVG, que es el que se serializa al PNG que se
+//   adjunta a un informe. Se monta solo en el momento de exportar.
+//
+// El dibujo es el MISMO en los dos (`Dibujo`), así que lo que el perito explora
+// y lo que se lleva al informe no pueden divergir. Y como el zoom y el
+// desplazamiento viven en el CONTENEDOR (`GraphViewport`) y no en un `transform`
+// dentro del SVG, lo que se serializa sigue siendo la geometría canónica, mire
+// el perito donde mire.
 //
 // Todo el texto entra como nodos de texto del SVG (React los escapa), nunca como
 // HTML: el valor de un nodo es contenido DERIVADO DE EVIDENCIA y puede venir
 // sembrado por el investigado (SECURITY INVARIANT 8).
 
-//: Márgenes del lienzo. El dibujo del backend ocupa `lienzo.ancho x lienzo.alto`;
-//: aquí se le añade la cabecera arriba y la banda de leyenda y procedencia abajo.
+//: Márgenes del lienzo en el modo de EXPORTACIÓN. El dibujo ocupa
+//: `lienzo.ancho x lienzo.alto`; aquí se le añade la cabecera arriba y la banda
+//: de leyenda y procedencia abajo.
 const MARGEN_X = 30;
 const CABECERA = 92;
 //: Pie con UNA línea de nodos y UNA de relaciones. Cuando la leyenda necesita
 //: más líneas, crece con ellas (`pie`, calculado en el render).
 const PIE_BASE = 128;
+//: Alto de cada línea del pie (procedencia, aviso y, si la hay, la vista
+//: declarada).
+const ALTO_LINEA_PIE = 16;
 
 //: Tiene que coincidir con `RADIO_NODO` y `MAX_CHARS_ETIQUETA` de
 //: `forensia/graph/layout.py`: allí se reserva el sitio de cada nodo y aquí se
@@ -61,14 +83,15 @@ const APAGADO = 0.22;
 
 // ── rejilla de la leyenda ─────────────────────────────────────────────────────
 //
-// Las dos filas comparten UNA rejilla de columnas: la muestra de la primera
-// relación cae justo debajo de la del primer tipo de nodo, la de la segunda
-// debajo de la segunda, y así. Antes cada fila llevaba su propio paso fijo (118
-// los nodos, 152 las relaciones), de modo que solo coincidía la primera entrada
-// y el resto quedaba a la deriva; y como el paso no miraba la etiqueta, una
-// larga se comía el hueco de la siguiente («Transferencia de ficheros» ocupa
-// 148 de los 152 px de su hueco) y dos entradas acababan pegadas mientras otras
-// dos quedaban separadas por un palmo.
+// Solo la usa el modo de EXPORTACIÓN: en pantalla la leyenda es HTML y la
+// dispone el navegador. Las dos filas comparten UNA rejilla de columnas: la
+// muestra de la primera relación cae justo debajo de la del primer tipo de nodo,
+// la de la segunda debajo de la segunda, y así. Antes cada fila llevaba su
+// propio paso fijo (118 los nodos, 152 las relaciones), de modo que solo
+// coincidía la primera entrada y el resto quedaba a la deriva; y como el paso no
+// miraba la etiqueta, una larga se comía el hueco de la siguiente
+// («Transferencia de ficheros» ocupa 148 de los 152 px de su hueco) y dos
+// entradas acababan pegadas mientras otras dos quedaban separadas por un palmo.
 //
 // El ancho de columna sale de la entrada MÁS ancha de la leyenda, así que
 // ninguna invade a la que tiene al lado, y las que no caben en el ancho de la
@@ -102,7 +125,21 @@ function porLinea(entradas: number, cabenPorLinea: number): number {
   return Math.ceil(entradas / Math.ceil(entradas / cabenPorLinea));
 }
 
+// Qué tipos y qué relaciones PINTA de verdad esta figura. La leyenda del SVG
+// exportado y la de la pantalla salen de esta misma cuenta, para que no puedan
+// decir cosas distintas de la misma figura.
+export function tiposPresentes(nodos: GraphNode[]): string[] {
+  return NODOS_LEYENDA.filter((tipo) => nodos.some((n) => n.tipo === tipo));
+}
+
+export function relacionesPresentes(relaciones: GraphEdge[]): string[] {
+  return Array.from(new Set(relaciones.map((r) => r.tipo))).sort();
+}
+
+export type ModoFigura = "pantalla" | "exportacion";
+
 type Props = {
+  modo: ModoFigura;
   titulo: string;
   subtitulo: string;
   nodos: GraphNode[];
@@ -120,6 +157,18 @@ type Props = {
   exportadoEn: string;
   seleccionado?: string | null;
   onSeleccionar?: (valor: string | null) => void;
+  //: FUNCIÓN «INVENTARIO». Las entidades sin ninguna relación. Solo las dibuja
+  //: el modo de EXPORTACIÓN, en una banda al pie: en pantalla se leen mejor como
+  //: lista, y meterlas en el lienzo lo alargaba hasta devolver los rótulos a los
+  //: cuatro píxeles de los que se venía (medido, ver `graph/inventario.py`).
+  inventario?: GraphInventory | null;
+  //: FUNCIÓN «VISTAS». El corte aplicado, ya redactado. Va DENTRO del PNG: una
+  //: figura recortada que no dice que lo está engaña a quien la lee en un
+  //: informe.
+  vistaDeclarada?: string | null;
+  //: FUNCIÓN «LOCALIZADOR». Cuántos saltos de vecindad quedan a plena tinta al
+  //: enfocar un nodo. 1 es lo de siempre.
+  profundidadFoco?: number;
 };
 
 function recorta(valor: string): string {
@@ -171,53 +220,73 @@ function formaNodo(tipo: string, x: number, y: number, color: string) {
   }
 }
 
-export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationGraph(
-  {
-    titulo,
-    subtitulo,
-    nodos,
-    relaciones,
-    lienzo,
-    aviso,
-    vacio,
-    caseName,
-    exportadoEn,
-    seleccionado,
-    onSeleccionar,
-  },
-  ref,
-) {
-  const palette = useThemePalette();
-  const { t } = useLang();
-  // Un tipo que el vocabulario no declara sale TAL CUAL (RULE 2).
-  const rotuloNodo = (tipo: string) => {
-    const k = claveNodo(tipo);
-    return k ? t(k) : tipo;
-  };
-  const rotuloRelacion = (tipo: string) => {
-    const k = claveRelacion(tipo);
-    return k ? t(k) : tipo;
-  };
-  const oscuro = document.documentElement.getAttribute("data-theme") === "dark";
+type DibujoProps = {
+  nodos: GraphNode[];
+  relaciones: GraphEdge[];
+  //: Desplazamiento del dibujo dentro del SVG que lo contiene. Es 0 en pantalla
+  //: (el SVG es exactamente el lienzo) y deja sitio a la cabecera al exportar.
+  dx: number;
+  dy: number;
+  oscuro: boolean;
+  palette: Palette;
+  rotuloNodo: (tipo: string) => string;
+  rotuloRelacion: (tipo: string) => string;
+  seleccionado?: string | null;
+  onSeleccionar?: (valor: string | null) => void;
+  profundidad: number;
+};
 
-  const ancho = lienzo.ancho + MARGEN_X * 2;
-  const dx = MARGEN_X;
-  const dy = CABECERA;
+// FUNCIÓN «LOCALIZADOR»: la vecindad de un nodo hasta `profundidad` saltos.
+//
+// Con un salto se ve con quién habla la entidad; con dos, la cadena en la que
+// está metida, que en un caso de exfiltración es lo que se quiere enseñar (la
+// cuenta, el fichero que toca y a dónde va). Más de dos, sobre un grafo de 36
+// nodos, ya alcanza casi todo y deja de distinguir.
+function vecindadHasta(
+  origen: string,
+  relaciones: GraphEdge[],
+  profundidad: number,
+): Set<string> {
+  const dentro = new Set<string>([origen]);
+  let frontera = new Set<string>([origen]);
+  for (let salto = 0; salto < profundidad; salto += 1) {
+    const siguiente = new Set<string>();
+    for (const r of relaciones) {
+      if (frontera.has(r.origen) && !dentro.has(r.destino)) siguiente.add(r.destino);
+      if (frontera.has(r.destino) && !dentro.has(r.origen)) siguiente.add(r.origen);
+    }
+    if (siguiente.size === 0) break;
+    for (const v of siguiente) dentro.add(v);
+    frontera = siguiente;
+  }
+  return dentro;
+}
 
+// El DIBUJO: aristas, sus rótulos y los nodos. Es lo único que el visor mueve, y
+// es lo mismo que se compone dentro de la figura exportada.
+function Dibujo({
+  nodos,
+  relaciones,
+  dx,
+  dy,
+  oscuro,
+  palette,
+  rotuloNodo,
+  rotuloRelacion,
+  seleccionado,
+  onSeleccionar,
+  profundidad,
+}: DibujoProps) {
   const posicion = new Map(nodos.map((n) => [n.valor, n]));
 
-  // ENFOCAR un nodo: su vecindad inmediata queda a plena tinta y el resto se
-  // apaga. Es el punto de entrada que a un grafo denso le falta, y es lo que
-  // hace legible una figura que de un vistazo es una maraña.
+  // ENFOCAR un nodo: su vecindad queda a plena tinta y el resto se apaga. Es el
+  // punto de entrada que a un grafo denso le falta, y es lo que hace legible una
+  // figura que de un vistazo es una maraña.
   const hayFoco = Boolean(seleccionado && posicion.has(seleccionado));
-  const vecindad = new Set<string>();
-  if (hayFoco && seleccionado) {
-    vecindad.add(seleccionado);
-    for (const r of relaciones) {
-      if (r.origen === seleccionado) vecindad.add(r.destino);
-      if (r.destino === seleccionado) vecindad.add(r.origen);
-    }
-  }
+  const vecindad =
+    hayFoco && seleccionado
+      ? vecindadHasta(seleccionado, relaciones, profundidad)
+      : new Set<string>();
 
   // La geometría de cada arista, resuelta UNA vez y compartida por las dos
   // pasadas de pintado (líneas y rótulos).
@@ -239,132 +308,16 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
         y2,
         angulo: Math.atan2(y2 - y1, x2 - x1),
         color: colorRelacion(r.tipo, oscuro),
-        tenue: hayFoco && r.origen !== seleccionado && r.destino !== seleccionado,
+        // Encendida cuando los DOS extremos están en la vecindad: con más de
+        // un salto, una arista con un extremo fuera apuntaría a un nodo
+        // apagado y se leería como que va a ninguna parte.
+        tenue: hayFoco && !(vecindad.has(r.origen) && vecindad.has(r.destino)),
       },
     ];
   });
 
-  // Solo se pintan en la leyenda los tipos y las relaciones PRESENTES: una
-  // leyenda con trece entradas de las que se usan dos no explica, estorba.
-  const tiposPresentes = NODOS_LEYENDA.filter((t) => nodos.some((n) => n.tipo === t));
-  const relacionesPresentes = Array.from(new Set(relaciones.map((r) => r.tipo))).sort();
-
-  // La rejilla que comparten las dos filas de la leyenda.
-  const anchoColumna =
-    Math.max(
-      0,
-      ...tiposPresentes.map((tipo) => MUESTRA_NODO + anchoEtiqueta(rotuloNodo(tipo))),
-      ...relacionesPresentes.map(
-        (tipo) => MUESTRA_RELACION + anchoEtiqueta(rotuloRelacion(tipo)),
-      ),
-    ) + LEYENDA_AIRE;
-  //: Cuántas columnas caben. La última no necesita su aire de la derecha, así
-  //: que se le devuelve antes de dividir: sin eso, una leyenda que entra por los
-  //: pelos se parte en dos líneas sin motivo.
-  const caben = Math.max(
-    1,
-    Math.floor((ancho - MARGEN_X - LEYENDA_X + LEYENDA_AIRE) / anchoColumna),
-  );
-  const nodosPorLinea = porLinea(tiposPresentes.length, caben);
-  const relacionesPorLinea = porLinea(relacionesPresentes.length, caben);
-  // Una fila sin entradas ocupa igualmente su línea: ahí va su «n/d».
-  const lineasNodos = Math.max(1, Math.ceil(tiposPresentes.length / nodosPorLinea));
-  const lineasRelaciones = Math.max(
-    1,
-    Math.ceil(relacionesPresentes.length / relacionesPorLinea),
-  );
-
-  const pie = PIE_BASE + (lineasNodos + lineasRelaciones - 2) * LEYENDA_LINEA;
-  const alto = lienzo.alto + CABECERA + pie;
-  //: `y` de la línea `i` de la leyenda, contando desde la de «NODOS».
-  const yLinea = (i: number) => alto - pie + 26 + i * LEYENDA_LINEA;
-  //: `x` de la entrada que ocupa la columna `c`, la MISMA en las dos filas.
-  const xColumna = (c: number) => LEYENDA_X + c * anchoColumna;
-
   return (
-    <svg
-      ref={ref}
-      width={ancho}
-      height={alto}
-      viewBox={`0 0 ${ancho} ${alto}`}
-      xmlns="http://www.w3.org/2000/svg"
-      style={{ maxWidth: "100%", height: "auto", display: "block" }}
-      role="img"
-      aria-label={`${titulo}. ${subtitulo}`}
-    >
-      <rect x={0} y={0} width={ancho} height={alto} fill={palette["--surface"]} />
-      <rect
-        x={0.5}
-        y={0.5}
-        width={ancho - 1}
-        height={alto - 1}
-        fill="none"
-        stroke={palette["--hair"]}
-        strokeWidth={1}
-      />
-
-      {/* cabecera */}
-      <text
-        x={MARGEN_X}
-        y={34}
-        fill={palette["--ink"]}
-        fontFamily="ui-sans-serif, system-ui, sans-serif"
-        fontSize={16}
-        fontWeight={600}
-      >
-        {titulo}
-      </text>
-      <text
-        x={MARGEN_X}
-        y={54}
-        fill={palette["--ink-3"]}
-        fontFamily="ui-sans-serif, system-ui, sans-serif"
-        fontSize={12}
-      >
-        {subtitulo}
-      </text>
-      {/* la píldora del recuento, centrada */}
-      <rect
-        x={ancho / 2 - 78}
-        y={22}
-        width={156}
-        height={24}
-        fill="none"
-        stroke={palette["--hair"]}
-        strokeWidth={1}
-      />
-      <text
-        x={ancho / 2}
-        y={38}
-        textAnchor="middle"
-        fill={palette["--ink-2"]}
-        fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
-        fontSize={11}
-      >
-        {t("graph.svgCounts", { nodes: nodos.length, edges: relaciones.length })}
-      </text>
-      <line
-        x1={MARGEN_X}
-        y1={CABECERA - 20}
-        x2={ancho - MARGEN_X}
-        y2={CABECERA - 20}
-        stroke={palette["--hair"]}
-        strokeWidth={1}
-      />
-
-      {nodos.length === 0 && (
-        <text
-          x={ancho / 2}
-          y={CABECERA + lienzo.alto / 2}
-          textAnchor="middle"
-          fill={palette["--ink-3"]}
-          fontFamily="ui-sans-serif, system-ui, sans-serif"
-          fontSize={13}
-        >
-          {vacio}
-        </text>
-      )}
-
+    <>
       {/* Aristas, en DOS pasadas: primero todas las líneas y luego todos los
           rótulos. Con una sola pasada, la línea de una arista posterior cruzaba
           por encima del rótulo de la anterior y lo tachaba. */}
@@ -377,7 +330,10 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
         const py = y2 - oy;
         const punta = 7;
         return (
-          <g key={`linea-${r.origen}-${r.destino}-${r.tipo}-${i}`} opacity={tenue ? APAGADO : 1}>
+          <g
+            key={`linea-${r.origen}-${r.destino}-${r.tipo}-${i}`}
+            opacity={tenue ? APAGADO : 1}
+          >
             <line
               x1={x1 + ox}
               y1={y1 + oy}
@@ -403,18 +359,21 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
           de otros nodos: en un PNG no hay hover que lo salve. */}
       {trazos.map(({ r, i, x1, y1, x2, y2, tenue }) => {
         const texto = rotuloRelacion(r.tipo);
-        const ancho = texto.length * ANCHO_CARACTER_RELACION + 10;
+        const anchoCaja = texto.length * ANCHO_CARACTER_RELACION + 10;
         // A dos tercios hacia el destino, no en el medio: en un concentrador
         // (una cuenta con varias aristas) todos los rótulos se juntaban sobre el
         // nombre del nodo y no se leía ninguno.
         const mx = x1 + (x2 - x1) * 0.62;
         const my = y1 + (y2 - y1) * 0.62;
         return (
-          <g key={`rotulo-${r.origen}-${r.destino}-${r.tipo}-${i}`} opacity={tenue ? APAGADO : 1}>
+          <g
+            key={`rotulo-${r.origen}-${r.destino}-${r.tipo}-${i}`}
+            opacity={tenue ? APAGADO : 1}
+          >
             <rect
-              x={mx - ancho / 2}
+              x={mx - anchoCaja / 2}
               y={my - 8}
-              width={ancho}
+              width={anchoCaja}
               height={15}
               fill={palette["--surface"]}
               stroke={palette["--hair"]}
@@ -497,6 +456,298 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
           </g>
         );
       })}
+    </>
+  );
+}
+
+export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationGraph(
+  {
+    modo,
+    titulo,
+    subtitulo,
+    nodos,
+    relaciones,
+    lienzo,
+    aviso,
+    vacio,
+    caseName,
+    exportadoEn,
+    seleccionado,
+    onSeleccionar,
+    inventario,
+    vistaDeclarada,
+    profundidadFoco = 1,
+  },
+  ref,
+) {
+  const palette = useThemePalette();
+  const { t } = useLang();
+  // Un tipo que el vocabulario no declara sale TAL CUAL (RULE 2).
+  const rotuloNodo = (tipo: string) => {
+    const k = claveNodo(tipo);
+    return k ? t(k) : tipo;
+  };
+  const rotuloRelacion = (tipo: string) => {
+    const k = claveRelacion(tipo);
+    return k ? t(k) : tipo;
+  };
+  const oscuro = document.documentElement.getAttribute("data-theme") === "dark";
+
+  const dibujo = (dx: number, dy: number, extra: GraphNode[] = []) => (
+    <Dibujo
+      nodos={extra.length ? [...nodos, ...extra] : nodos}
+      relaciones={relaciones}
+      dx={dx}
+      dy={dy}
+      oscuro={oscuro}
+      palette={palette}
+      rotuloNodo={rotuloNodo}
+      rotuloRelacion={rotuloRelacion}
+      seleccionado={seleccionado}
+      onSeleccionar={onSeleccionar}
+      profundidad={profundidadFoco}
+    />
+  );
+
+  // ── modo PANTALLA: solo el dibujo ──────────────────────────────────────────
+  //
+  // El SVG mide exactamente el lienzo que calculó el backend y no se estira solo
+  // (nada de `width: 100%`): quien decide a qué escala se ve es el visor, que
+  // así puede ajustar la figura ENTERA a la ventana en vez de ajustar solo su
+  // ancho. El rótulo, el recuento y la leyenda los pinta la interfaz alrededor,
+  // fijos.
+  if (modo === "pantalla") {
+    return (
+      <svg
+        ref={ref}
+        width={lienzo.ancho}
+        height={lienzo.alto}
+        viewBox={`0 0 ${lienzo.ancho} ${lienzo.alto}`}
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ display: "block" }}
+        role="img"
+        aria-label={`${titulo}. ${subtitulo}`}
+      >
+        <rect
+          x={0}
+          y={0}
+          width={lienzo.ancho}
+          height={lienzo.alto}
+          fill={palette["--surface"]}
+        />
+        {/* El borde del lienzo: al mover la figura dice dónde acaba, que es lo
+            que evita creer que se ha perdido algo fuera de la ventana. */}
+        <rect
+          x={0.5}
+          y={0.5}
+          width={lienzo.ancho - 1}
+          height={lienzo.alto - 1}
+          fill="none"
+          stroke={palette["--hair"]}
+          strokeWidth={1}
+        />
+        {nodos.length === 0 && (
+          <text
+            x={lienzo.ancho / 2}
+            y={lienzo.alto / 2}
+            textAnchor="middle"
+            fill={palette["--ink-3"]}
+            fontFamily="ui-sans-serif, system-ui, sans-serif"
+            fontSize={13}
+          >
+            {vacio}
+          </text>
+        )}
+        {dibujo(0, 0)}
+      </svg>
+    );
+  }
+
+  // ── modo EXPORTACIÓN: la figura entera, en un solo SVG ─────────────────────
+
+  const ancho = lienzo.ancho + MARGEN_X * 2;
+  const dx = MARGEN_X;
+  const dy = CABECERA;
+
+  // Solo se pintan en la leyenda los tipos y las relaciones PRESENTES: una
+  // leyenda con trece entradas de las que se usan dos no explica, estorba.
+  const tipos = tiposPresentes(nodos);
+  const relacionesLeyenda = relacionesPresentes(relaciones);
+
+  // La rejilla que comparten las dos filas de la leyenda.
+  const anchoColumna =
+    Math.max(
+      0,
+      ...tipos.map((tipo) => MUESTRA_NODO + anchoEtiqueta(rotuloNodo(tipo))),
+      ...relacionesLeyenda.map(
+        (tipo) => MUESTRA_RELACION + anchoEtiqueta(rotuloRelacion(tipo)),
+      ),
+    ) + LEYENDA_AIRE;
+  //: Cuántas columnas caben. La última no necesita su aire de la derecha, así
+  //: que se le devuelve antes de dividir: sin eso, una leyenda que entra por los
+  //: pelos se parte en dos líneas sin motivo.
+  const caben = Math.max(
+    1,
+    Math.floor((ancho - MARGEN_X - LEYENDA_X + LEYENDA_AIRE) / anchoColumna),
+  );
+  const nodosPorLinea = porLinea(tipos.length, caben);
+  const relacionesPorLinea = porLinea(relacionesLeyenda.length, caben);
+  // Una fila sin entradas ocupa igualmente su línea: ahí va su «n/d».
+  const lineasNodos = Math.max(1, Math.ceil(tipos.length / nodosPorLinea));
+  const lineasRelaciones = Math.max(
+    1,
+    Math.ceil(relacionesLeyenda.length / relacionesPorLinea),
+  );
+
+  // FUNCIÓN «INVENTARIO»: la banda de entidades sueltas solo la dibuja el PNG, y
+  // trae su propio alto de lienzo, calculado por el backend con la MISMA reserva
+  // de sitio que usa el dibujo. El ancho no cambia nunca, así que las
+  // coordenadas de la red son idénticas a las de la pantalla.
+  const banda = inventario && inventario.nodos.length > 0 ? inventario : null;
+  const altoDibujo = banda ? banda.lienzo.alto : lienzo.alto;
+
+  // Las líneas del pie, de arriba abajo. La vista declarada (FUNCIÓN «VISTAS»)
+  // añade una: un recorte que no se anuncia dentro de la propia imagen es lo que
+  // convierte una figura en un argumento tramposo.
+  const lineasPie: { texto: string; mono: boolean }[] = [
+    {
+      texto: t("graph.provenance", {
+        case: caseName,
+        date: exportadoEn,
+        nodes: nodos.length + (banda ? banda.nodos.length : 0),
+        edges: relaciones.length,
+      }),
+      mono: true,
+    },
+    { texto: aviso, mono: false },
+  ];
+  if (vistaDeclarada) lineasPie.push({ texto: vistaDeclarada, mono: true });
+
+  const pie =
+    PIE_BASE +
+    (lineasNodos + lineasRelaciones - 2) * LEYENDA_LINEA +
+    (lineasPie.length - 2) * ALTO_LINEA_PIE;
+  const alto = altoDibujo + CABECERA + pie;
+  //: `y` de la línea `i` de la leyenda, contando desde la de «NODOS».
+  const yLinea = (i: number) => alto - pie + 26 + i * LEYENDA_LINEA;
+  //: `x` de la entrada que ocupa la columna `c`, la MISMA en las dos filas.
+  const xColumna = (c: number) => LEYENDA_X + c * anchoColumna;
+
+  return (
+    <svg
+      ref={ref}
+      width={ancho}
+      height={alto}
+      viewBox={`0 0 ${ancho} ${alto}`}
+      xmlns="http://www.w3.org/2000/svg"
+      style={{ maxWidth: "100%", height: "auto", display: "block" }}
+      role="img"
+      aria-label={`${titulo}. ${subtitulo}`}
+    >
+      <rect x={0} y={0} width={ancho} height={alto} fill={palette["--surface"]} />
+      <rect
+        x={0.5}
+        y={0.5}
+        width={ancho - 1}
+        height={alto - 1}
+        fill="none"
+        stroke={palette["--hair"]}
+        strokeWidth={1}
+      />
+
+      {/* cabecera */}
+      <text
+        x={MARGEN_X}
+        y={34}
+        fill={palette["--ink"]}
+        fontFamily="ui-sans-serif, system-ui, sans-serif"
+        fontSize={16}
+        fontWeight={600}
+      >
+        {titulo}
+      </text>
+      <text
+        x={MARGEN_X}
+        y={54}
+        fill={palette["--ink-3"]}
+        fontFamily="ui-sans-serif, system-ui, sans-serif"
+        fontSize={12}
+      >
+        {subtitulo}
+      </text>
+      {/* la píldora del recuento, centrada */}
+      <rect
+        x={ancho / 2 - 78}
+        y={22}
+        width={156}
+        height={24}
+        fill="none"
+        stroke={palette["--hair"]}
+        strokeWidth={1}
+      />
+      <text
+        x={ancho / 2}
+        y={38}
+        textAnchor="middle"
+        fill={palette["--ink-2"]}
+        fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+        fontSize={11}
+      >
+        {t("graph.svgCounts", {
+          nodes: nodos.length + (banda ? banda.nodos.length : 0),
+          edges: relaciones.length,
+        })}
+      </text>
+      <line
+        x1={MARGEN_X}
+        y1={CABECERA - 20}
+        x2={ancho - MARGEN_X}
+        y2={CABECERA - 20}
+        stroke={palette["--hair"]}
+        strokeWidth={1}
+      />
+
+      {nodos.length === 0 && (
+        <text
+          x={ancho / 2}
+          y={CABECERA + lienzo.alto / 2}
+          textAnchor="middle"
+          fill={palette["--ink-3"]}
+          fontFamily="ui-sans-serif, system-ui, sans-serif"
+          fontSize={13}
+        >
+          {vacio}
+        </text>
+      )}
+
+      {dibujo(dx, dy, banda ? banda.nodos : [])}
+
+      {/* FUNCIÓN «INVENTARIO»: la raya y el rótulo que abren la banda. Los nodos
+          de la banda los pinta el mismo `Dibujo` que la red, con su forma y su
+          color, porque son las mismas entidades: lo único que cambia es que
+          ninguna relación las nombra, y eso lo dice el rótulo. */}
+      {banda && (
+        <>
+          <line
+            x1={MARGEN_X}
+            y1={dy + banda.y}
+            x2={ancho - MARGEN_X}
+            y2={dy + banda.y}
+            stroke={palette["--hair"]}
+            strokeWidth={1}
+            strokeDasharray="3 3"
+          />
+          <text
+            x={MARGEN_X}
+            y={dy + banda.y + 24}
+            fill={palette["--ink-2"]}
+            fontFamily="ui-sans-serif, system-ui, sans-serif"
+            fontSize={11}
+          >
+            {t("graph.inventoryBand", { count: banda.total })}
+          </text>
+        </>
+      )}
 
       {/* leyenda, abajo a la izquierda, DENTRO de la figura */}
       <line
@@ -517,14 +768,14 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
       >
         {t("graph.legendNodes")}
       </text>
-      {tiposPresentes.map((t, i) => (
+      {tipos.map((tipo, i) => (
         <g
-          key={`leyenda-nodo-${t}`}
+          key={`leyenda-nodo-${tipo}`}
           transform={`translate(${xColumna(i % nodosPorLinea)}, ${yLinea(
             Math.floor(i / nodosPorLinea),
           )})`}
         >
-          <rect x={0} y={-7} width={9} height={9} fill={colorNodo(t, oscuro)} />
+          <rect x={0} y={-7} width={9} height={9} fill={colorNodo(tipo, oscuro)} />
           <text
             x={MUESTRA_NODO}
             y={1}
@@ -532,11 +783,11 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
             fontFamily="ui-sans-serif, system-ui, sans-serif"
             fontSize={10.5}
           >
-            {rotuloNodo(t)}
+            {rotuloNodo(tipo)}
           </text>
         </g>
       ))}
-      {tiposPresentes.length === 0 && (
+      {tipos.length === 0 && (
         <text
           x={LEYENDA_X}
           y={yLinea(0) + 4}
@@ -557,14 +808,21 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
       >
         {t("graph.legendEdges")}
       </text>
-      {relacionesPresentes.map((t, i) => (
+      {relacionesLeyenda.map((tipo, i) => (
         <g
-          key={`leyenda-rel-${t}`}
+          key={`leyenda-rel-${tipo}`}
           transform={`translate(${xColumna(i % relacionesPorLinea)}, ${yLinea(
             lineasNodos + Math.floor(i / relacionesPorLinea),
           )})`}
         >
-          <line x1={0} y1={-3} x2={14} y2={-3} stroke={colorRelacion(t, oscuro)} strokeWidth={1.6} />
+          <line
+            x1={0}
+            y1={-3}
+            x2={14}
+            y2={-3}
+            stroke={colorRelacion(tipo, oscuro)}
+            strokeWidth={1.6}
+          />
           <text
             x={MUESTRA_RELACION}
             y={1}
@@ -572,11 +830,11 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
             fontFamily="ui-sans-serif, system-ui, sans-serif"
             fontSize={10.5}
           >
-            {rotuloRelacion(t)}
+            {rotuloRelacion(tipo)}
           </text>
         </g>
       ))}
-      {relacionesPresentes.length === 0 && (
+      {relacionesLeyenda.length === 0 && (
         <text
           x={LEYENDA_X}
           y={yLinea(lineasNodos) + 4}
@@ -590,29 +848,22 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
 
       {/* procedencia, DENTRO del dibujo: un PNG suelto tiene que decir de qué
           caso es, cuándo se exportó y qué clase de dato es lo que enseña. */}
-      <text
-        x={MARGEN_X}
-        y={alto - 34}
-        fill={palette["--ink-3"]}
-        fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
-        fontSize={9.5}
-      >
-        {t("graph.provenance", {
-          case: caseName,
-          date: exportadoEn,
-          nodes: nodos.length,
-          edges: relaciones.length,
-        })}
-      </text>
-      <text
-        x={MARGEN_X}
-        y={alto - 18}
-        fill={palette["--ink-3"]}
-        fontFamily="ui-sans-serif, system-ui, sans-serif"
-        fontSize={9.5}
-      >
-        {aviso}
-      </text>
+      {lineasPie.map((linea, i) => (
+        <text
+          key={`pie-${i}`}
+          x={MARGEN_X}
+          y={alto - 18 - (lineasPie.length - 1 - i) * ALTO_LINEA_PIE}
+          fill={palette["--ink-3"]}
+          fontFamily={
+            linea.mono
+              ? "ui-monospace, SFMono-Regular, Menlo, monospace"
+              : "ui-sans-serif, system-ui, sans-serif"
+          }
+          fontSize={9.5}
+        >
+          {linea.texto}
+        </text>
+      ))}
     </svg>
   );
 });

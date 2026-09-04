@@ -827,6 +827,9 @@ export interface GraphNode {
   // Solo en el grafo del caso: qué hallazgos sostienen este nodo, y su grado.
   hallazgos?: string[];
   grado?: number;
+  // FUNCIÓN «INVENTARIO»: cierto en un nodo que no participa en ninguna
+  // relación, o sea uno de los que van a la banda del pie y no a la red.
+  suelto?: boolean;
 }
 
 export interface GraphEdge {
@@ -902,6 +905,32 @@ export interface GraphFindingView {
   } | null;
 }
 
+// FUNCIÓN «INVENTARIO» (grafos, en prueba 2026-09-04). Las entidades que el
+// modelo nombró y que no participan en ninguna relación. No es una poda: viajan
+// enteras, con su recuento, y se pintan como lista en pantalla y como banda al
+// pie del PNG. `lienzo` y `y` van en las coordenadas de la EXPORTACIÓN, que es
+// la única figura que las dibuja; el lienzo de la red no las incluye.
+export interface GraphInventory {
+  total: number;
+  en_la_red: number;
+  nodos: GraphNode[];
+  y: number;
+  lienzo: GraphCanvas;
+}
+
+// FUNCIÓN «VISTAS» (grafos, en prueba 2026-09-04). Un corte del grafo del caso
+// por un eje que el caso YA tiene persistido. `hallazgos` es cuántos entran en
+// el corte, no cuántos nodos salen.
+export type GraphVistaEje = "tecnica" | "tactica" | "evidencia" | "severidad";
+
+export interface GraphVista {
+  id: string;
+  eje: GraphVistaEje;
+  valor: string;
+  etiqueta: string;
+  hallazgos: number;
+}
+
 export interface GraphCaseView {
   case_id: string;
   case_name: string;
@@ -913,6 +942,13 @@ export interface GraphCaseView {
   hallazgos: { id: string; title: string }[];
   lienzo: GraphCanvas;
   notas_layout: GraphLayoutNote[];
+  // FUNCIÓN «INVENTARIO»: null cuando toda entidad del caso participa en alguna
+  // relación, que es cuando una banda vacía no aportaría nada.
+  inventario: GraphInventory | null;
+  // FUNCIÓN «VISTAS»: `vista` es el corte APLICADO (null = el caso entero) y
+  // `vistas` los cortes que este caso admite.
+  vista: GraphVista | null;
+  vistas: GraphVista[];
 }
 
 export interface GraphSummary {

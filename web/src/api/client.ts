@@ -487,8 +487,14 @@ export const api = {
       request<GraphIndex>(`/api/cases/${encodeURIComponent(caseId)}/graphs`),
     // El grafo del CASO: los de los hallazgos fundidos por entidad. No gasta
     // ninguna llamada al modelo, funde lo ya extraído.
-    caseGraph: (caseId: string) =>
-      request<GraphCaseView>(`/api/cases/${encodeURIComponent(caseId)}/graphs/case`),
+    // `vista` (FUNCIÓN «VISTAS») corta el grafo por un eje que el caso ya tiene
+    // (`tecnica:T1114`, `tactica:TA0010`, `evidencia:<id>`, `severidad:high`).
+    // Sin ella sale el caso entero, que es lo de siempre.
+    caseGraph: (caseId: string, vista?: string) =>
+      request<GraphCaseView>(
+        `/api/cases/${encodeURIComponent(caseId)}/graphs/case` +
+          (vista ? `?vista=${encodeURIComponent(vista)}` : ""),
+      ),
     graph: (caseId: string, findingId: string) =>
       request<GraphFindingView>(
         `/api/cases/${encodeURIComponent(caseId)}/graphs/${encodeURIComponent(findingId)}`,

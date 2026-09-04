@@ -1082,6 +1082,77 @@ a 9,5 px, cruzando por encima de otros nodos, y en un PNG no hay hover que lo
 salve) y **enfoque**: pulsar un nodo deja su vecindad a plena tinta y apaga el
 resto sin ocultarlo. Pinned by `tests/test_graph_layout.py`.
 
+**La figura deja de arrastrar su propio rótulo, y la red se separa del
+inventario (2026-09-04)**: el título «Grafo de relaciones del caso», el
+subtítulo, la píldora del recuento, la leyenda y la procedencia vivían DENTRO
+del mismo `<svg>` que va en el contenedor con la transformación de zoom y
+desplazamiento, así que arrastrar la figura se llevaba también el marco de
+lectura: el título se salía de la ventana y la leyenda dejaba de estar donde se
+la busca. `RelationGraph` gana un `modo`: `pantalla` dibuja SOLO el grafo, en un
+lienzo del tamaño exacto que calculó el backend, y `exportacion` compone la
+figura entera en un solo SVG que se monta fuera de la vista únicamente mientras
+se serializa el PNG. El dibujo es el MISMO en los dos (`Dibujo`), así que lo que
+el perito explora y lo que se lleva al informe no pueden divergir, y la
+transformación sigue viviendo en el CONTENEDOR, de modo que lo que se serializa
+es la geometría canónica (contrato de `graph/layout.py`, intacto). Con el dibujo
+suelto del envoltorio, «Ajustar encuadre» AJUSTA de verdad: antes solo devolvía
+la escala a 1, y como el SVG se estiraba al 100 % del ancho, encajaba el ANCHO y
+dejaba fuera de la ventana todo el alto de una figura grande; ahora el visor mide
+su marco con un `ResizeObserver` y calcula `min(ancho, alto)`, centrado, con el
+suelo del zoom en el propio ajuste (una figura de 2.628 px se ajusta al 38 %, por
+debajo de cualquier mínimo que se escribiera). El marco pasa de 620 px fijos a
+`clamp(420px, 66vh, 860px)`.
+
+Y la medición que reencuadró el problema, sobre el caso real LoneWolf, 20
+hallazgos con grafo: el grafo del caso tiene **82 nodos y 34 aristas, y 46 de
+esos nodos (el 56,1 %) no participan en NINGUNA relación**. La red de verdad son
+36 nodos en dos componentes (29 y 7); los otros 46 son `Windows`, `ProgramData`,
+`pagefile.sys`, `~WRL2465.tmp` y los diez dominios, y son ellos los que inflan el
+lienzo a 2620 x 1850, donde la etiqueta se ve a **4,0 px**. Sin ellos el lienzo
+es 1258 x 887 y la etiqueta se ve a **8,3 px**. No es un fallo de la extracción:
+la regla 2 del encargo (`gx.rules`) EXIGE exhaustividad y dice literalmente que
+un nodo suelto es un resultado correcto y esperado, que es lo que impide perder
+un dominio escrito en el texto. El dato estaba bien; lo que estaba mal era que un
+grafo de RELACIONES dibujaba un inventario como si fuera una red.
+
+**Tres funciones EN PRUEBA (2026-09-04)**, cada una en su módulo y rotulada en
+sus puntos de anclaje para poder retirarla sin tocar el resto:
+
+- **«INVENTARIO»** (`forensia.graph.inventario`): `partir` separa por GRADO, no
+  por tipo ni por «parecer relevante», y `componer` coloca los sueltos en una
+  rejilla que NO ensancha ni alarga el lienzo de la red. Ese detalle es el que
+  hace que la función sirva de algo, y salió de medirlo: la primera versión metía
+  la banda en el mismo lienzo, que pasaba a 1258 x 1531, la figura volvía a
+  ajustarse al 46 % y la etiqueta se quedaba en 4,8 px, o sea que la banda se
+  comía la ganancia entera. Ahora en pantalla el inventario es una LISTA (se lee
+  mejor como texto que como 46 discos de cuatro píxeles) y en el PNG es una banda
+  rotulada al pie, con su recuento. Nada se descarta (RULE 2): lo que se deja de
+  hacer es afirmar con la geometría una relación que nadie afirmó.
+- **«VISTAS»** (`forensia.graph.vistas`): `GET …/graphs/case?vista=<eje>:<valor>`
+  corta el grafo del caso por un eje que el caso YA tiene persistido, sin gastar
+  una llamada al modelo: `tecnica`, `tactica` (las dos fusionando `mitre_hints`
+  con las anotaciones de `annotate_mitre`, misma fusión y misma razón medida que
+  la línea de tiempo del incidente), `evidencia` y `severidad`. El corte elige
+  HALLAZGOS, no nodos: descartar un nodo por parecer ajeno a la vista sería
+  afirmar sobre él algo que ningún hallazgo dice. Solo se ofrecen cortes con al
+  menos un hallazgo CON grafo, la vista aplicada viaja DECLARADA y se escribe
+  DENTRO del PNG (una figura recortada que no lo anuncia engaña a quien la lee en
+  un informe), y un eje que no existe es un 422 que los enumera, nunca el caso
+  entero por no haber entendido (RULE 2). Medido sobre LoneWolf: 12 cortes, y
+  «T1567.002 Exfiltration to Cloud Storage» da una figura de 27 nodos y 25
+  aristas, que es la que se adjunta a un apartado.
+- **«LOCALIZADOR»** (solo cliente): buscar una entidad por subcadena, que la
+  encuadra y la acerca hasta 1:1 si se estaba más lejos, y elegir si el enfoque
+  enciende la vecindad a 1 o a 2 saltos. Busca en la red Y en el inventario,
+  porque buscar solo en la red respondería «ninguna entidad contiene gmail.com»
+  teniéndola el caso en la lista, que es una negación falsa sobre el contenido de
+  un expediente.
+
+Pinned by `tests/test_graph_funciones.py`, que va aparte de
+`test_graph_relaciones.py` justamente para que retirar una función sea borrar su
+módulo, su bloque del router y sus tests, sin tocar lo que fija el contrato del
+grafo.
+
 **Los grafos son una FASE, no un apartado del informe (2026-08-11)**: nacieron
 dentro del Informe pericial y ahí competían con «Finalizar investigación», la
 otra acción de esa pantalla que llama al modelo y cuesta dinero. Son ahora la

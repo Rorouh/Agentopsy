@@ -20,6 +20,7 @@ deducido por el servidor.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -36,12 +37,15 @@ from forensia.executors import (
     REASONING_CONFIG_KEY,
     get_executor,
 )
+from forensia.evidence import evidence_manager  # FUNCIÓN «VISTAS»
 from forensia.export_hoja import export_basename, iso_utc_ahora
 from forensia.findings import finding_store
+from forensia.graph import inventario, vistas  # FUNCIÓN «INVENTARIO» y FUNCIÓN «VISTAS»
 from forensia.graph.fusion import merge_case_graph
 from forensia.graph.layout import layout_caso, layout_hallazgo
 from forensia.graph.lote import extraer_lote
 from forensia.graph.store import graph_store
+from forensia.mitre.coverage import CoverageStore  # FUNCIÓN «VISTAS»
 from forensia.security import require_token
 
 router = APIRouter()
@@ -111,24 +115,79 @@ def list_graphs(case_id: str) -> dict[str, Any]:
 
 
 @router.get("/api/cases/{case_id}/graphs/case", dependencies=[Depends(require_token)])
-def case_graph(case_id: str) -> dict[str, Any]:
+def case_graph(case_id: str, vista: str | None = None) -> dict[str, Any]:
     """El grafo del CASO: los grafos de los hallazgos fundidos por entidad.
 
     No gasta ninguna llamada al modelo: funde lo ya extraído. Un caso sin grafos
     devuelve las listas vacías con el recuento a cero, no un error: no haber
-    extraído todavía no es un fallo."""
+    extraído todavía no es un fallo.
+
+    ``vista`` (FUNCIÓN «VISTAS», en prueba) corta el grafo por un eje que el caso
+    ya tiene persistido: ``tecnica:T1114``, ``tactica:TA0010``,
+    ``evidencia:<id>`` o ``severidad:high``. Sin ``vista`` sale el caso entero,
+    que es lo de siempre; con una vista que el caso no admita, 422 con los ejes
+    válidos (RULE 2: no se cae al grafo completo por no haber entendido)."""
     case = _case_or_404(case_id)
+    findings = finding_store.list(case_id)
     grafos = graph_store.list_latest(case_id)
+
+    # ── FUNCIÓN «VISTAS» ───────────────────────────────────────────────────────
+    # Para retirarla: borrar este bloque, la clave `vista` de la respuesta, el
+    # parámetro de la firma y `forensia/graph/vistas.py`.
+    # El almacén se construye con el `case_manager` y el `finding_store` de ESTE
+    # módulo, no con el singleton, para que siga leyendo del caso que apunten
+    # cuando se sustituyan (los tests del router lo hacen, y el singleton
+    # quedaría mirando a otro sitio).
+    anotaciones = CoverageStore(case_manager, finding_store).annotations_by_finding(case_id)
+    # Cómo se LEE una evidencia en el desplegable. Un UUID no lo puede usar
+    # nadie, y el nombre no se inventa: sale del basename de la copia inmutable,
+    # que es el que el acta de adquisición ya enumera.
+    try:
+        rotulos_evidencia = {
+            h.evidence_id: f"{Path(h.original_path).name} ({h.evidence_id[:8]})"
+            for h in evidence_manager.list(case_id)
+        }
+    except (KeyError, ValueError):
+        # Un caso sin evidencia legible no impide cortar por los otros ejes: la
+        # evidencia se quedaría con su id, que es dato.
+        rotulos_evidencia = {}
+    vista_declarada: dict[str, Any] | None = None
+    if vista:
+        try:
+            elegidos, vista_declarada = vistas.hallazgos_de(
+                vista, findings, anotaciones, rotulos_evidencia
+            )
+        except vistas.VistaDesconocida as exc:
+            raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
+        permitidos = set(elegidos)
+        grafos = [g for g in grafos if g.finding_id in permitidos]
+    vistas_disponibles = vistas.catalogo(
+        findings,
+        anotaciones,
+        {g.finding_id for g in graph_store.list_latest(case_id)},
+        rotulos_evidencia,
+    )
+    # ── fin FUNCIÓN «VISTAS» ───────────────────────────────────────────────────
+
     fundido = merge_case_graph([
         {"finding_id": g.finding_id, "nodos": g.nodos, "relaciones": g.relaciones}
         for g in grafos
     ])
-    titulos = {f.id: f.title for f in finding_store.list(case_id)}
+    titulos = {f.id: f.title for f in findings}
     exported_at = iso_utc_ahora()
-    # El LIENZO lo decide el layout, no una constante del módulo: una figura con
-    # muchos nodos crece en vez de comprimirse (RULE 2), y `notas` dice qué hubo
-    # que ampliar.
-    figura = layout_caso(case_id, fundido["nodos"], fundido["relaciones"])
+
+    # ── FUNCIÓN «INVENTARIO» ───────────────────────────────────────────────────
+    # La figura dibuja la RED, y las entidades que no participan en ninguna
+    # relación bajan a una banda declarada al pie. No se descarta ninguna: se
+    # deja de afirmar con la geometría una relación que nadie afirmó. Para
+    # retirarla: sustituir estas tres líneas por
+    #     figura = layout_caso(case_id, fundido["nodos"], fundido["relaciones"])
+    # y borrar `forensia/graph/inventario.py` y la clave `inventario` de abajo.
+    conectados, sueltos = inventario.partir(fundido["nodos"], fundido["relaciones"])
+    figura = layout_caso(case_id, conectados, fundido["relaciones"])
+    figura = inventario.componer(figura, sueltos)
+    # ── fin FUNCIÓN «INVENTARIO» ───────────────────────────────────────────────
+
     return {
         "case_id": case_id,
         "case_name": case.name,
@@ -144,6 +203,9 @@ def case_graph(case_id: str) -> dict[str, Any]:
         ],
         "lienzo": figura["lienzo"],
         "notas_layout": figura["notas"],
+        "inventario": figura["inventario"],
+        "vista": vista_declarada,
+        "vistas": vistas_disponibles,
     }
 
 

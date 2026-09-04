@@ -2534,13 +2534,46 @@ select option:disabled { color: var(--ink-5); }
 }
 .graph-parte-fallo { display: flex; flex-direction: column; gap: 2px; }
 .graph-parte-motivo { color: var(--ink-3); font-size: var(--fs-1); }
-.graph-figure { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
+.graph-figure {
+  position: relative;
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
 
 /* ── Visor del grafo: acercar, alejar y mover ─────────────────────────────
    La transformación vive en `.graph-viewport-canvas`, NO dentro del `svg`: lo
    que se exporta a PNG es la geometría calculada por el backend, no el encuadre
-   en el que el perito dejara la vista. */
+   en el que el perito dejara la vista.
+
+   Y dentro del marco va SOLO el dibujo. El rótulo de la figura y la leyenda son
+   el marco de lectura, así que quedan fuera del elemento transformado y no se
+   mueven con el arrastre: un título que se va de la ventana al mover el grafo
+   es lo que hacía que la sección no pareciera acabada. */
 .graph-viewport { flex: 1 1 620px; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+
+/* El rótulo FIJO de la figura, sobre el visor. */
+.graph-caption {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--hair);
+}
+.graph-caption-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.graph-caption-title { font-size: var(--fs-3); font-weight: 600; }
+.graph-caption-sub { font-size: var(--fs-1); color: var(--ink-3); }
+.graph-caption-counts {
+  font-size: var(--fs-1);
+  color: var(--ink-2);
+  border: 1px solid var(--hair);
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
 .graph-viewport-tools { display: flex; align-items: center; gap: 10px; }
 .graph-viewport-level { font-size: var(--fs-1); color: var(--ink-3); min-width: 52px; }
 .graph-viewport-tools .action-outline {
@@ -2551,17 +2584,118 @@ select option:disabled { color: var(--ink-5); }
   position: relative;
   overflow: hidden;
   border: 1px solid var(--hair);
-  /* Alto fijo: el visor es una VENTANA sobre un lienzo que puede ser mucho
+  /* Alto acotado: el visor es una VENTANA sobre un lienzo que puede ser mucho
      mayor. Sin tope, la página crecía con la figura y el zoom no servía de
-     nada porque no había nada que recortar. */
-  height: 620px;
+     nada porque no había nada que recortar. Crece con la ventana porque un
+     grafo denso se lee con sitio, y el ajuste ya reparte lo que haya. */
+  height: clamp(420px, 66vh, 860px);
   cursor: grab;
   touch-action: none;
 }
 .graph-viewport-frame.is-dragging { cursor: grabbing; }
-.graph-viewport-canvas { width: 100%; }
-.graph-viewport-canvas > svg { display: block; width: 100%; height: auto; }
+/* El lienzo se coloca en el origen del marco y lo escala el visor: el SVG entra
+   con su tamaño INTRÍNSECO (el que calculó el backend) para que «ajustar» pueda
+   encajar la figura entera y no solo su ancho. */
+.graph-viewport-canvas { position: absolute; top: 0; left: 0; }
+.graph-viewport-canvas > svg { display: block; }
 .graph-viewport-hint { margin: 0; font-size: var(--fs-1); color: var(--ink-3); }
+
+/* La leyenda FIJA, bajo el visor. Enumera lo que la figura pinta, no las
+   dieciocho entradas de las dos enums. */
+.graph-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--hair);
+}
+.graph-legend-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.graph-legend-label { min-width: 74px; color: var(--ink-4); }
+.graph-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--fs-1);
+  color: var(--ink-2);
+}
+.graph-legend-swatch { width: 9px; height: 9px; flex: 0 0 auto; }
+.graph-legend-rule { width: 14px; height: 2px; flex: 0 0 auto; }
+.graph-legend-empty { font-size: var(--fs-1); color: var(--ink-3); }
+
+/* FUNCIÓN «LOCALIZADOR» (grafos, en prueba 2026-09-04): buscar una entidad y
+   elegir cuántos saltos de vecindad quedan encendidos al enfocarla. */
+.graph-explore {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.graph-explore-field { display: flex; flex-direction: column; gap: 4px; flex: 1 1 260px; min-width: 0; }
+.graph-explore-depth { display: flex; align-items: center; gap: 8px; }
+.graph-explore-depth .action-outline,
+.graph-explore-depth .action-accent { padding: 5px 11px; letter-spacing: 0.06em; }
+
+/* FUNCIÓN «VISTAS» (grafos, en prueba 2026-09-04). */
+.graph-select-corte { flex: 1 1 240px; min-width: 0; }
+
+/* FUNCIÓN «INVENTARIO» (grafos, en prueba 2026-09-04): las entidades que ningún
+   hallazgo relaciona, como lista. En el PNG van como banda dentro de la figura;
+   aquí se leen como texto, que es como mejor se leen. */
+.graph-inventory {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--hair);
+}
+.graph-inventory-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+.graph-inventory-count { font-size: var(--fs-1); color: var(--ink-3); }
+.graph-inventory-note {
+  margin: 0;
+  font-size: var(--fs-1);
+  color: var(--ink-3);
+  max-width: 76ch;
+  line-height: 1.6;
+}
+.graph-inventory-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 4px 20px;
+}
+.graph-inventory-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: var(--fs-1);
+  min-width: 0;
+}
+.graph-inventory-value {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.graph-inventory-type { color: var(--ink-3); white-space: nowrap; }
+
+/* La figura de EXPORTACIÓN se monta fuera de la vista solo mientras se
+   serializa. No se oculta con `display: none` porque un elemento sin caja es
+   territorio de matices entre navegadores justo cuando hay que serializarlo. */
+.graph-export-offscreen {
+  position: absolute;
+  left: -100000px;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  pointer-events: none;
+}
 .graph-card {
   flex: 0 1 300px;
   min-width: 240px;

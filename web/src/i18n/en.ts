@@ -522,6 +522,36 @@ export const en = {
   "graph.reextractThis": "Extract this one again",
   "graph.extractThis": "Extract this finding",
   "graph.exportPng": "Export PNG",
+  // FUNCIÓN «INVENTARIO» (grafos, en prueba 2026-09-04)
+  "graph.inventoryBand":
+    "{count} entities named by the findings with no relation asserted between them",
+  "graph.inventoryTitle": "Entities with no relation",
+  "graph.inventoryNote":
+    "The findings name them, but no finding asserts a relation for them, so they are not part of the network. They travel whole inside the exported PNG.",
+  "graph.inventoryCount": "{loose} of {total} entities",
+  // FUNCIÓN «VISTAS» (grafos, en prueba 2026-09-04)
+  "graph.viewLabel": "View",
+  "graph.viewWhole": "Whole case",
+  "graph.viewOption": "{label} ({count} findings)",
+  "graph.viewDeclared": "View: {label}. Cut over {count} of the case's findings.",
+  "graph.viewEmptyNote":
+    "This view covers no finding with a graph extracted. Pick another one or extract the missing graphs.",
+  "graph.viewAxis.tecnica": "ATT&CK technique",
+  "graph.viewAxis.tactica": "ATT&CK tactic",
+  "graph.viewAxis.evidencia": "Evidence",
+  "graph.viewAxis.severidad": "Severity",
+  // FUNCIÓN «LOCALIZADOR» (grafos, en prueba 2026-09-04)
+  "graph.searchLabel": "Find an entity",
+  "graph.searchPlaceholder": "IP, account, file, domain",
+  "graph.searchNoMatch": "No entity of this figure contains {query}.",
+  "graph.searchInInventory":
+    "{value} is one of the entities with no relation: it is in the list below the figure, not in the network.",
+  "graph.searchMatches": "{count} entities match. The first one is framed.",
+  "graph.focusDepth": "Neighbourhood",
+  "graph.focusDepth1": "1 hop",
+  "graph.focusDepth2": "2 hops",
+  "graph.exporting": "Exporting…",
+  "graph.exportNotReady": "the figure to export could not be composed",
   "graph.needExecutor":
     "The graph is extracted by the model you select. Choose one in «Model that extracts», above: Agentopsy does not choose one for you.",
   "graph.extractingNth": "Extracting {n} of {total}: {title}",

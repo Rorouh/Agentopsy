@@ -12,8 +12,12 @@ import type {
 import { exportRailPng } from "../timeline/IncidentRail";
 import { useThemePalette } from "../timeline/themePalette";
 import { GraphViewport } from "./GraphViewport";
-import { RelationGraph } from "./RelationGraph";
-import { claveNodo, claveRelacion } from "./vocabulario";
+import {
+  RelationGraph,
+  relacionesPresentes,
+  tiposPresentes,
+} from "./RelationGraph";
+import { claveNodo, claveRelacion, colorNodo, colorRelacion } from "./vocabulario";
 import { useLang } from "../../i18n";
 
 // GRAFOS DE RELACIONES: la figura, su ficha lateral y la extracción.
@@ -34,6 +38,12 @@ import { useLang } from "../../i18n";
 // modelo: la hace el servidor con lo ya extraído.
 
 const JOB_POLL_MS = 1500;
+
+// FUNCIÓN «VISTAS»: el orden en que se agrupan los cortes en el desplegable. Es
+// el mismo de `forensia.graph.vistas.EJES`, para que la lista se lea igual que
+// la calcula el servidor. Un eje que el backend gane y esta tabla no conozca no
+// se pinta, que es preferible a inventarle un rótulo (RULE 2).
+const EJES_VISTA = ["tecnica", "tactica", "evidencia", "severidad"] as const;
 
 function fmt(iso: string | null | undefined): string {
   if (!iso) return "n/d";
@@ -78,13 +88,28 @@ export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
     return k ? t(k) : tipo;
   };
   const palette = useThemePalette();
-  const svgRef = useRef<SVGSVGElement | null>(null);
+  // El SVG que se serializa es el de la figura ENTERA, que solo se monta durante
+  // la exportación: en pantalla se pinta el dibujo a secas, y componer las dos
+  // versiones a la vez sería dibujar cada nodo dos veces sin que nadie lo vea.
+  const svgExportRef = useRef<SVGSVGElement | null>(null);
+  const [exportando, setExportando] = useState(false);
 
   const [index, setIndex] = useState<GraphIndex | null>(null);
   const [vista, setVista] = useState<Vista>({ tipo: "caso" });
   const [caso, setCaso] = useState<GraphCaseView | null>(null);
   const [detalle, setDetalle] = useState<GraphFindingView | null>(null);
   const [nodo, setNodo] = useState<string | null>(null);
+
+  // FUNCIÓN «VISTAS»: el corte aplicado al grafo del caso. Vacío = caso entero.
+  const [vistaCorte, setVistaCorte] = useState("");
+  const vistaCorteRef = useRef("");
+  vistaCorteRef.current = vistaCorte;
+  // FUNCIÓN «LOCALIZADOR»: la búsqueda y el encuadre que produce.
+  const [busqueda, setBusqueda] = useState("");
+  const [centrarEn, setCentrarEn] = useState<{ x: number; y: number; sello: number } | null>(
+    null,
+  );
+  const [profundidadFoco, setProfundidadFoco] = useState(1);
 
   const [job, setJob] = useState<GraphJob | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -100,7 +125,10 @@ export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
   const recargar = useCallback(async () => {
     const idx = await api.cases.listGraphs(caseId);
     setIndex(idx);
-    const grafo = await api.cases.caseGraph(caseId);
+    // El corte va por REF y no por dependencia: `recargar` la usan tres efectos
+    // y rehacerla al cambiar de vista los dispararía todos, incluido el que
+    // vuelve a pedir la lista de jobs.
+    const grafo = await api.cases.caseGraph(caseId, vistaCorteRef.current || undefined);
     setCaso(grafo);
   }, [caseId]);
 
@@ -141,6 +169,28 @@ export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
       cancelado = true;
     };
   }, [revGrafos, recargar]);
+
+  // FUNCIÓN «VISTAS»: cambiar de corte vuelve a pedir el grafo del caso, y solo
+  // eso. La selección del perito (nodo enfocado, búsqueda) se descarta porque es
+  // de la figura anterior.
+  useEffect(() => {
+    let cancelado = false;
+    void (async () => {
+      try {
+        const grafo = await api.cases.caseGraph(caseId, vistaCorte || undefined);
+        if (cancelado) return;
+        setCaso(grafo);
+        setNodo(null);
+        setBusqueda("");
+        setError(null);
+      } catch (e) {
+        if (!cancelado) setError(e instanceof ApiError ? e.message : String(e));
+      }
+    })();
+    return () => {
+      cancelado = true;
+    };
+  }, [vistaCorte, caseId]);
 
   // Lo que la cabecera cuenta sale del índice ya cargado, no de otra petición.
   useEffect(() => {
@@ -219,29 +269,30 @@ export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
   );
 
   const exportar = useCallback(async () => {
-    const svg = svgRef.current;
-    if (!svg) return;
+    setExportando(true);
     try {
       // Se vuelve a pedir la capa para que la marca de exportación que va
       // DENTRO de la imagen sea la de este momento y no la de hace media hora.
       const fresco =
         vista.tipo === "caso"
-          ? await api.cases.caseGraph(caseId)
+          ? await api.cases.caseGraph(caseId, vistaCorte || undefined)
           : await api.cases.graph(caseId, vista.findingId);
       if (vista.tipo === "caso") setCaso(fresco as GraphCaseView);
       else setDetalle(fresco as GraphFindingView);
-      // Un frame para que el SVG se repinte con la marca nueva antes de
-      // serializarlo: si no, se exportaría la anterior.
+      // DOS frames: uno para que React monte la figura de exportación y otro
+      // para que se repinte con la marca nueva. Con uno solo se serializaría un
+      // SVG que todavía no existe, o el de la marca anterior.
       await new Promise((r) => window.requestAnimationFrame(() => r(null)));
-      await exportRailPng(
-        svgRef.current ?? svg,
-        `${fresco.export_basename}.png`,
-        palette["--surface"],
-      );
+      await new Promise((r) => window.requestAnimationFrame(() => r(null)));
+      const svg = svgExportRef.current;
+      if (!svg) throw new Error(t("graph.exportNotReady"));
+      await exportRailPng(svg, `${fresco.export_basename}.png`, palette["--surface"]);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : String(e));
+    } finally {
+      setExportando(false);
     }
-  }, [caseId, vista, palette]);
+  }, [caseId, vista, vistaCorte, palette, t]);
 
   if (!index) {
     return (
@@ -266,6 +317,184 @@ export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
     : [];
   const titulos = new Map(index.hallazgos.map((h) => [h.id, h.title]));
 
+  // La identidad de la figura y su leyenda. Se calculan UNA vez y las usan las
+  // dos versiones (la de pantalla, que las pinta fijas alrededor del dibujo, y
+  // la de exportación, que las compone dentro del SVG), para que no puedan decir
+  // cosas distintas de la misma figura.
+  const figuraTitulo = t(vista.tipo === "caso" ? "graph.caseTitle" : "graph.findingTitle");
+  // Las entidades de la figura son las de la red MÁS las de la banda: la
+  // exportación dibuja las dos, así que contar aquí solo la red haría que la
+  // misma figura dijera 36 en pantalla y 82 en el PNG.
+  const inventarioActivo = vista.tipo === "caso" ? caso?.inventario ?? null : null;
+  const totalEntidades = nodos.length + (inventarioActivo?.total ?? 0);
+  const figuraSubtitulo =
+    vista.tipo === "caso"
+      ? t("graph.caseSubtitle", {
+          nodes: totalEntidades,
+          edges: relaciones.length,
+          findings: caso?.hallazgos.length ?? 0,
+        })
+      : t("graph.findingSubtitle", { nodes: totalEntidades, edges: relaciones.length });
+  // El tema se lee del ATRIBUTO del documento y no del contexto, por la misma
+  // razón que lo hace `useThemePalette`, de quien esta vista ya depende: al
+  // cambiar de tema la paleta se relee y este render vuelve a pasar por aquí.
+  const oscuro = document.documentElement.getAttribute("data-theme") === "dark";
+  const tiposLeyenda = tiposPresentes(nodos);
+  const relacionesLeyenda = relacionesPresentes(relaciones);
+
+  // FUNCIÓN «VISTAS»: cómo se lee el corte aplicado, y los cortes que ofrece el
+  // caso agrupados por eje. El texto declarado viaja DENTRO del PNG.
+  const cortes = caso?.vistas ?? [];
+  const cortesPorEje = EJES_VISTA.map((eje) => ({
+    eje,
+    opciones: cortes.filter((c) => c.eje === eje),
+  })).filter((g) => g.opciones.length > 0);
+  const corteAplicado = caso?.vista ?? null;
+  const vistaDeclarada = corteAplicado
+    ? t("graph.viewDeclared", {
+        label: corteAplicado.etiqueta,
+        count: corteAplicado.hallazgos,
+      })
+    : null;
+
+  // FUNCIÓN «LOCALIZADOR»: qué entidades de ESTA figura contienen lo buscado.
+  // La comparación es la misma que usa la extracción para comprobar que una
+  // entidad está escrita en el hallazgo: subcadena, insensible a mayúsculas.
+  //
+  // Se busca en la red Y en el inventario. Buscar solo en la red haría que
+  // preguntar por `gmail.com` respondiera «ninguna entidad contiene gmail.com»
+  // teniéndola el caso en la lista de abajo, que es peor que no buscar: una
+  // negación falsa sobre el contenido de un expediente.
+  const consulta = busqueda.trim().toLowerCase();
+  const coincidencias = consulta
+    ? nodos.filter((n) => n.valor.toLowerCase().includes(consulta))
+    : [];
+  const enInventario =
+    consulta && coincidencias.length === 0
+      ? (inventarioActivo?.nodos ?? []).find((n) =>
+          n.valor.toLowerCase().includes(consulta),
+        )
+      : undefined;
+
+  const localizar = (texto: string) => {
+    setBusqueda(texto);
+    const q = texto.trim().toLowerCase();
+    // Vaciar la caja suelta el foco: dejarlo puesto apagaría media figura sin
+    // que quede en pantalla el motivo.
+    if (!q) {
+      setNodo(null);
+      return;
+    }
+    const encontrado = nodos.find((n) => n.valor.toLowerCase().includes(q));
+    // Sin coincidencia no se toca la vista: el aviso ya dice que no hay ninguna,
+    // y saltar a otro sitio al escribir una letra de más desorienta.
+    if (!encontrado || encontrado.valor === nodo) return;
+    setNodo(encontrado.valor);
+    setCentrarEn({ x: encontrado.x, y: encontrado.y, sello: Date.now() });
+  };
+
+  // El rótulo de la figura, FIJO sobre el visor. Va aquí y no dentro del SVG de
+  // pantalla porque es el marco de lectura, no el dato: moverlo con el dibujo lo
+  // sacaba de la ventana en cuanto el perito arrastraba un poco.
+  const cabeceraFigura = (
+    <>
+      <div className="graph-caption">
+        <div className="graph-caption-text">
+          <span className="graph-caption-title">{figuraTitulo}</span>
+          <span className="graph-caption-sub">{figuraSubtitulo}</span>
+        </div>
+        <span className="mono graph-caption-counts">
+          {t("graph.svgCounts", { nodes: totalEntidades, edges: relaciones.length })}
+        </span>
+      </div>
+
+      {/* FUNCIÓN «LOCALIZADOR». En una figura de decenas de nodos, la pregunta
+          que más se hace un perito es «dónde está esta IP», y hasta ahora la
+          respuesta era recorrerla con la vista. */}
+      <div className="graph-explore">
+        <label className="graph-explore-field">
+          <span className="eyebrow">{t("graph.searchLabel")}</span>
+          <input
+            type="search"
+            className="field-input field-input--sm"
+            value={busqueda}
+            placeholder={t("graph.searchPlaceholder")}
+            onChange={(e) => localizar(e.target.value)}
+          />
+        </label>
+        <div className="graph-explore-depth">
+          <span className="eyebrow">{t("graph.focusDepth")}</span>
+          {([1, 2] as const).map((saltos) => (
+            <button
+              key={saltos}
+              type="button"
+              className={profundidadFoco === saltos ? "action-accent" : "action-outline"}
+              onClick={() => setProfundidadFoco(saltos)}
+            >
+              {t(saltos === 1 ? "graph.focusDepth1" : "graph.focusDepth2")}
+            </button>
+          ))}
+        </div>
+      </div>
+      {enInventario && (
+        <div className="inline-note">
+          {t("graph.searchInInventory", { value: enInventario.valor })}
+        </div>
+      )}
+      {consulta && coincidencias.length === 0 && !enInventario && (
+        <div className="inline-note">
+          {t("graph.searchNoMatch", { query: busqueda.trim() })}
+        </div>
+      )}
+      {coincidencias.length > 1 && (
+        <div className="inline-note">
+          {t("graph.searchMatches", { count: coincidencias.length })}
+        </div>
+      )}
+    </>
+  );
+
+  // La leyenda, FIJA bajo el visor. Enumera lo que la figura pinta de verdad, no
+  // las dieciocho entradas de las dos enums.
+  const leyendaFigura = (
+    <div className="graph-legend">
+      <div className="graph-legend-row">
+        <span className="eyebrow graph-legend-label">{t("graph.legendNodes")}</span>
+        {tiposLeyenda.length === 0 ? (
+          <span className="graph-legend-empty">{t("common.na")}</span>
+        ) : (
+          tiposLeyenda.map((tipo) => (
+            <span className="graph-legend-item" key={`ln-${tipo}`}>
+              <span
+                className="graph-legend-swatch"
+                style={{ background: colorNodo(tipo, oscuro) }}
+                aria-hidden="true"
+              />
+              {rotuloNodo(tipo)}
+            </span>
+          ))
+        )}
+      </div>
+      <div className="graph-legend-row">
+        <span className="eyebrow graph-legend-label">{t("graph.legendEdges")}</span>
+        {relacionesLeyenda.length === 0 ? (
+          <span className="graph-legend-empty">{t("common.na")}</span>
+        ) : (
+          relacionesLeyenda.map((tipo) => (
+            <span className="graph-legend-item" key={`lr-${tipo}`}>
+              <span
+                className="graph-legend-rule"
+                style={{ background: colorRelacion(tipo, oscuro) }}
+                aria-hidden="true"
+              />
+              {rotuloRelacion(tipo)}
+            </span>
+          ))
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <section className="graph-section">
       <div className="eyebrow eyebrow--section">{t("graph.figure")}</div>
@@ -280,6 +509,7 @@ export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
           value={vista.tipo === "caso" ? "caso" : vista.findingId}
           onChange={(e) => {
             setNodo(null);
+            setBusqueda("");
             setVista(
               e.target.value === "caso"
                 ? { tipo: "caso" }
@@ -300,6 +530,36 @@ export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
             );
           })}
         </select>
+
+        {/* FUNCIÓN «VISTAS». Solo tiene sentido sobre el grafo del CASO: el de
+            un hallazgo ya ES un corte, el de ese hallazgo. Los ejes salen de lo
+            que el caso tiene persistido, así que un caso sin correlación ATT&CK
+            solo ofrece evidencia y severidad, y uno sin nada no ofrece el
+            desplegable. */}
+        {vista.tipo === "caso" && cortesPorEje.length > 0 && (
+          <>
+            <label className="visually-hidden" htmlFor="graph-corte">
+              {t("graph.viewLabel")}
+            </label>
+            <select
+              id="graph-corte"
+              className="field-input field-input--sm graph-select-corte"
+              value={vistaCorte}
+              onChange={(e) => setVistaCorte(e.target.value)}
+            >
+              <option value="">{t("graph.viewWhole")}</option>
+              {cortesPorEje.map(({ eje, opciones }) => (
+                <optgroup key={eje} label={t(`graph.viewAxis.${eje}` as const)}>
+                  {opciones.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {t("graph.viewOption", { label: c.etiqueta, count: c.hallazgos })}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </>
+        )}
 
         {pendientes.length > 0 && (
           <button
@@ -326,10 +586,10 @@ export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
         <button
           type="button"
           className="action"
-          disabled={nodos.length === 0}
+          disabled={nodos.length === 0 || exportando}
           onClick={() => void exportar()}
         >
-          {t("graph.exportPng")}
+          {t(exportando ? "graph.exporting" : "graph.exportPng")}
         </button>
       </div>
 
@@ -400,6 +660,16 @@ export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
 
       {error && <div className="inline-note">{error}</div>}
 
+      {/* FUNCIÓN «VISTAS»: qué corte se está mirando. Se dice en la vista y se
+          escribe DENTRO del PNG, porque una figura recortada que no lo anuncia
+          engaña a quien la lee en un informe. */}
+      {vista.tipo === "caso" && vistaDeclarada && (
+        <div className="inline-note">{vistaDeclarada}</div>
+      )}
+      {vista.tipo === "caso" && corteAplicado && corteAplicado.hallazgos === 0 && (
+        <div className="inline-note">{t("graph.viewEmptyNote")}</div>
+      )}
+
       {/* Lo que el layout tuvo que hacer para que la figura cupiera. Una figura
           ampliada o con solapes corregidos no es lo mismo que una que salió a la
           primera, y quien la lleva a un informe tiene derecho a saberlo
@@ -416,33 +686,55 @@ export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
         <div className="graph-figure">
           <GraphViewport
             encuadreDe={vista.tipo === "caso" ? "caso" : vista.findingId}
+            ancho={activo.lienzo.ancho}
+            alto={activo.lienzo.alto}
+            cabecera={cabeceraFigura}
+            leyenda={leyendaFigura}
+            centrarEn={centrarEn}
           >
-          <RelationGraph
-            ref={svgRef}
-            titulo={t(vista.tipo === "caso" ? "graph.caseTitle" : "graph.findingTitle")}
-            subtitulo={
-              vista.tipo === "caso"
-                ? t("graph.caseSubtitle", {
-                    nodes: nodos.length,
-                    edges: relaciones.length,
-                    findings: caso?.hallazgos.length ?? 0,
-                  })
-                : t("graph.findingSubtitle", {
-                    nodes: nodos.length,
-                    edges: relaciones.length,
-                  })
-            }
-            nodos={nodos}
-            relaciones={relaciones}
-            lienzo={activo.lienzo}
-            aviso={activo.aviso}
-            vacio={t(vista.tipo === "caso" ? "graph.emptyCase" : "graph.emptyFinding")}
-            caseName={caseName}
-            exportadoEn={activo.exported_at}
-            seleccionado={nodo}
-            onSeleccionar={setNodo}
-          />
+            <RelationGraph
+              modo="pantalla"
+              titulo={figuraTitulo}
+              subtitulo={figuraSubtitulo}
+              nodos={nodos}
+              relaciones={relaciones}
+              lienzo={activo.lienzo}
+              aviso={activo.aviso}
+              vacio={t(vista.tipo === "caso" ? "graph.emptyCase" : "graph.emptyFinding")}
+              caseName={caseName}
+              exportadoEn={activo.exported_at}
+              seleccionado={nodo}
+              onSeleccionar={setNodo}
+              profundidadFoco={profundidadFoco}
+            />
           </GraphViewport>
+
+          {/* La figura ENTERA, la que se serializa al PNG. Se monta fuera de la
+              vista y solo mientras se exporta: es la misma geometría que se está
+              explorando, con su cabecera, su leyenda y su procedencia dentro del
+              dibujo, que es lo que un PNG suelto necesita para sostenerse en un
+              informe. */}
+          {exportando && (
+            <div className="graph-export-offscreen" aria-hidden="true">
+              <RelationGraph
+                modo="exportacion"
+                ref={svgExportRef}
+                titulo={figuraTitulo}
+                subtitulo={figuraSubtitulo}
+                nodos={nodos}
+                relaciones={relaciones}
+                lienzo={activo.lienzo}
+                aviso={activo.aviso}
+                vacio={t(vista.tipo === "caso" ? "graph.emptyCase" : "graph.emptyFinding")}
+                caseName={caseName}
+                exportadoEn={activo.exported_at}
+                seleccionado={nodo}
+                profundidadFoco={profundidadFoco}
+                inventario={inventarioActivo}
+                vistaDeclarada={vista.tipo === "caso" ? vistaDeclarada : null}
+              />
+            </div>
+          )}
 
           {/* La ficha del nodo. Su mitad de arriba es PROPUESTA del modelo y su
               mitad de abajo es dato VERIFICADO del hallazgo: van separadas
@@ -525,6 +817,39 @@ export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
           <div className="empty-rail-body">
             {t(index.hallazgos.length === 0 ? "graph.noFindingsBody" : "graph.pressExtract")}
           </div>
+        </div>
+      )}
+
+      {/* FUNCIÓN «INVENTARIO»: las entidades que ningún hallazgo relaciona. En
+          pantalla son una LISTA y no una banda de discos: se leen mejor como
+          texto, y meterlas en el lienzo lo alargaba hasta devolver los rótulos
+          de la red a cuatro píxeles, que es de lo que se venía. Dentro del PNG
+          sí van como banda, porque una imagen suelta tiene que llevarlo todo. */}
+      {inventarioActivo && (
+        <div className="graph-inventory">
+          <div className="graph-inventory-head">
+            <span className="eyebrow">{t("graph.inventoryTitle")}</span>
+            <span className="mono graph-inventory-count">
+              {t("graph.inventoryCount", {
+                loose: inventarioActivo.total,
+                total: inventarioActivo.total + inventarioActivo.en_la_red,
+              })}
+            </span>
+          </div>
+          <p className="graph-inventory-note">{t("graph.inventoryNote")}</p>
+          <ul className="graph-inventory-list">
+            {inventarioActivo.nodos.map((n) => (
+              <li className="graph-inventory-item" key={`${n.tipo}:${n.valor}`}>
+                <span
+                  className="graph-legend-swatch"
+                  style={{ background: colorNodo(n.tipo, oscuro) }}
+                  aria-hidden="true"
+                />
+                <span className="mono graph-inventory-value">{n.valor}</span>
+                <span className="graph-inventory-type">{rotuloNodo(n.tipo)}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

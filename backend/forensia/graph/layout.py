@@ -163,8 +163,12 @@ def _etiqueta(valor: str) -> str:
     return valor if len(valor) <= MAX_CHARS_ETIQUETA else f"{valor[:MAX_CHARS_ETIQUETA - 1]}…"
 
 
-def _ancho_caja(nodo: dict[str, Any]) -> float:
-    """Ancho que ocupa un nodo con su etiqueta, aire incluido."""
+def ancho_caja(nodo: dict[str, Any]) -> float:
+    """Ancho que ocupa un nodo con su etiqueta, aire incluido.
+
+    Es pública porque la reserva de sitio de un nodo tiene que ser LA MISMA en
+    todo lo que coloque nodos, y desde 2026-09-04 la banda de entidades sueltas
+    (``forensia.graph.inventario``) también coloca."""
     etiqueta = _etiqueta(str(nodo.get("valor", "")))
     return max(2 * RADIO_NODO, len(etiqueta) * ANCHO_CARACTER) + _AIRE_X
 
@@ -175,7 +179,7 @@ def _caja(nodo: dict[str, Any]) -> tuple[float, float, float, float]:
     La caja NO está centrada en el nodo: el disco sube ``RADIO_NODO`` y la
     etiqueta baja otro tanto más sus dos líneas.
     """
-    ancho = _ancho_caja(nodo)
+    ancho = ancho_caja(nodo)
     return (
         ancho / 2,
         RADIO_NODO + _AIRE_Y / 2,
@@ -259,7 +263,7 @@ def _radio_para(grupo: list[dict[str, Any]]) -> float:
     """
     if not grupo:
         return 0.0
-    necesario = sum(_ancho_caja(n) for n in grupo)
+    necesario = sum(ancho_caja(n) for n in grupo)
     return max(_RADIO_MINIMO, _HOLGURA * necesario / _PERIMETRO_UNIDAD)
 
 
@@ -490,6 +494,7 @@ __all__ = [
     "ANILLOS",
     "MAX_CHARS_ETIQUETA",
     "RADIO_NODO",
+    "ancho_caja",
     "layout_caso",
     "layout_hallazgo",
 ]

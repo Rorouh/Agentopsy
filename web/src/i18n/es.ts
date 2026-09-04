@@ -495,6 +495,36 @@ export const es: Record<MessageKey, string> = {
   "graph.reextractThis": "Volver a extraer este",
   "graph.extractThis": "Extraer este hallazgo",
   "graph.exportPng": "Exportar PNG",
+  // FUNCIÓN «INVENTARIO» (grafos, en prueba 2026-09-04)
+  "graph.inventoryBand":
+    "{count} entidades que los hallazgos nombran sin afirmar ninguna relación entre ellas",
+  "graph.inventoryTitle": "Entidades sin relación",
+  "graph.inventoryNote":
+    "Los hallazgos las nombran, pero ningún hallazgo les afirma una relación, así que no forman parte de la red. Viajan enteras dentro del PNG exportado.",
+  "graph.inventoryCount": "{loose} de {total} entidades",
+  // FUNCIÓN «VISTAS» (grafos, en prueba 2026-09-04)
+  "graph.viewLabel": "Vista",
+  "graph.viewWhole": "Caso entero",
+  "graph.viewOption": "{label} ({count} hallazgos)",
+  "graph.viewDeclared": "Vista: {label}. Corte sobre {count} hallazgos del caso.",
+  "graph.viewEmptyNote":
+    "Esta vista no cubre ningún hallazgo con grafo extraído. Elige otra o extrae los grafos que faltan.",
+  "graph.viewAxis.tecnica": "Técnica ATT&CK",
+  "graph.viewAxis.tactica": "Táctica ATT&CK",
+  "graph.viewAxis.evidencia": "Evidencia",
+  "graph.viewAxis.severidad": "Severidad",
+  // FUNCIÓN «LOCALIZADOR» (grafos, en prueba 2026-09-04)
+  "graph.searchLabel": "Localizar una entidad",
+  "graph.searchPlaceholder": "IP, cuenta, fichero, dominio",
+  "graph.searchNoMatch": "Ninguna entidad de esta figura contiene {query}.",
+  "graph.searchInInventory":
+    "{value} es una de las entidades sin relación: está en la lista de debajo de la figura, no en la red.",
+  "graph.searchMatches": "{count} entidades coinciden. Se encuadra la primera.",
+  "graph.focusDepth": "Vecindad",
+  "graph.focusDepth1": "1 salto",
+  "graph.focusDepth2": "2 saltos",
+  "graph.exporting": "Exportando…",
+  "graph.exportNotReady": "no se pudo componer la figura que se exporta",
   "graph.needExecutor":
     "El grafo lo extrae el modelo que selecciones. Elige uno en «Modelo que extrae», aquí arriba: Agentopsy no elige uno por ti.",
   "graph.extractingNth": "Extrayendo {n} de {total}: {title}",
