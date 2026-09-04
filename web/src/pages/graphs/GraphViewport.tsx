@@ -73,6 +73,8 @@ export function GraphViewport({
   //: entidad buscada.
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
+  const panRef = useRef(pan);
+  panRef.current = pan;
   //: Para qué figura se hizo ya el ajuste inicial. Sin esto, redimensionar la
   //: ventana reencuadraría la vista y el perito perdería el detalle que estaba
   //: mirando.
@@ -108,14 +110,80 @@ export function GraphViewport({
     [escalaAjuste],
   );
 
+  // El TOPE del desplazamiento, en los dos ejes.
+  //
+  // Sin él, arrastrar sacaba la figura entera de la ventana y dejaba el marco en
+  // blanco, sin ninguna pista de hacia dónde había que volver salvo «Ajustar a
+  // la vista». Con él, el borde de la figura no pasa nunca del borde del marco:
+  // es lo que hace cualquier visor de imágenes y lo que convierte el arrastre en
+  // una exploración en vez de en una forma de perderse.
+  //
+  // Cuando la figura es MÁS PEQUEÑA que el marco no hay nada que explorar en ese
+  // eje, así que queda centrada y el arrastre no la mueve: moverla solo serviría
+  // para descuadrarla.
+  const acotarPan = useCallback(
+    (p: { x: number; y: number }, escala: number) => {
+      const w = ancho * escala;
+      const h = alto * escala;
+      return {
+        x:
+          w <= ventana.ancho
+            ? (ventana.ancho - w) / 2
+            : Math.min(0, Math.max(ventana.ancho - w, p.x)),
+        y:
+          h <= ventana.alto
+            ? (ventana.alto - h) / 2
+            : Math.min(0, Math.max(ventana.alto - h, p.y)),
+      };
+    },
+    [ancho, alto, ventana.ancho, ventana.alto],
+  );
+
+  //: Fija escala y desplazamiento a la vez, los dos acotados. Todo lo que mueve
+  //: la vista (la rueda, los botones, el teclado, el arrastre y el localizador)
+  //: pasa por aquí, para que no haya un solo camino que se salte el tope.
+  const aplicar = useCallback(
+    (escala: number, p: { x: number; y: number }) => {
+      const z = acota(escala);
+      const destino = acotarPan(p, z);
+      // Las refs se actualizan AQUÍ, no solo al renderizar. Un trackpad emite
+      // varios eventos de rueda dentro del mismo frame, y si la siguiente vuelta
+      // leyera la ref antes de que React haya vuelto a pintar, partiría del zoom
+      // anterior y se comería pasos.
+      zoomRef.current = z;
+      panRef.current = destino;
+      setZoom(z);
+      setPan(destino);
+    },
+    [acota, acotarPan],
+  );
+
+  //: Desplazar sin tocar la escala, acotado y con la ref al día por la misma
+  //: razón que `aplicar`.
+  const desplazar = useCallback(
+    (p: { x: number; y: number }) => {
+      const destino = acotarPan(p, zoomRef.current);
+      panRef.current = destino;
+      setPan(destino);
+    },
+    [acotarPan],
+  );
+
   const ajustar = useCallback(() => {
-    setZoom(escalaAjuste);
-    // Y centrada: una figura ajustada pero pegada a la esquina no es un encuadre.
-    setPan({
+    aplicar(escalaAjuste, {
+      // Centrada: una figura ajustada pero pegada a la esquina no es un encuadre.
       x: (ventana.ancho - ancho * escalaAjuste) / 2,
       y: (ventana.alto - alto * escalaAjuste) / 2,
     });
-  }, [escalaAjuste, ventana.ancho, ventana.alto, ancho, alto]);
+  }, [aplicar, escalaAjuste, ventana.ancho, ventana.alto, ancho, alto]);
+
+  // Al cambiar el tamaño del marco, o el de la figura, el desplazamiento que era
+  // válido puede dejar de serlo. Se vuelve a acotar sin tocar el zoom: reencuadrar
+  // entero al redimensionar la ventana perdería el detalle que se estaba mirando.
+  useEffect(() => {
+    if (!ventana.ancho || !ventana.alto) return;
+    desplazar(panRef.current);
+  }, [desplazar, ventana.ancho, ventana.alto]);
 
   // El ajuste inicial de CADA figura, en cuanto el marco se ha podido medir.
   useEffect(() => {
@@ -134,8 +202,7 @@ export function GraphViewport({
   useEffect(() => {
     if (!centrarEn || !ventana.ancho || !ventana.alto) return;
     const z = Math.max(zoomRef.current, 1);
-    setZoom(z);
-    setPan({
+    aplicar(z, {
       x: ventana.ancho / 2 - centrarEn.x * z,
       y: ventana.alto / 2 - centrarEn.y * z,
     });
@@ -157,38 +224,37 @@ export function GraphViewport({
       const caja = el.getBoundingClientRect();
       const cx = e.clientX - caja.left;
       const cy = e.clientY - caja.top;
-      setZoom((previo) => {
-        const siguiente = acota(previo * (e.deltaY < 0 ? PASO : 1 / PASO));
-        const factor = siguiente / previo;
-        setPan((p) => ({
-          x: cx - (cx - p.x) * factor,
-          y: cy - (cy - p.y) * factor,
-        }));
-        return siguiente;
+      const previo = zoomRef.current;
+      const siguiente = acota(previo * (e.deltaY < 0 ? PASO : 1 / PASO));
+      const factor = siguiente / previo;
+      const p = panRef.current;
+      aplicar(siguiente, {
+        x: cx - (cx - p.x) * factor,
+        y: cy - (cy - p.y) * factor,
       });
     };
     el.addEventListener("wheel", alRodar, { passive: false });
     return () => el.removeEventListener("wheel", alRodar);
-  }, [acota]);
+  }, [acota, aplicar]);
 
   const escalar = useCallback(
     (factor: number) => {
       const cx = ventana.ancho / 2;
       const cy = ventana.alto / 2;
-      setZoom((previo) => {
-        const siguiente = acota(previo * factor);
-        const k = siguiente / previo;
-        setPan((p) => ({ x: cx - (cx - p.x) * k, y: cy - (cy - p.y) * k }));
-        return siguiente;
-      });
+      const previo = zoomRef.current;
+      const siguiente = acota(previo * factor);
+      const k = siguiente / previo;
+      const p = panRef.current;
+      aplicar(siguiente, { x: cx - (cx - p.x) * k, y: cy - (cy - p.y) * k });
     },
-    [acota, ventana.ancho, ventana.alto],
+    [acota, aplicar, ventana.ancho, ventana.alto],
   );
 
   const alPulsar = (e: KeyboardEvent<HTMLDivElement>) => {
     const mover = (dx: number, dy: number) => {
       e.preventDefault();
-      setPan((p) => ({ x: p.x + dx, y: p.y + dy }));
+      const p = panRef.current;
+      desplazar({ x: p.x + dx, y: p.y + dy });
     };
     switch (e.key) {
       case "+":
@@ -269,7 +335,7 @@ export function GraphViewport({
         onPointerMove={(e) => {
           const a = arrastre.current;
           if (!a) return;
-          setPan({ x: a.px + (e.clientX - a.x), y: a.py + (e.clientY - a.y) });
+          desplazar({ x: a.px + (e.clientX - a.x), y: a.py + (e.clientY - a.y) });
         }}
         onPointerUp={(e) => {
           arrastre.current = null;

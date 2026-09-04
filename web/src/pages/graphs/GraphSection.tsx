@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 
 import { ApiError, api } from "../../api/client";
 import { useCaseStream } from "../../state/casePulse";
@@ -73,9 +74,21 @@ type Props = {
   // el botón no se pulsa y el motivo se dice (RULE 2).
   executor: ExecutorId | "";
   onResumen?: (r: GraphResumen) => void;
+  //: El selector de modelo, que construye la PÁGINA (es suya la selección y su
+  //: persistencia) y se pinta aquí, en la barra, junto al botón que lo gasta.
+  controlModelo?: ReactNode;
+  //: Por qué el ejecutor elegido no se puede usar, si es el caso.
+  avisoModelo?: string | null;
 };
 
-export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
+export function GraphSection({
+  caseId,
+  caseName,
+  executor,
+  onResumen,
+  controlModelo,
+  avisoModelo,
+}: Props) {
   const { t, tn } = useLang();
   // Un tipo que el vocabulario no declara sale TAL CUAL (RULE 2): feo y
   // verdadero, en vez de una etiqueta inventada.
@@ -561,6 +574,8 @@ export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
           </>
         )}
 
+        {controlModelo}
+
         {pendientes.length > 0 && (
           <button
             type="button"
@@ -592,6 +607,8 @@ export function GraphSection({ caseId, caseName, executor, onResumen }: Props) {
           {t(exportando ? "graph.exporting" : "graph.exportPng")}
         </button>
       </div>
+
+      {avisoModelo && <div className="inline-note">{avisoModelo}</div>}
 
       {sinEjecutor && pendientes.length > 0 && (
         <div className="inline-note">

@@ -44,6 +44,42 @@ def _s(text: Any) -> str:
     return str(text).translate(_TRANS).encode("latin-1", "replace").decode("latin-1")
 
 
+# ── paginación ───────────────────────────────────────────────────────────────
+#
+# Un informe pericial se lee en papel, y ahí un salto de página mal puesto no es
+# un detalle estético: una fila partida entre dos hojas deja media tabla sin su
+# otra mitad, y un rótulo al pie con su cuerpo en la hoja siguiente obliga a
+# volver atrás para saber de qué se estaba hablando. Las dos cosas se evitan
+# igual, RESERVANDO el sitio antes de escribir.
+
+#: Cuánto se reserva DEBAJO de un rótulo (un H2, el título de un hallazgo) para
+#: que no se quede solo al pie. Es el alto de un par de líneas de cuerpo: con
+#: menos que eso, lo que sigue al rótulo no se ve en la misma hoja.
+_ALTO_CUERPO_MINIMO = 14.0
+
+
+def _reservar(pdf: "_Report", alto: float) -> None:
+    """Salta de página si ``alto`` no cabe en lo que queda de la actual.
+
+    La guarda del margen superior es lo que impide que esto genere una hoja en
+    blanco: si ya estamos al principio de una página, lo que no quepa no va a
+    caber tampoco en la siguiente, así que se escribe aquí y se deja que el salto
+    automático lo parta donde toque.
+    """
+    if pdf.get_y() > pdf.t_margin and pdf.will_page_break(alto):
+        pdf.add_page()
+
+
+def _alto_de(pdf: "_Report", ancho: float, linea: float, texto: str, **kw: Any) -> float:
+    """Lo que va a ocupar un ``multi_cell``, sin escribirlo."""
+    return float(
+        pdf.multi_cell(
+            ancho, linea, texto, dry_run=True, output="HEIGHT",
+            new_x="LMARGIN", new_y="NEXT", **kw,
+        )
+    )
+
+
 class _Report(FPDF):
     header_left = "Agentopsy - Informe pericial forense"
     header_right = "Confidencial"
@@ -118,21 +154,71 @@ def _cover(pdf: _Report, doc: Document) -> None:
     _meta_table(pdf, rows)
 
 
-def _meta_table(pdf: _Report, rows: list[tuple[str, str]]) -> None:
-    kw = pdf.epw * 0.32
+#: Qué parte del ancho se lleva la columna de la CLAVE en las dos tablas de dos
+#: columnas del informe (la ficha de la portada y los bloques ``kv``).
+_ANCHO_CLAVE = 32
+
+#: Aire dentro de cada celda: arriba, derecha, abajo, izquierda. Reproduce la
+#: densidad que tenían las celdas dibujadas a mano (una línea ocupaba 6,4 mm con
+#: un interlineado de 4,6).
+_AIRE_CELDA = (1, 2, 1, 2)
+
+
+def _tabla_clave_valor(
+    pdf: _Report,
+    filas: list[tuple[str, str]],
+    *,
+    estilo_valor: FontFace,
+    interlineado: float,
+) -> None:
+    """Las dos columnas CLAVE / VALOR, paginadas por fpdf2 y no a mano.
+
+    Antes esto se dibujaba pareja a pareja: se guardaba la ``y`` de partida, se
+    escribía la clave y se volvía con ``set_xy`` a esa misma ``y`` para escribir
+    el valor al lado. Funcionaba en medio de una página y fallaba justo en el
+    borde: si la celda de la clave disparaba el salto automático, la clave se
+    pintaba ya en la página siguiente, pero el ``set_xy`` devolvía la ``y`` al
+    valor que tenía en la ANTERIOR, cerca del pie, de modo que el valor
+    disparaba OTRO salto y se iba a una tercera página. Resultado medido sobre un
+    bloque de 70 parejas: dos hojas con una sola columna suelta y su valor a dos
+    páginas de distancia. Es el defecto que se ve en un informe generado.
+
+    La tabla de fpdf2 no tiene ese problema porque decide el salto por FILA
+    ENTERA: la que no cabe pasa completa a la hoja siguiente. De paso arregla dos
+    cosas más que se veían en el mismo sitio: las dos celdas de una fila salen
+    con la MISMA altura (antes la clave quedaba corta cuando el valor ocupaba dos
+    líneas) y el texto se parte por PALABRAS y no por caracteres, así que se
+    acabó el «evidenc / ias» del informe anterior. Un token sin espacios que no
+    quepa en su columna, un SHA-256 por ejemplo, lo sigue partiendo fpdf2 por
+    donde puede, así que no hay nada que desborde.
+    """
     pdf.set_draw_color(*_RULE)
-    for k, v in rows:
-        y0 = pdf.get_y()
-        pdf.set_fill_color(*_SURFACE)
-        pdf.set_font("Courier", "", 8.5)
-        pdf.set_text_color(*_MUTED)
-        pdf.multi_cell(kw, 7, _s(k.upper()), border=1, fill=True, align="L",
-                       new_x="RIGHT", new_y="TOP", max_line_height=5)
-        pdf.set_font("Courier", "", 9)
-        pdf.set_text_color(*_INK)
-        pdf.set_xy(pdf.l_margin + kw, y0)
-        pdf.multi_cell(pdf.epw - kw, 7, _s(v), border=1, align="L",
-                       new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR", max_line_height=5)
+    pdf.set_line_width(0.2)
+    estilo_clave = FontFace(
+        family="Courier", size_pt=8.5, color=_MUTED, fill_color=_SURFACE
+    )
+    with pdf.table(
+        col_widths=(_ANCHO_CLAVE, 100 - _ANCHO_CLAVE),
+        first_row_as_headings=False,
+        borders_layout="ALL",
+        line_height=interlineado,
+        padding=_AIRE_CELDA,
+        text_align="LEFT",
+        v_align="TOP",
+    ) as tabla:
+        for clave, valor in filas:
+            fila = tabla.row()
+            fila.cell(_s(str(clave).upper()), style=estilo_clave)
+            fila.cell(_s(valor), style=estilo_valor)
+
+
+def _meta_table(pdf: _Report, rows: list[tuple[str, str]]) -> None:
+    _tabla_clave_valor(
+        pdf,
+        rows,
+        estilo_valor=FontFace(family="Courier", size_pt=9, color=_INK),
+        interlineado=5,
+    )
     pdf.ln(3)
 
 
@@ -157,11 +243,15 @@ def _toc(pdf: _Report, doc: Document) -> None:
 
 
 def _h2(pdf: _Report, title: str, num: str) -> None:
-    pdf.ln(4)
     pdf.set_font("Helvetica", "B", 15)
     pdf.set_text_color(*_INK)
-    label = f"{num} - {title}" if num else title
-    pdf.multi_cell(0, 8, _s(label), new_x="LMARGIN", new_y="NEXT")
+    label = _s(f"{num} - {title}" if num else title)
+    # El rótulo se lleva consigo su raya y un par de líneas de cuerpo. Sin esto,
+    # un apartado podía titularse al pie de una hoja y empezar en la siguiente, y
+    # la raya llegaba a dibujarse ya dentro del pie de página.
+    _reservar(pdf, 4 + _alto_de(pdf, 0, 8, label) + 4 + _ALTO_CUERPO_MINIMO)
+    pdf.ln(4)
+    pdf.multi_cell(0, 8, label, new_x="LMARGIN", new_y="NEXT")
     pdf.set_draw_color(*_INK)
     pdf.set_line_width(0.5)
     y = pdf.get_y() + 1
@@ -184,10 +274,12 @@ def _block(pdf: _Report, b: dict[str, Any]) -> None:
         pdf.multi_cell(0, 5.6, _s(b.get("text", "")), new_x="LMARGIN", new_y="NEXT")
         pdf.ln(1.5)
     elif t == "h3":
-        pdf.ln(2)
         pdf.set_font("Helvetica", "B", 12)
         pdf.set_text_color(*_INK)
-        pdf.multi_cell(0, 6, _s(b.get("text", "")), new_x="LMARGIN", new_y="NEXT")
+        texto = _s(b.get("text", ""))
+        _reservar(pdf, 2 + _alto_de(pdf, 0, 6, texto) + _ALTO_CUERPO_MINIMO)
+        pdf.ln(2)
+        pdf.multi_cell(0, 6, texto, new_x="LMARGIN", new_y="NEXT")
         pdf.ln(1)
     elif t == "quote":
         pdf.set_font("Courier", "", 10)
@@ -221,20 +313,14 @@ def _block(pdf: _Report, b: dict[str, Any]) -> None:
 
 
 def _kv(pdf: _Report, pairs: list[dict[str, Any]]) -> None:
-    kw = pdf.epw * 0.32
-    pdf.set_draw_color(*_RULE)
-    for kv in pairs:
-        y0 = pdf.get_y()
-        pdf.set_fill_color(*_SURFACE)
-        pdf.set_font("Courier", "", 8.5)
-        pdf.set_text_color(*_MUTED)
-        pdf.multi_cell(kw, 6.4, _s(kv.get("k", "")).upper(), border=1, fill=True,
-                       new_x="RIGHT", new_y="TOP", max_line_height=4.6)
-        pdf.set_font("Helvetica", "", 9.5)
-        pdf.set_text_color(*_INK)
-        pdf.set_xy(pdf.l_margin + kw, y0)
-        pdf.multi_cell(pdf.epw - kw, 6.4, _s(kv.get("v", "")), border=1,
-                       new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR", max_line_height=4.6)
+    if not pairs:
+        return
+    _tabla_clave_valor(
+        pdf,
+        [(kv.get("k", ""), kv.get("v", "")) for kv in pairs],
+        estilo_valor=FontFace(family="Helvetica", size_pt=9.5, color=_INK),
+        interlineado=4.6,
+    )
     pdf.ln(2)
 
 
@@ -263,12 +349,18 @@ def _table(pdf: _Report, headers: list[Any], rows: list[list[Any]]) -> None:
 def _finding(pdf: _Report, b: dict[str, Any]) -> None:
     sev = b.get("sev", "low")
     color = _SEV_COLOR.get(sev, _MUTED)
+    titulo = _s(b.get("title", ""))
+    # La cabecera de un hallazgo son tres cosas que solo significan algo juntas:
+    # la severidad, el título y el arranque de su descripción. Se reservan de una
+    # vez para que no quede una etiqueta «[ ALTO ]» suelta al pie de una hoja.
+    pdf.set_font("Helvetica", "B", 10.5)
+    _reservar(pdf, 5 + _alto_de(pdf, 0, 5.4, titulo) + _ALTO_CUERPO_MINIMO)
     pdf.set_font("Helvetica", "B", 7.5)
     pdf.set_text_color(*color)
     pdf.cell(0, 5, _s(f"[ {_SEV_LABEL.get(sev, sev).upper()} ]"), new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "B", 10.5)
     pdf.set_text_color(*_INK)
-    pdf.multi_cell(0, 5.4, _s(b.get("title", "")), new_x="LMARGIN", new_y="NEXT")
+    pdf.multi_cell(0, 5.4, titulo, new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "", 9.5)
     pdf.set_text_color(*_BODY)
     pdf.multi_cell(0, 5, _s(b.get("text", "")), new_x="LMARGIN", new_y="NEXT")
@@ -289,7 +381,14 @@ def _finding(pdf: _Report, b: dict[str, Any]) -> None:
 # ── firma ────────────────────────────────────────────────────────────────────
 
 
+#: Alto del bloque de firma: la raya, el aire, las dos líneas del pie y el
+#: SHA-256 partido en dos. Es lo último del informe y va entero o en la hoja
+#: siguiente: una firma separada de su hash no acredita nada.
+_ALTO_FIRMA = 34.0
+
+
 def _signature(pdf: _Report, doc: Document) -> None:
+    _reservar(pdf, _ALTO_FIRMA)
     pdf.ln(6)
     pdf.set_draw_color(*_RULE)
     pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + pdf.epw, pdf.get_y())

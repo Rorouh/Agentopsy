@@ -9,6 +9,8 @@ formado. RULE 2: caso sin docs → []; id inexistente → KeyError.
 from __future__ import annotations
 
 import json
+import re
+import zlib
 
 import pytest
 
@@ -130,3 +132,134 @@ def test_pdf_is_well_formed(tmp_case) -> None:
     pdf = render_pdf(doc)
     assert pdf[:5] == b"%PDF-"
     assert len(pdf) > 1500
+
+
+# ── paginación del PDF ────────────────────────────────────────────────────────
+#
+# El defecto que fijan estos tests salió de un informe real: el PDF traía hojas
+# con una sola columna de una tabla y nada más. La causa era que un bloque `kv`
+# se dibujaba pareja a pareja, guardando la `y` de partida y volviendo a ella con
+# `set_xy` para escribir el valor al lado de su clave. Cuando la clave disparaba
+# el salto de página automático, la clave se pintaba ya en la hoja siguiente,
+# pero el `set_xy` devolvía la `y` a su valor de la hoja ANTERIOR, cerca del pie,
+# así que el valor disparaba OTRO salto y aterrizaba dos hojas más allá. Medido
+# sobre el informe real del caso LoneWolf: 34 páginas con 5 casi vacías, que
+# pasaron a 30 sin ninguna.
+
+_MARCA_TEXTO = re.compile(r"\((.*?)\)\s*T[jJ]")
+_FLUJO = re.compile(rb"stream\r?\n(.*?)\r?\nendstream", re.S)
+
+#: Por debajo de esto una hoja no tiene contenido PROPIO: la cabecera y el pie
+#: que van en todas ya suman unos 100 caracteres.
+_MINIMO_POR_PAGINA = 260
+
+
+def _texto_por_pagina(pdf: bytes) -> list[str]:
+    """El texto que lleva cada hoja, leído de los flujos de contenido."""
+    hojas = []
+    for m in _FLUJO.finditer(pdf):
+        try:
+            crudo = zlib.decompress(m.group(1))
+        except zlib.error:
+            crudo = m.group(1)
+        hojas.append(" ".join(_MARCA_TEXTO.findall(crudo.decode("latin-1", "replace"))))
+    return hojas
+
+
+def _kv_largo(parejas: int) -> dict:
+    """Un bloque `kv` lo bastante largo para cruzar varias veces el pie.
+
+    Cada pareja lleva su propia marca en la clave y otra en el valor, que es lo
+    que permite comprobar que las dos mitades de una fila caen en la misma hoja.
+    """
+    return {
+        "t": "kv",
+        "pairs": [
+            {"k": f"CLAVE-{i:03d}", "v": f"VALOR-{i:03d} " + "texto de relleno " * (2 + i % 4)}
+            for i in range(parejas)
+        ],
+    }
+
+
+def test_a_key_value_row_is_never_split_across_two_pages(tmp_case) -> None:
+    """Las dos mitades de una fila viajan SIEMPRE en la misma hoja.
+
+    Es el gate del defecto. Antes de arreglarlo, dos de estas noventa filas
+    quedaban partidas, y la hoja que recibía la clave huérfana no tenía nada
+    más."""
+    cases, case_id = tmp_case
+    store = DocumentStore(cases)
+    doc = store.create(case_id, _payload(
+        sections=[{"num": "10", "title": "Recomendaciones", "blocks": [_kv_largo(90)]}],
+    ))
+    hojas = _texto_por_pagina(render_pdf(doc))
+
+    pagina_clave: dict[int, int] = {}
+    pagina_valor: dict[int, int] = {}
+    for numero, hoja in enumerate(hojas, 1):
+        for i in re.findall(r"CLAVE-(\d{3})", hoja):
+            pagina_clave[int(i)] = numero
+        for i in re.findall(r"VALOR-(\d{3})", hoja):
+            pagina_valor[int(i)] = numero
+
+    # Ninguna pareja se pierde por el camino, y ninguna se parte.
+    assert len(pagina_clave) == 90
+    assert len(pagina_valor) == 90
+    partidas = [i for i, pag in pagina_clave.items() if pagina_valor.get(i) != pag]
+    assert not partidas, f"filas partidas entre dos hojas: {partidas}"
+
+
+def test_no_page_of_a_long_report_is_left_almost_empty(tmp_case) -> None:
+    """Ninguna hoja sale con la cabecera, el pie y nada más.
+
+    Es el síntoma tal y como se ve en el PDF, comprobado sobre un informe que
+    mezcla los bloques que sí pueden quedarse a medias en un salto de página."""
+    cases, case_id = tmp_case
+    store = DocumentStore(cases)
+    doc = store.create(case_id, _payload(
+        sections=[
+            {"num": str(n), "title": f"Apartado {n}", "blocks": [
+                {"t": "p", "text": "Parrafo de contexto. " * 12},
+                _kv_largo(11),
+                {"t": "h3", "text": f"Subapartado {n}.1"},
+                {"t": "finding", "sev": "high", "title": f"Hallazgo {n}",
+                 "text": "Descripcion del hallazgo. " * 8},
+                {"t": "table", "headers": ["a", "b"], "rows": [["x", "y"]] * 6},
+            ]}
+            for n in range(1, 9)
+        ],
+    ))
+    flacas = [
+        (numero, len(hoja))
+        for numero, hoja in enumerate(_texto_por_pagina(render_pdf(doc)), 1)
+        if len(hoja) < _MINIMO_POR_PAGINA
+    ]
+    assert not flacas, f"hojas casi vacias (pagina, caracteres): {flacas}"
+
+
+def test_a_section_heading_is_never_the_last_thing_on_its_page(tmp_case) -> None:
+    """Un rótulo se lleva consigo el arranque de su cuerpo.
+
+    Un apartado que se titula al pie de una hoja y empieza en la siguiente
+    obliga a volver atrás para saber de qué se estaba hablando, que es el mismo
+    defecto de lectura que una fila partida."""
+    cases, case_id = tmp_case
+    store = DocumentStore(cases)
+    # Longitudes crecientes: alguna deja el rótulo siguiente justo en el borde.
+    doc = store.create(case_id, _payload(
+        sections=[
+            {"num": str(n), "title": f"Apartado {n} con titulo largo de verdad",
+             "blocks": [{"t": "p", "text": "Relleno de cuerpo. " * (18 + n * 7)}]}
+            for n in range(1, 16)
+        ],
+    ))
+    for numero, hoja in enumerate(_texto_por_pagina(render_pdf(doc)), 1):
+        for n in range(1, 16):
+            rotulo = f"{n} - Apartado {n} con titulo largo de verdad"
+            if rotulo not in hoja:
+                continue
+            # Detrás del rótulo tiene que quedar cuerpo, no solo el pie de página.
+            despues = hoja.split(rotulo, 1)[1]
+            assert len(despues) > 120, (
+                f"el rotulo del apartado {n} se queda casi solo al pie de la pagina {numero}"
+            )

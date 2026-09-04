@@ -129,42 +129,47 @@ export function GraphsPage() {
   return (
     <div className="view-scroll">
       <div className="graphs-page">
-        <div className="graphs-intro">
-          <div className="graphs-intro-text">{t("graphs.intro")}</div>
-          <div className="field graphs-intro-field">
-            <label className="eyebrow" htmlFor="graphs-executor">
-              {t("graphs.extractingModel")}
-            </label>
-            {/* Selección EXPLÍCITA del operador. Un ejecutor no disponible se
-                lista deshabilitado con su nombre, nunca se sustituye por otro
-                (RULE 2). Es la misma clave que usan el chat y el informe. */}
-            <select
-              id="graphs-executor"
-              className="field-input field-input--sm"
-              value={executor}
-              onChange={(e) => seleccionar(e.target.value as ExecutorId | "")}
-            >
-              <option value="">{t("executor.pick")}</option>
-              {executorEntries.map(([id, st]) => (
-                <option key={id} value={id} disabled={!st.available}>
-                  {st.available ? st.name : t("executor.unavailable", { name: st.name })}
-                  {st.local ? ` · ${t("executor.local")}` : ""}
-                </option>
-              ))}
-            </select>
-            {executorStatus && !executorStatus.available && (
-              <div className="inline-note">
-                {executorStatus.reason ?? t("executor.notAvailable", { name: executorStatus.name })}
-              </div>
-            )}
-          </div>
-        </div>
-
         <GraphSection
           caseId={activeCase.id}
           caseName={activeCase.name}
           executor={executor}
           onResumen={onResumen}
+          /* El selector de modelo viaja a la barra de la figura, al lado del
+             botón que lo gasta. Antes vivía en un bloque de texto introductorio
+             encima de todo, lejos de la acción que decide: quien pulsa «Extraer»
+             tiene ahora delante con qué modelo va a hacerlo. La página sigue
+             siendo la dueña del estado y de persistirlo (RULE 3), la sección
+             solo lo pinta donde toca. */
+          controlModelo={
+            <div className="field graph-modelo">
+              <label className="eyebrow" htmlFor="graphs-executor">
+                {t("graphs.extractingModel")}
+              </label>
+              {/* Selección EXPLÍCITA del operador. Un ejecutor no disponible se
+                  lista deshabilitado con su nombre, nunca se sustituye por otro
+                  (RULE 2). Es la misma clave que usan el chat y el informe. */}
+              <select
+                id="graphs-executor"
+                className="field-input field-input--sm"
+                value={executor}
+                onChange={(e) => seleccionar(e.target.value as ExecutorId | "")}
+              >
+                <option value="">{t("executor.pick")}</option>
+                {executorEntries.map(([id, st]) => (
+                  <option key={id} value={id} disabled={!st.available}>
+                    {st.available ? st.name : t("executor.unavailable", { name: st.name })}
+                    {st.local ? ` · ${t("executor.local")}` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+          }
+          avisoModelo={
+            executorStatus && !executorStatus.available
+              ? executorStatus.reason ??
+                t("executor.notAvailable", { name: executorStatus.name })
+              : null
+          }
         />
       </div>
     </div>

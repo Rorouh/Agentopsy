@@ -528,24 +528,12 @@ export const RelationGraph = forwardRef<SVGSVGElement, Props>(function RelationG
         role="img"
         aria-label={`${titulo}. ${subtitulo}`}
       >
-        <rect
-          x={0}
-          y={0}
-          width={lienzo.ancho}
-          height={lienzo.alto}
-          fill={palette["--surface"]}
-        />
-        {/* El borde del lienzo: al mover la figura dice dónde acaba, que es lo
-            que evita creer que se ha perdido algo fuera de la ventana. */}
-        <rect
-          x={0.5}
-          y={0.5}
-          width={lienzo.ancho - 1}
-          height={lienzo.alto - 1}
-          fill="none"
-          stroke={palette["--hair"]}
-          strokeWidth={1}
-        />
+        {/* Sin fondo ni borde PROPIOS. El lienzo los llevaba, y dentro del marco
+            del visor eso pintaba un segundo recuadro flotando en el primero. El
+            fondo lo pone ahora el marco (`.graph-viewport-frame`), que es el
+            único borde de la sección, y el desplazamiento va acotado para que la
+            figura no se pueda sacar de él: el tope hace el mismo trabajo que
+            hacía ese borde, decir dónde acaba la figura, sin dibujar nada. */}
         {nodos.length === 0 && (
           <text
             x={lienzo.ancho / 2}

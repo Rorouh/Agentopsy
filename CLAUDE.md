@@ -1153,6 +1153,54 @@ Pinned by `tests/test_graph_funciones.py`, que va aparte de
 módulo, su bloque del router y sus tests, sin tocar lo que fija el contrato del
 grafo.
 
+**Un solo recuadro, y el desplazamiento con tope (2026-09-04)**: la figura
+llevaba fondo y borde PROPIOS dentro del SVG, así que en pantalla se veía un
+segundo recuadro flotando dentro del marco del visor y paseándose por él al
+arrastrar. El fondo pasa al marco (`.graph-viewport-frame`), que queda como el
+único borde de la sección, y el SVG de pantalla va transparente; el color sigue
+siendo `--surface`, que es el que dan por supuesto las cajas opacas de los
+rótulos de relación. Lo que hacía ese borde, decir dónde acaba la figura, lo hace
+ahora el TOPE del desplazamiento: `acotarPan` impide que el borde de la figura
+pase del borde del marco en cualquiera de los dos ejes, y cuando la figura es más
+pequeña que el marco en un eje queda centrada en él y el arrastre no la mueve,
+porque ahí no hay nada que explorar. Todo lo que mueve la vista (rueda, botones,
+teclado, arrastre y el localizador) pasa por `aplicar` o `desplazar`, de modo que
+no hay un solo camino que se salte el tope, y las dos actualizan las refs de
+forma SÍNCRONA: un trackpad emite varios eventos de rueda dentro del mismo frame
+y leer la ref antes del siguiente render se comía pasos de zoom. El selector de
+modelo se muda al lado del botón que lo gasta, en la barra de la figura, y el
+párrafo introductorio de la fase desaparece con su clave del catálogo.
+
+**El PDF del informe deja de sacar hojas con media tabla (2026-09-04,
+`reports/pdf.py`)**: un informe generado traía páginas con una sola columna de
+una tabla y nada más, y la siguiente continuaba como si nada. La causa estaba
+entera en cómo se dibujaban las dos tablas de dos columnas del informe, la ficha
+de la portada (`_meta_table`) y los bloques `kv` (`_kv`): se pintaban pareja a
+pareja, guardando la `y` de partida y volviendo a ella con `set_xy` para escribir
+el valor AL LADO de su clave. Eso funciona en medio de una página y falla justo
+en el borde: si la celda de la clave dispara el salto automático, la clave se
+pinta ya en la hoja siguiente, pero el `set_xy` devuelve la `y` al valor que
+tenía en la hoja ANTERIOR, cerca del pie, así que el valor dispara OTRO salto y
+aterriza dos páginas más allá. Entre las dos queda una hoja con la clave
+huérfana. Las dos tablas pasan a `pdf.table()`, que decide el salto por FILA
+ENTERA, y de paso arregla dos defectos que se veían en el mismo sitio: las dos
+celdas de una fila salen con la MISMA altura (antes la clave quedaba corta
+cuando el valor ocupaba dos líneas) y el texto se parte por PALABRAS y no por
+caracteres, así que se acabó el «evidenc / ias» del informe anterior; un token
+sin espacios que no quepa, un SHA-256, lo sigue partiendo fpdf2 por donde puede,
+o sea que nada desborda. El mismo criterio se extiende a lo demás que puede
+quedarse a medias en un salto: un H2, un H3, la cabecera de un hallazgo (la
+etiqueta de severidad, el título y el arranque del texto) y el bloque de firma
+RESERVAN su sitio antes de escribir (`_reservar`, que solo salta si no estamos ya
+al principio de una página, que es lo que impide que el propio arreglo genere una
+hoja en blanco). Medido sobre el informe real del caso LoneWolf: **v0.2 pasa de
+34 páginas con 5 casi vacías a 30 sin ninguna**, y v0.1 de 18 con 2 a 17 sin
+ninguna. Pinned by los tres gates de `tests/test_documents.py`
+(`test_a_key_value_row_is_never_split_across_two_pages`,
+`test_no_page_of_a_long_report_is_left_almost_empty`,
+`test_a_section_heading_is_never_the_last_thing_on_its_page`), verificados
+FALLANDO contra el código anterior.
+
 **Los grafos son una FASE, no un apartado del informe (2026-08-11)**: nacieron
 dentro del Informe pericial y ahí competían con «Finalizar investigación», la
 otra acción de esa pantalla que llama al modelo y cuesta dinero. Son ahora la

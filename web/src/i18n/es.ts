@@ -452,8 +452,6 @@ export const es: Record<MessageKey, string> = {
   "graphs.loadFailed": "No se pudieron cargar los grafos:",
   "graphs.noCaseBody":
     "El grafo se extrae del texto de los hallazgos de un caso. Abre uno desde el lateral.",
-  "graphs.intro":
-    "Donde la línea de tiempo responde cuándo pasó, el grafo responde qué se conecta con qué: qué cuentas, ficheros, equipos, dominios e IP intervienen en cada hallazgo y con qué relación. El grafo del caso funde los de todos los hallazgos por entidad, y esa fusión no gasta ninguna llamada al modelo. Es una propuesta del modelo, no un hecho verificado, y así viaja etiquetada también dentro de la imagen exportada.",
   "graphs.extractingModel": "Modelo que extrae",
 
   // --- selección de ejecutor -----------------------------------------------

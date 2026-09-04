@@ -479,8 +479,6 @@ export const en = {
   "graphs.loadFailed": "The graphs could not be loaded:",
   "graphs.noCaseBody":
     "The graph is extracted from the text of a case's findings. Open one from the sidebar.",
-  "graphs.intro":
-    "Where the timeline answers when it happened, the graph answers what connects to what: which accounts, files, hosts, domains and IPs take part in each finding and with what relation. The case graph merges those of all the findings by entity, and that merge spends no model call at all. It is a proposal by the model, not a verified fact, and it travels labelled as such inside the exported image too.",
   "graphs.extractingModel": "Model that extracts",
 
   // --- selección de ejecutor -----------------------------------------------
