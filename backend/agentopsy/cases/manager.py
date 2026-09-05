@@ -3,7 +3,7 @@
 A case is the root scope of a forensic investigation. Every artifact (evidence copies,
 audit log, chats, reports) lives under ``CONFIG_DIR/cases/<case-id>/``. The directory
 layout is the source of truth — there is no separate index. Filesystem scan is fine
-for v1 (a agentopsy install is not expected to hold thousands of cases).
+for v1 (an Agentopsy install is not expected to hold thousands of cases).
 
 RULE 2: no silent defaults. Missing/invalid arguments raise ``ValueError`` immediately.
 """
