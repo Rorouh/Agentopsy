@@ -22,9 +22,9 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from forensia.cases import CaseManager
-from forensia.pulse import AUSENTE, FLUJOS, case_pulse
-from forensia.server import create_app
+from agentopsy.cases import CaseManager
+from agentopsy.pulse import AUSENTE, FLUJOS, case_pulse
+from agentopsy.server import create_app
 
 PORT = 51044
 
@@ -161,8 +161,8 @@ def test_a_case_that_does_not_exist_raises(cases) -> None:
 
 @pytest.fixture
 def client(cases, monkeypatch) -> TestClient:
-    import forensia.pulse as pulse_mod
-    import forensia.routers.cases as cases_router
+    import agentopsy.pulse as pulse_mod
+    import agentopsy.routers.cases as cases_router
 
     monkeypatch.setattr(cases_router, "case_manager", cases)
     monkeypatch.setattr(pulse_mod, "case_manager", cases)
@@ -170,7 +170,7 @@ def client(cases, monkeypatch) -> TestClient:
 
 
 def test_the_endpoint_serves_the_pulse(client, case_id) -> None:
-    auth = {"X-Forensia-Token": client.app.state.token}
+    auth = {"X-Agentopsy-Token": client.app.state.token}
 
     res = client.get(f"/api/cases/{case_id}/pulse", headers=auth)
 
@@ -182,7 +182,7 @@ def test_the_endpoint_serves_the_pulse(client, case_id) -> None:
 
 
 def test_the_endpoint_404s_on_a_case_that_does_not_exist(client) -> None:
-    auth = {"X-Forensia-Token": client.app.state.token}
+    auth = {"X-Agentopsy-Token": client.app.state.token}
     res = client.get(
         "/api/cases/00000000-0000-4000-8000-000000000000/pulse", headers=auth
     )

@@ -355,7 +355,7 @@ export function ExecutorLoginModal({
           <div className="exec-login-ok" role="status" aria-live="polite">
             <Icon name="check" size={13} />{" "}
             {t("execLogin.connectedBefore", { name: executorName })}{" "}
-            <code>forensia-cli-auth</code>.
+            <code>agentopsy-cli-auth</code>.
           </div>
         )}
 

@@ -23,11 +23,11 @@ export const LANGS: readonly Lang[] = ["en", "es"];
 // el selector lo cambia en un clic. Mismo estatuto que la paleta «papel».
 export const DEFAULT_LANG: Lang = "en";
 
-export const LANG_STORAGE_KEY = "forensia-lang";
+export const LANG_STORAGE_KEY = "agentopsy-lang";
 
 // La cabecera con la que cada llamada declara su idioma, gemela del token.
-// El api la tiene declarada en su allowlist de CORS (forensia/i18n.py).
-export const LANG_HEADER = "X-Forensia-Lang";
+// El api la tiene declarada en su allowlist de CORS (agentopsy/i18n.py).
+export const LANG_HEADER = "X-Agentopsy-Lang";
 
 // Locale con el que se formatean fechas y números. `en-GB` y no `en-US` a
 // propósito: mantiene el orden día/mes del formato actual, y en un informe

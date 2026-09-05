@@ -39,9 +39,9 @@ from pathlib import Path
 import pytest
 
 from _custody import context_for, register_evidence, wire_dispatcher_custody
-from forensia.artifacts.store import ArtifactStore
-from forensia.cases.manager import CaseManager
-from forensia.toolkit import dispatcher, maletin
+from agentopsy.artifacts.store import ArtifactStore
+from agentopsy.cases.manager import CaseManager
+from agentopsy.toolkit import dispatcher, maletin
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXEC_AGENT_PY = REPO_ROOT / "docker" / "docker" / "forensic-toolkit" / "exec_agent.py"
@@ -62,7 +62,7 @@ _GROW = (
 
 
 def _load_exec_agent():
-    spec = importlib.util.spec_from_file_location("forensia_exec_agent_timeout", EXEC_AGENT_PY)
+    spec = importlib.util.spec_from_file_location("agentopsy_exec_agent_timeout", EXEC_AGENT_PY)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -72,7 +72,7 @@ def _load_exec_agent():
 # (a) exec-agent: a `null` timeout is bounded by the ceiling and kills the child
 # --------------------------------------------------------------------------- #
 def test_null_timeout_is_bounded_and_kills_process(monkeypatch, tmp_path) -> None:
-    monkeypatch.delenv("FORENSIA_EXEC_AGENT_TOKEN", raising=False)
+    monkeypatch.delenv("AGENTOPSY_EXEC_AGENT_TOKEN", raising=False)
     module = _load_exec_agent()
     module._MAX_TIMEOUT_S = 1  # tiny effective ceiling so the runaway child is killed fast
 
@@ -121,7 +121,7 @@ def test_null_timeout_is_bounded_and_kills_process(monkeypatch, tmp_path) -> Non
 def test_non_positive_timeout_is_rejected(monkeypatch, tmp_path) -> None:
     """A `null` timeout applies the ceiling; an explicit non-positive one is a loud 400
     (never silently coerced to "no limit" — RULE 2)."""
-    monkeypatch.delenv("FORENSIA_EXEC_AGENT_TOKEN", raising=False)
+    monkeypatch.delenv("AGENTOPSY_EXEC_AGENT_TOKEN", raising=False)
     module = _load_exec_agent()
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), module.Handler)
@@ -189,8 +189,7 @@ def test_http_timeout_exceeds_exec_agent_ceiling(monkeypatch) -> None:
     os.name != "posix",
     reason=(
         "runs a POSIX script stand-in for the catalog binary shell-free on PATH; it runs in "
-        "CI (Linux). On Windows the real chain is driven over docker compose with a .E01 "
-        "(docs/operacion/e2e-ewf-runbook.md)."
+        "CI (Linux). On Windows the real chain is driven over docker compose with a .E01."
     ),
 )
 def test_dispatcher_hashes_final_bytes_after_process_death(monkeypatch, tmp_path) -> None:
@@ -212,12 +211,12 @@ def test_dispatcher_hashes_final_bytes_after_process_death(monkeypatch, tmp_path
         json.dumps({"schema": 1, "stage": "unix", "versions": {"icat": "sleuthkit 4.12 (dpkg)"}}),
         encoding="utf-8",
     )
-    monkeypatch.setenv("FORENSIA_VERSIONS_MANIFEST", str(manifest))
+    monkeypatch.setenv("AGENTOPSY_VERSIONS_MANIFEST", str(manifest))
 
     wire_dispatcher_custody(monkeypatch, dispatcher, cases, store, fake_version=None)
     monkeypatch.setattr(dispatcher, "resolve", lambda _b: None)  # force the maletín venue
     monkeypatch.setenv("PATH", str(bindir) + os.pathsep + os.environ.get("PATH", ""))
-    monkeypatch.delenv("FORENSIA_EXEC_AGENT_TOKEN", raising=False)
+    monkeypatch.delenv("AGENTOPSY_EXEC_AGENT_TOKEN", raising=False)
     # Fail-fast: shrink the client budget so a broken (unbounded) exec-agent would not hang
     # the test for the full 1800 s ceiling. The invariant (client > exec ceiling) still holds.
     monkeypatch.setattr(maletin, "_EXEC_AGENT_MAX_TIMEOUT", 5)
@@ -229,7 +228,7 @@ def test_dispatcher_hashes_final_bytes_after_process_death(monkeypatch, tmp_path
     port = server.server_address[1]
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    monkeypatch.setenv("FORENSIA_TOOLKIT_UNIX_URL", f"http://127.0.0.1:{port}")
+    monkeypatch.setenv("AGENTOPSY_TOOLKIT_UNIX_URL", f"http://127.0.0.1:{port}")
     try:
         result = dispatcher.execute(
             "tsk_icat",

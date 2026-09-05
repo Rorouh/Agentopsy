@@ -5,10 +5,10 @@ retirar una función sea borrar su módulo, su bloque del router y sus tests de
 aquí, sin tocar lo que fija el contrato del grafo. Cada bloque de este fichero
 está rotulado con el nombre de su función:
 
-- «INVENTARIO» (``forensia.graph.inventario``): la figura dibuja la RED, y las
+- «INVENTARIO» (``agentopsy.graph.inventario``): la figura dibuja la RED, y las
   entidades que ningún hallazgo relaciona bajan a una banda declarada que solo
   compone el PNG.
-- «VISTAS» (``forensia.graph.vistas``): cortes del grafo del caso por un eje que
+- «VISTAS» (``agentopsy.graph.vistas``): cortes del grafo del caso por un eje que
   el caso ya tiene persistido.
 - La tercera, «LOCALIZADOR», es enteramente del cliente (buscar una entidad y
   encuadrarla, y el foco a dos saltos) y no tiene superficie que fijar aquí.
@@ -22,12 +22,12 @@ from dataclasses import dataclass, field
 import pytest
 from fastapi.testclient import TestClient
 
-from forensia.cases.manager import CaseManager
-from forensia.findings.store import FindingStore
-from forensia.graph import inventario, vistas
-from forensia.graph.layout import ALTO_ETIQUETA, RADIO_NODO, ancho_caja, layout_caso
-from forensia.graph.store import GraphStore
-from forensia.server import create_app
+from agentopsy.cases.manager import CaseManager
+from agentopsy.findings.store import FindingStore
+from agentopsy.graph import inventario, vistas
+from agentopsy.graph.layout import ALTO_ETIQUETA, RADIO_NODO, ancho_caja, layout_caso
+from agentopsy.graph.store import GraphStore
+from agentopsy.server import create_app
 
 PORT = 51137
 
@@ -238,7 +238,7 @@ def test_a_view_that_covers_nothing_says_so_instead_of_falling_back() -> None:
 
 @pytest.fixture()
 def http(tmp_path, monkeypatch):
-    import forensia.routers.graphs as graphs_router
+    import agentopsy.routers.graphs as graphs_router
 
     cases = CaseManager(root=tmp_path / "cases")
     case = cases.create(name="Murcielago", examiner="Daniel Ramos", os_profile="windows")
@@ -254,7 +254,7 @@ def http(tmp_path, monkeypatch):
     return {
         "client": client, "case": case, "cases": cases,
         "findings": findings, "store": store,
-        "auth": {"X-Forensia-Token": client.app.state.token},
+        "auth": {"X-Agentopsy-Token": client.app.state.token},
     }
 
 

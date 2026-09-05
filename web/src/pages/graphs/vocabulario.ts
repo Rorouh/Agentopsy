@@ -3,7 +3,7 @@ import type { MessageKey } from "../../i18n/en";
 
 // Las etiquetas y los colores del grafo, en UNA tabla.
 //
-// Misma regla que `forensia/timeline/vocabulario.py`: un valor que no esté en la
+// Misma regla que `agentopsy/timeline/vocabulario.py`: un valor que no esté en la
 // tabla sale TAL CUAL, nunca traducido a lo que se le parezca. Si el backend
 // gana un tipo y esta tabla no se entera, la figura enseña el `snake_case`
 // literal, que es feo y verdadero, en vez de una etiqueta inventada (RULE 2).

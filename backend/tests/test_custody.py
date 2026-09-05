@@ -13,11 +13,11 @@ import hashlib
 
 import pytest
 
-from forensia.i18n import t
-from forensia.audit.log import AuditLog
-from forensia.cases.manager import CaseManager
-from forensia.custody import build_custody_act
-from forensia.evidence import (
+from agentopsy.i18n import t
+from agentopsy.audit.log import AuditLog
+from agentopsy.cases.manager import CaseManager
+from agentopsy.custody import build_custody_act
+from agentopsy.evidence import (
     READ_ONLY_LEVEL,
     EvidenceManager,
     human_readable_size,

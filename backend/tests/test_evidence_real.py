@@ -11,9 +11,9 @@ import sys
 import pytest
 from _symlink_support import requires_symlinks
 
-from forensia.i18n import codigo_de
-from forensia.cases.manager import CaseManager
-from forensia.evidence import EvidenceManager
+from agentopsy.i18n import codigo_de
+from agentopsy.cases.manager import CaseManager
+from agentopsy.evidence import EvidenceManager
 
 
 @pytest.fixture
@@ -150,7 +150,7 @@ class TestHashGateCleanup:
             return d
 
         # Patch the symbol the evidence module actually calls.
-        import forensia.evidence as ev
+        import agentopsy.evidence as ev
 
         monkeypatch.setattr(ev.shutil, "copy2", corrupting_copy2)
 

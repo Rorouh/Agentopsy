@@ -37,11 +37,11 @@ from pathlib import Path
 import pytest
 
 from _custody import FAKE_TOOL_VERSION, context_for, register_evidence, wire_dispatcher_custody
-from forensia.artifacts.store import ArtifactStore
-from forensia.audit.log import AuditLog
-from forensia.cases.manager import CaseManager
-from forensia.toolkit import dispatcher, maletin
-from forensia.toolkit.dispatcher import _qemu_format_for_path
+from agentopsy.artifacts.store import ArtifactStore
+from agentopsy.audit.log import AuditLog
+from agentopsy.cases.manager import CaseManager
+from agentopsy.toolkit import dispatcher, maletin
+from agentopsy.toolkit.dispatcher import _qemu_format_for_path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXEC_AGENT_PY = REPO_ROOT / "docker" / "docker" / "forensic-toolkit" / "exec_agent.py"
@@ -170,7 +170,7 @@ def test_dispatcher_anchors_image_format_to_raw_for_container(
 # exec-agent harness (real loopback HTTP, in-process — no docker)
 # --------------------------------------------------------------------------- #
 def _load_exec_agent():
-    spec = importlib.util.spec_from_file_location("forensia_exec_agent_vmdk_test", EXEC_AGENT_PY)
+    spec = importlib.util.spec_from_file_location("agentopsy_exec_agent_vmdk_test", EXEC_AGENT_PY)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -202,7 +202,7 @@ def _post_exec(module, payload: dict) -> tuple[int, dict]:
 # 2) mechanism: the argv token is rewritten to the raw `raw.img`, and teardown runs
 # --------------------------------------------------------------------------- #
 def test_exec_agent_qemu_rewrites_argv_and_tears_down(monkeypatch, tmp_path) -> None:
-    monkeypatch.delenv("FORENSIA_EXEC_AGENT_TOKEN", raising=False)
+    monkeypatch.delenv("AGENTOPSY_EXEC_AGENT_TOKEN", raising=False)
     module = _load_exec_agent()
 
     raw_bytes = b"RAW-DISK-IMAGE-VIA-RAW.IMG"
@@ -240,7 +240,7 @@ def test_exec_agent_qemu_rewrites_argv_and_tears_down(monkeypatch, tmp_path) -> 
 
 
 def test_exec_agent_qemu_tears_down_even_when_tool_fails(monkeypatch, tmp_path) -> None:
-    monkeypatch.delenv("FORENSIA_EXEC_AGENT_TOKEN", raising=False)
+    monkeypatch.delenv("AGENTOPSY_EXEC_AGENT_TOKEN", raising=False)
     module = _load_exec_agent()
 
     teardowns = {"n": 0}
@@ -255,7 +255,7 @@ def test_exec_agent_qemu_tears_down_even_when_tool_fails(monkeypatch, tmp_path) 
     monkeypatch.setattr(module, "qemu_unmount", fake_unmount)
 
     qemu_image = str(tmp_path / "original.vmdk")
-    argv = ["forensia-no-such-binary-xyz", qemu_image]
+    argv = ["agentopsy-no-such-binary-xyz", qemu_image]
     status, body = _post_exec(
         module, {"argv": argv, "qemu_image": qemu_image, "qemu_format": "vmdk"}
     )
@@ -268,7 +268,7 @@ def test_exec_agent_qemu_tears_down_even_when_tool_fails(monkeypatch, tmp_path) 
 # 3) validation + RULE 2 at the exec-agent
 # --------------------------------------------------------------------------- #
 def test_exec_agent_qemu_image_must_be_argv_token(monkeypatch) -> None:
-    monkeypatch.delenv("FORENSIA_EXEC_AGENT_TOKEN", raising=False)
+    monkeypatch.delenv("AGENTOPSY_EXEC_AGENT_TOKEN", raising=False)
     module = _load_exec_agent()
     status, body = _post_exec(
         module,
@@ -280,7 +280,7 @@ def test_exec_agent_qemu_image_must_be_argv_token(monkeypatch) -> None:
 
 
 def test_exec_agent_qemu_format_must_be_valid(monkeypatch, tmp_path) -> None:
-    monkeypatch.delenv("FORENSIA_EXEC_AGENT_TOKEN", raising=False)
+    monkeypatch.delenv("AGENTOPSY_EXEC_AGENT_TOKEN", raising=False)
     module = _load_exec_agent()
     qemu_image = str(tmp_path / "original.vmdk")
     status, body = _post_exec(
@@ -292,7 +292,7 @@ def test_exec_agent_qemu_format_must_be_valid(monkeypatch, tmp_path) -> None:
 
 
 def test_exec_agent_ewf_and_qemu_mutually_exclusive(monkeypatch, tmp_path) -> None:
-    monkeypatch.delenv("FORENSIA_EXEC_AGENT_TOKEN", raising=False)
+    monkeypatch.delenv("AGENTOPSY_EXEC_AGENT_TOKEN", raising=False)
     module = _load_exec_agent()
     image = str(tmp_path / "original.vmdk")
     status, body = _post_exec(
@@ -307,7 +307,7 @@ def test_exec_agent_ewf_and_qemu_mutually_exclusive(monkeypatch, tmp_path) -> No
 def test_exec_agent_qemu_missing_daemon_is_actionable(monkeypatch, tmp_path) -> None:
     """No `qemu-storage-daemon` on the dev host / CI runner → 424 naming the dependency,
     never a silent raw treatment of the container (RULE 2). Uses the REAL helper."""
-    monkeypatch.delenv("FORENSIA_EXEC_AGENT_TOKEN", raising=False)
+    monkeypatch.delenv("AGENTOPSY_EXEC_AGENT_TOKEN", raising=False)
     module = _load_exec_agent()
     qemu_image = tmp_path / "original.vmdk"
     qemu_image.write_bytes(b"KDMV-not-a-real-vmdk")  # exists; daemon absent OR dies fast
@@ -324,8 +324,8 @@ def test_exec_agent_qemu_missing_daemon_is_actionable(monkeypatch, tmp_path) -> 
 # 4) custody proof: the maletín client verifies the qemu rewrite token-by-token
 # --------------------------------------------------------------------------- #
 def _exec_fake(monkeypatch, body_for_payload):
-    monkeypatch.setenv("FORENSIA_TOOLKIT_UNIX_URL", "http://toolkit-unix:8666")
-    monkeypatch.delenv("FORENSIA_EXEC_AGENT_TOKEN", raising=False)
+    monkeypatch.setenv("AGENTOPSY_TOOLKIT_UNIX_URL", "http://toolkit-unix:8666")
+    monkeypatch.delenv("AGENTOPSY_EXEC_AGENT_TOKEN", raising=False)
 
     def fake_request(method, url, payload=None, *, timeout=maletin._PROBE_TIMEOUT):
         assert url.endswith("/exec")
@@ -364,7 +364,7 @@ def test_maletin_accepts_correct_qemu_rewrite(monkeypatch) -> None:
     image = "/cases/x/original.vmdk"
 
     def truthful(p):
-        executed = ["/tmp/forensia-qemu-abc/raw.img" if t == image else t for t in p["argv"]]
+        executed = ["/tmp/agentopsy-qemu-abc/raw.img" if t == image else t for t in p["argv"]]
         return {"exit": 0, "stdout": "DOS\n", "stderr": "", "executed_argv": executed}
 
     _exec_fake(monkeypatch, truthful)
@@ -395,8 +395,8 @@ def test_maletin_rejects_ewf_and_qemu_together(monkeypatch) -> None:
 
 
 def test_maletin_surfaces_qemu_dependency_error(monkeypatch) -> None:
-    monkeypatch.setenv("FORENSIA_TOOLKIT_UNIX_URL", "http://toolkit-unix:8666")
-    monkeypatch.delenv("FORENSIA_EXEC_AGENT_TOKEN", raising=False)
+    monkeypatch.setenv("AGENTOPSY_TOOLKIT_UNIX_URL", "http://toolkit-unix:8666")
+    monkeypatch.delenv("AGENTOPSY_EXEC_AGENT_TOKEN", raising=False)
     image = "/cases/x/original.vmdk"
 
     def fake_request(method, url, payload=None, *, timeout=maletin._PROBE_TIMEOUT):

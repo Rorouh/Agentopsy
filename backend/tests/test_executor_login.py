@@ -1,6 +1,6 @@
 """Web-driven CLI login (2026-07-15).
 
-Exercises ``forensia.executors.login`` end to end against a FAKE login CLI — a
+Exercises ``agentopsy.executors.login`` end to end against a FAKE login CLI — a
 tiny stand-in that prints a url (+ code) and, on a stdin sentinel, "logs in" by
 writing a marker file. NEVER a real OAuth/device flow and NEVER the network: the
 only thing faked is the external process; the orchestrator and the availability
@@ -29,9 +29,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from forensia.executors import login as login_mod
-from forensia.executors.base import ExecutorAvailability
-from forensia.server import create_app
+from agentopsy.executors import login as login_mod
+from agentopsy.executors.base import ExecutorAvailability
+from agentopsy.server import create_app
 
 PORT = 50996
 
@@ -266,7 +266,7 @@ def client() -> TestClient:
 
 
 def _tok(client: TestClient) -> dict[str, str]:
-    return {"X-Forensia-Token": client.app.state.token}
+    return {"X-Agentopsy-Token": client.app.state.token}
 
 
 def test_login_endpoints_require_token(client: TestClient) -> None:
@@ -296,4 +296,4 @@ def test_gemini_start_degrades_with_manual_command(client: TestClient) -> None:
     r = client.post("/api/executors/gemini/login", headers=_tok(client))
     assert r.status_code == 409
     assert "docker compose exec" in r.json()["detail"]
-    assert r.headers.get("X-Forensia-Manual-Command", "").startswith("docker compose exec")
+    assert r.headers.get("X-Agentopsy-Manual-Command", "").startswith("docker compose exec")

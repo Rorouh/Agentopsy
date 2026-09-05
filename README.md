@@ -9,8 +9,6 @@
 
 Herramienta de análisis forense **post-mortem** asistida por IA, **autoalojada**: se despliega con `git clone` + `docker compose up --build` y se usa desde el navegador. Sin instaladores nativos y **sin API keys**.
 
-> **Trabajo Final de Máster · Entrega: 7 de septiembre de 2026.**
-
 ---
 
 ## Qué es
@@ -20,7 +18,7 @@ Un investigador carga evidencias ya extraídas, tanto imágenes de un sistema en
 **Principios**
 
 - **Un solo comando.** `git clone` + `docker compose up --build` levantan la interfaz web, el backend, el modelo local y los maletines forenses. Sin instalador nativo, sin auto-update, sin pasos por herramienta.
-- **Sin API keys.** Los prompts de la sección *Investigación* se ejecutan con el **ejecutor** que elija el usuario: **Claude Code** (`claude -p`), **Codex CLI** (`codex exec`), **Gemini CLI** (`gemini -p`) u **Ollama** (servicio del propio compose). Los CLIs consumen la suscripción del propio usuario mediante la sesión guardada en un volumen local del stack (`forensia-cli-auth`), *seeded* una única vez desde las credenciales del host o creada con un login directo en el contenedor; ninguna clave de proveedor existe en el proyecto, y las sesiones nunca salen de tu máquina, no se escriben en logs ni se exponen por la API.
+- **Sin API keys.** Los prompts de la sección *Investigación* se ejecutan con el **ejecutor** que elija el usuario: **Claude Code** (`claude -p`), **Codex CLI** (`codex exec`), **Gemini CLI** (`gemini -p`) u **Ollama** (servicio del propio compose). Los CLIs consumen la suscripción del propio usuario mediante la sesión guardada en un volumen local del stack (`agentopsy-cli-auth`), *seeded* una única vez desde las credenciales del host o creada con un login directo en el contenedor; ninguna clave de proveedor existe en el proyecto, y las sesiones nunca salen de tu máquina, no se escriben en logs ni se exponen por la API.
 - **Privacidad explícita.** Ollama es la opción 100 % local. Si el usuario elige un ejecutor respaldado por cloud (Claude Code, Codex, Gemini), la aplicación lo advierte y lo registra en el audit log. Sin ejecutor seleccionado no hay análisis — nunca un default silencioso (RULE 2).
 - **Cadena de custodia.** Lectura a nivel de bloque en solo lectura, hash SHA-256 baseline en la ingesta, audit log encadenado por hash, comando literal (argv) registrado por cada ejecución.
 - **En inglés o en castellano.** Todo lo que la herramienta pone delante de una persona (la interfaz, los mensajes del backend, el informe pericial con sus anexos y lo que escribe el agente) se emite en el idioma que elija el perito, en *Configuración → Apariencia → Idioma*. Por defecto, inglés. Lo que **no** se traduce nunca es el contenido del caso: el nombre que le pusiste, el título de un hallazgo o el resumen que escribió el agente viajan tal cual, porque traducir un dato del expediente sería inventarlo.
@@ -36,8 +34,8 @@ Prerequisitos:
    - **Claude Code**, **Codex CLI** o **Gemini CLI** — tu propia suscripción/cuenta (los CLIs ya vienen instalados en la imagen `api`; solo falta la sesión, ver abajo).
 
 ```bash
-git clone https://github.com/Rorouh/Forensia-AI.git
-cd Forensia-AI
+git clone https://github.com/Rorouh/Agentopsy.git
+cd Agentopsy
 docker compose up --build
 ```
 
@@ -47,9 +45,9 @@ Abre <http://127.0.0.1:5173> en el navegador. Todos los puertos se publican úni
 
 ### Sesión de los CLIs (solo si usas un ejecutor cloud)
 
-El HOME del servicio `api` vive en el volumen `forensia-cli-auth`. En el primer arranque, el entrypoint **seedea** a ese volumen las credenciales que ya existan en tu host (`~/.claude`, `~/.claude.json`, `~/.codex`, `~/.gemini`, montadas en solo lectura como staging); desde entonces los CLIs leen y **refrescan sus tokens solo en el volumen**, nunca en tus ficheros.
+El HOME del servicio `api` vive en el volumen `agentopsy-cli-auth`. En el primer arranque, el entrypoint **seedea** a ese volumen las credenciales que ya existan en tu host (`~/.claude`, `~/.claude.json`, `~/.codex`, `~/.gemini`, montadas en solo lectura como staging); desde entonces los CLIs leen y **refrescan sus tokens solo en el volumen**, nunca en tus ficheros.
 
-**Conectar desde la web (recomendado).** Si un ejecutor aparece *No disponible* en *Ajustes → Ejecutores / IA* (o en el selector de proveedor del chat), pulsa **«Conectar»**: Agentopsy lanza el login del propio CLI dentro del contenedor y te muestra en un diálogo la **URL** a abrir y el **código** del flujo *device*/OAuth, sin abrir una terminal. La sesión se guarda en el volumen `forensia-cli-auth` igual que el login manual.
+**Conectar desde la web (recomendado).** Si un ejecutor aparece *No disponible* en *Ajustes → Ejecutores / IA* (o en el selector de proveedor del chat), pulsa **«Conectar»**: Agentopsy lanza el login del propio CLI dentro del contenedor y te muestra en un diálogo la **URL** a abrir y el **código** del flujo *device*/OAuth, sin abrir una terminal. La sesión se guarda en el volumen `agentopsy-cli-auth` igual que el login manual.
 
 - **Codex** (`codex login --device-auth`): abre la URL e **introduce el código en el navegador**; el diálogo pasa a *Disponible* solo cuando terminas.
 - **Claude Code** (`claude auth login`): abre la URL, autoriza y **pega de vuelta** en el diálogo el código que te da el navegador.
@@ -79,7 +77,7 @@ La sesión persiste entre reinicios. Comprueba el estado en *Ajustes → Ejecuto
 │  web            frontend React servido por su contenedor                 │
 │    │  HTTP (red interna del compose)                                     │
 │    ▼                                                                     │
-│  api            FastAPI — backend/forensia, el núcleo completo:          │
+│  api            FastAPI — backend/agentopsy, el núcleo completo:          │
 │                 · dispatcher (resolver, shell=False, argv literal)       │
 │                 · EvidenceManager (hash gate, read-only a nivel bloque)  │
 │                 · ArtifactStore (manifest + sha256 por run)              │
@@ -88,7 +86,7 @@ La sesión persiste entre reinicios. Comprueba el estado en *Ajustes → Ejecuto
 │    ├──► CAPA DE EJECUCIÓN — a elección del usuario (sin default):        │
 │    │      claude -p · codex exec · gemini -p                             │
 │    │      (CLIs instalados en la imagen api; sesión en el volumen        │
-│    │       forensia-cli-auth — seeded del host o login en contenedor)    │
+│    │       agentopsy-cli-auth — seeded del host o login en contenedor)    │
 │    │      ollama ──HTTP──► servicio ollama (100 % local)                 │
 │    ▼                                                                     │
 │  toolkit-windows · toolkit-unix                                          │
@@ -103,7 +101,6 @@ Documentación técnica:
 - Comportamiento del agente: [`agentes/README.md`](agentes/README.md) y sus dos ficheros por idioma,
   [`agentes/agent.md`](agentes/agent.md) (castellano) y [`agentes/agent.en.md`](agentes/agent.en.md) (inglés).
 - Invariantes de arquitectura, forenses y de seguridad: [`CLAUDE.md`](CLAUDE.md).
-- Lo pendiente, medido: [`hoja-de-ruta.md`](hoja-de-ruta.md) — el plan de coste del informe pericial.
 
 ## Desarrollo local
 
@@ -125,11 +122,13 @@ docker compose build api
 cd backend
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e ".[dev]"
+pip install -e ".[dev,mcp]"   # el extra [mcp] no es opcional: tests/test_mcp_toolkit.py
+                              # importa `mcp` a nivel de módulo y sin él pytest
+                              # falla al recolectar, igual que en CI
 pytest
 
 # Backend standalone para depurar (imprime url 127.0.0.1 + token)
-python -m forensia.server
+python -m agentopsy.server
 ```
 
 ### Servidor MCP standalone
@@ -140,7 +139,7 @@ El maletín se expone también como servidor MCP estándar para clientes externo
 cd backend
 source .venv/bin/activate
 pip install -e ".[mcp]"
-FORENSIA_CLOUD_CONSENT=manual_test python -m forensia.mcp
+AGENTOPSY_CLOUD_CONSENT=manual_test python -m agentopsy.mcp
 ```
 
 ## Equipo

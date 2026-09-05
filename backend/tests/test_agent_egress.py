@@ -16,22 +16,22 @@ from pathlib import Path
 
 import pytest
 
-from forensia.agent.agent import ForensicAgent
-from forensia.agent.package import (
+from agentopsy.agent.agent import ForensicAgent
+from agentopsy.agent.package import (
     AgentPackage,
     AgentPackageModel,
     AgentPackagePolicy,
     AgentPackagePrompts,
     RedactionPattern,
 )
-from forensia.agent.redaction import apply_redaction, redact_messages
-from forensia.audit.log import AuditLog
-from forensia.cases.manager import CaseManager
-from forensia.evidence import EvidenceManager
-from forensia.findings.store import FindingStore
-from forensia.models.base import FinalAnswer, ModelBackend, ModelCapabilities, ToolCall
+from agentopsy.agent.redaction import apply_redaction, redact_messages
+from agentopsy.audit.log import AuditLog
+from agentopsy.cases.manager import CaseManager
+from agentopsy.evidence import EvidenceManager
+from agentopsy.findings.store import FindingStore
+from agentopsy.models.base import FinalAnswer, ModelBackend, ModelCapabilities, ToolCall
 
-# Two of the real forensia-unix patterns — enough to prove the egress border.
+# Two of the real agentopsy-unix patterns — enough to prove the egress border.
 EMAIL = RedactionPattern(
     name="email",
     regex=r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
@@ -87,7 +87,7 @@ def _fake_execute(
 ):
     """Stand-in for the dispatcher: a tool run whose stdout carries PII.
 
-    Mirrors ``forensia.toolkit.dispatcher.execute`` — keyword-only ``case_id`` /
+    Mirrors ``agentopsy.toolkit.dispatcher.execute`` — keyword-only ``case_id`` /
     ``os_profile`` / ``timeout`` / ``evidence_context`` — so it stays in step with the
     merged agent loop (which passes ``os_profile=self.os_profile`` and the verified
     ``evidence_context`` built from the handle)."""
@@ -153,7 +153,7 @@ class TestRedaction:
         assert out[0]["content"] == "x <IPV4>"
 
     def test_cloud_egress_redacts_tool_results(self, anchored, monkeypatch):
-        import forensia.toolkit.dispatcher as disp
+        import agentopsy.toolkit.dispatcher as disp
 
         monkeypatch.setattr(disp, "execute", _fake_execute)
 
@@ -182,7 +182,7 @@ class TestRedaction:
         assert "<IPV4>" in sent
 
     def test_local_backend_does_not_redact(self, anchored, monkeypatch):
-        import forensia.toolkit.dispatcher as disp
+        import agentopsy.toolkit.dispatcher as disp
 
         monkeypatch.setattr(disp, "execute", _fake_execute)
 
@@ -216,7 +216,7 @@ class TestAudit:
         cases = anchored["cases"]
         # Point the agent's finding store at the tmp case root.
         monkeypatch.setattr(
-            "forensia.agent.agent.finding_store", FindingStore(cases)
+            "agentopsy.agent.agent.finding_store", FindingStore(cases)
         )
 
         audit = AuditLog(cases.case_dir(anchored["case"].id) / "audit.jsonl")

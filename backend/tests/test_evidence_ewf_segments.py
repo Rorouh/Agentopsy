@@ -30,9 +30,9 @@ import sys
 import pytest
 from _symlink_support import requires_symlinks
 
-from forensia.i18n import codigo_de
-from forensia.cases.manager import CaseManager
-from forensia.evidence import (
+from agentopsy.i18n import codigo_de
+from agentopsy.cases.manager import CaseManager
+from agentopsy.evidence import (
     EvidenceManager,
     _ewf_segment_index,
     _is_ewf_first_segment,
@@ -200,7 +200,7 @@ class TestMultiSegmentRegister:
         assert meta["total_size_bytes"] == total
         assert meta["size_bytes"] == handle.size
 
-        from forensia.custody import build_custody_act
+        from agentopsy.custody import build_custody_act
 
         act = build_custody_act(case.id, handle.evidence_id, cases=cases, evidence=manager)
         assert act["evidence"]["segment_count"] == 4
@@ -228,8 +228,8 @@ class TestMultiSegmentRegister:
         que llevara copiados. Ningún `except` puede limpiar eso, así que lo barre el
         siguiente registro del caso, y lo deja dicho en el log encadenado: se borran
         bytes de un caso, aunque no sean evidencia registrada."""
-        from forensia.audit.log import AuditLog
-        from forensia.evidence import _STAGING_PREFIX
+        from agentopsy.audit.log import AuditLog
+        from agentopsy.evidence import _STAGING_PREFIX
 
         # Un registro anterior que el api no terminó: staging con media copia dentro.
         evidence_root = cases.case_dir(case.id) / "evidence"
@@ -263,7 +263,7 @@ class TestMultiSegmentRegister:
         """El barrido no adivina por fechas: un staging está vivo mientras un hilo de
         ESTE proceso está dentro de `register`. Registrar en paralelo en el mismo caso
         no puede llevarse por delante la copia del otro."""
-        from forensia.evidence import _LIVE_STAGING, _STAGING_PREFIX, _sweep_orphan_staging
+        from agentopsy.evidence import _LIVE_STAGING, _STAGING_PREFIX, _sweep_orphan_staging
 
         evidence_root = cases.case_dir(case.id) / "evidence"
         evidence_root.mkdir(parents=True, exist_ok=True)
@@ -280,7 +280,7 @@ class TestMultiSegmentRegister:
         assert not en_vuelo.exists()
 
     def test_register_event_attests_every_segment(self, manager, cases, case, tmp_path):
-        from forensia.audit.log import AuditLog
+        from agentopsy.audit.log import AuditLog
 
         srcs = _write_ewf_set(tmp_path, "disk", 3)
         handle = manager.register(case.id, str(srcs[0]))
@@ -490,7 +490,7 @@ class TestUploadSegmentSet:
     def inbox(self, tmp_path, monkeypatch):
         root = tmp_path / "inbox"
         root.mkdir()
-        monkeypatch.setenv("FORENSIA_EVIDENCE_DIR", str(root))
+        monkeypatch.setenv("AGENTOPSY_EVIDENCE_DIR", str(root))
         return root
 
     def _upload(self, name: str, payload: bytes) -> dict:

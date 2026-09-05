@@ -1,6 +1,6 @@
 """CP1 — Store del grafo de conocimiento por caso.
 
-Gates que cierra este fichero (diseño: `docs/estado-actual/09-grafo-de-caso.md`):
+Gates que cierra este fichero:
 
 - **C1 · el modelo emite un id, nunca una ruta**: el charset cerrado hace que el
   traversal no sea expresable, y cualquier intento se rechaza fuerte.
@@ -18,8 +18,8 @@ import json
 
 import pytest
 
-from forensia.cases import CaseManager
-from forensia.knowledge import (
+from agentopsy.cases import CaseManager
+from agentopsy.knowledge import (
     MAX_BLOCK_CHARS,
     MAX_NODES_PER_CASE,
     MAX_SECTIONS_PER_NODE,

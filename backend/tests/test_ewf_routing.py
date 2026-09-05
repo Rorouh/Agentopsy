@@ -33,11 +33,11 @@ from pathlib import Path
 import pytest
 
 from _custody import FAKE_TOOL_VERSION, context_for, register_evidence, wire_dispatcher_custody
-from forensia.artifacts.store import ArtifactStore
-from forensia.audit.log import AuditLog
-from forensia.cases.manager import CaseManager
-from forensia.toolkit import dispatcher, maletin
-from forensia.toolkit.dispatcher import _is_ewf_path
+from agentopsy.artifacts.store import ArtifactStore
+from agentopsy.audit.log import AuditLog
+from agentopsy.cases.manager import CaseManager
+from agentopsy.toolkit import dispatcher, maletin
+from agentopsy.toolkit.dispatcher import _is_ewf_path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXEC_AGENT_PY = REPO_ROOT / "docker" / "docker" / "forensic-toolkit" / "exec_agent.py"
@@ -136,7 +136,7 @@ def test_dispatcher_no_ewf_image_for_raw(monkeypatch, dispatch_case, tmp_path) -
 # exec-agent harness (real loopback HTTP, in-process — no docker)
 # --------------------------------------------------------------------------- #
 def _load_exec_agent():
-    spec = importlib.util.spec_from_file_location("forensia_exec_agent_ewf_test", EXEC_AGENT_PY)
+    spec = importlib.util.spec_from_file_location("agentopsy_exec_agent_ewf_test", EXEC_AGENT_PY)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -168,7 +168,7 @@ def _post_exec(module, payload: dict) -> tuple[int, dict]:
 # 2) mechanism: the argv token is rewritten to the raw `ewf1`, and unmount runs
 # --------------------------------------------------------------------------- #
 def test_exec_agent_ewf_rewrites_argv_and_unmounts(monkeypatch, tmp_path) -> None:
-    monkeypatch.delenv("FORENSIA_EXEC_AGENT_TOKEN", raising=False)
+    monkeypatch.delenv("AGENTOPSY_EXEC_AGENT_TOKEN", raising=False)
     module = _load_exec_agent()
 
     raw_bytes = b"RAW-DISK-IMAGE-VIA-EWF1"
@@ -207,7 +207,7 @@ def test_exec_agent_ewf_rewrites_argv_and_unmounts(monkeypatch, tmp_path) -> Non
 
 
 def test_exec_agent_ewf_unmounts_even_when_tool_fails(monkeypatch, tmp_path) -> None:
-    monkeypatch.delenv("FORENSIA_EXEC_AGENT_TOKEN", raising=False)
+    monkeypatch.delenv("AGENTOPSY_EXEC_AGENT_TOKEN", raising=False)
     module = _load_exec_agent()
 
     unmounts = {"n": 0}
@@ -222,7 +222,7 @@ def test_exec_agent_ewf_unmounts_even_when_tool_fails(monkeypatch, tmp_path) -> 
     monkeypatch.setattr(module, "ewf_unmount", fake_unmount)
 
     ewf_image = str(tmp_path / "original.E01")
-    argv = ["forensia-no-such-binary-xyz", ewf_image]  # FileNotFoundError → exit 127
+    argv = ["agentopsy-no-such-binary-xyz", ewf_image]  # FileNotFoundError → exit 127
     status, body = _post_exec(module, {"argv": argv, "ewf_image": ewf_image})
 
     assert status == 200
@@ -234,7 +234,7 @@ def test_exec_agent_ewf_unmounts_even_when_tool_fails(monkeypatch, tmp_path) -> 
 # 3) RULE 2: ewfmount unavailable → 424 naming the dependency (real helper)
 # --------------------------------------------------------------------------- #
 def test_exec_agent_ewf_missing_ewfmount_is_actionable(monkeypatch, tmp_path) -> None:
-    monkeypatch.delenv("FORENSIA_EXEC_AGENT_TOKEN", raising=False)
+    monkeypatch.delenv("AGENTOPSY_EXEC_AGENT_TOKEN", raising=False)
     module = _load_exec_agent()  # real ewf_mount — no `ewfmount` on the dev host / CI runner
 
     ewf_image = tmp_path / "original.E01"
@@ -249,7 +249,7 @@ def test_exec_agent_ewf_missing_ewfmount_is_actionable(monkeypatch, tmp_path) ->
 
 
 def test_exec_agent_ewf_image_must_be_argv_token(monkeypatch) -> None:
-    monkeypatch.delenv("FORENSIA_EXEC_AGENT_TOKEN", raising=False)
+    monkeypatch.delenv("AGENTOPSY_EXEC_AGENT_TOKEN", raising=False)
     module = _load_exec_agent()
     # The api names the exact token; mounting something absent from the command is guessing.
     status, body = _post_exec(
@@ -264,8 +264,8 @@ def test_exec_agent_ewf_image_must_be_argv_token(monkeypatch) -> None:
 # --------------------------------------------------------------------------- #
 def _exec_fake(monkeypatch, body_for_payload):
     """Wire run_argv_in_maletin's transport to a fake /exec responder."""
-    monkeypatch.setenv("FORENSIA_TOOLKIT_UNIX_URL", "http://toolkit-unix:8666")
-    monkeypatch.delenv("FORENSIA_EXEC_AGENT_TOKEN", raising=False)
+    monkeypatch.setenv("AGENTOPSY_TOOLKIT_UNIX_URL", "http://toolkit-unix:8666")
+    monkeypatch.delenv("AGENTOPSY_EXEC_AGENT_TOKEN", raising=False)
 
     def fake_request(method, url, payload=None, *, timeout=maletin._PROBE_TIMEOUT):
         assert url.endswith("/exec")
@@ -358,7 +358,7 @@ def test_maletin_accepts_correct_ewf_rewrite(monkeypatch) -> None:
     image = "/cases/x/original.E01"
 
     def truthful(p):
-        executed = ["/tmp/forensia-ewf-abc/ewf1" if t == image else t for t in p["argv"]]
+        executed = ["/tmp/agentopsy-ewf-abc/ewf1" if t == image else t for t in p["argv"]]
         return {"exit": 0, "stdout": "DOS\n", "stderr": "", "executed_argv": executed}
 
     _exec_fake(monkeypatch, truthful)
@@ -377,8 +377,8 @@ def test_dispatcher_closes_run_as_error_when_maletin_lies(
     cases, case = dispatch_case
     handle = register_evidence(cases, case.id, tmp_path, payload=b"raw", name="disk.raw")
     monkeypatch.setattr(dispatcher, "resolve", lambda _binary: None)
-    monkeypatch.setenv("FORENSIA_TOOLKIT_UNIX_URL", "http://toolkit-unix:8666")
-    monkeypatch.delenv("FORENSIA_EXEC_AGENT_TOKEN", raising=False)
+    monkeypatch.setenv("AGENTOPSY_TOOLKIT_UNIX_URL", "http://toolkit-unix:8666")
+    monkeypatch.delenv("AGENTOPSY_EXEC_AGENT_TOKEN", raising=False)
 
     def lie(method, url, payload=None, *, timeout=maletin._PROBE_TIMEOUT):
         executed = list(payload["argv"])
@@ -411,8 +411,8 @@ def test_dispatcher_closes_run_as_error_when_maletin_lies(
 # 5) the maletín client surfaces the 424 as an actionable MaletinExecError
 # --------------------------------------------------------------------------- #
 def test_maletin_surfaces_ewf_dependency_error(monkeypatch) -> None:
-    monkeypatch.setenv("FORENSIA_TOOLKIT_UNIX_URL", "http://toolkit-unix:8666")
-    monkeypatch.delenv("FORENSIA_EXEC_AGENT_TOKEN", raising=False)
+    monkeypatch.setenv("AGENTOPSY_TOOLKIT_UNIX_URL", "http://toolkit-unix:8666")
+    monkeypatch.delenv("AGENTOPSY_EXEC_AGENT_TOKEN", raising=False)
     image = "/cases/x/original.E01"
 
     def fake_request(method, url, payload=None, *, timeout=maletin._PROBE_TIMEOUT):

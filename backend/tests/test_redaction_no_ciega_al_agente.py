@@ -32,10 +32,10 @@ import pytest
 
 from _agent_pkg import make_package
 
-from forensia.agent.agent import ForensicAgent
-from forensia.agent.package import RedactionPattern
-from forensia.agent.redaction import apply_redaction, redact_messages
-from forensia.models.base import FinalAnswer, ModelBackend, ModelCapabilities, ToolCall
+from agentopsy.agent.agent import ForensicAgent
+from agentopsy.agent.package import RedactionPattern
+from agentopsy.agent.redaction import apply_redaction, redact_messages
+from agentopsy.models.base import FinalAnswer, ModelBackend, ModelCapabilities, ToolCall
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 AGENTES_DIR = REPO_ROOT / "agentes"
@@ -185,7 +185,7 @@ def test_el_agente_cloud_VE_el_run_id_real_de_la_herramienta(monkeypatch) -> Non
             "run_id": RUN_ID,
         }
 
-    monkeypatch.setattr("forensia.toolkit.dispatcher.execute", fake_execute)
+    monkeypatch.setattr("agentopsy.toolkit.dispatcher.execute", fake_execute)
     pkg = make_package("windows", redaction_patterns=(GUID_PATTERN,))
     model = _Capturador([
         ToolCall(tool_id="tsk_mmls", params={}, call_id="x"),
@@ -237,7 +237,7 @@ def test_un_backend_local_nunca_redacta(monkeypatch, es_local) -> None:
             "parsed": None, "run_id": RUN_ID,
         }
 
-    monkeypatch.setattr("forensia.toolkit.dispatcher.execute", fake_execute)
+    monkeypatch.setattr("agentopsy.toolkit.dispatcher.execute", fake_execute)
     pkg = make_package("windows", redaction_patterns=(GUID_PATTERN,))
     model = _M([ToolCall(tool_id="tsk_mmls", params={}, call_id="x")])
     ForensicAgent(pkg, model, _FakeEvidence()).run("x", case_id="c", evidence_id="e")

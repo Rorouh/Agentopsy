@@ -1,6 +1,6 @@
 """Redacción íntegra del informe pericial por el ejecutor seleccionado.
 
-Los gates que importan (``forensia.reports.writer``):
+Los gates que importan (``agentopsy.reports.writer``):
 
 - El informe es del MODELO: la prosa, el número de bloques y la longitud salen
   de su respuesta, no de una plantilla.
@@ -19,10 +19,10 @@ import json
 
 import pytest
 
-from forensia.i18n import t
-from forensia.executors.base import ExecutorAvailability, ExecutorResult, PromptExecutor
-from forensia.reports.indice import NUMS, titulos
-from forensia.reports.writer import (
+from agentopsy.i18n import t
+from agentopsy.executors.base import ExecutorAvailability, ExecutorResult, PromptExecutor
+from agentopsy.reports.indice import NUMS, titulos
+from agentopsy.reports.writer import (
     encargo,
     ReportWriteError,
     build_prompt,
@@ -631,7 +631,7 @@ def test_trabajos_realizados_no_pide_una_ficha_por_ejecucion() -> None:
     contrato de la sección lo ORDENABA, así que es el contrato lo que lo
     prohíbe.
     """
-    from forensia.reports.indice import INDICE
+    from agentopsy.reports.indice import INDICE
 
     contrato = next(s for s in INDICE if s.num == "7").contrato("es")
 
@@ -649,7 +649,7 @@ def test_trabajos_realizados_no_pide_una_ficha_por_ejecucion() -> None:
 def test_the_indice_itself_carries_no_forbidden_typography() -> None:
     """El índice es una constante del producto: si él trae una raya, el informe
     la copia."""
-    from forensia.reports.indice import contrato_del_indice
+    from agentopsy.reports.indice import contrato_del_indice
 
     indice = contrato_del_indice()
     assert "§" not in indice

@@ -14,10 +14,10 @@ from typing import Any
 
 import pytest
 
-from forensia.i18n import t
-from forensia.agent.agent import ForensicAgent, _max_tool_attempts
+from agentopsy.i18n import t
+from agentopsy.agent.agent import ForensicAgent, _max_tool_attempts
 from _agent_pkg import make_package
-from forensia.models.base import ModelBackend, ModelCapabilities, ToolCall
+from agentopsy.models.base import ModelBackend, ModelCapabilities, ToolCall
 
 def _marca(clave: str) -> str:
     """El marcador distintivo de un bloque del prompt, EN EL IDIOMA EN CURSO.
@@ -39,7 +39,7 @@ AGENTES_DIR = REPO_ROOT / "agentes"
 
 
 def test_max_tool_attempts_defaults_to_3_when_env_absent(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("FORENSIA_MAX_TOOL_ATTEMPTS", raising=False)
+    monkeypatch.delenv("AGENTOPSY_MAX_TOOL_ATTEMPTS", raising=False)
     assert _max_tool_attempts() == 3
 
 
@@ -47,8 +47,8 @@ def test_max_tool_attempts_defaults_to_3_when_env_absent(monkeypatch: pytest.Mon
 def test_max_tool_attempts_fails_loud_on_invalid_env(
     monkeypatch: pytest.MonkeyPatch, raw: str
 ) -> None:
-    monkeypatch.setenv("FORENSIA_MAX_TOOL_ATTEMPTS", raw)
-    with pytest.raises(RuntimeError, match="FORENSIA_MAX_TOOL_ATTEMPTS"):
+    monkeypatch.setenv("AGENTOPSY_MAX_TOOL_ATTEMPTS", raw)
+    with pytest.raises(RuntimeError, match="AGENTOPSY_MAX_TOOL_ATTEMPTS"):
         _max_tool_attempts()
 
 
@@ -98,7 +98,7 @@ def test_agent_rejects_model_chosen_evidence_path_before_dispatch(
         calls["n"] += 1
         raise AssertionError("dispatcher must not be reached")
 
-    monkeypatch.setattr("forensia.toolkit.dispatcher.execute", forbidden_execute)
+    monkeypatch.setattr("agentopsy.toolkit.dispatcher.execute", forbidden_execute)
     pkg = make_package("unix")
     agent = ForensicAgent(
         pkg,
@@ -119,7 +119,7 @@ def test_agent_rejects_model_chosen_evidence_path_before_dispatch(
 
 
 def test_failing_tool_blocked_after_max_attempts(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("FORENSIA_MAX_TOOL_ATTEMPTS", "3")
+    monkeypatch.setenv("AGENTOPSY_MAX_TOOL_ATTEMPTS", "3")
 
     calls = {"n": 0}
 
@@ -137,7 +137,7 @@ def test_failing_tool_blocked_after_max_attempts(monkeypatch: pytest.MonkeyPatch
             "run_id": "r",
         }
 
-    monkeypatch.setattr("forensia.toolkit.dispatcher.execute", fake_execute)
+    monkeypatch.setattr("agentopsy.toolkit.dispatcher.execute", fake_execute)
 
     pkg = make_package("unix")
     # `tsk_mmls` está en la allowlist del paquete unix y es una tool real del catálogo.
@@ -160,7 +160,7 @@ def test_failing_tool_blocked_after_max_attempts(monkeypatch: pytest.MonkeyPatch
 def test_successful_tool_is_not_capped(monkeypatch: pytest.MonkeyPatch) -> None:
     """Una tool que va bien puede llamarse muchas veces (p. ej. tsk_icat por inodo): el
     guardrail cuenta FALLOS, no usos."""
-    monkeypatch.setenv("FORENSIA_MAX_TOOL_ATTEMPTS", "3")
+    monkeypatch.setenv("AGENTOPSY_MAX_TOOL_ATTEMPTS", "3")
 
     calls = {"n": 0}
 
@@ -178,7 +178,7 @@ def test_successful_tool_is_not_capped(monkeypatch: pytest.MonkeyPatch) -> None:
             "run_id": "r",
         }
 
-    monkeypatch.setattr("forensia.toolkit.dispatcher.execute", fake_execute)
+    monkeypatch.setattr("agentopsy.toolkit.dispatcher.execute", fake_execute)
 
     pkg = make_package("unix")
     agent = ForensicAgent(pkg, _AlwaysSameTool("tsk_fls"), _FakeEvidence())
@@ -194,7 +194,7 @@ def test_records_nudge_injected_after_tools_without_finding(
 ) -> None:
     """Refuerzo estructural: si el agente encadena herramientas del catálogo sin
     registrar hallazgos, el loop le inyecta un recordatorio de `record_finding`."""
-    monkeypatch.setenv("FORENSIA_MAX_TOOL_ATTEMPTS", "10")  # sin tope de fallos
+    monkeypatch.setenv("AGENTOPSY_MAX_TOOL_ATTEMPTS", "10")  # sin tope de fallos
 
     def fake_execute(
         tool_id, params, *, case_id=None, os_profile=None, timeout=None, evidence_context=None
@@ -205,7 +205,7 @@ def test_records_nudge_injected_after_tools_without_finding(
             "parsed": {"format": "list", "entries_count": 1, "entries": []}, "run_id": "r",
         }
 
-    monkeypatch.setattr("forensia.toolkit.dispatcher.execute", fake_execute)
+    monkeypatch.setattr("agentopsy.toolkit.dispatcher.execute", fake_execute)
 
     seen: list[int] = []
 
@@ -233,7 +233,7 @@ def test_budget_nudges_demand_a_final_before_exhaustion(
     solo `final` (12,97 USD sin respuesta al operador). El agente no conoce su
     presupuesto salvo que se le diga: a 2 iteraciones del límite se le avisa de
     que cierre, y en la última se le exige el `final`. Nunca antes."""
-    monkeypatch.setenv("FORENSIA_MAX_TOOL_ATTEMPTS", "10")
+    monkeypatch.setenv("AGENTOPSY_MAX_TOOL_ATTEMPTS", "10")
 
     def fake_execute(
         tool_id, params, *, case_id=None, os_profile=None, timeout=None, evidence_context=None
@@ -243,7 +243,7 @@ def test_budget_nudges_demand_a_final_before_exhaustion(
             "stdout_sample": "ok", "stderr_sample": "", "parsed": None, "run_id": "r",
         }
 
-    monkeypatch.setattr("forensia.toolkit.dispatcher.execute", fake_execute)
+    monkeypatch.setattr("agentopsy.toolkit.dispatcher.execute", fake_execute)
 
     class _CapturingStates(_AlwaysSameTool):
         def __init__(self, tool_id: str) -> None:
@@ -274,7 +274,7 @@ def test_budget_nudges_demand_a_final_before_exhaustion(
 def test_budget_nudge_skips_single_iteration_runs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("FORENSIA_MAX_TOOL_ATTEMPTS", "10")
+    monkeypatch.setenv("AGENTOPSY_MAX_TOOL_ATTEMPTS", "10")
 
     def fake_execute(
         tool_id, params, *, case_id=None, os_profile=None, timeout=None, evidence_context=None
@@ -284,7 +284,7 @@ def test_budget_nudge_skips_single_iteration_runs(
             "stdout_sample": "ok", "stderr_sample": "", "parsed": None, "run_id": "r",
         }
 
-    monkeypatch.setattr("forensia.toolkit.dispatcher.execute", fake_execute)
+    monkeypatch.setattr("agentopsy.toolkit.dispatcher.execute", fake_execute)
 
     seen: list[str] = []
 

@@ -299,7 +299,7 @@ export function RepositoryPage({ onNavigate }: RepositoryPageProps) {
   );
 
   // ── Determinación del sistema operativo ───────────────────────────────────
-  // El SO NO se le pregunta al perito: lo determina `forensia.triage` del
+  // El SO NO se le pregunta al perito: lo determina `agentopsy.triage` del
   // CONTENIDO de la evidencia y, si es una imagen contenedor, el pase profundo
   // que la abre por el maletín (solo lectura, a nivel de bloque). Aquí vive
   // todo lo que puede hacer falta cuando esa determinación no llegó a cerrar:

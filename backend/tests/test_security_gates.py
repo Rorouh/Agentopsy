@@ -5,10 +5,10 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from forensia.server import create_app
+from agentopsy.server import create_app
 
 PORT = 50998
-SRC = Path(__file__).resolve().parents[1] / "forensia"
+SRC = Path(__file__).resolve().parents[1] / "agentopsy"
 
 
 @pytest.fixture
@@ -30,7 +30,7 @@ def test_gate2_foreign_host_header_rejected(client: TestClient) -> None:
 
 def test_gate3_capabilities_requires_token(client: TestClient) -> None:
     assert client.get("/api/capabilities").status_code == 401
-    bad = client.get("/api/capabilities", headers={"X-Forensia-Token": "nope"})
+    bad = client.get("/api/capabilities", headers={"X-Agentopsy-Token": "nope"})
     assert bad.status_code == 401
 
 

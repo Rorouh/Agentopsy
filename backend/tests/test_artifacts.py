@@ -8,8 +8,8 @@ import json
 import pytest
 from _symlink_support import requires_symlinks
 
-from forensia.artifacts.store import ArtifactStore, OutputFile
-from forensia.cases.manager import CaseManager
+from agentopsy.artifacts.store import ArtifactStore, OutputFile
+from agentopsy.cases.manager import CaseManager
 
 # Evidence provenance every manifest must carry (P0.5-3, FORENSIC INVARIANT 4): the
 # dispatcher passes the verified context's id + baseline hash; direct store users
@@ -234,12 +234,12 @@ class TestFinalizeRun:
     ):
         """If ``os.replace`` raises mid-finalize the manifest stays in its
         ``running`` state and the ``.tmp`` siblings are left on disk for forensic
-        triage. This documents the v1 behaviour: ``_atomic_write_text`` does not
-        catch + cleanup on failure (TODO: add cleanup in v2 — see issue tracker).
+        triage. This documents the current behaviour: ``_atomic_write_text``
+        does not catch + cleanup on failure.
         """
         run_id, _ = store.start_run(case.id, "tool_x", argv=["x"], **_PROV)
 
-        import forensia.artifacts.store as store_mod
+        import agentopsy.artifacts.store as store_mod
 
         def boom(src, dst):
             raise OSError("simulated replace failure")
@@ -388,7 +388,7 @@ class TestResolveOutputDir:
         assert before != after
 
     def test_a_tampered_file_breaks_custody(self, store, case):
-        from forensia.artifacts.store import ArtifactIntegrityError
+        from agentopsy.artifacts.store import ArtifactIntegrityError
 
         run_id, out = self._run_with_tree(store, case)
         (out / "recovered" / "sub" / "cookies.sqlite").write_bytes(b"manipulado")

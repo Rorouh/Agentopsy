@@ -1,4 +1,4 @@
-// Tipos espejo de los contratos JSON del servicio api (backend/forensia/routers/*).
+// Tipos espejo de los contratos JSON del servicio api (backend/agentopsy/routers/*).
 // Convención: snake_case 1:1 con el backend, sin transformaciones en el cliente.
 
 export type ExecutorId = "claude-code" | "codex" | "gemini" | "ollama";
@@ -79,7 +79,7 @@ export interface ExecutorModels {
 // ── Login web de un ejecutor CLI cloud (2026-07-15) ────────────────────────
 // El operador conecta Codex/Claude DESDE LA WEB sin abrir una terminal: el
 // backend relaya el flujo device/OAuth del propio CLI. La sesión sigue viviendo
-// en el volumen forensia-cli-auth (SECURITY INVARIANT 7, sin API keys).
+// en el volumen agentopsy-cli-auth (SECURITY INVARIANT 7, sin API keys).
 
 // Capacidad de relay de cada ejecutor cloud (/api/executors/login-capabilities).
 // `relay_supported:false` (Gemini) → la UI degrada al comando manual + «Comprobar»
@@ -216,7 +216,7 @@ export interface Case {
   examiner: string;
   created_at: string;
   // El operador ya no lo elige al crear el caso, lo deriva el orquestador
-  // del contenido de la evidencia (forensia.triage). `null` hasta que haya
+  // del contenido de la evidencia (agentopsy.triage). `null` hasta que haya
   // evidencia enrutable registrada.
   os_profile: "unix" | "windows" | null;
   status: "active" | "closed";
@@ -224,7 +224,7 @@ export interface Case {
 }
 
 // Los flujos de un caso que la interfaz observa para refrescarse sola. El nombre
-// es el contrato con `forensia.pulse.FLUJOS`: si allí se añade uno, aquí también.
+// es el contrato con `agentopsy.pulse.FLUJOS`: si allí se añade uno, aquí también.
 export type CaseStream =
   | "case"
   | "evidence"
@@ -266,7 +266,7 @@ export interface EvidenceHandle {
   size: number;
   registered_at: string;
   last_verification: VerificationRecord | null;
-  // Huella de triage (forensia.triage + forensia.triage_deep). La UI la compara
+  // Huella de triage (agentopsy.triage + agentopsy.triage_deep). La UI la compara
   // con el os_profile del caso y pinta el banner de desajuste; NUNCA cambia el
   // caso sola (RULE 2). En una imagen contenedor (.E01/.vmdk/.qcow2/.vhd) el
   // valor lo determina el pase PROFUNDO, que abre la imagen por el maletín.
@@ -368,7 +368,7 @@ export interface EvidenceMetadata {
 
 // Acta de adquisición estructurada (GET …/evidence/{id}/custody-act). Se
 // construye de forma pura desde el baseline + el evento `evidence_register` del
-// audit hash-encadenado; no narra nada nuevo (forensia.custody).
+// audit hash-encadenado; no narra nada nuevo (agentopsy.custody).
 export interface CustodyAct {
   generated_at: string;
   tool: { name: string; version: string; component: string; method: string };
@@ -434,7 +434,7 @@ export interface AgentFinding {
   run_id: string | null;
   created_at: string;
   // Técnicas ATT&CK que el hallazgo sostiene. Enum cerrada: el backend sólo
-  // acepta ids de la semilla del orquestador (ver forensia/mitre/catalog.py).
+  // acepta ids de la semilla del orquestador (ver agentopsy/mitre/catalog.py).
   mitre_hints: string[];
   // El backend serializa el Finding entero (asdict): estos campos llegan siempre
   // aunque el rail corto no los use. Los pinta la vista Documentos (detalle).
@@ -474,7 +474,7 @@ export interface MitreTactic {
 }
 
 // ── Documentos / informes del caso ────────────────────────────────────────
-// Espejo de forensia.reports. Un bloque del cuerpo del informe: párrafo,
+// Espejo de agentopsy.reports. Un bloque del cuerpo del informe: párrafo,
 // sub-encabezado, cita, lista, código, pares clave-valor, tabla o hallazgo.
 export interface DocumentBlock {
   t: "p" | "h3" | "quote" | "list" | "code" | "kv" | "table" | "finding";
@@ -529,7 +529,7 @@ export interface DocumentVerifyResult {
 }
 
 // «Finalizar investigación»: el ejecutor seleccionado redacta el informe
-// pericial COMPLETO (forensia.reports.writer). `executor` es obligatorio, es el
+// pericial COMPLETO (agentopsy.reports.writer). `executor` es obligatorio, es el
 // modelo que escribe, y Agentopsy no elige uno por el operador (RULE 2); el
 // backend acepta también la selección ya fijada en Configuración
 // (DEFAULT_EXECUTOR). Los datos del perito son opcionales: sin ellos figura el
@@ -544,7 +544,7 @@ export interface FinalizeInvestigationRequest {
   version?: string;
 }
 
-// Job de redacción del informe. Espejo de forensia.agent.jobs.Job para el
+// Job de redacción del informe. Espejo de agentopsy.agent.jobs.Job para el
 // `kind: "report"`: la redacción es una llamada larga a un modelo y corre
 // desacoplada de la petición HTTP, así que cerrar la pestaña no la aborta.
 export interface ReportJob {
@@ -650,7 +650,7 @@ export interface QueryRequest {
   session_id?: string;
 }
 
-// ── Timeline forense del caso (backend/forensia/timeline) ───────────────────
+// ── Timeline forense del caso (backend/agentopsy/timeline) ───────────────────
 // Todas las marcas `ts` son UTC, normalizadas a un ISO-8601 con `Z` explícito
 // (hallazgo F: la zona horaria nunca se deja implícita).
 
@@ -709,7 +709,7 @@ export interface IncidentEvent {
   title: string;
   severity: "low" | "medium" | "high" | "critical";
   // Etiqueta en castellano resuelta por el BACKEND (fuente única,
-  // forensia.timeline.vocabulario): la UI no tiene una segunda tabla.
+  // agentopsy.timeline.vocabulario): la UI no tiene una segunda tabla.
   severity_label: string;
   evidence_id: string | null;
   run_id: string | null;
@@ -816,7 +816,7 @@ export type GraphEdgeType =
   | "logon"
   | "file_transfer";
 
-// Nodo ya COLOCADO: la geometría la resuelve el backend (`forensia.graph.layout`)
+// Nodo ya COLOCADO: la geometría la resuelve el backend (`agentopsy.graph.layout`)
 // para que la figura sea reproducible y no dependa del navegador.
 export interface GraphNode {
   tipo: GraphNodeType;

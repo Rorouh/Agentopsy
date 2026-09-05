@@ -7,8 +7,8 @@ import uuid
 
 import pytest
 
-from forensia.cases.manager import CaseManager
-from forensia.chats.store import ChatMessage, ChatStore
+from agentopsy.cases.manager import CaseManager
+from agentopsy.chats.store import ChatMessage, ChatStore
 
 
 @pytest.fixture

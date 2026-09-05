@@ -441,7 +441,7 @@ export const en = {
   "guide.note2.title": "Forensic principles",
   "guide.note2.body":
     "Evidence is never touched directly: every access goes through a hash-verified handle that is read-only at block level. Every action is recorded in a hash-chained audit log.",
-  "guide.note3.title": "Academic scope",
+  "guide.note3.title": "Tool scope",
   "guide.note3.body":
     "Agentopsy is post-mortem and self-hosted: it does not perform live forensics or acquisition from the original machine. No certified legal validity, but real forensic rigor.",
 

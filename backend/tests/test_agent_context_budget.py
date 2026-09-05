@@ -11,16 +11,16 @@ from __future__ import annotations
 
 import json
 
-from forensia.i18n import t
-from forensia.agent.agent import (
+from agentopsy.i18n import t
+from agentopsy.agent.agent import (
     _MAX_TOOL_RESULT_CHARS,
     _UNTRUSTED_CLOSE,
     _untrusted_open,
     ForensicAgent,
     _bounded_json,
 )
-from forensia.agent.context import _stub_for, window_messages
-from forensia.models.base import ToolCall
+from agentopsy.agent.context import _stub_for, window_messages
+from agentopsy.models.base import ToolCall
 
 
 def _tool_msg(run_id: str, payload: str = "x" * 4000) -> dict:

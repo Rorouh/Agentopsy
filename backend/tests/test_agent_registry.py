@@ -5,7 +5,7 @@ Desde 2026-07-28 el agente se configura con un solo ``agentes/agent.md``. Cubre:
 - ``read_instructions`` lee ``agent.md``; ausente o vacío falla en seco (RULE 2).
 - ``build_package`` deriva la allowlist del catálogo por perfil (nada escrito a mano).
 - ``load_packages`` construye un agente por perfil compartiendo el mismo texto.
-- La registry sobre el repo carga ``forensia-unix`` y ``forensia-windows``; un
+- La registry sobre el repo carga ``agentopsy-unix`` y ``agentopsy-windows``; un
   perfil desconocido lanza ``KeyError``; sin ``agent.md`` arranca vacía (degrada).
 - Superficie HTTP: ``/api/agents`` lista lo cargado; ``/api/agent/query`` sin caso
   responde 422 accionable.
@@ -18,16 +18,16 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from forensia.agent.loader import (
+from agentopsy.agent.loader import (
     AgentPackageError,
     build_package,
     default_allowed_tools,
     load_packages,
     read_instructions,
 )
-from forensia.agent.registry import AgentRegistry
-from forensia.i18n import set_current_lang
-from forensia.server import create_app
+from agentopsy.agent.registry import AgentRegistry
+from agentopsy.i18n import set_current_lang
+from agentopsy.server import create_app
 
 PORT = 50999
 
@@ -44,7 +44,7 @@ def _castellano():
     IDIOMA (`agent.md` / `agent.en.md`) y el de partida del producto es inglés."""
     token = set_current_lang("es")
     yield
-    from forensia.i18n import _LANG_ACTUAL
+    from agentopsy.i18n import _LANG_ACTUAL
 
     _LANG_ACTUAL.reset(token)
 
@@ -68,7 +68,7 @@ def test_the_english_twin_is_the_one_read_in_english() -> None:
         assert text.startswith("# agent.en.md")
         assert "forensics examiner" in text.lower()
     finally:
-        from forensia.i18n import _LANG_ACTUAL
+        from agentopsy.i18n import _LANG_ACTUAL
 
         _LANG_ACTUAL.reset(token)
 
@@ -87,7 +87,7 @@ def test_the_missing_file_of_a_language_never_falls_back_to_the_other(
         with pytest.raises(AgentPackageError, match="agent.en.md"):
             read_instructions(tmp_path)
     finally:
-        from forensia.i18n import _LANG_ACTUAL
+        from agentopsy.i18n import _LANG_ACTUAL
 
         _LANG_ACTUAL.reset(token)
 
@@ -129,7 +129,7 @@ def test_invalid_profile_rejected() -> None:
 
 def test_build_package_shape(_castellano) -> None:
     pkg = build_package("windows", read_instructions(AGENTES_DIR))
-    assert pkg.id == "forensia-windows"
+    assert pkg.id == "agentopsy-windows"
     assert pkg.os_profile == "windows"
     assert "regripper" in pkg.policy.allowed_tools
     assert pkg.prompts.system.startswith("# agent.md")
@@ -162,9 +162,9 @@ def test_registry_loads_both_real_profiles() -> None:
     reg = AgentRegistry(AGENTES_DIR)
     assert reg.has_profile("unix")
     assert reg.has_profile("windows")
-    assert reg.get_for_profile("unix").id == "forensia-unix"
-    assert reg.get_for_profile("windows").id == "forensia-windows"
-    assert [pkg.id for pkg in reg.list()] == ["forensia-unix", "forensia-windows"]
+    assert reg.get_for_profile("unix").id == "agentopsy-unix"
+    assert reg.get_for_profile("windows").id == "agentopsy-windows"
+    assert [pkg.id for pkg in reg.list()] == ["agentopsy-unix", "agentopsy-windows"]
 
 
 def test_registry_unknown_profile_raises() -> None:
@@ -197,18 +197,18 @@ def client() -> TestClient:
 
 def test_list_agents_endpoint(client: TestClient) -> None:
     token = client.app.state.token
-    r = client.get("/api/agents", headers={"X-Forensia-Token": token})
+    r = client.get("/api/agents", headers={"X-Agentopsy-Token": token})
     assert r.status_code == 200
     ids = {a["id"] for a in r.json()["agents"]}
-    assert "forensia-unix" in ids
-    assert "forensia-windows" in ids
+    assert "agentopsy-unix" in ids
+    assert "agentopsy-windows" in ids
 
 
 def test_query_without_case_is_actionable_422(client: TestClient) -> None:
     token = client.app.state.token
     r = client.post(
         "/api/agent/query",
-        headers={"X-Forensia-Token": token},
+        headers={"X-Agentopsy-Token": token},
         json={"prompt": "hola", "os_profile": "unix", "evidence_id": ""},
     )
     assert r.status_code == 422
@@ -219,7 +219,7 @@ def test_query_empty_prompt(client: TestClient) -> None:
     token = client.app.state.token
     r = client.post(
         "/api/agent/query",
-        headers={"X-Forensia-Token": token},
+        headers={"X-Agentopsy-Token": token},
         json={"prompt": "   "},
     )
     assert r.status_code == 422

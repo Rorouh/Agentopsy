@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from forensia.agent import history
-from forensia.findings.store import Finding
+from agentopsy.agent import history
+from agentopsy.findings.store import Finding
 
 
 def _finding(fid: str, title: str) -> Finding:

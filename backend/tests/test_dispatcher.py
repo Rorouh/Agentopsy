@@ -1,4 +1,4 @@
-"""Tests for forensia.toolkit.dispatcher.execute and _build_result.
+"""Tests for agentopsy.toolkit.dispatcher.execute and _build_result.
 
 `execute()` is the only blessed entry point from the agent to the toolkit. The
 unit tests below pin its contract end-to-end without ever launching a real
@@ -19,11 +19,11 @@ from pathlib import Path
 
 import pytest
 
-from forensia.toolkit import dispatcher as dispatcher_mod
-from forensia.toolkit import maletin as maletin_mod
-from forensia.toolkit.catalog import BY_ID
-from forensia.toolkit.dispatcher import ToolExecutionError, _build_result, _select_maletin, execute
-from forensia.toolkit.tool import DELIVERY_ALL_BUNDLED, Tool
+from agentopsy.toolkit import dispatcher as dispatcher_mod
+from agentopsy.toolkit import maletin as maletin_mod
+from agentopsy.toolkit.catalog import BY_ID
+from agentopsy.toolkit.dispatcher import ToolExecutionError, _build_result, _select_maletin, execute
+from agentopsy.toolkit.tool import DELIVERY_ALL_BUNDLED, Tool
 
 
 # --------------------------------------------------------------------------- #

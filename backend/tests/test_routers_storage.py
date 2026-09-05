@@ -7,11 +7,11 @@ import hashlib
 import pytest
 from fastapi.testclient import TestClient
 
-from forensia.artifacts.store import ArtifactStore
-from forensia.cases.manager import CaseManager
-from forensia.chats.store import ChatStore
-from forensia.evidence import EvidenceManager
-from forensia.server import create_app
+from agentopsy.artifacts.store import ArtifactStore
+from agentopsy.cases.manager import CaseManager
+from agentopsy.chats.store import ChatStore
+from agentopsy.evidence import EvidenceManager
+from agentopsy.server import create_app
 
 # Evidence provenance required by ArtifactStore.start_run (P0.5-3, INVARIANT 4).
 _PROV = {
@@ -32,9 +32,9 @@ def isolated_storage(tmp_path, monkeypatch):
     chats = ChatStore(cases)
 
     # Patch the module-level names every router imports from.
-    import forensia.routers.cases as cases_router
-    import forensia.routers.artifacts as artifacts_router
-    import forensia.routers.chats as chats_router
+    import agentopsy.routers.cases as cases_router
+    import agentopsy.routers.artifacts as artifacts_router
+    import agentopsy.routers.chats as chats_router
 
     monkeypatch.setattr(cases_router, "case_manager", cases)
     monkeypatch.setattr(cases_router, "evidence_manager", evidence)
@@ -42,7 +42,7 @@ def isolated_storage(tmp_path, monkeypatch):
     monkeypatch.setattr(chats_router, "chat_store", chats)
 
     # Also patch the dispatcher singletons in case any other test triggers it.
-    import forensia.toolkit.dispatcher as dispatcher_mod
+    import agentopsy.toolkit.dispatcher as dispatcher_mod
 
     monkeypatch.setattr(dispatcher_mod, "case_manager", cases)
     monkeypatch.setattr(dispatcher_mod, "artifact_store", artifacts)
@@ -62,7 +62,7 @@ def token(client):
 
 @pytest.fixture
 def auth(token):
-    return {"X-Forensia-Token": token}
+    return {"X-Agentopsy-Token": token}
 
 
 # --------------------------------------------------------------------------- #

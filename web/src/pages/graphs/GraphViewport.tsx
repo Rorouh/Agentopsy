@@ -10,7 +10,7 @@ import { useLang } from "../../i18n";
 // ser la geometría CALCULADA por el backend, no el encuadre en el que el perito
 // dejara la vista. Poniendo el `transform` en este contenedor, el SVG que se
 // serializa no lo lleva: explorar no puede cambiar la prueba. Es la misma
-// separación que enuncia `forensia/graph/layout.py`.
+// separación que enuncia `agentopsy/graph/layout.py`.
 //
 // Qué se mueve y qué NO. Dentro del marco va SOLO el dibujo (el modo `pantalla`
 // de `RelationGraph`). El rótulo de la figura, el recuento y la leyenda son el

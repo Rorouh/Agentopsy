@@ -16,10 +16,10 @@ from __future__ import annotations
 
 import json
 
-from forensia.executors.base import Usage
-from forensia.executors.claude_code import ClaudeCodeExecutor
-from forensia.executors.gemini import GeminiExecutor
-from forensia.executors.ollama import OllamaExecutor
+from agentopsy.executors.base import Usage
+from agentopsy.executors.claude_code import ClaudeCodeExecutor
+from agentopsy.executors.gemini import GeminiExecutor
+from agentopsy.executors.ollama import OllamaExecutor
 
 
 # ── parseo por ejecutor ──────────────────────────────────────────────────────
@@ -56,7 +56,7 @@ def test_gemini_finds_canonical_token_keys_nested_in_stats() -> None:
 
 
 def test_codex_parses_token_counts_from_jsonl_stream() -> None:
-    from forensia.executors.codex import CodexExecutor
+    from agentopsy.executors.codex import CodexExecutor
     stream = "\n".join([
         '{"type":"item.started"}',
         '{"type":"turn.completed","usage":{"input_tokens":2200,"output_tokens":450}}',
@@ -68,7 +68,7 @@ def test_codex_parses_token_counts_from_jsonl_stream() -> None:
 
 
 def test_codex_last_token_event_wins() -> None:
-    from forensia.executors.codex import CodexExecutor
+    from agentopsy.executors.codex import CodexExecutor
     stream = "\n".join([
         '{"usage":{"input_tokens":100,"output_tokens":10}}',
         '{"usage":{"input_tokens":300,"output_tokens":80}}',
@@ -78,7 +78,7 @@ def test_codex_last_token_event_wins() -> None:
 
 
 def test_codex_argv_uses_json_but_text_still_from_file() -> None:
-    from forensia.executors.codex import CodexExecutor
+    from agentopsy.executors.codex import CodexExecutor
     ex = CodexExecutor()
     ex._last_message_path = "/tmp/x.md"
     argv = ex._build_argv("hola", None)
@@ -87,7 +87,7 @@ def test_codex_argv_uses_json_but_text_still_from_file() -> None:
 
 
 def test_codex_no_token_events_degrades_to_none() -> None:
-    from forensia.executors.codex import CodexExecutor
+    from agentopsy.executors.codex import CodexExecutor
     assert CodexExecutor()._extract_usage('{"type":"item.started"}') is None
 
 

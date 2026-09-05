@@ -20,11 +20,11 @@ from typing import Any
 
 from openpyxl import load_workbook
 
-from forensia.i18n import CATALOGO, t
-from forensia.export_hoja import NO_APLICA
-from forensia.findings.store import Finding
-from forensia.timeline.builder import assemble_investigation_timeline
-from forensia.timeline.export import hoja_header, timeline_to_hoja
+from agentopsy.i18n import CATALOGO, t
+from agentopsy.export_hoja import NO_APLICA
+from agentopsy.findings.store import Finding
+from agentopsy.timeline.builder import assemble_investigation_timeline
+from agentopsy.timeline.export import hoja_header, timeline_to_hoja
 
 def _col(nombre_es: str) -> str:
     """El rótulo de una columna (o de una fila de procedencia) EN EL IDIOMA EN

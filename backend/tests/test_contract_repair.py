@@ -28,11 +28,11 @@ from typing import Any
 import pytest
 
 from _agent_pkg import make_package
-from forensia.i18n import t
-from forensia.agent.agent import MAX_REPARACIONES_CONTRATO, ForensicAgent
+from agentopsy.i18n import t
+from agentopsy.agent.agent import MAX_REPARACIONES_CONTRATO, ForensicAgent
 
 
-from forensia.models.base import (
+from agentopsy.models.base import (
     Action,
     ExecutorBackend,
     FinalAnswer,
@@ -212,7 +212,7 @@ def test_the_allowance_is_consecutive_not_per_run(
             "run_id": "r",
         }
 
-    monkeypatch.setattr("forensia.toolkit.dispatcher.execute", fake_execute)
+    monkeypatch.setattr("agentopsy.toolkit.dispatcher.execute", fake_execute)
 
     valida = ToolCall(
         tool_id="tsk_fls",

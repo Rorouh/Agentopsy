@@ -22,7 +22,7 @@ import type { Case } from "../api/types";
 // «cambiar caso» / «Nuevo caso» se disparan desde el armazón. Por eso la LISTA
 // de casos también vive aquí: si cada vista la cargase por su cuenta, el
 // sidebar tendría que cargarla una sexta vez en cada render.
-const ACTIVE_CASE_STORAGE_KEY = "forensia-active-case";
+const ACTIVE_CASE_STORAGE_KEY = "agentopsy-active-case";
 
 function initialActiveCaseId(): string | null {
   try {

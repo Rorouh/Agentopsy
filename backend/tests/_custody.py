@@ -16,10 +16,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from forensia.artifacts.store import ArtifactStore
-from forensia.cases.manager import CaseManager
-from forensia.evidence import EvidenceManager
-from forensia.evidence_context import EvidenceContext
+from agentopsy.artifacts.store import ArtifactStore
+from agentopsy.cases.manager import CaseManager
+from agentopsy.evidence import EvidenceManager
+from agentopsy.evidence_context import EvidenceContext
 
 # Realistic build-manifest identity used when the version TRANSPORT is faked.
 FAKE_TOOL_VERSION = "sleuthkit 4.12.1+dfsg-1ppa1 (dpkg)"

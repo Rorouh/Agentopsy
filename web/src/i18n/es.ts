@@ -414,9 +414,9 @@ export const es: Record<MessageKey, string> = {
   "guide.note2.title": "Principios forenses",
   "guide.note2.body":
     "La evidencia nunca se toca directamente: todo acceso pasa por un handle hash-verificado y de solo lectura a nivel de bloque. Cada acción queda en un log de auditoría encadenado por hash.",
-  "guide.note3.title": "Alcance académico",
+  "guide.note3.title": "Alcance de la herramienta",
   "guide.note3.body":
-    "Agentopsy es post-mortem y de escritorio: no realiza forensia en vivo ni adquisición desde el equipo original. Sin validez legal certificada, pero con rigor forense real.",
+    "Agentopsy es post-mortem y autoalojada: no realiza forensia en vivo ni adquisición desde el equipo original. Sin validez legal certificada, pero con rigor forense real.",
 
   // --- fase 2: investigación -----------------------------------------------
   "inv.loadingContext": "Cargando contexto del caso…",

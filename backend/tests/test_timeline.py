@@ -13,10 +13,10 @@ from pathlib import Path
 
 import pytest
 
-from forensia.cases.manager import CaseManager
-from forensia.findings.store import Finding, FindingStore
-from forensia.timeline import builder
-from forensia.timeline.builder import (
+from agentopsy.cases.manager import CaseManager
+from agentopsy.findings.store import Finding, FindingStore
+from agentopsy.timeline import builder
+from agentopsy.timeline.builder import (
     assemble_investigation_timeline,
     bodyfile_to_fs_events,
     build_investigation_timeline,

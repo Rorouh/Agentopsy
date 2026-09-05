@@ -21,7 +21,7 @@ and stops RegRipper (RULE 2).
 
 POSIX only: launching a script stand-in shell-free needs POSIX exec semantics, so this runs
 in CI (Linux). On Windows the operator drives the real chain over docker compose with a
-``.E01`` — see ``docs/operacion/e2e-ewf-runbook.md``.
+``.E01``.
 """
 
 from __future__ import annotations
@@ -38,17 +38,17 @@ from pathlib import Path
 import pytest
 
 from _custody import context_for, register_evidence, wire_dispatcher_custody
-from forensia.artifacts.store import ArtifactStore
-from forensia.audit.log import AuditLog
-from forensia.cases.manager import CaseManager
-from forensia.toolkit import dispatcher
+from agentopsy.artifacts.store import ArtifactStore
+from agentopsy.audit.log import AuditLog
+from agentopsy.cases.manager import CaseManager
+from agentopsy.toolkit import dispatcher
 
 pytestmark = pytest.mark.skipif(
     os.name != "posix",
     reason=(
         "the loopback exec-agent E2E runs POSIX stand-in tools shell-free on PATH; it runs "
         "in CI (Linux). Windows shell-free exec cannot launch script stand-ins — the real "
-        "chain is driven over docker compose with a .E01 (docs/operacion/e2e-ewf-runbook.md)."
+        "chain is driven over docker compose with a .E01."
     ),
 )
 
@@ -112,7 +112,7 @@ def _write_tool(bindir: Path, name: str, body: str) -> None:
 
 
 def _load_exec_agent():
-    spec = importlib.util.spec_from_file_location("forensia_exec_agent_e2e", EXEC_AGENT_PY)
+    spec = importlib.util.spec_from_file_location("agentopsy_exec_agent_e2e", EXEC_AGENT_PY)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -160,7 +160,7 @@ def chain(monkeypatch, bindir, cases, store, tmp_path):
     # even though the stand-ins are on PATH for the exec-agent's own subprocess.
     monkeypatch.setattr(dispatcher, "resolve", lambda _binary: None)
     monkeypatch.setenv("PATH", str(bindir) + os.pathsep + os.environ.get("PATH", ""))
-    monkeypatch.delenv("FORENSIA_EXEC_AGENT_TOKEN", raising=False)  # read at import → no auth
+    monkeypatch.delenv("AGENTOPSY_EXEC_AGENT_TOKEN", raising=False)  # read at import → no auth
 
     # The build manifest the exec-agent serves — set BEFORE loading (read at import).
     manifest = tmp_path / "versions.json"
@@ -168,7 +168,7 @@ def chain(monkeypatch, bindir, cases, store, tmp_path):
         json.dumps({"schema": 1, "stage": "windows", "versions": _VERSIONS}),
         encoding="utf-8",
     )
-    monkeypatch.setenv("FORENSIA_VERSIONS_MANIFEST", str(manifest))
+    monkeypatch.setenv("AGENTOPSY_VERSIONS_MANIFEST", str(manifest))
 
     module = _load_exec_agent()
     server = ThreadingHTTPServer(("127.0.0.1", 0), module.Handler)
@@ -176,7 +176,7 @@ def chain(monkeypatch, bindir, cases, store, tmp_path):
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     # All catalog tools here live in (or route to) toolkit-windows for os_profile="windows".
-    monkeypatch.setenv("FORENSIA_TOOLKIT_WINDOWS_URL", f"http://127.0.0.1:{port}")
+    monkeypatch.setenv("AGENTOPSY_TOOLKIT_WINDOWS_URL", f"http://127.0.0.1:{port}")
     try:
         yield
     finally:

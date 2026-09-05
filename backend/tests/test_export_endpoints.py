@@ -23,12 +23,12 @@ import pytest
 from fastapi.testclient import TestClient
 from openpyxl import load_workbook
 
-from forensia.i18n import t
-from forensia.cases.manager import CaseManager
-from forensia.export_hoja import MEDIA_TYPE
-from forensia.findings.store import FindingStore
-from forensia.mitre.coverage import CoverageStore
-from forensia.server import create_app
+from agentopsy.i18n import t
+from agentopsy.cases.manager import CaseManager
+from agentopsy.export_hoja import MEDIA_TYPE
+from agentopsy.findings.store import FindingStore
+from agentopsy.mitre.coverage import CoverageStore
+from agentopsy.server import create_app
 
 PORT = 51033
 
@@ -45,10 +45,10 @@ def cases(tmp_path, monkeypatch) -> CaseManager:
     """Un `CaseManager` aislado, inyectado en los routers que exportan."""
     store = CaseManager(root=tmp_path / "cases")
 
-    import forensia.mitre.coverage as coverage_mod
-    import forensia.routers.mitre as mitre_router
-    import forensia.routers.timeline as timeline_router
-    import forensia.timeline.builder as builder
+    import agentopsy.mitre.coverage as coverage_mod
+    import agentopsy.routers.mitre as mitre_router
+    import agentopsy.routers.timeline as timeline_router
+    import agentopsy.timeline.builder as builder
 
     findings = FindingStore(store)
     coverage = CoverageStore(store, findings)
@@ -70,7 +70,7 @@ def client(cases) -> TestClient:
 
 @pytest.fixture
 def auth(client) -> dict[str, str]:
-    return {"X-Forensia-Token": client.app.state.token}
+    return {"X-Agentopsy-Token": client.app.state.token}
 
 
 def _filename(response) -> str:

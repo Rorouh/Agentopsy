@@ -55,7 +55,7 @@ const FILE_INPUT_ACCEPT = FILE_INPUT_ACCEPT_EXTENSIONS.join(",");
 // catálogo (`inbox.ewfHint`); aquí sólo queda la lista de extensiones, que es
 // DATO y se escribe igual en los dos idiomas.
 
-// Fases REALES del hash-gate (backend/forensia/evidence.py PROGRESS_PHASES). El
+// Fases REALES del hash-gate (backend/agentopsy/evidence.py PROGRESS_PHASES). El
 // progreso es observacional: describe las tres pasadas que ya se hacían, no
 // añade ninguna (FORENSIC INVARIANT 2).
 const PHASE_KEY: Record<NonNullable<EvidenceRegisterJob["phase"]>, MessageKey> = {

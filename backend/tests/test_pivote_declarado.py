@@ -27,13 +27,13 @@ from typing import Any
 
 import pytest
 
-from forensia.i18n import t as traducir
-from forensia.agent.agent import ForensicAgent
+from agentopsy.i18n import t as traducir
+from agentopsy.agent.agent import ForensicAgent
 from _agent_pkg import make_package
-from forensia.agent.tool_schemas import internal_tool_specs
-from forensia.audit import AuditLog
-from forensia.cases import CaseManager
-from forensia.models.base import FinalAnswer, ModelBackend, ModelCapabilities, ToolCall
+from agentopsy.agent.tool_schemas import internal_tool_specs
+from agentopsy.audit import AuditLog
+from agentopsy.cases import CaseManager
+from agentopsy.models.base import FinalAnswer, ModelBackend, ModelCapabilities, ToolCall
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 AGENTES_DIR = REPO_ROOT / "agentes"
@@ -181,7 +181,7 @@ def test_el_pivote_no_ejecuta_ninguna_herramienta(wired, monkeypatch) -> None:
     def forbidden(*a, **k):
         raise AssertionError("el pivote no debe llegar al dispatcher")
 
-    monkeypatch.setattr("forensia.toolkit.dispatcher.execute", forbidden)
+    monkeypatch.setattr("agentopsy.toolkit.dispatcher.execute", forbidden)
     agent, _ = build([
         _pivote(via_cerrada="el disco", motivo="exit 1", via_alternativa="la RAM")
     ])

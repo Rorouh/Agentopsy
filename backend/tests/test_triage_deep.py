@@ -1,10 +1,10 @@
 """Triage PROFUNDO: el SO de una imagen CONTENEDOR se determina abriéndola.
 
-El fingerprint superficial (`forensia.triage`) lee los BYTES del fichero
+El fingerprint superficial (`agentopsy.triage`) lee los BYTES del fichero
 registrado. En un `.raw` eso basta. En un contenedor (EWF `.E01`, `.vmdk`,
 `.qcow2`, `.vhd(x)`, `.vdi`) el disco está troceado y comprimido: los marcadores
 del SO no están en claro, `family` salía `unknown`, el caso se quedaba sin
-`os_profile` y había que PREGUNTARLE al perito qué SO era. `forensia.triage_deep`
+`os_profile` y había que PREGUNTARLE al perito qué SO era. `agentopsy.triage_deep`
 cierra ese hueco abriendo la imagen por el maletín (ewfmount / qemu FUSE export,
 solo lectura a nivel de bloque) y leyendo el directorio raíz de cada sistema de
 ficheros.
@@ -34,11 +34,11 @@ import json
 
 import pytest
 
-from forensia.cases.manager import CaseManager, resolve_os_profile
-from forensia.evidence import EvidenceManager
-from forensia.toolkit import maletin
-from forensia.triage import DetectedEvidence
-from forensia.triage_deep import DEEP_TRIAGE_VENUE, deepen, probe_image
+from agentopsy.cases.manager import CaseManager, resolve_os_profile
+from agentopsy.evidence import EvidenceManager
+from agentopsy.toolkit import maletin
+from agentopsy.triage import DetectedEvidence
+from agentopsy.triage_deep import DEEP_TRIAGE_VENUE, deepen, probe_image
 
 # --- salidas TSK sintéticas ------------------------------------------------ #
 
@@ -178,7 +178,7 @@ def test_container_without_deep_pass_stays_unresolved(evidence, cases, tmp_path,
     """Sin canal al maletín (el caso de estas pruebas por defecto), un `.E01` se
     registra bien pero el caso NO obtiene os_profile. Es el estado que el pase
     profundo viene a arreglar — y el que debe conservarse cuando no puede correr."""
-    monkeypatch.delenv("FORENSIA_TOOLKIT_UNIX_URL", raising=False)
+    monkeypatch.delenv("AGENTOPSY_TOOLKIT_UNIX_URL", raising=False)
     case = cases.create(name="op", examiner="alice")
     handle = evidence.register(
         case.id, str(_write(tmp_path, "img.E01", _ewf_blob()))

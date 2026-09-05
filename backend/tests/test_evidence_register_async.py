@@ -17,7 +17,7 @@ Aquí se fija el contrato de la solución:
 - el registro es ATÓMICO: se construye en un directorio temporal OCULTO y se
   publica con un único ``rename``; un fallo a mitad no deja NADA bajo
   ``evidence/`` (ni ``<uuid>`` ni temporal).
-- ``forensia.evidence_jobs`` corre ese registro en un hilo y expone su estado;
+- ``agentopsy.evidence_jobs`` corre ese registro en un hilo y expone su estado;
   el router lo arranca (``POST …/evidence/async``) y lo sondea
   (``GET …/evidence/jobs/{job_id}``), con 404 para caso/job inexistente.
 
@@ -33,10 +33,10 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from forensia.cases.manager import CaseManager
-from forensia.evidence import PROGRESS_PHASES, EvidenceManager
-from forensia.evidence_jobs import RegisterJobRegistry
-from forensia.server import create_app
+from agentopsy.cases.manager import CaseManager
+from agentopsy.evidence import PROGRESS_PHASES, EvidenceManager
+from agentopsy.evidence_jobs import RegisterJobRegistry
+from agentopsy.server import create_app
 
 PORT = 51011
 
@@ -184,7 +184,7 @@ class TestAtomicity:
         good = manager.register(case.id, str(segments[0]))
         before = _evidence_entries(cases, case.id)
 
-        import forensia.evidence as ev_mod
+        import agentopsy.evidence as ev_mod
 
         real_copy = ev_mod._copy_file
         calls = {"n": 0}
@@ -210,7 +210,7 @@ class TestAtomicity:
         segments = _write_ewf_set(tmp_path / "src", "caso", 2)
         before = _evidence_entries(cases, case.id)
 
-        import forensia.evidence as ev_mod
+        import agentopsy.evidence as ev_mod
 
         def corrupting_copy(src, dest, on_chunk=None):
             dest.write_bytes(b"bytes que no son los del origen")
@@ -342,7 +342,7 @@ class TestJobs:
 def isolated_cases(tmp_path, monkeypatch) -> CaseManager:
     cases = CaseManager(root=tmp_path / "cases")
 
-    import forensia.routers.cases as cases_router
+    import agentopsy.routers.cases as cases_router
 
     monkeypatch.setattr(cases_router, "case_manager", cases)
     monkeypatch.setattr(cases_router, "evidence_manager", EvidenceManager(cases))
@@ -356,7 +356,7 @@ def client(isolated_cases) -> TestClient:
 
 @pytest.fixture
 def auth(client) -> dict[str, str]:
-    return {"X-Forensia-Token": client.app.state.token}
+    return {"X-Agentopsy-Token": client.app.state.token}
 
 
 def _poll_http(client: TestClient, auth: dict, case_id: str, job_id: str, timeout=20.0) -> dict:

@@ -19,9 +19,9 @@ import json
 
 import pytest
 
-from forensia.agent.tool_schemas import TOOL_PARAM_SCHEMAS, internal_tool_specs
-from forensia.cases import CaseManager
-from forensia.findings.store import FindingStore
+from agentopsy.agent.tool_schemas import TOOL_PARAM_SCHEMAS, internal_tool_specs
+from agentopsy.cases import CaseManager
+from agentopsy.findings.store import FindingStore
 
 _RUN_ID = "11111111-1111-4111-8111-111111111111"
 
@@ -155,7 +155,7 @@ def test_a_finding_written_before_the_validation_still_reloads(store_case) -> No
     de confiar en que el store ya lo impide.
     """
     store, case_id = store_case
-    from forensia.cases import case_manager  # noqa: F401  (el store trae el suyo)
+    from agentopsy.cases import case_manager  # noqa: F401  (el store trae el suyo)
 
     path = store._cases.case_dir(case_id) / "findings.jsonl"
     path.write_text(

@@ -328,7 +328,7 @@ const COMPOSER_MAX_ROWS = 10;
 const STICK_TO_BOTTOM_PX = 72;
 
 // Config key que persiste el modelo elegido POR proveedor (espejo de
-// backend/forensia/executors/__init__.py MODEL_CONFIG_KEY).
+// backend/agentopsy/executors/__init__.py MODEL_CONFIG_KEY).
 const MODEL_CONFIG_KEY: Record<ExecutorId, string> = {
   "claude-code": "CLAUDE_CODE_MODEL",
   codex: "CODEX_MODEL",
@@ -337,7 +337,7 @@ const MODEL_CONFIG_KEY: Record<ExecutorId, string> = {
 };
 
 // Config key que persiste la POTENCIA (nivel de razonamiento) por proveedor
-// (espejo de backend/forensia/executors/__init__.py REASONING_CONFIG_KEY). Solo
+// (espejo de backend/agentopsy/executors/__init__.py REASONING_CONFIG_KEY). Solo
 // aparece el ejecutor cuyo nivel se ha verificado contra su binario real; un
 // proveedor ausente no lleva nivel y lo decide su CLI (RULE 2).
 const REASONING_CONFIG_KEY: Partial<Record<ExecutorId, string>> = {
@@ -840,7 +840,7 @@ export function ChatPage({
   // no se intenta a ciegas).
   const hasEvidence = activeEvidence != null;
   const sendDisabled = !input.trim() || busy || !hasEvidence;
-  const agentLabel = activeAgent?.id ?? (activeProfile ? `forensia-${activeProfile}` : "agentopsy");
+  const agentLabel = activeAgent?.id ?? (activeProfile ? `agentopsy-${activeProfile}` : "agentopsy");
 
   const providerLabel = executor ? executorStatus?.name ?? executor : t("chat.pickExecutor");
   // El modelo recomendado del paquete solo aplica a Ollama (modelo local).
@@ -901,7 +901,7 @@ export function ChatPage({
           )}
 
           {/* El chat NO pregunta el sistema operativo. La determinación es
-              forense y automática: `forensia.triage` la deriva del CONTENIDO de
+              forense y automática: `agentopsy.triage` la deriva del CONTENIDO de
               la evidencia (cabeceras, sectores de arranque y, en imágenes
               contenedor, el disco des-encapsulado dentro del maletín). El caso
               ambiguo que el triage no puede cerrar se resuelve en Evidencia,

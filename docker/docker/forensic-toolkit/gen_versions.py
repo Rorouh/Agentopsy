@@ -2,7 +2,7 @@
 """Genera el manifiesto INMUTABLE de versiones del maletín durante el build de la imagen.
 
 Se ejecuta como último paso de cada stage final del Dockerfile (windows / unix) y
-escribe ``/opt/forensia/versions.json``: ``{"schema": 1, "stage": ..., "versions":
+escribe ``/opt/agentopsy/versions.json``: ``{"schema": 1, "stage": ..., "versions":
 {binario: versión}}``. El exec-agent lo sirve por ``GET /versions`` y el backend lo
 consulta ANTES de cada ``tool_run_start`` (FORENSIC INVARIANT 4).
 

@@ -28,7 +28,7 @@ Notas que aplican a los ejemplos:
 
 Este documento inventaria lo que las imágenes **instalan**. Es un eje distinto de
 lo que el **agente puede pedir**, que es el catálogo del backend
-(`backend/forensia/toolkit/catalog.py`, hoy 32 tools). Un binario puede estar
+(`backend/agentopsy/toolkit/catalog.py`, hoy 32 tools). Un binario puede estar
 instalado y no expuesto, y eso casi siempre es deliberado.
 
 Para que una tool sea pedible por el agente hacen falta cuatro piezas, y si falta
@@ -48,7 +48,7 @@ comentario **«INSTALADO EN EL MALETÍN Y FUERA DEL CATÁLOGO, A PROPÓSITO»** 
 |---|---|
 | `guestmount` | Monta el sistema de ficheros de la evidencia: viola el invariante forense 3 |
 | `guestfish`, los ~25 `virt-*` | Peor: `virt-copy-in`, `virt-customize` y `virt-sysprep` ESCRIBEN en la imagen. Los arrastra `libguestfs-tools` |
-| `ewfmount`, `qemu-storage-daemon` | Son el mecanismo interno de `forensia.triage_deep`; exponerlos abriría la imagen fuera del control de `EvidenceManager` |
+| `ewfmount`, `qemu-storage-daemon` | Son el mecanismo interno de `agentopsy.triage_deep`; exponerlos abriría la imagen fuera del control de `EvidenceManager` |
 | `sha256sum` | El hash-gate lo hace `EvidenceManager` en proceso |
 | `evtx_dump` | Redunda con `evtxecmd` (EvtxECmd, que además aplica sus `Maps/`) |
 | `lnkparse` | Redunda con `lecmd` (LECmd) |
@@ -203,7 +203,7 @@ prefijo, y se rechazan en vez de limpiarse porque limpiarlos bien exige parsear
 los literales de cadena) y nada de dot-commands.
 
 El resultado va acotado y **una truncadura nunca es silenciosa**. La consulta se
-envuelve como `SELECT *, <max_rows> AS _forensia_cap FROM (<consulta>) LIMIT
+envuelve como `SELECT *, <max_rows> AS _agentopsy_cap FROM (<consulta>) LIMIT
 <max_rows+1>`, verificado con CTEs, con `ORDER BY` y con una consulta que ya trae
 su propio `LIMIT`. La fila de más demuestra que hay más; la columna centinela es
 lo que permite al `parse` conocer la cota, porque un `parse` solo recibe stdout y
@@ -430,7 +430,7 @@ CDN publica una versión nueva — re-pinnear, igual que hayabusa/chainsaw).
 > **Catálogo del backend:** las once están en el maletín para uso manual; ocho
 > (`lecmd`, `jlecmd`, `recmd`, `amcacheparser`, `appcompatcacheparser`,
 > `sbecmd`, `wxtcmd`, `rbcmd`) están además en el catálogo del backend
-> (`backend/forensia/toolkit/catalog.py`, tier extended) y son invocables por
+> (`backend/agentopsy/toolkit/catalog.py`, tier extended) y son invocables por
 > el agente — igual que `evtxecmd`/`mftecmd` (core). **`bstrings` queda fuera
 > del catálogo**: en Linux solo procesa por stdin y el canal exec-agent
 > ejecuta argv sin shell (sin tuberías) — herramienta de uso manual.

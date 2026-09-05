@@ -21,13 +21,13 @@ import json
 
 import pytest
 
-from forensia.cases.manager import (
+from agentopsy.cases.manager import (
     CaseManager,
     OsProfileUnresolved,
     resolve_os_profile,
 )
-from forensia.evidence import EvidenceManager
-from forensia.triage import DetectedEvidence, routable_profile
+from agentopsy.evidence import EvidenceManager
+from agentopsy.triage import DetectedEvidence, routable_profile
 
 
 # --- crafted evidence: minimal byte blobs that triage classifies deterministically.

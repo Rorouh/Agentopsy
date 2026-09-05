@@ -185,7 +185,7 @@ export function InvestigationPage({ caps, onNavigate, onCapsRefresh }: Investiga
           <strong>{t("inv.mismatchLead")}</strong>{" "}
           {t("inv.mismatchBodyA")} <code>{activeCase.os_profile}</code>{" "}
           {t("inv.mismatchBodyB")} <code>{profileMismatch}</code>. {t("inv.mismatchBodyC")}{" "}
-          (<code>forensia-{activeCase.os_profile}</code>) {t("inv.mismatchBodyD")}{" "}
+          (<code>agentopsy-{activeCase.os_profile}</code>) {t("inv.mismatchBodyD")}{" "}
           <strong>{t("inv.mismatchPath")}</strong>: {t("inv.mismatchBodyE")}
         </div>
       )}

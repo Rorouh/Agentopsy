@@ -19,7 +19,7 @@ export interface CaseFacts {
   // matriz pinta, así que la fase está hecha cuando hay al menos una.
   mitreTechniques: number;
   // De esas, cuántas llevan dictamen del perito. Es el OTRO eje y nunca se funde
-  // con el primero (ver forensia.mitre.coverage): se cuenta aparte para que la
+  // con el primero (ver agentopsy.mitre.coverage): se cuenta aparte para que la
   // escalera pueda decir «propuestas, aún sin dictaminar» en vez de callarlo.
   mitreAdjudicated: number;
   // Eventos de la línea de tiempo del INCIDENTE: un hallazgo con `observed_at`

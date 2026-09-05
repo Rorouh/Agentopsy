@@ -1,7 +1,6 @@
 """Prompt-cache accounting, session integrity and the cost-estimate correction.
 
-Backs the changes of ``docs/diseno/tokens-2026-07/plan.md`` Fases 0-2. The gates
-that matter:
+The gates that matter:
 
 - ``Usage`` parses the cache split per executor, and reports ``None`` — never a
   fabricated number — for an executor that does not report it (RULE 2).
@@ -24,17 +23,17 @@ from __future__ import annotations
 
 import json
 
-from forensia.i18n import t
-from forensia.executors.base import Usage
-from forensia.executors.cache_health import CacheHealthMonitor
-from forensia.executors.claude_code import ClaudeCodeExecutor
-from forensia.executors.codex import CodexExecutor
-from forensia.executors.gemini import GeminiExecutor
-from forensia.executors.session_guard import (
+from agentopsy.i18n import t
+from agentopsy.executors.base import Usage
+from agentopsy.executors.cache_health import CacheHealthMonitor
+from agentopsy.executors.claude_code import ClaudeCodeExecutor
+from agentopsy.executors.codex import CodexExecutor
+from agentopsy.executors.gemini import GeminiExecutor
+from agentopsy.executors.session_guard import (
     inspect_transcript,
     verify_session,
 )
-from forensia.models.base import ExecutorBackend
+from agentopsy.models.base import ExecutorBackend
 
 def _bloque(clave: str) -> str:
     """El encabezado de un bloque del prompt, EN EL IDIOMA EN CURSO.

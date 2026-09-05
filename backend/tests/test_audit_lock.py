@@ -8,8 +8,8 @@ each lock.
 
 Uses multiprocessing (real OS processes) because the lock is cross-process
 (via the ``filelock`` library: ``fcntl`` on POSIX, ``msvcrt`` on Windows); a
-threading test would not exercise that path. The propuesta v1.2 requires the
-audit chain to remain coherent on Windows / macOS / Linux uniformly.
+threading test would not exercise that path. The audit chain has to remain
+coherent on Windows / macOS / Linux uniformly.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from forensia.audit.log import AuditLog
+from agentopsy.audit.log import AuditLog
 
 
 def _hammer(path: str, n: int, label: str) -> None:

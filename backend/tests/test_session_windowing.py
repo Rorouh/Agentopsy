@@ -3,8 +3,7 @@
 El windowing (Bug 008) ahorra cuando el ejecutor es stateless y re-envía todo
 cada turno; con una sesión reanudable INVIERTE la economía: el stub plantado en
 la sesión hace que el modelo queme turnos releyendo lo que el propio stub
-elidió (medido: 12 de 21 turnos, ~42 % de la entrada —
-``docs/diseno/tokens-2026-07/fase-turnos.md`` §3). Los gates que importan:
+elidió (medido: 12 de 21 turnos, ~42 % de la entrada). Los gates que importan:
 
 - Con backend capaz de sesión, ningún resultado de tool se elide y
   ``messages_full`` es la MISMA lista que cruzó el punto único de egreso.
@@ -27,9 +26,9 @@ import pytest
 from _agent_pkg import make_package
 from test_agent_loop import _FakeEvidence
 
-from forensia.agent.agent import ForensicAgent
-from forensia.agent.context import session_context_budget_chars, transcript_chars
-from forensia.models.base import (
+from agentopsy.agent.agent import ForensicAgent
+from agentopsy.agent.context import session_context_budget_chars, transcript_chars
+from agentopsy.models.base import (
     ExecutorBackend,
     FinalAnswer,
     ModelBackend,
@@ -100,7 +99,7 @@ def ok_dispatcher(monkeypatch: pytest.MonkeyPatch):
             "run_id": f"run{counter['n']:03d}",
         }
 
-    monkeypatch.setattr("forensia.toolkit.dispatcher.execute", fake_execute)
+    monkeypatch.setattr("agentopsy.toolkit.dispatcher.execute", fake_execute)
 
 
 def _contents(messages: list[dict[str, Any]]) -> list[str]:
@@ -139,7 +138,7 @@ def test_stateless_backend_keeps_the_windowing(ok_dispatcher) -> None:
 def test_over_budget_trim_is_windowed_and_audited(
     ok_dispatcher, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("FORENSIA_SESSION_CONTEXT_MAX_CHARS", "50")
+    monkeypatch.setenv("AGENTOPSY_SESSION_CONTEXT_MAX_CHARS", "50")
     audit = _ListAudit()
     backend = _CaptureBackend("tsk_mmls", 6, session=True)
     agent = ForensicAgent(make_package("unix"), backend, _FakeEvidence(), audit=audit)
@@ -158,16 +157,16 @@ def test_over_budget_trim_is_windowed_and_audited(
 
 
 def test_budget_default_and_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("FORENSIA_SESSION_CONTEXT_MAX_CHARS", raising=False)
+    monkeypatch.delenv("AGENTOPSY_SESSION_CONTEXT_MAX_CHARS", raising=False)
     assert session_context_budget_chars() == 400_000
-    monkeypatch.setenv("FORENSIA_SESSION_CONTEXT_MAX_CHARS", "1234")
+    monkeypatch.setenv("AGENTOPSY_SESSION_CONTEXT_MAX_CHARS", "1234")
     assert session_context_budget_chars() == 1234
 
 
 @pytest.mark.parametrize("raw", ["0", "-5", "abc"])
 def test_budget_invalid_fails_loud(monkeypatch: pytest.MonkeyPatch, raw: str) -> None:
-    monkeypatch.setenv("FORENSIA_SESSION_CONTEXT_MAX_CHARS", raw)
-    with pytest.raises(RuntimeError, match="FORENSIA_SESSION_CONTEXT_MAX_CHARS"):
+    monkeypatch.setenv("AGENTOPSY_SESSION_CONTEXT_MAX_CHARS", raw)
+    with pytest.raises(RuntimeError, match="AGENTOPSY_SESSION_CONTEXT_MAX_CHARS"):
         session_context_budget_chars()
 
 
@@ -224,7 +223,7 @@ def test_reopen_prompt_renders_from_canonical(monkeypatch: pytest.MonkeyPatch) -
     backend._prompts_sent = 1
     backend._last_num_turns = 1
     monkeypatch.setattr(
-        "forensia.models.base.verify_session",
+        "agentopsy.models.base.verify_session",
         lambda *a, **k: type(
             "V", (), {"can_send_delta": False, "reason": "sesión divergida"}
         )(),

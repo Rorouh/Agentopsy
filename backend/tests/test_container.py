@@ -1,4 +1,4 @@
-"""Tests for forensia.toolkit.container — runtime execution + mount guard.
+"""Tests for agentopsy.toolkit.container — runtime execution + mount guard.
 
 Critical invariants exercised here:
     - Raw-evidence suffixes are refused as container mounts (FORENSIC_SOUNDNESS §5).
@@ -17,9 +17,9 @@ from pathlib import Path
 
 import pytest
 
-from forensia.toolkit import container as container_mod
-from forensia.toolkit.container import _validate_mount_paths, run_in_container
-from forensia.toolkit.tool import DELIVERY_ALL_CONTAINER, Tool
+from agentopsy.toolkit import container as container_mod
+from agentopsy.toolkit.container import _validate_mount_paths, run_in_container
+from agentopsy.toolkit.tool import DELIVERY_ALL_CONTAINER, Tool
 
 
 # --------------------------------------------------------------------------- #
@@ -66,7 +66,7 @@ def test_validate_mount_paths_rejects_non_path_keys() -> None:
 # --------------------------------------------------------------------------- #
 # run_in_container — fixture: a synthetic Tool we control
 # --------------------------------------------------------------------------- #
-def _make_container_tool(container_image: str | None = "forensia/sample:latest") -> Tool:
+def _make_container_tool(container_image: str | None = "agentopsy/sample:latest") -> Tool:
     return Tool(
         id="sample_container_tool",
         binary="sample",
@@ -169,7 +169,7 @@ def test_run_in_container_assembles_expected_argv(monkeypatch, tmp_path) -> None
     assert ro_mount in argv
     assert rw_mount in argv
     # Container image and inside argv come last
-    image_idx = argv.index("forensia/sample:latest")
+    image_idx = argv.index("agentopsy/sample:latest")
     assert argv[image_idx + 1 :] == ["-r", "/in/hive", "-p", "compname"]
     # shell=False is non-negotiable
     assert captured["kwargs"].get("shell") is False

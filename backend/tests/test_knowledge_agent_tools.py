@@ -21,14 +21,14 @@ from typing import Any
 
 import pytest
 
-from forensia.i18n import t
-from forensia.agent.agent import ForensicAgent
+from agentopsy.i18n import t
+from agentopsy.agent.agent import ForensicAgent
 from _agent_pkg import make_package
-from forensia.agent.tool_schemas import internal_tool_specs
-from forensia.audit import AuditLog
-from forensia.cases import CaseManager
-from forensia.knowledge import DOC_ID_PATTERN, KnowledgeStore
-from forensia.models.base import FinalAnswer, ModelBackend, ModelCapabilities, ToolCall
+from agentopsy.agent.tool_schemas import internal_tool_specs
+from agentopsy.audit import AuditLog
+from agentopsy.cases import CaseManager
+from agentopsy.knowledge import DOC_ID_PATTERN, KnowledgeStore
+from agentopsy.models.base import FinalAnswer, ModelBackend, ModelCapabilities, ToolCall
 
 def _marca(clave: str) -> str:
     """El marcador distintivo de un bloque del prompt, EN EL IDIOMA EN CURSO.
@@ -101,7 +101,7 @@ def wired(tmp_path, monkeypatch):
     cases = CaseManager(root=tmp_path / "cases")
     case = cases.create(name="Caso grafo", examiner="ramos", os_profile="windows")
     store = KnowledgeStore(cases)
-    monkeypatch.setattr("forensia.agent.agent.knowledge_store", store)
+    monkeypatch.setattr("agentopsy.agent.agent.knowledge_store", store)
     pkg = make_package("windows")
 
     def build(actions):

@@ -9,7 +9,7 @@ Covers:
   false positive in the 2026-07-02 E2E verification.
 - `run()` aborts FAST with the actionable reason when the auth check fails —
   it never launches the prompt (no more hanging until the run timeout).
-- Timeout: `resolve_timeout` honours context > FORENSIA_EXECUTOR_TIMEOUT >
+- Timeout: `resolve_timeout` honours context > AGENTOPSY_EXECUTOR_TIMEOUT >
   designed default, and fails loud on unparseable values (RULE 2).
 - HTTP surface: `/api/agent/query` demands an operator-selected executor —
   4xx actionable, never a default; selected-but-unusable executor → 503 with
@@ -30,9 +30,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from forensia.i18n import codigo_de, t
-from forensia.config import config
-from forensia.executors import (
+from agentopsy.i18n import codigo_de, t
+from agentopsy.config import config
+from agentopsy.executors import (
     DEFAULT_TIMEOUT_S,
     EXECUTOR_IDS,
     MODEL_CONFIG_KEY,
@@ -49,8 +49,8 @@ from forensia.executors import (
     validate_model_id,
     validate_reasoning_effort,
 )
-from forensia.executors import base as executors_base
-from forensia.server import create_app
+from agentopsy.executors import base as executors_base
+from agentopsy.server import create_app
 
 
 def _gemini_hint() -> str:
@@ -79,7 +79,7 @@ def clean_config(monkeypatch: pytest.MonkeyPatch) -> None:
         "CODEX_MODEL",
         "CODEX_REASONING_EFFORT",
         "GEMINI_MODEL",
-        "FORENSIA_EXECUTOR_TIMEOUT",
+        "AGENTOPSY_EXECUTOR_TIMEOUT",
     ):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setattr(config, "_data", {})
@@ -391,14 +391,14 @@ def test_resolve_timeout_designed_default(clean_config: None) -> None:
 
 
 def test_resolve_timeout_from_env(clean_config: None, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("FORENSIA_EXECUTOR_TIMEOUT", "45")
+    monkeypatch.setenv("AGENTOPSY_EXECUTOR_TIMEOUT", "45")
     assert resolve_timeout({}) == 45
 
 
 def test_resolve_timeout_context_wins_over_env(
     clean_config: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("FORENSIA_EXECUTOR_TIMEOUT", "45")
+    monkeypatch.setenv("AGENTOPSY_EXECUTOR_TIMEOUT", "45")
     assert resolve_timeout({"timeout": 7}) == 7
 
 
@@ -406,10 +406,10 @@ def test_resolve_timeout_invalid_env_fails_loud(
     clean_config: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # RULE 2: un valor corrupto NO se sustituye en silencio por el default.
-    monkeypatch.setenv("FORENSIA_EXECUTOR_TIMEOUT", "muchos")
+    monkeypatch.setenv("AGENTOPSY_EXECUTOR_TIMEOUT", "muchos")
     with pytest.raises(ExecutorError) as exc:
         resolve_timeout({})
-    assert "FORENSIA_EXECUTOR_TIMEOUT" in str(exc.value)
+    assert "AGENTOPSY_EXECUTOR_TIMEOUT" in str(exc.value)
 
 
 # ---- cwd neutro + coste del turno perdido (2026-07-30) -------------------------
@@ -498,7 +498,7 @@ def _query(client: TestClient, payload: dict) -> object:
     base = {"prompt": "analiza", "os_profile": "unix", "case_id": "c1", "evidence_id": "e1"}
     return client.post(
         "/api/agent/query",
-        headers={"X-Forensia-Token": token},
+        headers={"X-Agentopsy-Token": token},
         json={**base, **payload},
     )
 
@@ -804,7 +804,7 @@ def test_claude_surfaces_the_expired_session_instead_of_an_empty_stderr() -> Non
     assert detail is not None, "el envoltorio traía la causa y se ha perdido"
     assert "OAuth access token has expired" in detail
     assert "claude auth login" in detail, "el motivo no nombra el comando que lo arregla"
-    assert "forensia-cli-auth" in detail
+    assert "agentopsy-cli-auth" in detail
 
 
 def test_claude_extract_error_stays_quiet_when_the_envelope_says_nothing() -> None:
@@ -820,7 +820,7 @@ def test_models_endpoint_ollama(client: TestClient, monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(OllamaExecutor, "list_models", lambda self: ["qwen2.5:7b-instruct"])
     r = client.get(
         "/api/executors/ollama/models",
-        headers={"X-Forensia-Token": client.app.state.token},
+        headers={"X-Agentopsy-Token": client.app.state.token},
     )
     assert r.status_code == 200
     body = r.json()
@@ -832,7 +832,7 @@ def test_models_endpoint_ollama(client: TestClient, monkeypatch: pytest.MonkeyPa
 def _set_config(client: TestClient, key: str, value: str) -> object:
     return client.post(
         "/api/config",
-        headers={"X-Forensia-Token": client.app.state.token},
+        headers={"X-Agentopsy-Token": client.app.state.token},
         json={"key": key, "value": value},
     )
 
@@ -894,7 +894,7 @@ def test_reasoning_effort_key_set_unset_and_validated(
 def test_models_endpoint_unknown_id_is_400(client: TestClient) -> None:
     r = client.get(
         "/api/executors/nope/models",
-        headers={"X-Forensia-Token": client.app.state.token},
+        headers={"X-Agentopsy-Token": client.app.state.token},
     )
     assert r.status_code == 400
     assert r.json()["detail"] == t(
@@ -910,7 +910,7 @@ def test_stream_endpoint_requires_executor_like_query(
     token = client.app.state.token
     r = client.post(
         "/api/agent/query/stream",
-        headers={"X-Forensia-Token": token},
+        headers={"X-Agentopsy-Token": token},
         json={"prompt": "analiza", "os_profile": "unix", "case_id": "c1", "evidence_id": "e1"},
     )
     assert r.status_code == 422

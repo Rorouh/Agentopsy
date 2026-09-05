@@ -19,7 +19,7 @@ import { useLang } from "../../i18n";
 // La FIGURA del grafo de relaciones, en sus DOS modos.
 //
 // La geometría NO se calcula aquí, viene resuelta del backend
-// (`forensia.graph.layout`), que es lo que hace que el mismo grafo dé la misma
+// (`agentopsy.graph.layout`), que es lo que hace que el mismo grafo dé la misma
 // imagen en cualquier máquina: una figura que se adjunta a un informe pericial
 // tiene que ser reproducible, y una simulación de fuerzas con semilla aleatoria
 // dibuja distinto lo mismo en cada render.
@@ -60,7 +60,7 @@ const PIE_BASE = 128;
 const ALTO_LINEA_PIE = 16;
 
 //: Tiene que coincidir con `RADIO_NODO` y `MAX_CHARS_ETIQUETA` de
-//: `forensia/graph/layout.py`: allí se reserva el sitio de cada nodo y aquí se
+//: `agentopsy/graph/layout.py`: allí se reserva el sitio de cada nodo y aquí se
 //: pinta, así que si divergen la figura vuelve a solaparse.
 const RADIO_NODO = 19;
 const MAX_CHARS_ETIQUETA = 22;

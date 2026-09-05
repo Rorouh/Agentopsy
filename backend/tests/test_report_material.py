@@ -1,6 +1,6 @@
 """El MATERIAL de redacción del informe: todo lo persistido, sin una frase.
 
-Los gates que importan (``forensia.reports.material``):
+Los gates que importan (``agentopsy.reports.material``):
 
 - Todo lo que el caso tiene registrado llega al material: encargo, evidencias con
   su custodia verificada, hallazgos ÍNTEGROS (con hashes completos), ejecuciones
@@ -20,14 +20,14 @@ import uuid
 
 import pytest
 
-from forensia.i18n import _LANG_ACTUAL, set_current_lang
-from forensia.audit.log import AuditLog
-from forensia.cases import CaseManager
-from forensia.evidence import EvidenceManager
-from forensia.findings.store import FindingStore
-from forensia.mitre.coverage import CoverageStore
-from forensia.reports.material import MAX_HALLAZGOS, build_material, naturaleza
-from forensia.reports.store import DocumentStore
+from agentopsy.i18n import _LANG_ACTUAL, set_current_lang
+from agentopsy.audit.log import AuditLog
+from agentopsy.cases import CaseManager
+from agentopsy.evidence import EvidenceManager
+from agentopsy.findings.store import FindingStore
+from agentopsy.mitre.coverage import CoverageStore
+from agentopsy.reports.material import MAX_HALLAZGOS, build_material, naturaleza
+from agentopsy.reports.store import DocumentStore
 
 ARGV = ["tsk_fls", "-r", "-o", "2048", "/evidence/disk.raw"]
 
@@ -281,6 +281,6 @@ def test_memory_is_enumerated_first(entorno) -> None:
 
     disco = _Handle("disk.raw", "disk")
     memoria = _Handle("mem.raw", "memory")
-    from forensia.reports.material import _por_volatilidad
+    from agentopsy.reports.material import _por_volatilidad
 
     assert _por_volatilidad([disco, memoria]) == [memoria, disco]

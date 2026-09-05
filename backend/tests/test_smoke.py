@@ -3,8 +3,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from forensia.audit import AuditLog
-from forensia.server import create_app
+from agentopsy.audit import AuditLog
+from agentopsy.server import create_app
 
 PORT = 50999
 
@@ -23,7 +23,7 @@ def test_health_is_public(client: TestClient) -> None:
 
 def test_capabilities_reports_container_runtime(client: TestClient) -> None:
     token = client.app.state.token
-    r = client.get("/api/capabilities", headers={"X-Forensia-Token": token})
+    r = client.get("/api/capabilities", headers={"X-Agentopsy-Token": token})
     assert r.status_code == 200
     body = r.json()
     # No docker-branded key: the runtime is reported generically because Podman /

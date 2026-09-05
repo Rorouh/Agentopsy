@@ -29,10 +29,10 @@ from pathlib import Path
 import pytest
 
 from _custody import context_for, register_evidence, wire_dispatcher_custody
-from forensia.artifacts.store import ArtifactIntegrityError, ArtifactStore
-from forensia.audit.log import AuditLog
-from forensia.cases.manager import CaseManager
-from forensia.toolkit import dispatcher
+from agentopsy.artifacts.store import ArtifactIntegrityError, ArtifactStore
+from agentopsy.audit.log import AuditLog
+from agentopsy.cases.manager import CaseManager
+from agentopsy.toolkit import dispatcher
 
 # A byte-exact "hive" the (fake) icat extracts; deliberately not valid UTF-8 so a text
 # round-trip would change it. Its identity downstream is its SHA-256.

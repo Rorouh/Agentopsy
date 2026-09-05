@@ -14,10 +14,10 @@ import zlib
 
 import pytest
 
-from forensia.audit.log import AuditLog
-from forensia.cases import CaseManager
-from forensia.reports.pdf import render_pdf
-from forensia.reports.store import DocumentStore
+from agentopsy.audit.log import AuditLog
+from agentopsy.cases import CaseManager
+from agentopsy.reports.pdf import render_pdf
+from agentopsy.reports.store import DocumentStore
 
 
 @pytest.fixture

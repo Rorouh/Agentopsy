@@ -1,5 +1,5 @@
 // Conocimiento compartido sobre ficheros de evidencia, en UN solo sitio.
-// Fuente de los formatos: backend/forensia/evidence.py, que RE-VALIDA siempre;
+// Fuente de los formatos: backend/agentopsy/evidence.py, que RE-VALIDA siempre;
 // lo de aquí sólo evita hacer subir un fichero que el backend va a rechazar.
 
 import type { EvidenceHandle } from "../api/types";
@@ -89,7 +89,7 @@ export function fileExtension(name: string): string {
 // el nombre: `.exe` es literalmente «e» + dos letras, o sea la misma forma, y
 // tratarla como segmento haría irregistrable una muestra de malware. Dentro de
 // un set anclado en su `.E01` sí se contempla, porque allí manda la numeración.
-// Espejo de backend/forensia/evidence.py (_EWF_FIRST_RE / _is_ewf_numeric_segment,
+// Espejo de backend/agentopsy/evidence.py (_EWF_FIRST_RE / _is_ewf_numeric_segment,
 // is_uploadable_evidence_ext / is_registrable_evidence_ext), que re-valida siempre.
 const EWF_FIRST_RE = /^\.(ex?)01$/i;
 const EWF_NUMERIC_RE = /^\.(ex?)(\d{2})$/i;

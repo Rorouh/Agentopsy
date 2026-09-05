@@ -22,11 +22,11 @@ from typing import Any
 import pytest
 from openpyxl import load_workbook
 
-from forensia.i18n import CATALOGO, t
-from forensia.cases import CaseManager
-from forensia.findings.store import FindingStore
-from forensia.mitre.coverage import CoverageStore
-from forensia.mitre.export import (
+from agentopsy.i18n import CATALOGO, t
+from agentopsy.cases import CaseManager
+from agentopsy.findings.store import FindingStore
+from agentopsy.mitre.coverage import CoverageStore
+from agentopsy.mitre.export import (
     NAVIGATOR_LAYER_VERSION,
     sin_dictamen,
     coverage_to_hoja,

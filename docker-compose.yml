@@ -3,11 +3,11 @@
 #
 #   Desplegar:                 docker compose up --build
 #   Usar:                      http://127.0.0.1:5173 en el navegador
-#   Ver herramientas:          docker compose exec toolkit-windows forensia-info
-#                              docker compose exec toolkit-unix    forensia-info
+#   Ver herramientas:          docker compose exec toolkit-windows agentopsy-info
+#                              docker compose exec toolkit-unix    agentopsy-info
 #
 # Cinco servicios, todos contenedores Linux (entorno idéntico en Windows/macOS/
-# Linux): web (frontend), api (FastAPI, backend/forensia), ollama (ejecutor
+# Linux): web (frontend), api (FastAPI, backend/agentopsy), ollama (ejecutor
 # 100 % local) y los dos maletines forenses (toolkit-windows / toolkit-unix).
 #
 # SECURITY INVARIANT 1: todos los puertos publicados se ligan a 127.0.0.1 —
@@ -23,7 +23,7 @@
 #
 # Sin API keys (SECURITY INVARIANT 7): los CLIs de la capa de ejecución
 # (claude / codex / gemini) viven en la imagen `api` y se autentican con la
-# sesión guardada en el volumen `forensia-cli-auth` (el HOME del contenedor).
+# sesión guardada en el volumen `agentopsy-cli-auth` (el HOME del contenedor).
 # Las credenciales del host se montan EN SOLO LECTURA como staging bajo
 # /host-creds/ y el entrypoint las SEEDEA una única vez al volumen; el refresh
 # de tokens ocurre en el volumen, nunca en los ficheros del host. Si el host
@@ -35,18 +35,18 @@
 # concreto; el resto del stack funciona. Revocar/limpiar: `docker compose
 # down -v` elimina el volumen de credenciales.
 # =============================================================================
-name: forensia
+name: agentopsy
 
 # Ajustes comunes a los dos maletines
 #
 # La carpeta de evidencias es CONFIGURABLE: el operador define
-# FORENSIA_EVIDENCE_DIR (export o fichero .env junto a este compose) apuntando a
+# AGENTOPSY_EVIDENCE_DIR (export o fichero .env junto a este compose) apuntando a
 # la carpeta única del caso — el diseño de la app final es "una carpeta de
 # evidencia elegida por el usuario". Sin variable definida se usa ./evidence
 # (default de diseño, documentado en docker/README.md). Nunca rutas absolutas
 # hardcodeadas de un host concreto en ficheros versionados. Nota: estas
 # variables interpolan RUTAS DEL HOST al parsear el compose; no confundir con
-# la FORENSIA_EVIDENCE_DIR del environment del servicio api, que es la ruta
+# la AGENTOPSY_EVIDENCE_DIR del environment del servicio api, que es la ruta
 # DENTRO del contenedor (/evidence).
 x-toolkit-common: &toolkit-common
   # Los maletines se CONSTRUYEN y EJECUTAN como imágenes linux/amd64. El PPA GIFT
@@ -60,8 +60,8 @@ x-toolkit-common: &toolkit-common
   restart: unless-stopped
   stop_grace_period: 5s
   volumes:
-    - ${FORENSIA_EVIDENCE_DIR:-./evidence}:/evidence:ro   # evidencias en SOLO LECTURA (cadena de custodia)
-    - ${FORENSIA_CASES_DIR:-./projects}:/cases            # proyectos, salidas e informes
+    - ${AGENTOPSY_EVIDENCE_DIR:-./evidence}:/evidence:ro   # evidencias en SOLO LECTURA (cadena de custodia)
+    - ${AGENTOPSY_CASES_DIR:-./projects}:/cases            # proyectos, salidas e informes
   # Capacidades necesarias para exponer imágenes en SOLO LECTURA vía FUSE dentro
   # del contenedor: `ewfmount` (abre el .E01 como bloque raw `ewf1` para que TSK lo
   # lea SIN montar el sistema de ficheros — el camino producto para evidencia EWF,
@@ -96,8 +96,8 @@ services:
       # mismo-origen con su backend).
       context: .
       dockerfile: docker/web/Dockerfile
-    image: forensia/web:0.1
-    container_name: forensia-web
+    image: agentopsy/web:0.1
+    container_name: agentopsy-web
     restart: unless-stopped
     ports:
       - "127.0.0.1:5173:80"
@@ -109,38 +109,38 @@ services:
     build:
       context: .
       dockerfile: docker/api/Dockerfile
-    image: forensia/api:0.1
-    container_name: forensia-api
+    image: agentopsy/api:0.1
+    container_name: agentopsy-api
     restart: unless-stopped
     ports:
       - "127.0.0.1:8000:8000"
     environment:
       # Raíz de datos del backend: config.json y cases/ persisten en ./projects
-      # del repo (ver docs/storage.md).
-      FORENSIA_HOME: /cases
+      # del repo.
+      AGENTOPSY_HOME: /cases
       # Comportamiento del agente: un único agentes/agent.md (ver agentes/README.md).
-      FORENSIA_AGENTS_DIR: /opt/forensia/agentes
+      AGENTOPSY_AGENTS_DIR: /opt/agentopsy/agentes
       # Ejecutor 100 % local: el api llega a Ollama por la red interna del
       # compose (el servicio no publica puerto al host). Es la clave que lee
-      # forensia.executors.ollama vía forensia.config.
+      # agentopsy.executors.ollama vía agentopsy.config.
       OLLAMA_HOST: http://ollama:11434
       # Bandeja de entrada de evidencias que la UI lista en "Registrar
       # evidencia". El perito deja el fichero en ./evidence del host o lo SUBE
       # desde el navegador (drag-and-drop) — por eso el api la monta rw (ver más
       # abajo). El operador siempre ELIGE el fichero (no hay diálogo nativo en
       # una web).
-      FORENSIA_EVIDENCE_DIR: /evidence
+      AGENTOPSY_EVIDENCE_DIR: /evidence
       # Orígenes EXACTOS de la UI web (allowlist de CORS + Host-header check;
       # SECURITY INVARIANT 2 — nunca un regex sobre localhost). El nginx del
       # servicio web reenvía el Host original del navegador.
-      FORENSIA_UI_ORIGINS: http://127.0.0.1:5173,http://localhost:5173
-      # Canal api→maletín (§B, docs/operacion/exec-agent.md): el api consulta y
+      AGENTOPSY_UI_ORIGINS: http://127.0.0.1:5173,http://localhost:5173
+      # Canal api→maletín: el api consulta y
       # ejecuta herramientas hablando por HTTP con el exec-agent de cada maletín en
-      # la red interna del compose (sin socket de Docker). `forensia.toolkit.maletin`
-      # lee estas URLs. Endurecimiento opcional: define FORENSIA_EXEC_AGENT_TOKEN en
+      # la red interna del compose (sin socket de Docker). `agentopsy.toolkit.maletin`
+      # lee estas URLs. Endurecimiento opcional: define AGENTOPSY_EXEC_AGENT_TOKEN en
       # api + ambos maletines para exigir cabecera compartida.
-      FORENSIA_TOOLKIT_UNIX_URL: http://toolkit-unix:8666
-      FORENSIA_TOOLKIT_WINDOWS_URL: http://toolkit-windows:8666
+      AGENTOPSY_TOOLKIT_UNIX_URL: http://toolkit-unix:8666
+      AGENTOPSY_TOOLKIT_WINDOWS_URL: http://toolkit-windows:8666
     volumes:
       # Mismas carpetas del host que los maletines (interpolación al parsear el
       # compose): api y toolkits deben ver la MISMA evidencia y los MISMOS casos.
@@ -148,9 +148,9 @@ services:
       # en LECTURA-ESCRITURA: es el camino del perito para SUBIR evidencia desde
       # la web (/api/evidence/upload). El agente sigue viéndola ro. Custodia: el
       # hash-gate y la copia inmutable ocurren al registrar, no al subir.
-      - ${FORENSIA_EVIDENCE_DIR:-./evidence}:/evidence:rw  # bandeja RW (subida del perito)
-      - ${FORENSIA_CASES_DIR:-./projects}:/cases           # casos, artefactos, audit log, informes
-      - ./agentes:/opt/forensia/agentes:ro
+      - ${AGENTOPSY_EVIDENCE_DIR:-./evidence}:/evidence:rw  # bandeja RW (subida del perito)
+      - ${AGENTOPSY_CASES_DIR:-./projects}:/cases           # casos, artefactos, audit log, informes
+      - ./agentes:/opt/agentopsy/agentes:ro
       # HOME del contenedor en un volumen local del stack: aquí viven las
       # sesiones de los CLIs (suscripción propia, SIN API keys). Los CLIs leen
       # y REFRESCAN sus tokens en el volumen — jamás en los ficheros del host.
@@ -188,7 +188,7 @@ services:
   # --- Ejecutor local (privacidad: los datos del caso no salen de la máquina) -
   ollama:
     image: ollama/ollama:0.31.1
-    container_name: forensia-ollama
+    container_name: agentopsy-ollama
     restart: unless-stopped
     volumes:
       - ollama:/root/.ollama             # modelos descargados (volumen con nombre)
@@ -204,11 +204,11 @@ services:
         VOLATILITY3_VERSION: "2.28.0"
         HAYABUSA_VERSION: "3.9.0"
         CHAINSAW_VERSION: "2.16.0"
-    image: forensia/toolkit-windows:1.0
-    container_name: forensia-toolkit-windows
+    image: agentopsy/toolkit-windows:1.0
+    container_name: agentopsy-toolkit-windows
     # Arranca el exec-agent (canal api→maletín §B) en vez de dormir. Sin puerto
     # publicado: solo alcanzable en la red interna del compose (como ollama).
-    command: ["python3", "/opt/forensia/exec_agent.py"]
+    command: ["python3", "/opt/agentopsy/exec_agent.py"]
 
   toolkit-unix:
     <<: *toolkit-common
@@ -217,11 +217,11 @@ services:
       target: unix
       args:
         VOLATILITY3_VERSION: "2.28.0"
-    image: forensia/toolkit-unix:1.0
-    container_name: forensia-toolkit-unix
+    image: agentopsy/toolkit-unix:1.0
+    container_name: agentopsy-toolkit-unix
     # Arranca el exec-agent (canal api→maletín §B) en vez de dormir. Sin puerto
     # publicado: solo alcanzable en la red interna del compose (como ollama).
-    command: ["python3", "/opt/forensia/exec_agent.py"]
+    command: ["python3", "/opt/agentopsy/exec_agent.py"]
 
 volumes:
   ollama:
@@ -229,4 +229,4 @@ volumes:
   # Local al stack: nunca sale del host, nunca se publica por API, y se
   # elimina con `docker compose down -v`.
   cli-auth:
-    name: forensia-cli-auth
+    name: agentopsy-cli-auth

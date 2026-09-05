@@ -23,7 +23,7 @@ import { SettingsPage } from "./pages/SettingsPage";
 // Recuerda la vista activa entre recargas: si no, un F5 desde el Chat vuelve a
 // "Casos y evidencias" y parece que se perdió la conversación (los mensajes SÍ
 // están persistidos en el store; sólo se había reseteado la vista).
-const VIEW_STORAGE_KEY = "forensia-active-view";
+const VIEW_STORAGE_KEY = "agentopsy-active-view";
 
 function initialView(): ViewId {
   try {
@@ -78,7 +78,7 @@ export function App() {
       <CaseEvidenceProvider>
       <ShellHeaderProvider>
       <AppShell activeView={activeView} onViewChange={setActiveView} error={error}>
-        {/* Las ocho vistas llaman al backend real (forensia/routers/*). El caso
+        {/* Las ocho vistas llaman al backend real (agentopsy/routers/*). El caso
             activo y su lista los sirve ActiveCaseProvider, y la evidencia de ese
             caso CaseEvidenceProvider, que además gobierna el registro en segundo
             plano: por eso vive aquí arriba y no en la vista de Evidencia, que se

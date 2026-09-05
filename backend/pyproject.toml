@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "forensia"
+name = "agentopsy"
 dynamic = ["version"]
 description = "AI-assisted post-mortem digital forensics — backend (servicio api del compose)"
 requires-python = ">=3.12"
@@ -15,13 +15,13 @@ dependencies = [
     # Cross-platform exclusive file lock for AuditLog.append (replaces fcntl.flock
     # so the audit chain stays coherent across processes on Win/macOS/Linux).
     "filelock>=3.13",
-    # PDF real de los documentos del caso (forensia.reports.pdf). Pure-python: no
+    # PDF real de los documentos del caso (agentopsy.reports.pdf). Pure-python: no
     # arrastra libs de sistema (a diferencia de weasyprint), así la imagen no crece.
     "fpdf2>=2.7.6",
     # Parseo de multipart/form-data: lo exige FastAPI para UploadFile (subida de
     # evidencia a la bandeja, /api/evidence/upload).
     "python-multipart>=0.0.9",
-    # Hoja de cálculo real (.xlsx) de los exports (forensia.export_hoja). Sustituye
+    # Hoja de cálculo real (.xlsx) de los exports (agentopsy.export_hoja). Sustituye
     # al CSV, que no se podía leer: Excel no aplica el BOM cuando el fichero
     # declara `sep=;`, y sin esa declaración el separador depende del locale.
     # Pure-python, y además LEE, que es como los tests comprueban lo exportado.
@@ -42,7 +42,7 @@ dev = [
     "ruff==0.15.20",
 ]
 # NOTE: the old [models] extra (openai SDK) is gone — the 2026-07-02 pivot
-# replaced SDK backends with the executor layer (forensia/executors): the three
+# replaced SDK backends with the executor layer (agentopsy/executors): the three
 # CLIs live in the api image (docker/api/Dockerfile) and Ollama is plain HTTP
 # via stdlib, so no Python dependency is needed. No API keys anywhere
 # (SECURITY INVARIANT 7).
@@ -57,10 +57,10 @@ mcp = [
 ]
 
 [tool.setuptools.dynamic]
-version = { attr = "forensia._version.__version__" }
+version = { attr = "agentopsy._version.__version__" }
 
 [tool.setuptools.packages.find]
-include = ["forensia*"]
+include = ["agentopsy*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

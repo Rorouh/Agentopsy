@@ -6,7 +6,7 @@ Covers:
   desconocido → 403 (anti DNS-rebinding, SECURITY INVARIANT 2).
 - ``create_app(ui_origins=...)`` añade los hosts de la UI a la allowlist del
   Host-check (el nginx del servicio web reenvía el Host original del navegador).
-- ``/api/evidence/sources``: sin ``FORENSIA_EVIDENCE_DIR`` → 503 accionable
+- ``/api/evidence/sources``: sin ``AGENTOPSY_EVIDENCE_DIR`` → 503 accionable
   (RULE 2 — jamás se adivina una bandeja); con la bandeja montada lista solo
   ficheros regulares no ocultos.
 - ``/api/evidence/upload`` (subida del perito): deposita el fichero en la
@@ -35,9 +35,9 @@ import pytest
 from _symlink_support import requires_symlinks
 from fastapi.testclient import TestClient
 
-from forensia.cases.manager import CaseManager
-from forensia.executors import ClaudeCodeExecutor, ExecutorAvailability, OllamaExecutor
-from forensia.server import create_app
+from agentopsy.cases.manager import CaseManager
+from agentopsy.executors import ClaudeCodeExecutor, ExecutorAvailability, OllamaExecutor
+from agentopsy.server import create_app
 
 PORT = 51007
 
@@ -46,9 +46,9 @@ PORT = 51007
 def isolated_cases(tmp_path, monkeypatch):
     cases = CaseManager(root=tmp_path / "cases")
 
-    import forensia.routers.agent as agent_router
-    import forensia.routers.cases as cases_router
-    from forensia.evidence import EvidenceManager
+    import agentopsy.routers.agent as agent_router
+    import agentopsy.routers.cases as cases_router
+    from agentopsy.evidence import EvidenceManager
 
     monkeypatch.setattr(cases_router, "case_manager", cases)
     monkeypatch.setattr(agent_router, "case_manager", cases)
@@ -67,7 +67,7 @@ def client(isolated_cases) -> TestClient:
 
 @pytest.fixture
 def auth(client) -> dict[str, str]:
-    return {"X-Forensia-Token": client.app.state.token}
+    return {"X-Agentopsy-Token": client.app.state.token}
 
 
 # ---- /api/session -------------------------------------------------------------
@@ -89,7 +89,7 @@ def test_session_rejected_on_foreign_host(client: TestClient) -> None:
 
 def test_ui_origins_extend_the_host_allowlist(isolated_cases) -> None:
     # Sin ui_origins el host de la UI no pasa; con ellos (compose:
-    # FORENSIA_UI_ORIGINS) el Host que nginx reenvía sí. Allowlist EXACTA.
+    # AGENTOPSY_UI_ORIGINS) el Host que nginx reenvía sí. Allowlist EXACTA.
     bare = TestClient(create_app(PORT), base_url=f"http://127.0.0.1:{PORT}")
     assert (
         bare.get("/api/session", headers={"Host": "127.0.0.1:5173"}).status_code == 403
@@ -110,10 +110,10 @@ def test_ui_origins_extend_the_host_allowlist(isolated_cases) -> None:
 def test_sources_without_env_is_actionable_503(
     client: TestClient, auth: dict, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.delenv("FORENSIA_EVIDENCE_DIR", raising=False)
+    monkeypatch.delenv("AGENTOPSY_EVIDENCE_DIR", raising=False)
     r = client.get("/api/evidence/sources", headers=auth)
     assert r.status_code == 503
-    assert "FORENSIA_EVIDENCE_DIR" in r.json()["detail"]
+    assert "AGENTOPSY_EVIDENCE_DIR" in r.json()["detail"]
 
 
 @requires_symlinks
@@ -126,7 +126,7 @@ def test_sources_lists_only_regular_visible_files(
     (inbox / "sub" / "mem.vmem").write_bytes(b"B" * 20)
     (inbox / ".oculto").write_bytes(b"C")
     (inbox / "enlace.raw").symlink_to(inbox / "disco.raw")
-    monkeypatch.setenv("FORENSIA_EVIDENCE_DIR", str(inbox))
+    monkeypatch.setenv("AGENTOPSY_EVIDENCE_DIR", str(inbox))
 
     r = client.get("/api/evidence/sources", headers=auth)
     assert r.status_code == 200
@@ -150,7 +150,7 @@ def test_upload_deposits_file_in_inbox(
 ) -> None:
     inbox = tmp_path / "inbox"
     inbox.mkdir()
-    monkeypatch.setenv("FORENSIA_EVIDENCE_DIR", str(inbox))
+    monkeypatch.setenv("AGENTOPSY_EVIDENCE_DIR", str(inbox))
 
     r = client.post(
         "/api/evidence/upload",
@@ -175,7 +175,7 @@ def test_upload_accepts_supplied_material(
     # Un documento es evidencia: entra por la bandeja como una imagen de disco.
     inbox = tmp_path / "inbox"
     inbox.mkdir()
-    monkeypatch.setenv("FORENSIA_EVIDENCE_DIR", str(inbox))
+    monkeypatch.setenv("AGENTOPSY_EVIDENCE_DIR", str(inbox))
 
     r = client.post(
         "/api/evidence/upload",
@@ -191,7 +191,7 @@ def test_upload_rejects_an_unrecognised_extension(
 ) -> None:
     inbox = tmp_path / "inbox"
     inbox.mkdir()
-    monkeypatch.setenv("FORENSIA_EVIDENCE_DIR", str(inbox))
+    monkeypatch.setenv("AGENTOPSY_EVIDENCE_DIR", str(inbox))
 
     r = client.post(
         "/api/evidence/upload",
@@ -208,7 +208,7 @@ def test_upload_rejects_path_traversal(
 ) -> None:
     inbox = tmp_path / "inbox"
     inbox.mkdir()
-    monkeypatch.setenv("FORENSIA_EVIDENCE_DIR", str(inbox))
+    monkeypatch.setenv("AGENTOPSY_EVIDENCE_DIR", str(inbox))
 
     r = client.post(
         "/api/evidence/upload",
@@ -225,7 +225,7 @@ def test_upload_never_overwrites_existing_evidence(
     inbox = tmp_path / "inbox"
     inbox.mkdir()
     (inbox / "disco.raw").write_bytes(b"original")
-    monkeypatch.setenv("FORENSIA_EVIDENCE_DIR", str(inbox))
+    monkeypatch.setenv("AGENTOPSY_EVIDENCE_DIR", str(inbox))
 
     r = client.post(
         "/api/evidence/upload",
@@ -254,7 +254,7 @@ def test_upload_accepts_ewf_continuation_segments(
     # continuaciones se suben aunque no sean puntos de entrada registrables.
     inbox = tmp_path / "inbox"
     inbox.mkdir()
-    monkeypatch.setenv("FORENSIA_EVIDENCE_DIR", str(inbox))
+    monkeypatch.setenv("AGENTOPSY_EVIDENCE_DIR", str(inbox))
 
     r = client.post(
         "/api/evidence/upload",
@@ -273,7 +273,7 @@ def test_upload_whole_ewf_set_then_register_ingests_it_as_one_evidence(
     # el .E01 (el único registrable) → UNA evidencia con el set entero.
     inbox = tmp_path / "inbox"
     inbox.mkdir()
-    monkeypatch.setenv("FORENSIA_EVIDENCE_DIR", str(inbox))
+    monkeypatch.setenv("AGENTOPSY_EVIDENCE_DIR", str(inbox))
     case_id = _create_case(client, auth)
 
     for i in (1, 2, 3):
@@ -305,7 +305,7 @@ def test_upload_of_a_continuation_that_is_already_there_is_409(
     inbox = tmp_path / "inbox"
     inbox.mkdir()
     (inbox / "caso.E02").write_bytes(b"original")
-    monkeypatch.setenv("FORENSIA_EVIDENCE_DIR", str(inbox))
+    monkeypatch.setenv("AGENTOPSY_EVIDENCE_DIR", str(inbox))
 
     r = client.post(
         "/api/evidence/upload",
@@ -516,7 +516,7 @@ def test_register_evidence_writes_baseline_to_audit(
     assert entry["source_path"] == str(source)         # ruta origen
     assert "registered_at" in entry                    # timestamp
     # El audit sigue siendo una cadena hash íntegra tras el append de register.
-    from forensia.audit.log import AuditLog
+    from agentopsy.audit.log import AuditLog
 
     assert AuditLog(isolated_cases.case_dir(case_id) / "audit.jsonl").verify() is True
 

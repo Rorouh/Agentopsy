@@ -2,7 +2,7 @@
 
 Maletín de herramientas forenses CLI empaquetado en Docker, en dos imágenes:
 **`toolkit-windows`** (artefactos de Windows) y **`toolkit-unix`** (artefactos
-Unix-like). Es la base sobre la que los agentes de IA harán *tool-calling*
+Unix-like). Es la base sobre la que los agentes de IA hacen *tool-calling*
 (sección «Cómo lo consulta la IA»).
 
 Los dos maletines son parte del compose raíz del repo (`docker-compose.yml`,
@@ -13,8 +13,8 @@ contiene los Dockerfiles de los servicios (`api/`, `web/`,
 > **Aclaración importante.** Son contenedores **Linux** que contienen las
 > herramientas para analizar evidencias de Windows y de Unix. No es un contenedor
 > con sistema operativo Windows: RegRipper, hayabusa, chainsaw, TSK, Volatility y
-> plaso son ejecutables sobre Linux y es el enfoque que el documento de alcance
-> asume (`docker compose up` en localhost, multiplataforma). Si en algún momento
+> plaso son ejecutables sobre Linux, y es lo que permite que `docker compose up`
+> dé el mismo entorno en los tres sistemas operativos anfitriones. Si en algún momento
 > necesitas un binario que SOLO exista para Windows, ese caso se trataría aparte
 > con un contenedor Windows real (requiere host Windows en modo *Windows
 > containers*).
@@ -46,7 +46,7 @@ contiene los Dockerfiles de los servicios (`api/`, `web/`,
 ## Estructura
 
 ```
-Forensia-AI/                        # raíz del repo
+Agentopsy/                          # raíz del repo
 ├── docker-compose.yml              # el compose raíz: los CINCO servicios
 ├── evidence/                       # <- coloca aquí las evidencias (.raw/.vmdk/.E01)
 ├── projects/                       # <- salidas, casos e informes
@@ -65,15 +65,15 @@ Forensia-AI/                        # raíz del repo
 Desde la **raíz del repo**:
 
 ```bash
-cd Forensia-AI
+cd Agentopsy
 docker compose up --build
 ```
 
 Comprobar que el maletín está listo:
 
 ```bash
-docker compose exec toolkit-windows forensia-info
-docker compose exec toolkit-unix    forensia-info
+docker compose exec toolkit-windows agentopsy-info
+docker compose exec toolkit-unix    agentopsy-info
 ```
 
 Debería listar cada herramienta con su ruta. El primer build tarda (compila e
@@ -85,23 +85,23 @@ y EZ Tools); los siguientes usan caché.
 La aplicación final centraliza todas las evidencias del caso en **una única
 carpeta que elige el usuario**. El compose refleja ese diseño: la carpeta que
 se monta en `/evidence` (solo lectura) se configura con la variable
-`FORENSIA_EVIDENCE_DIR`, y la de salidas (`/cases`) con `FORENSIA_CASES_DIR`.
+`AGENTOPSY_EVIDENCE_DIR`, y la de salidas (`/cases`) con `AGENTOPSY_CASES_DIR`.
 Sin variables definidas se usan `./evidence` y `./projects` (defaults de
 diseño, relativos a la raíz del repo, donde vive `docker-compose.yml`). Nunca
 escribas rutas absolutas de tu host en los ficheros versionados.
 
 ```bash
 # Opción A: variable de entorno puntual
-FORENSIA_EVIDENCE_DIR=/ruta/al/caso/evidencia docker compose up -d
+AGENTOPSY_EVIDENCE_DIR=/ruta/al/caso/evidencia docker compose up -d
 
 # Opción B: fichero .env junto al docker-compose.yml de la raíz (ignorado por git)
-echo 'FORENSIA_EVIDENCE_DIR=/ruta/al/caso/evidencia' > .env
+echo 'AGENTOPSY_EVIDENCE_DIR=/ruta/al/caso/evidencia' > .env
 docker compose up -d
 ```
 
 ## Uso básico
 
-1. Apunta `FORENSIA_EVIDENCE_DIR` a la carpeta de evidencia del caso (o copia
+1. Apunta `AGENTOPSY_EVIDENCE_DIR` a la carpeta de evidencia del caso (o copia
    la evidencia a `./evidence/`; desde la web también puedes ARRASTRARLA/subirla).
    Se monta en `/evidence` en **solo lectura** para los maletines/agente; el
    servicio `api` la monta en lectura-escritura (camino de subida del perito —
@@ -109,7 +109,7 @@ docker compose up -d
 2. Verifica integridad (cadena de custodia):
 
    ```bash
-   docker compose exec toolkit-windows forensia-hash /evidence/disco.raw
+   docker compose exec toolkit-windows agentopsy-hash /evidence/disco.raw
    ```
 3. Lanza herramientas; las salidas van a `./projects` (`/cases` dentro):
 
@@ -118,13 +118,13 @@ docker compose up -d
    docker compose exec toolkit-unix    log2timeline.py /cases/out.plaso /evidence/linux.raw
    ```
 
-Catálogo completo de herramientas de cada maletín: `docker compose exec toolkit-unix forensia-info` (o `toolkit-windows`); las versiones fijadas viven en [`docker/forensic-toolkit/tool-binaries.json`](docker/forensic-toolkit/tool-binaries.json).
+Catálogo completo de herramientas de cada maletín: `docker compose exec toolkit-unix agentopsy-info` (o `toolkit-windows`); las versiones fijadas viven en [`docker/forensic-toolkit/tool-binaries.json`](docker/forensic-toolkit/tool-binaries.json).
 
 ## Cómo lo consulta la IA (tool-calling)
 
 El maletín queda **habilitado para que el `api` lo consulte** así:
 
-- Cada contenedor corre el **exec-agent** (`python3 /opt/forensia/exec_agent.py`) con
+- Cada contenedor corre el **exec-agent** (`python3 /opt/agentopsy/exec_agent.py`) con
   todas las herramientas en el `PATH`, las evidencias en `/evidence:ro` y las salidas en
   `/cases`. El exec-agent es un HTTP mínimo en la red interna del compose (`:8666`, **sin
   puerto publicado**) — es el canal api→maletín, sin socket de Docker. El código
@@ -133,9 +133,9 @@ El maletín queda **habilitado para que el `api` lo consulte** así:
   `http://toolkit-unix:8666` / `http://toolkit-windows:8666` — es lo que reporta
   `capabilities` — y ejecuta las tools del agente por el mismo canal (`POST /exec`):
   el dispatcher resuelve el argv desde el allowlist y lo lanza en el maletín del
-  `os_profile` del caso (`proximos-pasos.md` §B.bis, HECHO).
-- **Versiones autoritativas (P0.5-3):** durante el build de cada stage,
-  `gen_versions.py` hornea el manifiesto **inmutable** `/opt/forensia/versions.json`
+  `os_profile` del caso.
+- **Versiones autoritativas:** durante el build de cada stage,
+  `gen_versions.py` hornea el manifiesto **inmutable** `/opt/agentopsy/versions.json`
   (una fuente designada por binario: paquete dpkg, `importlib.metadata` para
   volatility3, el ARG pinneado para hayabusa/chainsaw, el commit git del clone de
   RegRipper, y la versión auto-reportada + SHA-256 del zip para las EZ Tools). La lista
@@ -151,9 +151,6 @@ El maletín queda **habilitado para que el `api` lo consulte** así:
   ```
 
   El agente Windows apunta a `toolkit-windows` y el Unix-like a `toolkit-unix`.
-- Este es el «contrato CLI→JSON» del documento. La capa de *wrappers* que
-  formaliza ese contrato y los *system prompts* de cada agente se implementan en
-  la siguiente fase (no incluidos en esta entrega, que cubre Dockerfile + compose).
 
 ## Privacidad y cadena de custodia
 

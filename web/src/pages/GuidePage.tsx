@@ -148,7 +148,7 @@ export function GuidePage({ onNavigate }: GuidePageProps) {
           </div>
           <div className="guide-prose">
             {t("guide.loginProseA")} <strong>Ollama</strong> {t("guide.loginProseB")}{" "}
-            <span className="mono">forensia-cli-auth</span>.
+            <span className="mono">agentopsy-cli-auth</span>.
           </div>
           {/* Bloque de comandos: oscuro en AMBOS temas, es una terminal. */}
           <div className="code-block">

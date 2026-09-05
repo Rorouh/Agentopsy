@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import math
 
-from forensia.graph.layout import (
+from agentopsy.graph.layout import (
     ALTO,
     ALTO_ETIQUETA,
     ANCHO,
@@ -28,7 +28,7 @@ from forensia.graph.layout import (
     layout_caso,
     layout_hallazgo,
 )
-from forensia.graph.layout import _ITERACIONES, _relajar
+from agentopsy.graph.layout import _ITERACIONES, _relajar
 
 
 def _n(tipo: str, valor: str) -> dict[str, str]:

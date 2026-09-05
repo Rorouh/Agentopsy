@@ -45,9 +45,9 @@ const SEV_KEY: Record<string, MessageKey> = {
 const FS_PAGE_SIZE = 200;
 
 // Etiqueta legible de cada categoría de relevancia (clasificador determinista del
-// backend, forensia.timeline.relevance). Fuente única de las etiquetas de la UI.
+// backend, agentopsy.timeline.relevance). Fuente única de las etiquetas de la UI.
 // La CATEGORÍA la determina el clasificador del backend
-// (`forensia.timeline.relevance`) y su valor es dato: una que esta tabla no
+// (`agentopsy.timeline.relevance`) y su valor es dato: una que esta tabla no
 // declare se pinta tal cual (RULE 2), nunca traducida a lo que se le parezca.
 const CATEGORY_KEY: Record<string, MessageKey> = {
   credenciales: "tl.cat.credenciales",

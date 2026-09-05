@@ -41,7 +41,7 @@ import { useLang } from "../../i18n";
 const JOB_POLL_MS = 1500;
 
 // FUNCIÓN «VISTAS»: el orden en que se agrupan los cortes en el desplegable. Es
-// el mismo de `forensia.graph.vistas.EJES`, para que la lista se lea igual que
+// el mismo de `agentopsy.graph.vistas.EJES`, para que la lista se lea igual que
 // la calcula el servidor. Un eje que el backend gane y esta tabla no conozca no
 // se pinta, que es preferible a inventarle un rótulo (RULE 2).
 const EJES_VISTA = ["tecnica", "tactica", "evidencia", "severidad"] as const;

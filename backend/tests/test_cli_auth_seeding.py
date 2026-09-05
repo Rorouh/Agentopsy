@@ -1,4 +1,4 @@
-"""Seeding de credenciales al volumen ``forensia-cli-auth`` (docker/api/entrypoint.sh).
+"""Seeding de credenciales al volumen ``agentopsy-cli-auth`` (docker/api/entrypoint.sh).
 
 El modelo (2026-07-03): el HOME del servicio ``api`` vive en un volumen del
 stack; las credenciales del host llegan EN SOLO LECTURA como staging bajo
@@ -58,7 +58,7 @@ SECRET_CONTAINER = "sesion-creada-con-login-dentro-del-contenedor"
 
 
 def run_entrypoint(home: Path, staging: Path) -> subprocess.CompletedProcess[str]:
-    env = {**os.environ, "HOME": str(home), "FORENSIA_HOST_CREDS_DIR": str(staging)}
+    env = {**os.environ, "HOME": str(home), "AGENTOPSY_HOST_CREDS_DIR": str(staging)}
     return subprocess.run(
         ["sh", str(ENTRYPOINT), "true"],  # exec true: solo el seeding, sin servidor
         env=env,
@@ -102,7 +102,7 @@ def test_first_boot_seeds_everything(dirs: tuple[Path, Path]) -> None:
     assert (home / ".claude.json").is_file()
     assert (home / ".codex" / "auth.json").is_file()
     assert (home / ".gemini" / "oauth_creds.json").is_file()
-    assert (home / ".forensia-cli-auth-seeded").is_file()
+    assert (home / ".agentopsy-cli-auth-seeded").is_file()
 
 
 @requires_posix_perms
@@ -160,7 +160,7 @@ def test_absent_host_paths_are_skipped_without_error(dirs: tuple[Path, Path]) ->
     assert not (home / ".claude.json").exists()
     assert not (home / ".codex").exists()
     assert not (home / ".gemini").exists()
-    assert (home / ".forensia-cli-auth-seeded").is_file()
+    assert (home / ".agentopsy-cli-auth-seeded").is_file()
     assert "omitido" in proc.stdout
 
 

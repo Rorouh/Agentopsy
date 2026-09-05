@@ -17,10 +17,10 @@ import subprocess
 import pytest
 
 from _custody import FAKE_TOOL_VERSION, context_for, register_evidence, wire_dispatcher_custody
-from forensia.artifacts.store import ArtifactStore
-from forensia.audit.log import AuditLog
-from forensia.cases.manager import CaseManager
-from forensia.toolkit import dispatcher
+from agentopsy.artifacts.store import ArtifactStore
+from agentopsy.audit.log import AuditLog
+from agentopsy.cases.manager import CaseManager
+from agentopsy.toolkit import dispatcher
 
 
 @pytest.fixture

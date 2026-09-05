@@ -3,7 +3,7 @@ modelo se pueda defender en un informe.
 
 Un grafo propuesto por un modelo es, por defecto, indistinguible de uno
 inventado. Lo que lo separa de la fabulación son las puertas de
-``forensia.graph.modelo`` y ``forensia.graph.extractor``, y cada test de aquí
+``agentopsy.graph.modelo`` y ``agentopsy.graph.extractor``, y cada test de aquí
 fija UNA de ellas por lo que garantiza:
 
 - las dos enums son cerradas, y el rechazo enumera los valores válidos para que
@@ -28,32 +28,32 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
-from forensia.executors import EXECUTOR_IDS
-from forensia.i18n import LANG_HEADER, t
-from forensia.audit.log import AuditLog
-from forensia.cases.manager import CaseManager
-from forensia.executors.base import ExecutorAvailability, ExecutorResult, PromptExecutor
-from forensia.executors.session_guard import SessionVerdict
-from forensia.findings.store import FindingStore
-from forensia.graph.modelo import MAX_CHARS_NOTA
-from forensia.graph import extractor as extractor_mod
-from forensia.graph.extractor import (
+from agentopsy.executors import EXECUTOR_IDS
+from agentopsy.i18n import LANG_HEADER, t
+from agentopsy.audit.log import AuditLog
+from agentopsy.cases.manager import CaseManager
+from agentopsy.executors.base import ExecutorAvailability, ExecutorResult, PromptExecutor
+from agentopsy.executors.session_guard import SessionVerdict
+from agentopsy.findings.store import FindingStore
+from agentopsy.graph.modelo import MAX_CHARS_NOTA
+from agentopsy.graph import extractor as extractor_mod
+from agentopsy.graph.extractor import (
     SesionEncadenada,
     build_prompt,
     extract_graph,
 )
-from forensia.graph.fusion import merge_case_graph
-from forensia.graph.layout import layout_caso, layout_hallazgo
-from forensia.graph.lote import extraer_lote
-from forensia.graph.modelo import (
+from agentopsy.graph.fusion import merge_case_graph
+from agentopsy.graph.layout import layout_caso, layout_hallazgo
+from agentopsy.graph.lote import extraer_lote
+from agentopsy.graph.modelo import (
     TIPOS_NODO,
     TIPOS_RELACION,
     GraphExtractError,
     texto_del_hallazgo,
     validar_grafo,
 )
-from forensia.graph.store import GraphStore
-from forensia.server import create_app
+from agentopsy.graph.store import GraphStore
+from agentopsy.server import create_app
 
 PORT = 51133
 
@@ -497,7 +497,7 @@ def test_a_merged_node_keeps_the_findings_that_support_it():
 
 @pytest.fixture
 def http(caso, monkeypatch):
-    import forensia.routers.graphs as graphs_router
+    import agentopsy.routers.graphs as graphs_router
 
     monkeypatch.setattr(graphs_router, "case_manager", caso["cases"])
     monkeypatch.setattr(graphs_router, "finding_store", caso["findings"])
@@ -506,7 +506,7 @@ def http(caso, monkeypatch):
 
     client = TestClient(create_app(PORT), base_url=f"http://127.0.0.1:{PORT}")
     return {"client": client, "router": graphs_router,
-            "auth": {"X-Forensia-Token": client.app.state.token}, **caso}
+            "auth": {"X-Agentopsy-Token": client.app.state.token}, **caso}
 
 
 def _hallazgo(http_env) -> str:

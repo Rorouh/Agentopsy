@@ -6,7 +6,7 @@ from __future__ import annotations
 import threading
 import time
 
-from forensia.agent.jobs import JobRegistry
+from agentopsy.agent.jobs import JobRegistry
 
 
 def _wait(reg: JobRegistry, job_id: str, timeout: float = 3.0) -> None:

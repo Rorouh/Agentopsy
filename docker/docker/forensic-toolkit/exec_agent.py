@@ -23,7 +23,7 @@ ejecutar herramientas sin necesidad del socket de Docker del host:
 Toda respuesta 200 de /exec incluye `executed_argv`: el argv EXACTO que se pasó a
 `subprocess.run` (P0.5-4). Sin desencapsulado es idéntico al solicitado; con EWF difiere
 SOLO en el token `.E01` reescrito al bloque raw `ewf1`, y con contenedor qemu SOLO en el
-token del contenedor reescrito al raw `raw.img`. El cliente (`forensia.toolkit.maletin`)
+token del contenedor reescrito al raw `raw.img`. El cliente (`agentopsy.toolkit.maletin`)
 lo verifica token a token — un maletín que ejecutara un argv distinto del auditado
 rompería FORENSIC INVARIANT 4 y se detecta ahí, no se confía a ciegas.
 
@@ -53,8 +53,8 @@ error). El contenedor no se modifica (RO). Mutuamente excluyente con `ewf_image`
 qemu-storage-daemon/FUSE no está → no-200 nombrando la dependencia (RULE 2). Compone con
 `stdout_path`.
 
-Por qué existe (docs/operacion/exec-agent.md, proximos-pasos.md §B):
-La alternativa §A (montar `/var/run/docker.sock` en el `api` + docker-cli) le daría al
+Por qué existe:
+La alternativa (montar `/var/run/docker.sock` en el `api` + docker-cli) le daría al
 api control del Docker del HOST en cada despliegue — una escalada de privilegios que el
 repo evita a propósito. Este agente mantiene al api hablando SOLO con los maletines por
 la red interna, igual que hace con `ollama`.
@@ -68,8 +68,8 @@ SEGURIDAD:
   - Sin puerto publicado: el maletín no declara `ports:` en el compose, así que este
     servidor (bind 0.0.0.0 DENTRO del contenedor) solo es alcanzable en la red interna
     del compose — nunca desde el host (SECURITY INVARIANT 1), idéntico modelo a `ollama`.
-  - Endurecimiento opcional: si `FORENSIA_EXEC_AGENT_TOKEN` está definido, exige la
-    cabecera `X-Forensia-Exec-Token` con ese valor; si no, sin auth (confianza de red
+  - Endurecimiento opcional: si `AGENTOPSY_EXEC_AGENT_TOKEN` está definido, exige la
+    cabecera `X-Agentopsy-Exec-Token` con ese valor; si no, sin auth (confianza de red
     interna).
 
 Solo stdlib: el maletín trae python3 (`http.server` + `json` + `subprocess`).
@@ -86,9 +86,9 @@ import tempfile
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-_PORT = int(os.environ.get("FORENSIA_EXEC_AGENT_PORT", "8666"))
-_STAGE = os.environ.get("FORENSIA_STAGE", "base")
-_TOKEN = os.environ.get("FORENSIA_EXEC_AGENT_TOKEN") or None
+_PORT = int(os.environ.get("AGENTOPSY_EXEC_AGENT_PORT", "8666"))
+_STAGE = os.environ.get("AGENTOPSY_STAGE", "base")
+_TOKEN = os.environ.get("AGENTOPSY_EXEC_AGENT_TOKEN") or None
 # Tope duro de tiempo por ejecución: una tool que no termina no bloquea al agente para
 # siempre. El api pide su propio timeout (acotado a este techo); si pide `null`, este techo
 # ES el timeout efectivo — NUNCA se ejecuta con timeout None (sería `subprocess.run` sin
@@ -116,7 +116,7 @@ _QEMU_RAW_BASENAME = "raw.img"
 # y no vacía). El exec-agent solo lo SIRVE (`GET /versions`); nunca ejecuta `--version`
 # por corrida ni inventa un valor (RULE 2). Override solo para tests.
 _VERSIONS_MANIFEST = os.environ.get(
-    "FORENSIA_VERSIONS_MANIFEST", "/opt/forensia/versions.json"
+    "AGENTOPSY_VERSIONS_MANIFEST", "/opt/agentopsy/versions.json"
 )
 
 
@@ -315,7 +315,7 @@ class Handler(BaseHTTPRequestHandler):
     def _authed(self) -> bool:
         if _TOKEN is None:
             return True
-        return self.headers.get("X-Forensia-Exec-Token") == _TOKEN
+        return self.headers.get("X-Agentopsy-Exec-Token") == _TOKEN
 
     def _read_json(self) -> dict:
         length = int(self.headers.get("Content-Length") or 0)
@@ -466,7 +466,7 @@ class Handler(BaseHTTPRequestHandler):
         """Monta el `.E01` (RO, FUSE), reescribe el token del argv al raw `ewf1`, ejecuta y
         DESMONTA SIEMPRE (finally). El resto del contrato (stdout_path binario, shell-free)
         no cambia: solo se sustituye el token de la imagen por su bloque raw."""
-        mountpoint = tempfile.mkdtemp(prefix="forensia-ewf-")
+        mountpoint = tempfile.mkdtemp(prefix="agentopsy-ewf-")
         try:
             raw = ewf_mount(ewf_image, mountpoint)
             rewritten = [raw if token == ewf_image else token for token in argv]
@@ -482,7 +482,7 @@ class Handler(BaseHTTPRequestHandler):
         argv al raw expuesto, ejecuta y DESENCAPSULA SIEMPRE (finally): para el daemon y
         desmonta. Mismo contrato (stdout_path binario, shell-free); solo cambia el token de
         la imagen por su vista raw."""
-        mountpoint_dir = tempfile.mkdtemp(prefix="forensia-qemu-")
+        mountpoint_dir = tempfile.mkdtemp(prefix="agentopsy-qemu-")
         daemon: subprocess.Popen | None = None
         try:
             raw, daemon = qemu_mount(qemu_image, qemu_format, mountpoint_dir)
@@ -576,7 +576,7 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> None:
     server = ThreadingHTTPServer(("0.0.0.0", _PORT), Handler)
     print(
-        f"[forensia exec-agent] stage={_STAGE} escuchando en 0.0.0.0:{_PORT} "
+        f"[agentopsy exec-agent] stage={_STAGE} escuchando en 0.0.0.0:{_PORT} "
         f"(auth={'on' if _TOKEN else 'off'})",
         flush=True,
     )

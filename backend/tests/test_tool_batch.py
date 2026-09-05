@@ -21,10 +21,10 @@ from typing import Any
 
 import pytest
 
-from forensia.i18n import t
-from forensia.agent.agent import ForensicAgent
+from agentopsy.i18n import t
+from agentopsy.agent.agent import ForensicAgent
 from _agent_pkg import make_package
-from forensia.models.base import (
+from agentopsy.models.base import (
     ExecutorBackend,
     FinalAnswer,
     ModelBackend,
@@ -146,7 +146,7 @@ def test_tres_herramientas_en_un_solo_turno_del_modelo(monkeypatch) -> None:
             "run_id": "r",
         }
 
-    monkeypatch.setattr("forensia.toolkit.dispatcher.execute", fake_execute)
+    monkeypatch.setattr("agentopsy.toolkit.dispatcher.execute", fake_execute)
     pkg = make_package("unix")
     model = _OneBatchThenFinal(
         [_call("tsk_mmls"), _call("file_info"), _call("strings_head")]
@@ -182,7 +182,7 @@ def test_un_fallo_en_medio_no_aborta_el_resto_del_lote(monkeypatch) -> None:
             "run_id": "r",
         }
 
-    monkeypatch.setattr("forensia.toolkit.dispatcher.execute", fake_execute)
+    monkeypatch.setattr("agentopsy.toolkit.dispatcher.execute", fake_execute)
     pkg = make_package("unix")
     model = _OneBatchThenFinal(
         [_call("tsk_mmls"), _call("file_info"), _call("strings_head")]
@@ -209,7 +209,7 @@ def test_una_tool_fuera_de_la_allowlist_dentro_del_lote_se_rechaza_sin_parar(
             "stdout_sample": "", "stderr_sample": "", "parsed": None, "run_id": "r",
         }
 
-    monkeypatch.setattr("forensia.toolkit.dispatcher.execute", fake_execute)
+    monkeypatch.setattr("agentopsy.toolkit.dispatcher.execute", fake_execute)
     pkg = make_package("unix")
     # `regripper` es del paquete windows: fuera de la allowlist unix.
     model = _OneBatchThenFinal([_call("tsk_mmls"), _call("regripper"), _call("jq")])

@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import pytest
 
-from forensia.toolkit.wrappers import (
+from agentopsy.toolkit.wrappers import (
     aff4imager,
     amcacheparser,
     appcompatcacheparser,
@@ -2013,7 +2013,7 @@ class TestSqliteQuery:
         assert argv == [
             "-readonly", "-safe", "-nofollow", "-batch", "-bail", "-json",
             "file:/run/out/navegacion.sqlite?mode=ro",
-            "SELECT *, 200 AS _forensia_cap FROM (SELECT url FROM timeline) LIMIT 201",
+            "SELECT *, 200 AS _agentopsy_cap FROM (SELECT url FROM timeline) LIMIT 201",
         ]
 
     def test_the_three_read_only_guards_are_always_present(self):
@@ -2050,7 +2050,7 @@ class TestSqliteQuery:
     def test_max_rows_bounds_the_query_and_asks_for_one_more(self):
         argv = sqlite_query.build_argv(dict(self._BASE, max_rows=10))
         assert argv[-1].endswith("LIMIT 11")
-        assert "10 AS _forensia_cap" in argv[-1]
+        assert "10 AS _agentopsy_cap" in argv[-1]
 
     # ---- lo que el envoltorio RECHAZA ------------------------------------- #
     def test_missing_database_raises(self):
@@ -2094,7 +2094,7 @@ class TestSqliteQuery:
     def test_a_single_trailing_semicolon_is_a_habit_not_a_statement(self):
         argv = sqlite_query.build_argv(dict(self._BASE, query="SELECT url FROM t;  "))
         assert argv[-1] == (
-            "SELECT *, 200 AS _forensia_cap FROM (SELECT url FROM t) LIMIT 201"
+            "SELECT *, 200 AS _agentopsy_cap FROM (SELECT url FROM t) LIMIT 201"
         )
 
     @pytest.mark.parametrize(
@@ -2130,8 +2130,8 @@ class TestSqliteQuery:
     #: Salida REAL de sqlite3 3.37.2 con `-json` (2026-09-03). Fíjese en que las
     #: filas van separadas por coma y salto de línea, no en una sola línea.
     _JSON_2 = (
-        '[{"id":1,"url":"http://a.test","ts":100,"_forensia_cap":5},\n'
-        '{"id":2,"url":"http://b.test","ts":200,"_forensia_cap":5}]'
+        '[{"id":1,"url":"http://a.test","ts":100,"_agentopsy_cap":5},\n'
+        '{"id":2,"url":"http://b.test","ts":200,"_agentopsy_cap":5}]'
     )
 
     def test_parse_complete_result(self):
@@ -2140,13 +2140,13 @@ class TestSqliteQuery:
         assert out["row_count"] == 2
         assert out["columns"] == ["id", "url", "ts"]
         # El centinela no viaja al modelo.
-        assert all("_forensia_cap" not in row for row in out["rows"])
+        assert all("_agentopsy_cap" not in row for row in out["rows"])
 
     def test_parse_reports_the_truncation_and_drops_the_probe_row(self):
         """La fila de más es lo que demuestra que hay más; se descarta y se avisa,
         porque una respuesta incompleta que no lo diga es el fallo que este
         envoltorio existe para evitar (RULE 2)."""
-        capped = self._JSON_2.replace('"_forensia_cap":5', '"_forensia_cap":1')
+        capped = self._JSON_2.replace('"_agentopsy_cap":5', '"_agentopsy_cap":1')
         out = sqlite_query.parse(capped)
         assert out["truncated"] is True
         assert out["row_count"] == 1

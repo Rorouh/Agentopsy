@@ -25,13 +25,13 @@ from typing import Any
 
 import pytest
 
-from forensia.i18n import t
-from forensia.agent.agent import ForensicAgent
+from agentopsy.i18n import t
+from agentopsy.agent.agent import ForensicAgent
 from _agent_pkg import make_package
-from forensia.agent.tool_schemas import internal_tool_specs
-from forensia.artifacts.store import ArtifactStore
-from forensia.cases.manager import CaseManager
-from forensia.models.base import FinalAnswer, ModelBackend, ModelCapabilities, ToolCall
+from agentopsy.agent.tool_schemas import internal_tool_specs
+from agentopsy.artifacts.store import ArtifactStore
+from agentopsy.cases.manager import CaseManager
+from agentopsy.models.base import FinalAnswer, ModelBackend, ModelCapabilities, ToolCall
 
 def _marca(clave: str) -> str:
     """El marcador distintivo de un bloque del prompt, EN EL IDIOMA EN CURSO.
@@ -258,7 +258,7 @@ def test_el_agente_lee_su_salida_y_le_vuelve_marcada_no_confiable(
     store_run, monkeypatch
 ) -> None:
     store, _cases, case_id, run_id = store_run
-    monkeypatch.setattr("forensia.agent.agent.artifact_store", store)
+    monkeypatch.setattr("agentopsy.agent.agent.artifact_store", store)
     pkg = make_package("windows")
     model = _Scripted([
         ToolCall(
@@ -285,7 +285,7 @@ def test_el_agente_lee_su_salida_y_le_vuelve_marcada_no_confiable(
 
 def test_un_run_id_inventado_no_tumba_el_run(store_run, monkeypatch) -> None:
     store, _cases, case_id, _run_id = store_run
-    monkeypatch.setattr("forensia.agent.agent.artifact_store", store)
+    monkeypatch.setattr("agentopsy.agent.agent.artifact_store", store)
     pkg = make_package("windows")
     model = _Scripted([
         ToolCall(

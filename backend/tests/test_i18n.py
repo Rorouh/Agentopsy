@@ -1,6 +1,6 @@
 """El eje de idioma: dos catálogos que no pueden divergir, y ningún respaldo.
 
-`forensia.i18n` es la puerta por la que el backend habla en el idioma que pidió
+`agentopsy.i18n` es la puerta por la que el backend habla en el idioma que pidió
 la petición. Lo que este módulo fija es lo que hace que esa puerta sea fiable:
 
 - el catálogo trae SIEMPRE los dos idiomas (una traducción a medias no llega a
@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import pytest
 
-from forensia.i18n import (
+from agentopsy.i18n import (
     CATALOGO,
     _LANG_ACTUAL,
     DEFAULT_LANG,
@@ -92,7 +92,7 @@ def test_el_castellano_del_catalogo_es_el_texto_CANONICO():
     (FORENSIC INVARIANT 4), no lo que se pintó. Y como el canónico se RENDERIZA
     del catálogo, no puede desviarse de la entrada castellana.
     """
-    from forensia.i18n import Mensaje, codigo_de, set_current_lang, traducir_excepcion
+    from agentopsy.i18n import Mensaje, codigo_de, set_current_lang, traducir_excepcion
 
     for idioma in LANGS:
         token = set_current_lang(idioma)
@@ -109,7 +109,7 @@ def test_el_castellano_del_catalogo_es_el_texto_CANONICO():
 def test_un_error_sin_codigo_viaja_tal_cual():
     """RULE 2: lo que no declara código todavía no es de los que lee un humano,
     y forzarlo a un catálogo que no lo declara sería inventar una traducción."""
-    from forensia.i18n import traducir_excepcion
+    from agentopsy.i18n import traducir_excepcion
 
     assert traducir_excepcion(ValueError("internal invariant")) == "internal invariant"
 

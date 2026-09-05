@@ -2,8 +2,8 @@
 // o el proxy de Vite (desarrollo) reenvían /api hacia api:8000.
 //
 // Token de sesión: se obtiene UNA vez de GET /api/session (legible solo desde
-// el mismo-origen de la UI; ver backend/forensia/routers/session.py) y viaja
-// en X-Forensia-Token en cada llamada. Nunca se persiste (ni localStorage ni
+// el mismo-origen de la UI; ver backend/agentopsy/routers/session.py) y viaja
+// en X-Agentopsy-Token en cada llamada. Nunca se persiste (ni localStorage ni
 // cookies), vive solo en memoria de la pestaña.
 
 import { LANG_HEADER, getLang, tr } from "../i18n/state";
@@ -115,7 +115,7 @@ async function readDetail(res: Response): Promise<string> {
 // `getLang()` se lee EN CADA LLAMADA, no al cargar el módulo: cambiar el idioma
 // tiene que afectar a la siguiente petición sin recargar la página.
 function baseHeaders(token: string): Record<string, string> {
-  return { "X-Forensia-Token": token, [LANG_HEADER]: getLang() };
+  return { "X-Agentopsy-Token": token, [LANG_HEADER]: getLang() };
 }
 
 let tokenPromise: Promise<string> | null = null;

@@ -1,6 +1,6 @@
 """«Trabajos realizados»: las ejecuciones reensambladas del audit log.
 
-Los gates que importan (``forensia.reports.works``), todos derivados de FORENSIC
+Los gates que importan (``agentopsy.reports.works``), todos derivados de FORENSIC
 INVARIANT 4:
 
 1. El ``argv`` del informe es TOKEN A TOKEN el de ``tool_run_start`` — nunca una
@@ -20,10 +20,10 @@ import uuid
 
 import pytest
 
-from forensia.audit.log import AuditLog
-from forensia.cases import CaseManager
-from forensia.findings.store import FindingStore
-from forensia.reports.works import STATUS_INCOMPLETO, audited_argvs, tool_runs
+from agentopsy.audit.log import AuditLog
+from agentopsy.cases import CaseManager
+from agentopsy.findings.store import FindingStore
+from agentopsy.reports.works import STATUS_INCOMPLETO, audited_argvs, tool_runs
 
 
 @pytest.fixture

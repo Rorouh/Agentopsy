@@ -1,6 +1,6 @@
 """«Finalizar investigación»: la ÚNICA superficie que emite un informe pericial.
 
-Los gates que importan (``forensia.routers.documents``):
+Los gates que importan (``agentopsy.routers.documents``):
 
 - Un informe se emite SOLO al finalizar la investigación. No hay borrador
   automático al cerrar un análisis (retirado el 2026-07-30) ni endpoint de
@@ -23,22 +23,22 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
-from forensia.i18n import LANG_HEADER, t
-from forensia.cases.manager import CaseManager
-from forensia.evidence import EvidenceManager
-from forensia.executors.base import ExecutorAvailability, ExecutorResult, PromptExecutor
-from forensia.findings.store import FindingStore
-from forensia.mitre.coverage import CoverageStore
-from forensia.reports.indice import NUMS, titulos
-from forensia.reports.material import build_material
-from forensia.reports.store import DocumentStore
-from forensia.server import create_app
-from forensia.toolkit.usage import tool_usage
+from agentopsy.i18n import LANG_HEADER, t
+from agentopsy.cases.manager import CaseManager
+from agentopsy.evidence import EvidenceManager
+from agentopsy.executors.base import ExecutorAvailability, ExecutorResult, PromptExecutor
+from agentopsy.findings.store import FindingStore
+from agentopsy.mitre.coverage import CoverageStore
+from agentopsy.reports.indice import NUMS, titulos
+from agentopsy.reports.material import build_material
+from agentopsy.reports.store import DocumentStore
+from agentopsy.server import create_app
+from agentopsy.toolkit.usage import tool_usage
 
 
 def tool_usage_de(cases: CaseManager):
     """``tool_usage`` sobre los casos de ESTE test (el módulo usa el singleton)."""
-    import forensia.toolkit.usage as usage_mod
+    import agentopsy.toolkit.usage as usage_mod
 
     def _usage(case_id: str):
         original = usage_mod.case_manager
@@ -96,9 +96,9 @@ def entorno(tmp_path, monkeypatch):
     findings = FindingStore(cases)
     documents = DocumentStore(cases)
 
-    import forensia.reports.writer as writer_mod
-    import forensia.routers.cases as cases_router
-    import forensia.routers.documents as docs_router
+    import agentopsy.reports.writer as writer_mod
+    import agentopsy.routers.cases as cases_router
+    import agentopsy.routers.documents as docs_router
 
     monkeypatch.setattr(cases_router, "case_manager", cases)
     monkeypatch.setattr(cases_router, "evidence_manager", evidence)
@@ -141,7 +141,7 @@ def client(entorno):
 
 @pytest.fixture
 def auth(client):
-    return {"X-Forensia-Token": client.app.state.token}
+    return {"X-Agentopsy-Token": client.app.state.token}
 
 
 def _con_hallazgo(entorno) -> None:

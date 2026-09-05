@@ -1,5 +1,5 @@
 {
-  "name": "forensia-web",
+  "name": "agentopsy-web",
   "version": "0.1.0",
   "private": true,
   "description": "Agentopsy web UI — SPA React servida por el servicio `web` del compose (nginx). Habla con el servicio `api` por HTTP mismo-origen (/api proxificado).",

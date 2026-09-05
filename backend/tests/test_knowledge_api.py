@@ -14,9 +14,9 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from forensia.cases.manager import CaseManager
-from forensia.knowledge import KnowledgeStore
-from forensia.server import create_app
+from agentopsy.cases.manager import CaseManager
+from agentopsy.knowledge import KnowledgeStore
+from agentopsy.server import create_app
 
 PORT = 51100
 
@@ -26,8 +26,8 @@ def wired(tmp_path, monkeypatch):
     cases = CaseManager(root=tmp_path / "cases")
     store = KnowledgeStore(cases)
 
-    import forensia.routers.cases as cases_router
-    import forensia.routers.knowledge as knowledge_router
+    import agentopsy.routers.cases as cases_router
+    import agentopsy.routers.knowledge as knowledge_router
 
     monkeypatch.setattr(knowledge_router, "knowledge_store", store)
     monkeypatch.setattr(cases_router, "case_manager", cases)
@@ -35,7 +35,7 @@ def wired(tmp_path, monkeypatch):
     case = cases.create(name="Caso grafo", examiner="ramos", os_profile="windows")
     app = create_app(PORT)
     client = TestClient(app, base_url=f"http://127.0.0.1:{PORT}")
-    auth = {"X-Forensia-Token": app.state.token}
+    auth = {"X-Agentopsy-Token": app.state.token}
     return client, auth, store, case.id
 
 

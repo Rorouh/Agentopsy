@@ -1,4 +1,4 @@
-"""El envoltorio de un export: `forensia.export_hoja`.
+"""El envoltorio de un export: `agentopsy.export_hoja`.
 
 Aquí se fija lo que hace que la hoja se pueda ABRIR y ADJUNTAR, que es distinto de
 lo que hace que sus datos sean correctos (eso lo fijan `test_mitre_export` y
@@ -17,7 +17,7 @@ import io
 
 from openpyxl import load_workbook
 
-from forensia.export_hoja import (
+from agentopsy.export_hoja import (
     EXTENSION,
     MEDIA_TYPE,
     _ANCHO_MAX,

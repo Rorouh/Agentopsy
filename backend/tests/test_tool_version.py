@@ -37,12 +37,12 @@ from pathlib import Path
 import pytest
 
 from _custody import FAKE_TOOL_VERSION, context_for, register_evidence, wire_dispatcher_custody
-from forensia.artifacts.store import ArtifactStore
-from forensia.audit.log import AuditLog
-from forensia.cases.manager import CaseManager
-from forensia.toolkit import dispatcher, maletin
-from forensia.toolkit.catalog import CATALOG
-from forensia.toolkit.maletin import TOOLKIT_UNIX, TOOLKIT_WINDOWS
+from agentopsy.artifacts.store import ArtifactStore
+from agentopsy.audit.log import AuditLog
+from agentopsy.cases.manager import CaseManager
+from agentopsy.toolkit import dispatcher, maletin
+from agentopsy.toolkit.catalog import CATALOG
+from agentopsy.toolkit.maletin import TOOLKIT_UNIX, TOOLKIT_WINDOWS
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TOOLKIT_DIR = REPO_ROOT / "docker" / "docker" / "forensic-toolkit"
@@ -92,8 +92,8 @@ def _get(module, path: str, headers: dict | None = None) -> tuple[int, dict]:
 def test_versions_endpoint_serves_valid_manifest(monkeypatch, tmp_path) -> None:
     manifest = tmp_path / "versions.json"
     manifest.write_text(json.dumps(_VALID_MANIFEST), encoding="utf-8")
-    monkeypatch.delenv("FORENSIA_EXEC_AGENT_TOKEN", raising=False)
-    monkeypatch.setenv("FORENSIA_VERSIONS_MANIFEST", str(manifest))
+    monkeypatch.delenv("AGENTOPSY_EXEC_AGENT_TOKEN", raising=False)
+    monkeypatch.setenv("AGENTOPSY_VERSIONS_MANIFEST", str(manifest))
     module = _load_module(EXEC_AGENT_PY, "exec_agent_versions_ok")
 
     status, body = _get(module, "/versions")
@@ -103,8 +103,8 @@ def test_versions_endpoint_serves_valid_manifest(monkeypatch, tmp_path) -> None:
 
 
 def test_versions_endpoint_missing_manifest_is_actionable_500(monkeypatch, tmp_path) -> None:
-    monkeypatch.delenv("FORENSIA_EXEC_AGENT_TOKEN", raising=False)
-    monkeypatch.setenv("FORENSIA_VERSIONS_MANIFEST", str(tmp_path / "nope.json"))
+    monkeypatch.delenv("AGENTOPSY_EXEC_AGENT_TOKEN", raising=False)
+    monkeypatch.setenv("AGENTOPSY_VERSIONS_MANIFEST", str(tmp_path / "nope.json"))
     module = _load_module(EXEC_AGENT_PY, "exec_agent_versions_missing")
 
     status, body = _get(module, "/versions")
@@ -127,8 +127,8 @@ def test_versions_endpoint_missing_manifest_is_actionable_500(monkeypatch, tmp_p
 def test_versions_endpoint_corrupt_manifest_is_500(monkeypatch, tmp_path, content) -> None:
     manifest = tmp_path / "versions.json"
     manifest.write_text(content, encoding="utf-8")
-    monkeypatch.delenv("FORENSIA_EXEC_AGENT_TOKEN", raising=False)
-    monkeypatch.setenv("FORENSIA_VERSIONS_MANIFEST", str(manifest))
+    monkeypatch.delenv("AGENTOPSY_EXEC_AGENT_TOKEN", raising=False)
+    monkeypatch.setenv("AGENTOPSY_VERSIONS_MANIFEST", str(manifest))
     module = _load_module(EXEC_AGENT_PY, "exec_agent_versions_corrupt")
 
     status, body = _get(module, "/versions")
@@ -139,13 +139,13 @@ def test_versions_endpoint_corrupt_manifest_is_500(monkeypatch, tmp_path, conten
 def test_versions_endpoint_requires_token_when_configured(monkeypatch, tmp_path) -> None:
     manifest = tmp_path / "versions.json"
     manifest.write_text(json.dumps(_VALID_MANIFEST), encoding="utf-8")
-    monkeypatch.setenv("FORENSIA_EXEC_AGENT_TOKEN", "sekrit")
-    monkeypatch.setenv("FORENSIA_VERSIONS_MANIFEST", str(manifest))
+    monkeypatch.setenv("AGENTOPSY_EXEC_AGENT_TOKEN", "sekrit")
+    monkeypatch.setenv("AGENTOPSY_VERSIONS_MANIFEST", str(manifest))
     module = _load_module(EXEC_AGENT_PY, "exec_agent_versions_token")
 
     status, body = _get(module, "/versions")
     assert status == 401
-    status, body = _get(module, "/versions", headers={"X-Forensia-Exec-Token": "sekrit"})
+    status, body = _get(module, "/versions", headers={"X-Agentopsy-Exec-Token": "sekrit"})
     assert status == 200
     assert body["versions"] == _VALID_MANIFEST["versions"]
 
@@ -155,8 +155,8 @@ def test_versions_endpoint_is_closed_no_parameters(monkeypatch, tmp_path) -> Non
     no other GET path exists that could read arbitrary files or run commands."""
     manifest = tmp_path / "versions.json"
     manifest.write_text(json.dumps(_VALID_MANIFEST), encoding="utf-8")
-    monkeypatch.delenv("FORENSIA_EXEC_AGENT_TOKEN", raising=False)
-    monkeypatch.setenv("FORENSIA_VERSIONS_MANIFEST", str(manifest))
+    monkeypatch.delenv("AGENTOPSY_EXEC_AGENT_TOKEN", raising=False)
+    monkeypatch.setenv("AGENTOPSY_VERSIONS_MANIFEST", str(manifest))
     module = _load_module(EXEC_AGENT_PY, "exec_agent_versions_closed")
 
     status, _ = _get(module, "/versions?path=/etc/passwd")
@@ -169,13 +169,13 @@ def test_versions_endpoint_is_closed_no_parameters(monkeypatch, tmp_path) -> Non
 # 2) maletin client — tool_versions / tool_version (no placeholder survives)
 # --------------------------------------------------------------------------- #
 def test_tool_versions_without_url_fails_actionable(monkeypatch) -> None:
-    monkeypatch.delenv("FORENSIA_TOOLKIT_UNIX_URL", raising=False)
-    with pytest.raises(maletin.MaletinExecError, match="FORENSIA_TOOLKIT_UNIX_URL"):
+    monkeypatch.delenv("AGENTOPSY_TOOLKIT_UNIX_URL", raising=False)
+    with pytest.raises(maletin.MaletinExecError, match="AGENTOPSY_TOOLKIT_UNIX_URL"):
         maletin.tool_versions(TOOLKIT_UNIX)
 
 
 def test_tool_versions_transport_error_fails(monkeypatch) -> None:
-    monkeypatch.setenv("FORENSIA_TOOLKIT_UNIX_URL", _UNIX_URL)
+    monkeypatch.setenv("AGENTOPSY_TOOLKIT_UNIX_URL", _UNIX_URL)
 
     def _boom(method, url, payload=None, *, timeout=maletin._PROBE_TIMEOUT):
         raise urllib.error.URLError("connection refused")
@@ -186,7 +186,7 @@ def test_tool_versions_transport_error_fails(monkeypatch) -> None:
 
 
 def test_tool_versions_non_200_fails_with_detail(monkeypatch) -> None:
-    monkeypatch.setenv("FORENSIA_TOOLKIT_UNIX_URL", _UNIX_URL)
+    monkeypatch.setenv("AGENTOPSY_TOOLKIT_UNIX_URL", _UNIX_URL)
     monkeypatch.setattr(
         maletin,
         "_request",
@@ -204,7 +204,7 @@ def test_tool_versions_non_200_fails_with_detail(monkeypatch) -> None:
     ["", "unknown", "latest", "null", "none", "  Unknown ", "hayabusa latest", "tsk unknown"],
 )
 def test_tool_versions_rejects_forbidden_values(monkeypatch, bad) -> None:
-    monkeypatch.setenv("FORENSIA_TOOLKIT_UNIX_URL", _UNIX_URL)
+    monkeypatch.setenv("AGENTOPSY_TOOLKIT_UNIX_URL", _UNIX_URL)
     monkeypatch.setattr(
         maletin,
         "_request",
@@ -218,7 +218,7 @@ def test_tool_versions_rejects_forbidden_values(monkeypatch, bad) -> None:
 
 
 def test_tool_version_returns_manifest_entry(monkeypatch) -> None:
-    monkeypatch.setenv("FORENSIA_TOOLKIT_UNIX_URL", _UNIX_URL)
+    monkeypatch.setenv("AGENTOPSY_TOOLKIT_UNIX_URL", _UNIX_URL)
     monkeypatch.setattr(
         maletin,
         "_request",
@@ -231,7 +231,7 @@ def test_tool_version_returns_manifest_entry(monkeypatch) -> None:
 
 
 def test_tool_version_missing_binary_fails_naming_alignment(monkeypatch) -> None:
-    monkeypatch.setenv("FORENSIA_TOOLKIT_UNIX_URL", _UNIX_URL)
+    monkeypatch.setenv("AGENTOPSY_TOOLKIT_UNIX_URL", _UNIX_URL)
     monkeypatch.setattr(
         maletin,
         "_request",
@@ -419,7 +419,7 @@ def test_runner_exception_finish_keeps_version(monkeypatch, cases, store, anchor
 # 4) capabilities — divergent duplicate versions are surfaced, never averaged
 # --------------------------------------------------------------------------- #
 def test_divergent_versions_across_maletines_report_no_single_identity(monkeypatch) -> None:
-    from forensia.toolkit.tool import Tool
+    from agentopsy.toolkit.tool import Tool
 
     monkeypatch.setattr(maletin, "resolve", lambda _b: None)
     cross = Tool("fls", "fls", ("unix", "windows"), toolkits=(TOOLKIT_UNIX, TOOLKIT_WINDOWS))

@@ -3,7 +3,7 @@
 # Agentopsy — entrypoint del servicio `api`: seeding de credenciales de CLIs
 #
 # El HOME del contenedor (/root) vive en el volumen con nombre
-# `forensia-cli-auth`. En el PRIMER arranque (sin marker), este script copia al
+# `agentopsy-cli-auth`. En el PRIMER arranque (sin marker), este script copia al
 # volumen las credenciales que el compose monta EN SOLO LECTURA bajo
 # /host-creds/. A partir de ahí los CLIs (claude / codex / gemini) leen y
 # ESCRIBEN (refresh de tokens) únicamente en el volumen — los ficheros del
@@ -24,10 +24,10 @@
 set -eu
 
 HOME_DIR="${HOME:-/root}"
-STAGING="${FORENSIA_HOST_CREDS_DIR:-/host-creds}"
-MARKER="$HOME_DIR/.forensia-cli-auth-seeded"
+STAGING="${AGENTOPSY_HOST_CREDS_DIR:-/host-creds}"
+MARKER="$HOME_DIR/.agentopsy-cli-auth-seeded"
 
-log() { echo "[forensia-api] $*"; }
+log() { echo "[agentopsy-api] $*"; }
 
 # seed_dir <nombre-en-staging> <nombre-en-HOME>
 seed_dir() {
@@ -73,7 +73,7 @@ else
     seed_dir  codex       .codex
     seed_dir  gemini      .gemini
     date -u +"%Y-%m-%dT%H:%M:%SZ" > "$MARKER"
-    log "seed: completado — los CLIs leen y refrescan tokens SOLO en el volumen forensia-cli-auth"
+    log "seed: completado — los CLIs leen y refrescan tokens SOLO en el volumen agentopsy-cli-auth"
 fi
 
 exec "$@"

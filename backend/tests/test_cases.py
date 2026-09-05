@@ -9,7 +9,7 @@ from dataclasses import asdict
 
 import pytest
 
-from forensia.cases.manager import Case, CaseManager
+from agentopsy.cases.manager import Case, CaseManager
 
 _UUID4_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
@@ -298,7 +298,7 @@ class TestDelete:
         """Las copias de evidencia son inmutables (chmod 0444). Borrar el caso
         debe llevárselas igualmente — si no, el borrado quedaría a medias (en
         Windows el unlink de un fichero de solo lectura falla)."""
-        from forensia.evidence import EvidenceManager
+        from agentopsy.evidence import EvidenceManager
 
         case = manager.create(name="op", examiner="alice", os_profile="unix")
         source = tmp_path / "disco.raw"

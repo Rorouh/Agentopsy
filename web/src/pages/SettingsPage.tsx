@@ -30,7 +30,7 @@ const TABS: { id: TabId; labelKey: MessageKey }[] = [
 ];
 
 // Clave de configuración del modelo POR proveedor (espejo de
-// backend/forensia/executors/__init__.py MODEL_CONFIG_KEY).
+// backend/agentopsy/executors/__init__.py MODEL_CONFIG_KEY).
 const MODEL_CONFIG_KEY: Record<ExecutorId, string> = {
   "claude-code": "CLAUDE_CODE_MODEL",
   codex: "CODEX_MODEL",
@@ -135,7 +135,7 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
     ? (Object.entries(caps.executors) as [ExecutorId, ExecutorStatus][])
     : [];
   const defaultExecutor = config?.keys.DEFAULT_EXECUTOR?.preview ?? "";
-  const timeoutValue = Number(config?.keys.FORENSIA_EXECUTOR_TIMEOUT?.preview ?? "") || null;
+  const timeoutValue = Number(config?.keys.AGENTOPSY_EXECUTOR_TIMEOUT?.preview ?? "") || null;
 
   return (
     <div className="settings">
@@ -467,8 +467,8 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
                       key={v}
                       type="button"
                       className={`chip-option${timeoutValue === v ? " is-on" : ""}`}
-                      disabled={savingKey === "FORENSIA_EXECUTOR_TIMEOUT"}
-                      onClick={() => void saveKey("FORENSIA_EXECUTOR_TIMEOUT", String(v))}
+                      disabled={savingKey === "AGENTOPSY_EXECUTOR_TIMEOUT"}
+                      onClick={() => void saveKey("AGENTOPSY_EXECUTOR_TIMEOUT", String(v))}
                     >
                       {v} s
                     </button>

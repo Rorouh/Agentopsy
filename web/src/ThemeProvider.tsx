@@ -26,8 +26,8 @@ interface ThemeCtx {
   setPalette: (p: Palette) => void;
 }
 
-const THEME_KEY = "forensia-theme";
-const PALETTE_KEY = "forensia-palette";
+const THEME_KEY = "agentopsy-theme";
+const PALETTE_KEY = "agentopsy-palette";
 
 function getInitialTheme(): Theme {
   try {

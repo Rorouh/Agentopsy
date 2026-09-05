@@ -18,9 +18,9 @@ from typing import Any
 
 from _agent_pkg import make_package
 
-from forensia.i18n import t
-from forensia.agent.agent import ForensicAgent
-from forensia.models.base import FinalAnswer, ModelBackend, ModelCapabilities, ToolCall
+from agentopsy.i18n import t
+from agentopsy.agent.agent import ForensicAgent
+from agentopsy.models.base import FinalAnswer, ModelBackend, ModelCapabilities, ToolCall
 
 RAM_ID = "11111111-1111-4111-8111-111111111111"
 DISK_ID = "22222222-2222-4222-8222-222222222222"
@@ -102,7 +102,7 @@ def test_tool_targets_the_chosen_evidence(monkeypatch) -> None:
         return {"tool_id": tool_id, "argv": [tool_id], "exit_code": 0,
                 "stdout_sample": "ok", "stderr_sample": "", "parsed": None, "run_id": "r1"}
 
-    monkeypatch.setattr("forensia.toolkit.dispatcher.execute", fake_execute)
+    monkeypatch.setattr("agentopsy.toolkit.dispatcher.execute", fake_execute)
     pkg = make_package("windows")
     # Primaria = disco; el modelo apunta volatility3 a la RAM explícitamente.
     model = _ScriptedModel([
@@ -116,7 +116,7 @@ def test_tool_targets_the_chosen_evidence(monkeypatch) -> None:
 
 
 def test_tool_schema_exposes_evidence_selector_only_when_multiple() -> None:
-    from forensia.agent.tool_schemas import tool_spec
+    from agentopsy.agent.tool_schemas import tool_spec
 
     choices = [(RAM_ID, "original.raw · memory"), (DISK_ID, "original.vmdk · container_disk")]
     with_sel = tool_spec("tsk_fls", choices)["function"]["parameters"]["properties"]
@@ -133,7 +133,7 @@ def test_unknown_evidence_id_is_rejected(monkeypatch) -> None:
     def fake_execute(tool_id, params, **kwargs):  # pragma: no cover — no debe llamarse
         raise AssertionError("no debería ejecutar con una evidencia inválida")
 
-    monkeypatch.setattr("forensia.toolkit.dispatcher.execute", fake_execute)
+    monkeypatch.setattr("agentopsy.toolkit.dispatcher.execute", fake_execute)
     pkg = make_package("windows")
     model = _ScriptedModel([
         ToolCall(tool_id="tsk_fls", params={"evidence_id": "99999999-9999-4999-8999-999999999999"}, call_id="x"),

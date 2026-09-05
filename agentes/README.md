@@ -1,7 +1,7 @@
 # `agentes/` — el agente forense de Agentopsy
 
-Desde 2026-07-28 el agente se configura con **un único archivo de comportamiento**, y
-desde 2026-08-25 hay **uno por idioma**:
+El agente se configura con **un único archivo de comportamiento**, y hay **uno por
+idioma**:
 
 - **[`agent.md`](agent.md)** — las instrucciones en CASTELLANO.
 - **[`agent.en.md`](agent.en.md)** — su gemelo INGLÉS.
@@ -22,13 +22,9 @@ registro de ESE idioma queda vacío y `/api/agent/query` responde 503; nunca se 
 castellano cuando se pidió el inglés, porque eso dejaría al perito con un agente que
 escribe en un idioma que no eligió.
 
-Ya **no hay** el contrato de paquetes anterior (`agent.yaml`, `prompts/`, `policy/`,
-`objetivos`, `knowledge/`). Fue retirado: masticaba demasiada estructura declarativa
-para lo que aporta, y el método real cabe en un solo documento.
-
 ## Cómo lo consume Agentopsy
 
-El `api` lee el fichero del idioma de la petición (de `FORENSIA_AGENTS_DIR`) y construye
+El `api` lee el fichero del idioma de la petición (de `AGENTOPSY_AGENTS_DIR`) y construye
 **un agente por perfil de SO** (`windows`, `unix`) que comparten ese texto como base de
 su system prompt. La carga es perezosa y cacheada POR IDIOMA: el perito puede cambiarlo
 sin reiniciar nada. En cada corrida, Agentopsy añade el contexto del caso:
@@ -41,7 +37,7 @@ sin reiniciar nada. En cada corrida, Agentopsy añade el contexto del caso:
   muestra) sobre el que no aplica ninguna de las dos y se lee el fichero en sí.
   Un `document` **nunca** enruta el perfil del caso: no es el sistema investigado.
 - La **allowlist de herramientas**, que es el **catálogo filtrado por el `os_profile`**
-  del caso (`forensia.toolkit.catalog`). El agente elige por id; Agentopsy resuelve el
+  del caso (`agentopsy.toolkit.catalog`). El agente elige por id; Agentopsy resuelve el
   argv real desde el allowlist (SECURITY INVARIANT 5) y le inyecta el path de la
   evidencia (nunca lo pone el modelo).
 
@@ -50,13 +46,12 @@ la evidencia y el orquestador enruta al agente de ese perfil. En `unknown` / baj
 confianza / señales en conflicto, **el operador ancla** el perfil (RULE 2 — nunca un
 default silencioso).
 
-## La telaraña del caso vive en las stores del caso
+## Dónde escribe el agente
 
-El «spiderweb» de documentos que en el banco de pruebas eran ficheros markdown, aquí lo
-persisten las stores por caso (`~/.forensia/cases/<id>/`), y el agente las escribe con
-sus tools internas. La correspondencia:
+Todo lo que el agente concluye se persiste en las stores del caso
+(`~/.agentopsy/cases/<id>/`), que escribe con sus tools internas:
 
-| Papel (banco de pruebas) | En Agentopsy |
+| Papel | En Agentopsy |
 |---|---|
 | `FICHA` / `REGISTRO-DECISIONES` | grafo de conocimiento del caso (`knowledge/<doc_id>.md`, append-only, legible) — `anotar_conocimiento` / `consultar_conocimiento` |
 | Hallazgos con evidencia | `findings.jsonl` + audit encadenado — `record_finding` |

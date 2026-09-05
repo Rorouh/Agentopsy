@@ -14,11 +14,11 @@ import json
 
 import pytest
 
-from forensia.audit.log import AuditLog
-from forensia.cases import CaseManager
-from forensia.findings.store import FindingStore
-from forensia.mitre import catalog
-from forensia.mitre.coverage import CoverageStore
+from agentopsy.audit.log import AuditLog
+from agentopsy.cases import CaseManager
+from agentopsy.findings.store import FindingStore
+from agentopsy.mitre import catalog
+from agentopsy.mitre.coverage import CoverageStore
 
 
 #: Procedencia válida para un hallazgo afirmativo: un run_id UUID4 cualquiera. El

@@ -26,10 +26,10 @@ from pathlib import Path
 import pytest
 
 from _custody import context_for, register_evidence, wire_dispatcher_custody
-from forensia.artifacts.store import ArtifactStore
-from forensia.cases.manager import CaseManager
-from forensia.toolkit import dispatcher
-from forensia.toolkit.tool import run_argv
+from agentopsy.artifacts.store import ArtifactStore
+from agentopsy.cases.manager import CaseManager
+from agentopsy.toolkit import dispatcher
+from agentopsy.toolkit.tool import run_argv
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXEC_AGENT_PY = REPO_ROOT / "docker" / "docker" / "forensic-toolkit" / "exec_agent.py"
@@ -245,14 +245,14 @@ def test_fls_listing_mode_stays_inline_no_stdout_artifact(
 # 4) the exec-agent itself (infra, cross-lane): real loopback HTTP round-trip
 # --------------------------------------------------------------------------- #
 def _load_exec_agent():
-    spec = importlib.util.spec_from_file_location("forensia_exec_agent_test", EXEC_AGENT_PY)
+    spec = importlib.util.spec_from_file_location("agentopsy_exec_agent_test", EXEC_AGENT_PY)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
 def test_exec_agent_stdout_path_writes_exact_bytes(monkeypatch, tmp_path) -> None:
-    monkeypatch.delenv("FORENSIA_EXEC_AGENT_TOKEN", raising=False)
+    monkeypatch.delenv("AGENTOPSY_EXEC_AGENT_TOKEN", raising=False)
     module = _load_exec_agent()
 
     src = tmp_path / "src.bin"
@@ -311,7 +311,7 @@ def test_exec_agent_streams_large_binary_stdout_exactly(monkeypatch, tmp_path) -
     """P0.5-5: the binary channel is fd-direct (the child's stdout IS the file) and the
     hash is chunked — an 8 MiB payload round-trips byte-exact with a stable SHA-256,
     never buffered in memory as text."""
-    monkeypatch.delenv("FORENSIA_EXEC_AGENT_TOKEN", raising=False)
+    monkeypatch.delenv("AGENTOPSY_EXEC_AGENT_TOKEN", raising=False)
     module = _load_exec_agent()
     dst = tmp_path / "stdout.bin"
 

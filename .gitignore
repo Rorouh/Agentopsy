@@ -1,6 +1,6 @@
 # --- Evidence, cases, reports: NEVER commit (may contain real/personal data) ---
 # Anchored to repo root so we don't accidentally block source modules under
-# backend/forensia/cases/, backend/forensia/reports/, etc.
+# backend/agentopsy/cases/, backend/agentopsy/reports/, etc.
 /cases/
 /evidence/*
 !/evidence/.gitkeep

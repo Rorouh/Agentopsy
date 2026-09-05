@@ -11,7 +11,7 @@
 !docker/web/nginx.conf
 backend/.venv*/
 backend/build/
-backend/forensia.egg-info/
+backend/agentopsy.egg-info/
 backend/tests/
 backend/.pytest_cache/
 web/node_modules/

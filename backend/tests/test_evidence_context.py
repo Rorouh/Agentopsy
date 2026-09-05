@@ -27,11 +27,11 @@ from types import SimpleNamespace
 import pytest
 
 from _custody import FAKE_TOOL_VERSION, context_for, register_evidence, wire_dispatcher_custody
-from forensia.artifacts.store import ArtifactStore
-from forensia.audit.log import AuditLog
-from forensia.cases.manager import CaseManager
-from forensia.evidence_context import EvidenceContext
-from forensia.toolkit import dispatcher
+from agentopsy.artifacts.store import ArtifactStore
+from agentopsy.audit.log import AuditLog
+from agentopsy.cases.manager import CaseManager
+from agentopsy.evidence_context import EvidenceContext
+from agentopsy.toolkit import dispatcher
 
 _VALID_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 _VALID_SHA = "a" * 64
@@ -390,9 +390,9 @@ def test_context_recorded_on_runner_error_close(wired, monkeypatch, cases, ancho
 # 5) the surfaces build the context FROM the handle and thread it unchanged
 # --------------------------------------------------------------------------- #
 def test_agent_threads_context_built_from_handle(monkeypatch, tmp_path):
-    from forensia.agent.agent import ForensicAgent
+    from agentopsy.agent.agent import ForensicAgent
     from _agent_pkg import make_package
-    from forensia.models.base import (
+    from agentopsy.models.base import (
         FinalAnswer,
         ModelBackend,
         ModelCapabilities,
@@ -415,7 +415,7 @@ def test_agent_threads_context_built_from_handle(monkeypatch, tmp_path):
             "run_id": "r",
         }
 
-    monkeypatch.setattr("forensia.toolkit.dispatcher.execute", fake_execute)
+    monkeypatch.setattr("agentopsy.toolkit.dispatcher.execute", fake_execute)
 
     class _OneCall(ModelBackend):
         name = "fake"
@@ -460,15 +460,15 @@ def test_agent_threads_context_built_from_handle(monkeypatch, tmp_path):
 
 
 async def test_mcp_threads_context_built_from_handle(monkeypatch, tmp_path):
-    from forensia.mcp.toolkit import _dispatch_forensic
+    from agentopsy.mcp.toolkit import _dispatch_forensic
 
     cases = CaseManager(root=tmp_path / "cases")
     case = cases.create("op", "alice", os_profile="windows")
     handle = register_evidence(cases, case.id, tmp_path, payload=b"x")
 
-    from forensia.evidence import EvidenceManager
+    from agentopsy.evidence import EvidenceManager
 
-    monkeypatch.setattr("forensia.evidence.evidence_manager", EvidenceManager(cases))
+    monkeypatch.setattr("agentopsy.evidence.evidence_manager", EvidenceManager(cases))
 
     captured: dict = {}
 
@@ -486,7 +486,7 @@ async def test_mcp_threads_context_built_from_handle(monkeypatch, tmp_path):
             "parsed": None,
         }
 
-    monkeypatch.setattr("forensia.toolkit.dispatcher.execute", fake_execute)
+    monkeypatch.setattr("agentopsy.toolkit.dispatcher.execute", fake_execute)
 
     session = SimpleNamespace(
         case_id=case.id,

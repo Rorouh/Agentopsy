@@ -65,8 +65,6 @@ jobs:
       # instala el PPA GIFT + plaso/sleuthkit/bulk-extractor/libguestfs
       # (gigabytes de apt, decenas de minutos, y sujeto a la disponibilidad
       # del PPA) — demasiado lento y frágil para cada push. Sus Dockerfiles
-      # se ejercitan en el flujo real (`docker compose up --build`); un job
-      # aparte (programado) para construirlos queda anotado en
-      # docs/operacion/proximos-pasos.md.
+      # se ejercitan en el flujo real (`docker compose up --build`).
       - name: Build api + web images
         run: docker compose build api web

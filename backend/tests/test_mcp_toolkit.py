@@ -1,4 +1,4 @@
-"""Tests for ``forensia.mcp.toolkit`` — the MCP server S1.
+"""Tests for ``agentopsy.mcp.toolkit`` — the MCP server S1.
 
 Uses in-process memory streams via ``mcp.shared.memory`` to drive a Client
 against a Server without spawning a subprocess. Hardware end-to-end (real
@@ -27,8 +27,8 @@ from typing import Any
 import pytest
 from mcp.shared.memory import create_connected_server_and_client_session
 
-from forensia.cases.manager import case_manager
-from forensia.mcp.toolkit import build_server
+from agentopsy.cases.manager import case_manager
+from agentopsy.mcp.toolkit import build_server
 
 
 # ---- helpers --------------------------------------------------------------
@@ -206,8 +206,8 @@ async def test_differential_dispatcher_vs_mcp() -> None:
     """Run windows.info both directly via dispatcher and via the MCP client.
     Compare argv + exit_code + output_files[].sha256 (not stdout).
     """
-    from forensia.evidence import evidence_manager
-    from forensia.toolkit.dispatcher import execute as dispatch_tool
+    from agentopsy.evidence import evidence_manager
+    from agentopsy.toolkit.dispatcher import execute as dispatch_tool
 
     handle = evidence_manager.get(REAL_CASE_ID, REAL_EVIDENCE_ID)
     direct = dispatch_tool(

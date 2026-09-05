@@ -17,7 +17,7 @@ import { useActiveCase } from "../state/activeCase";
 import { useCaseStream } from "../state/casePulse";
 import { Icon } from "../ui/Icon";
 
-// FASE 7 · Informe pericial. Almacén real (forensia.reports): cada documento
+// FASE 7 · Informe pericial. Almacén real (agentopsy.reports): cada documento
 // lleva su SHA-256 y las acciones del perito (verificar integridad, firmar como
 // final, eliminar borrador) operan sobre ficheros reales y quedan en el audit.
 //
@@ -58,7 +58,7 @@ const PERITO_FIELDS: {
   { key: "version", labelKey: "doc.perito.version", placeholderKey: "doc.perito.versionPh" },
 ];
 
-// Fases del redactor (forensia.reports.writer emite `report_phase`). Es
+// Fases del redactor (agentopsy.reports.writer emite `report_phase`). Es
 // progreso OBSERVACIONAL: sin él, una llamada de minutos parece colgada.
 // La FASE la emite el redactor del backend (`report_phase`). Una que esta tabla
 // no declare se pinta tal cual (RULE 2), nunca traducida a lo que se le parezca.
@@ -336,7 +336,7 @@ export function DocumentsPage() {
       setVerify(res);
     });
 
-  // El PDF NO es un enlace: pasa por fetch con X-Forensia-Token y
+  // El PDF NO es un enlace: pasa por fetch con X-Agentopsy-Token y
   // URL.createObjectURL. Convertirlo en <a href> por estética da un 401.
   const onDownload = useCallback(
     () =>

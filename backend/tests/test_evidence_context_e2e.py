@@ -6,7 +6,7 @@ real ExecutorBackend parse → real dispatcher → REAL loopback exec-agent (the
 ``exec_agent.py`` served in-process, with a REAL build-manifest ``/versions``) →
 ``tsk_icat`` → full ``ArtifactRef`` → RegRipper``. Nothing else is substituted:
 ForensicAgent, ExecutorBackend, dispatcher, EvidenceManager, ArtifactStore, AuditLog and
-the agent package (the real ``agentes/forensia-windows``) are the production objects.
+the agent package (the real ``agentes/agentopsy-windows``) are the production objects.
 
 Allowed stand-ins (and only these):
   * the LLM: ``OllamaExecutor.run`` is scripted to answer the response contract
@@ -29,7 +29,7 @@ Asserts the P0.5-3 contract end to end:
   8. a context inconsistent with the handle is detectable (matches_handle).
 
 POSIX only (launches script stand-ins shell-free): runs in CI (Linux). On Windows the
-real chain is driven over docker compose with a ``.E01`` (docs/operacion/e2e-ewf-runbook.md).
+real chain is driven over docker compose with a ``.E01``.
 """
 
 from __future__ import annotations
@@ -46,22 +46,21 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from forensia.artifacts.store import ArtifactStore
-from forensia.audit.log import AuditLog
-from forensia.cases.manager import CaseManager
-from forensia.evidence import EvidenceManager
-from forensia.evidence_context import EvidenceContext
-from forensia.executors import ExecutorAvailability, OllamaExecutor
-from forensia.executors.base import ExecutorResult
-from forensia.server import create_app
-from forensia.toolkit import dispatcher
+from agentopsy.artifacts.store import ArtifactStore
+from agentopsy.audit.log import AuditLog
+from agentopsy.cases.manager import CaseManager
+from agentopsy.evidence import EvidenceManager
+from agentopsy.evidence_context import EvidenceContext
+from agentopsy.executors import ExecutorAvailability, OllamaExecutor
+from agentopsy.executors.base import ExecutorResult
+from agentopsy.server import create_app
+from agentopsy.toolkit import dispatcher
 
 pytestmark = pytest.mark.skipif(
     os.name != "posix",
     reason=(
         "drives POSIX script stand-ins shell-free over a loopback exec-agent; runs in CI "
-        "(Linux). On Windows the real chain runs over docker compose with a .E01 "
-        "(docs/operacion/e2e-ewf-runbook.md)."
+        "(Linux). On Windows the real chain runs over docker compose with a .E01."
     ),
 )
 
@@ -96,7 +95,7 @@ def _write_tool(bindir: Path, name: str, body: str) -> None:
 
 
 def _load_exec_agent():
-    spec = importlib.util.spec_from_file_location("forensia_exec_agent_ctx_e2e", EXEC_AGENT_PY)
+    spec = importlib.util.spec_from_file_location("agentopsy_exec_agent_ctx_e2e", EXEC_AGENT_PY)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -180,7 +179,7 @@ def wired(monkeypatch, tmp_path):
     monkeypatch.setenv("PATH", str(bindir) + os.pathsep + os.environ.get("PATH", ""))
 
     # The REAL build manifest the exec-agent serves at GET /versions — same shape
-    # gen_versions.py bakes into /opt/forensia/versions.json at image build.
+    # gen_versions.py bakes into /opt/agentopsy/versions.json at image build.
     manifest = tmp_path / "versions.json"
     manifest.write_text(
         json.dumps(
@@ -192,13 +191,13 @@ def wired(monkeypatch, tmp_path):
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("FORENSIA_VERSIONS_MANIFEST", str(manifest))
-    monkeypatch.delenv("FORENSIA_EXEC_AGENT_TOKEN", raising=False)
+    monkeypatch.setenv("AGENTOPSY_VERSIONS_MANIFEST", str(manifest))
+    monkeypatch.delenv("AGENTOPSY_EXEC_AGENT_TOKEN", raising=False)
 
     # Point the product singletons at the tmp-rooted storage. NOTHING else is faked:
     # the dispatcher keeps its real execute/gates/version lookup (maletín venue forced
     # by resolving no binary on the api PATH — exactly the compose posture).
-    import forensia.routers.agent as agent_router
+    import agentopsy.routers.agent as agent_router
 
     monkeypatch.setattr(agent_router, "case_manager", cases)
     monkeypatch.setattr(agent_router, "evidence_manager", evidence)
@@ -220,7 +219,7 @@ def wired(monkeypatch, tmp_path):
     port = server.server_address[1]
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    monkeypatch.setenv("FORENSIA_TOOLKIT_WINDOWS_URL", f"http://127.0.0.1:{port}")
+    monkeypatch.setenv("AGENTOPSY_TOOLKIT_WINDOWS_URL", f"http://127.0.0.1:{port}")
 
     # Operator-anchored case + evidence through the REAL hash gate.
     case = cases.create(name="op", examiner="alice", os_profile="windows")
@@ -230,7 +229,7 @@ def wired(monkeypatch, tmp_path):
 
     app = create_app(PORT)
     client = TestClient(app, base_url=f"http://127.0.0.1:{PORT}")
-    auth = {"X-Forensia-Token": app.state.token}
+    auth = {"X-Agentopsy-Token": app.state.token}
     try:
         yield {
             "cases": cases,

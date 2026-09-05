@@ -15,11 +15,11 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from forensia.i18n import LANG_HEADER, t
-from forensia.cases.manager import CaseManager
-from forensia.findings.store import Finding, FindingStore
-from forensia.server import create_app
-from forensia.timeline.hallazgos import assemble_findings_timeline
+from agentopsy.i18n import LANG_HEADER, t
+from agentopsy.cases.manager import CaseManager
+from agentopsy.findings.store import Finding, FindingStore
+from agentopsy.server import create_app
+from agentopsy.timeline.hallazgos import assemble_findings_timeline
 
 PORT = 51041
 
@@ -179,7 +179,7 @@ def test_severity_is_labelled_from_the_single_table() -> None:
     anexos del mismo informe. Se comprueba contra la tabla misma, no contra literales
     copiados aquí.
     """
-    from forensia.timeline.vocabulario import SEVERITY_KEY
+    from agentopsy.timeline.vocabulario import SEVERITY_KEY
 
     findings = [
         _finding(f"f{i}", observed_at=f"2021-03-1{i}T01:00:00Z", severity=sev)
@@ -234,7 +234,7 @@ def test_each_technique_carries_the_tactic_the_catalog_places_it_in() -> None:
     assert tecnica["tactic_id"]
     assert tecnica["tactic"]
     # La táctica sale del catálogo, en castellano, no de una tabla local.
-    from forensia.mitre import catalog
+    from agentopsy.mitre import catalog
 
     esperada = {t.id: t.name_es for t in catalog.load().tactics}[tecnica["tactic_id"]]
     assert tecnica["tactic"] == esperada
@@ -262,9 +262,9 @@ def test_a_technique_the_catalog_cannot_place_keeps_its_id_and_has_no_tactic() -
 def cases(tmp_path, monkeypatch) -> CaseManager:
     store = CaseManager(root=tmp_path / "cases")
 
-    import forensia.mitre.coverage as coverage_mod
-    import forensia.timeline.hallazgos as hallazgos_mod
-    from forensia.mitre.coverage import CoverageStore
+    import agentopsy.mitre.coverage as coverage_mod
+    import agentopsy.timeline.hallazgos as hallazgos_mod
+    from agentopsy.mitre.coverage import CoverageStore
 
     findings = FindingStore(store)
     coverage = CoverageStore(store, findings)
@@ -284,7 +284,7 @@ def client(cases) -> TestClient:
 
 @pytest.fixture
 def auth(client) -> dict[str, str]:
-    return {"X-Forensia-Token": client.app.state.token}
+    return {"X-Agentopsy-Token": client.app.state.token}
 
 
 def test_http_unknown_case_is_a_404_not_an_empty_axis(client, auth) -> None:
@@ -319,7 +319,7 @@ def test_http_a_case_without_findings_answers_with_an_actionable_message(
 
 def test_http_serves_the_incident_axis_with_what_stayed_out(client, auth, cases) -> None:
     case = cases.create(name="Caso con hallazgos", examiner="perito", os_profile="windows")
-    from forensia.timeline import hallazgos as hallazgos_mod
+    from agentopsy.timeline import hallazgos as hallazgos_mod
 
     store = hallazgos_mod.finding_store
     store.append(case.id, {

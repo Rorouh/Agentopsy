@@ -7,10 +7,10 @@ before the agent tries to dispatch it.
 
 from __future__ import annotations
 
-from forensia.mcp.schemas import _VOLATILITY_WINDOWS_PLUGINS
-from forensia.toolkit.catalog import BY_ID, CATALOG, by_tier, for_profile
-from forensia.toolkit.maletin import MALETINES, TOOLKIT_UNIX, TOOLKIT_WINDOWS
-from forensia.toolkit.tool import _not_built
+from agentopsy.mcp.schemas import _VOLATILITY_WINDOWS_PLUGINS
+from agentopsy.toolkit.catalog import BY_ID, CATALOG, by_tier, for_profile
+from agentopsy.toolkit.maletin import MALETINES, TOOLKIT_UNIX, TOOLKIT_WINDOWS
+from agentopsy.toolkit.tool import _not_built
 
 # os_profile → the maletín that must carry a tool applicable to that profile.
 _PROFILE_MALETIN = {"unix": TOOLKIT_UNIX, "windows": TOOLKIT_WINDOWS}
@@ -214,8 +214,8 @@ def test_every_allowed_tool_is_visible_to_the_llm() -> None:
     allowlist derivada del catálogo hace creer que una tool está disponible cuando el
     LLM ni siquiera la ve.
     """
-    from forensia.agent.loader import default_allowed_tools
-    from forensia.agent.tool_schemas import tool_specs
+    from agentopsy.agent.loader import default_allowed_tools
+    from agentopsy.agent.tool_schemas import tool_specs
 
     for profile in ("windows", "unix"):
         allowed = [t for t in default_allowed_tools(profile) if t not in _NOT_EXPOSED_TO_AGENT]
@@ -228,8 +228,8 @@ def test_every_allowed_tool_is_visible_to_the_llm() -> None:
 
 def test_exposed_tools_have_both_schemas_and_a_description() -> None:
     """Las dos superficies (agente y MCP) publican el mismo conjunto de tools."""
-    from forensia.agent.tool_schemas import TOOL_DESCRIPTIONS, TOOL_PARAM_SCHEMAS
-    from forensia.mcp.schemas import SCHEMA_BY_TOOL
+    from agentopsy.agent.tool_schemas import TOOL_DESCRIPTIONS, TOOL_PARAM_SCHEMAS
+    from agentopsy.mcp.schemas import SCHEMA_BY_TOOL
 
     for tool in CATALOG:
         if tool.id in _NOT_EXPOSED_TO_AGENT:

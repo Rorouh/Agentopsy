@@ -18,16 +18,16 @@ import pytest
 
 from _custody import context_for, register_evidence, wire_dispatcher_custody
 from _symlink_support import requires_symlinks
-from forensia.agent.agent import ForensicAgent
-from forensia.agent.tool_schemas import TOOL_PARAM_SCHEMAS
-from forensia.artifact_ref import validate_artifact_ref
-from forensia.artifacts.store import ArtifactStore
-from forensia.audit.log import AuditLog
-from forensia.cases.manager import CaseManager
-from forensia.evidence import EvidenceManager
-from forensia.mcp.schemas import RegRipperParams
-from forensia.mcp.toolkit import _dispatch_forensic
-from forensia.toolkit import dispatcher
+from agentopsy.agent.agent import ForensicAgent
+from agentopsy.agent.tool_schemas import TOOL_PARAM_SCHEMAS
+from agentopsy.artifact_ref import validate_artifact_ref
+from agentopsy.artifacts.store import ArtifactStore
+from agentopsy.audit.log import AuditLog
+from agentopsy.cases.manager import CaseManager
+from agentopsy.evidence import EvidenceManager
+from agentopsy.mcp.schemas import RegRipperParams
+from agentopsy.mcp.toolkit import _dispatch_forensic
+from agentopsy.toolkit import dispatcher
 
 
 @pytest.fixture
@@ -472,7 +472,7 @@ async def test_mcp_path_flows_to_shared_dispatcher_gate(
     )
     # The MCP surface reads the module-level singleton at call time; point it at the
     # SAME tmp-rooted EvidenceManager the dispatcher validates against.
-    monkeypatch.setattr("forensia.evidence.evidence_manager", EvidenceManager(cases))
+    monkeypatch.setattr("agentopsy.evidence.evidence_manager", EvidenceManager(cases))
     outside_rules = cases.root.parent / "outside.yar"
     outside_rules.write_text("rule outside { condition: true }", encoding="utf-8")
     response = await _dispatch_forensic(

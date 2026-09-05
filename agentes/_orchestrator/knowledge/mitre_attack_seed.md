@@ -129,6 +129,4 @@ ampliar).
 > intelectual por email** (Outlook Express) con **staging en carpeta oculta**
 > (`Pics\Hidden`); ese patrón no tenía técnica citable (la exfil de la semilla era
 > solo física/USB o cloud/web-service), y la corrida zero-shot 11-24 lo dejó
-> correctamente sin mapear. Sostiene el hilo Jo del ground-truth
-> `docs/agentes/ground-truth/m57-patents.md`. Derivado de fuentes públicas; a
-> validar con el packet oficial si el tutor lo obtiene.
+> correctamente sin mapear. Derivado de fuentes públicas.

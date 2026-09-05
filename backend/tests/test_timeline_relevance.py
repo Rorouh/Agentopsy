@@ -8,7 +8,7 @@ executables, web artifacts, logs, system binaries) and the selection/sort/cap of
 
 from __future__ import annotations
 
-from forensia.timeline.relevance import classify, select_relevant_events
+from agentopsy.timeline.relevance import classify, select_relevant_events
 
 
 def _ev(path: str, macb: str, ts: str = "2021-01-01T00:00:00Z") -> dict:

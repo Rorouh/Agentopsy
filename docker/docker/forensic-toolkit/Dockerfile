@@ -102,7 +102,7 @@ RUN cd /tmp \
 # Consume la SALIDA de WinPmem 3.x (volcados de RAM .aff4): lista los streams del
 # volumen y exporta el elegido (p. ej. la memoria física) a raw para Volatility3.
 # WinPmem en sí (adquisición en vivo, driver de kernel de Windows) queda FUERA:
-# FORENSIA es post-mortem. Binario Linux 1.0.rc1 (2018, el último publicado por
+# AGENTOPSY es post-mortem. Binario Linux 1.0.rc1 (2018, el último publicado por
 # Velocidex; casi estático — solo libc/libpthread), verificado en Ubuntu 22.04
 # con round-trip crear→listar→exportar byte-exacto (2026-07-17). SHA-256 pinneado
 # del release oficial de GitHub.
@@ -123,26 +123,26 @@ RUN cd /tmp \
 # --- Layout de trabajo -------------------------------------------------------
 #   /evidence -> evidencias montadas en SOLO LECTURA (cadena de custodia)
 #   /cases    -> proyectos/casos y salidas del análisis
-#   /opt/forensia -> scripts auxiliares del maletín
-RUN mkdir -p /evidence /cases /opt/forensia/bin
-ENV PATH="/opt/forensia/bin:${PATH}"
+#   /opt/agentopsy -> scripts auxiliares del maletín
+RUN mkdir -p /evidence /cases /opt/agentopsy/bin
+ENV PATH="/opt/agentopsy/bin:${PATH}"
 
 # Script de cadena de custodia: hashing SHA-256 de una evidencia (solo lectura)
-RUN cat > /opt/forensia/bin/forensia-hash <<'EOF'
+RUN cat > /opt/agentopsy/bin/agentopsy-hash <<'EOF'
 #!/bin/sh
-# Uso: forensia-hash <ruta-evidencia>
+# Uso: agentopsy-hash <ruta-evidencia>
 # Calcula SHA-256 de la evidencia para verificar integridad (cadena de custodia).
 set -e
-if [ -z "$1" ]; then echo "Uso: forensia-hash <ruta>" >&2; exit 1; fi
-echo "[forensia] SHA-256 de: $1"
+if [ -z "$1" ]; then echo "Uso: agentopsy-hash <ruta>" >&2; exit 1; fi
+echo "[agentopsy] SHA-256 de: $1"
 sha256sum "$1"
 EOF
 
 # Script informativo: muestra el catálogo y versiones instaladas
-RUN cat > /opt/forensia/bin/forensia-info <<'EOF'
+RUN cat > /opt/agentopsy/bin/agentopsy-info <<'EOF'
 #!/bin/sh
 echo "==================== Agentopsy — Maletín forense ===================="
-echo "Stage: ${FORENSIA_STAGE:-base}"
+echo "Stage: ${AGENTOPSY_STAGE:-base}"
 echo "-------------------------------------------------------------------"
 echo "Herramientas comunes (Cross):"
 echo "  sleuthkit (fls/icat/mmls/mactime) : $(command -v fls || echo 'NO')"
@@ -158,7 +158,7 @@ echo "  sha256sum                         : $(command -v sha256sum || echo 'NO')
 echo "  log2timeline (plaso)              : $(command -v log2timeline.py || echo 'NO')"
 echo "  psort (plaso)                     : $(command -v psort.py || echo 'NO')"
 echo "  volatility3                       : $(command -v vol || echo 'NO')"
-[ "${FORENSIA_STAGE}" = "windows" ] && {
+[ "${AGENTOPSY_STAGE}" = "windows" ] && {
   echo "Artefactos Windows:"
   echo "  rip.pl (RegRipper)              : $(command -v rip.pl || echo 'NO')"
   echo "  hayabusa                        : $(command -v hayabusa || echo 'NO')"
@@ -182,7 +182,7 @@ echo "  volatility3                       : $(command -v vol || echo 'NO')"
   echo "  EvtxECmd/MFTECmd (catalogo api) : $(command -v EvtxECmd || echo 'NO') / $(command -v MFTECmd || echo 'NO')"
   echo "  (PECmd/SrumECmd excluidas: Windows-only; Prefetch->prefetch.py, SRUM->plaso srum)"
 }
-[ "${FORENSIA_STAGE}" = "unix" ] && {
+[ "${AGENTOPSY_STAGE}" = "unix" ] && {
   echo "Artefactos Unix-like:"
   echo "  journalctl                      : $(command -v journalctl || echo 'NO')"
   echo "  lnav                            : $(command -v lnav || echo 'NO')"
@@ -191,8 +191,8 @@ echo "  volatility3                       : $(command -v vol || echo 'NO')"
 echo "===================================================================="
 EOF
 
-RUN sed -i 's/\r$//' /opt/forensia/bin/forensia-hash /opt/forensia/bin/forensia-info \
- && chmod +x /opt/forensia/bin/forensia-hash /opt/forensia/bin/forensia-info
+RUN sed -i 's/\r$//' /opt/agentopsy/bin/agentopsy-hash /opt/agentopsy/bin/agentopsy-info \
+ && chmod +x /opt/agentopsy/bin/agentopsy-hash /opt/agentopsy/bin/agentopsy-info
 
 WORKDIR /cases
 
@@ -201,7 +201,7 @@ WORKDIR /cases
 # =============================================================================
 FROM base AS windows
 
-ENV FORENSIA_STAGE=windows
+ENV AGENTOPSY_STAGE=windows
 
 # Versiones fijadas de binarios descargados (override con --build-arg)
 # hayabusa: build MUSL (enlazado estático). El build gnu de 3.9.0 exige
@@ -314,7 +314,7 @@ ENV DOTNET_EnableWriteXorExecute=0 \
 # /opt/eztools/<Tool>/ conservando su estructura interna (EvtxECmd necesita su
 # Maps/; RECmd trae BatchExamples/) — la ruta real del .dll varía por zip, así
 # que se localiza con find, nunca se asume. Cada tool queda envuelta en un
-# wrapper en minúsculas en /opt/forensia/bin; EvtxECmd y MFTECmd conservan
+# wrapper en minúsculas en /opt/agentopsy/bin; EvtxECmd y MFTECmd conservan
 # además el nombre capitalizado que el catálogo del backend resuelve.
 # El SHA-256 de cada zip y la versión que reporta la tool quedan registrados en
 # /opt/eztools/VERSIONS.txt (reproducibilidad: el CDN sirve "latest").
@@ -349,9 +349,9 @@ RUN set -e; cd /tmp \
       dll="$(find "/opt/eztools/${tool}" -iname "${tool}.dll" | head -n1)"; \
       [ -n "$dll" ] || { echo "ERROR: ${tool}.dll no encontrado en el zip" >&2; exit 1; }; \
       wrapper="$(echo "$tool" | tr '[:upper:]' '[:lower:]')"; \
-      printf '#!/bin/sh\nexec dotnet %s "$@"\n' "$dll" > "/opt/forensia/bin/${wrapper}"; \
-      chmod +x "/opt/forensia/bin/${wrapper}"; \
-      version="$("/opt/forensia/bin/${wrapper}" 2>&1 | grep -m1 -i 'version' || true)"; \
+      printf '#!/bin/sh\nexec dotnet %s "$@"\n' "$dll" > "/opt/agentopsy/bin/${wrapper}"; \
+      chmod +x "/opt/agentopsy/bin/${wrapper}"; \
+      version="$("/opt/agentopsy/bin/${wrapper}" 2>&1 | grep -m1 -i 'version' || true)"; \
       zipsha="$(sha256sum "${tool}.zip" | cut -d' ' -f1)"; \
       printf '%-22s zip_sha256=%s  %s\n' "$tool" "$zipsha" "${version:-version no reportada}" >> /opt/eztools/VERSIONS.txt; \
       # Identidad de versión para el manifiesto de build (gen_versions.py): el número
@@ -364,8 +364,8 @@ RUN set -e; cd /tmp \
       fi; \
       rm -f "${tool}.zip"; \
     done \
- && ln -sf /opt/forensia/bin/evtxecmd /usr/local/bin/EvtxECmd \
- && ln -sf /opt/forensia/bin/mftecmd  /usr/local/bin/MFTECmd \
+ && ln -sf /opt/agentopsy/bin/evtxecmd /usr/local/bin/EvtxECmd \
+ && ln -sf /opt/agentopsy/bin/mftecmd  /usr/local/bin/MFTECmd \
  && cat /opt/eztools/VERSIONS.txt
 
 # --- Parsers de artefactos Windows (Python) ----------------------------------
@@ -393,7 +393,7 @@ RUN pip3 install --no-cache-dir -r /tmp/requirements-windows.txt \
 # de un .pth al inicializar `site`, sin colisionar con nada.
 RUN printf '%s\n' \
       'import datetime; datetime.UTC = getattr(datetime, "UTC", datetime.timezone.utc)' \
-      > /usr/local/lib/python3.10/dist-packages/zzz_forensia_datetime_utc.pth \
+      > /usr/local/lib/python3.10/dist-packages/zzz_agentopsy_datetime_utc.pth \
  && python3 -c 'import datetime, sys; sys.exit(0 if datetime.UTC is datetime.timezone.utc else 1)' \
  && echo "datetime.UTC repuesto para pyhindsight"
 
@@ -447,21 +447,21 @@ RUN sed -i 's/\r$//' /usr/local/bin/evtx_dump \
 # El exec-agent lo sirve por GET /versions; el backend lo consulta antes de cada
 # tool_run_start. Los ARG de versión del stage (HAYABUSA_VERSION, CHAINSAW_VERSION)
 # están en scope como env de este RUN.
-COPY tool-binaries.json gen_versions.py /opt/forensia/
-RUN python3 /opt/forensia/gen_versions.py --stage windows --out /opt/forensia/versions.json
+COPY tool-binaries.json gen_versions.py /opt/agentopsy/
+RUN python3 /opt/agentopsy/gen_versions.py --stage windows --out /opt/agentopsy/versions.json
 
 # exec-agent: el canal api→maletín (§B). Se copia al final del stage para no
 # invalidar las capas caras (hayabusa/chainsaw/pip) del build. El compose lo arranca
 # con `command:`; este CMD es el default para un `docker run` standalone del maletín.
-COPY exec_agent.py /opt/forensia/exec_agent.py
-CMD ["python3", "/opt/forensia/exec_agent.py"]
+COPY exec_agent.py /opt/agentopsy/exec_agent.py
+CMD ["python3", "/opt/agentopsy/exec_agent.py"]
 
 # =============================================================================
 # STAGE 3 — unix : artefactos de Unix-like
 # =============================================================================
 FROM base AS unix
 
-ENV FORENSIA_STAGE=unix
+ENV AGENTOPSY_STAGE=unix
 
 # Soporte de sistemas de ficheros Linux + lectura de logs/journald
 #   - e2fsprogs/xfsprogs : utilidades EXT/XFS (TSK ya soporta su análisis)
@@ -477,11 +477,11 @@ RUN apt-get update \
 # Manifiesto INMUTABLE de versiones para el stage unix (solo las tools Cross del
 # catálogo — este stage no añade tools de catálogo propias). Mismo contrato que en
 # el stage windows: sin versión determinista → el build ABORTA (RULE 2).
-COPY tool-binaries.json gen_versions.py /opt/forensia/
-RUN python3 /opt/forensia/gen_versions.py --stage unix --out /opt/forensia/versions.json
+COPY tool-binaries.json gen_versions.py /opt/agentopsy/
+RUN python3 /opt/agentopsy/gen_versions.py --stage unix --out /opt/agentopsy/versions.json
 
 # exec-agent: el canal api→maletín (§B). Se copia al final del stage para no
 # invalidar las capas caras (hayabusa/chainsaw/pip) del build. El compose lo arranca
 # con `command:`; este CMD es el default para un `docker run` standalone del maletín.
-COPY exec_agent.py /opt/forensia/exec_agent.py
-CMD ["python3", "/opt/forensia/exec_agent.py"]
+COPY exec_agent.py /opt/agentopsy/exec_agent.py
+CMD ["python3", "/opt/agentopsy/exec_agent.py"]

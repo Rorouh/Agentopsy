@@ -7,7 +7,7 @@ aplicación web llevan:
 - el guion largo «—» y sus variantes: los incisos van entre comas o paréntesis;
 - emojis y pictogramas: donde otro pondría un símbolo, se escribe la palabra.
 
-La regla se PIDE en el prompt (``forensia.reports.writer`` reglas 8 y 9, y el
+La regla se PIDE en el prompt (``agentopsy.reports.writer`` reglas 8 y 9, y el
 apartado 9 de ``agentes/agent.md``) y se GARANTIZA en el redactor
 (``_normalizar_estilo``). Este módulo la fija en las TRES fuentes que el
 producto emite y que ningún prompt puede corregir:
@@ -30,7 +30,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-BACKEND = REPO_ROOT / "backend" / "forensia"
+BACKEND = REPO_ROOT / "backend" / "agentopsy"
 WEB_SRC = REPO_ROOT / "web" / "src"
 #: Los DOS ficheros de comportamiento, con el rótulo de su regla 9 y la
 #: frase que prueba que la regla está escrita y no solo cumplida. Desde
@@ -46,7 +46,7 @@ AGENT_MDS: tuple[tuple[str, str, str], ...] = (
 RAYAS = "—―⸺⸻"
 _RAYA_RE = re.compile(f"[{RAYAS}]")
 
-#: Emojis y pictogramas. Mismo conjunto que ``forensia.reports.writer``.
+#: Emojis y pictogramas. Mismo conjunto que ``agentopsy.reports.writer``.
 _EMOJI_RE = re.compile(
     "["
     "\U0001f000-\U0001faff"
@@ -159,7 +159,7 @@ def test_el_fichero_de_comportamiento_del_agente_cumple_la_regla(
 def test_el_indice_del_informe_no_ensena_el_signo_de_seccion() -> None:
     """El índice es lo único común a todos los informes y lo primero que el
     modelo copia: se enuncia «1. Control de versiones», nunca «§1»."""
-    from forensia.reports.indice import contrato_del_indice, titulos
+    from agentopsy.reports.indice import contrato_del_indice, titulos
 
     indice = contrato_del_indice()
     assert "§" not in indice
@@ -173,7 +173,7 @@ def test_el_indice_del_informe_no_ensena_el_signo_de_seccion() -> None:
 def test_el_encargo_del_informe_prohibe_el_signo(prohibido: str) -> None:
     """La regla viaja EN el encargo: el modelo tiene que leerla, no solo
     padecer la normalización posterior."""
-    from forensia.i18n import t
+    from agentopsy.i18n import t
 
     # Las reglas viajan en el idioma del informe, así que la prohibición tiene
     # que estar en LOS DOS. El signo y la raya se NOMBRAN para prohibirlos, que

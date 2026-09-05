@@ -33,16 +33,16 @@ import zipfile
 
 import pytest
 
-from forensia.i18n import _LANG_ACTUAL, set_current_lang
-from forensia.cases.manager import CaseManager
-from forensia.evidence import (
+from agentopsy.i18n import _LANG_ACTUAL, set_current_lang
+from agentopsy.cases.manager import CaseManager
+from agentopsy.evidence import (
     EvidenceManager,
     is_registrable_evidence_ext,
     is_uploadable_evidence_ext,
     save_uploaded_source,
 )
-from forensia.reports.material import naturaleza
-from forensia.triage import DetectedEvidence, fingerprint_evidence, routable_profile
+from agentopsy.reports.material import naturaleza
+from agentopsy.triage import DetectedEvidence, fingerprint_evidence, routable_profile
 
 
 @pytest.fixture
@@ -257,7 +257,7 @@ class TestBandejaDeMaterialAportado:
     def inbox(self, tmp_path, monkeypatch):
         root = tmp_path / "inbox"
         root.mkdir()
-        monkeypatch.setenv("FORENSIA_EVIDENCE_DIR", str(root))
+        monkeypatch.setenv("AGENTOPSY_EVIDENCE_DIR", str(root))
         return root
 
     @pytest.mark.parametrize(
@@ -314,7 +314,7 @@ class TestBandejaDeMaterialAportado:
         # El pase profundo abre imágenes de disco por el maletín con ``mmls``. Un
         # PDF no tiene tabla de particiones: llamar ahí sería gastar una ida y
         # vuelta al maletín para que TSK falle.
-        import forensia.evidence as evidence_mod
+        import agentopsy.evidence as evidence_mod
 
         def _nunca(*args, **kwargs):
             raise AssertionError("el pase profundo no debe tocar un documento")
