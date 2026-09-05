@@ -7,31 +7,33 @@
 [![Ollama](https://img.shields.io/badge/Ollama-Local%20AI-FF6F00?logo=ollama&logoColor=white)](https://ollama.com/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Herramienta de análisis forense **post-mortem** asistida por IA, **autoalojada**: se despliega con `git clone` + `docker compose up --build` y se usa desde el navegador. Sin instaladores nativos y **sin API keys**.
+Herramienta de análisis forense **post-mortem** asistida por IA. Se autoaloja: un `git clone`, un `docker compose up --build`, y trabajas desde el navegador. Sin instaladores nativos y sin API keys.
 
 ---
 
 ## Qué es
 
-Un investigador carga evidencias ya extraídas, tanto imágenes de un sistema entero (`.E01` / `.raw` / `.vmdk` / volcado de RAM) como los ficheros sueltos que le entregan (un PDF, un Word, una foto, un correo, un log exportado, un `.evtx` sin su disco, una muestra), conduce el análisis mediante prompts contra dos **sub-agentes** especializados (Windows y Unix-like) coordinados por un **agente orquestador**, y obtiene un informe forense estructurado, su línea temporal y la correlación con MITRE ATT&CK. Todo entra por el mismo hash-gate y la misma cadena de custodia.
+Cargas la evidencia que ya tienes extraída y conduces el análisis conversando. Vale la imagen de un sistema entero (`.E01`, `.raw`, `.vmdk`, un volcado de RAM) y valen los ficheros sueltos con los que suele llegar un encargo: un PDF, un Word, una foto, un correo, un log exportado, un `.evtx` sin su disco, una muestra.
 
-**Principios**
+Detrás, un agente orquestador reparte el trabajo entre dos sub-agentes especializados, uno en artefactos Windows y otro en Unix-like, que manejan un maletín de herramientas forenses de línea de comandos. De ahí salen un informe pericial, la línea temporal del incidente y la correlación con MITRE ATT&CK.
 
-- **Un solo comando.** `git clone` + `docker compose up --build` levantan la interfaz web, el backend, el modelo local y los maletines forenses. Sin instalador nativo, sin auto-update, sin pasos por herramienta.
-- **Sin API keys.** Los prompts de la sección *Investigación* se ejecutan con el **ejecutor** que elija el usuario: **Claude Code** (`claude -p`), **Codex CLI** (`codex exec`), **Gemini CLI** (`gemini -p`) u **Ollama** (servicio del propio compose). Los CLIs consumen la suscripción del propio usuario mediante la sesión guardada en un volumen local del stack (`agentopsy-cli-auth`), *seeded* una única vez desde las credenciales del host o creada con un login directo en el contenedor; ninguna clave de proveedor existe en el proyecto, y las sesiones nunca salen de tu máquina, no se escriben en logs ni se exponen por la API.
-- **Privacidad explícita.** Ollama es la opción 100 % local. Si el usuario elige un ejecutor respaldado por cloud (Claude Code, Codex, Gemini), la aplicación lo advierte y lo registra en el audit log. Sin ejecutor seleccionado no hay análisis — nunca un default silencioso (RULE 2).
-- **Cadena de custodia.** Lectura a nivel de bloque en solo lectura, hash SHA-256 baseline en la ingesta, audit log encadenado por hash, comando literal (argv) registrado por cada ejecución.
-- **En inglés o en castellano.** Todo lo que la herramienta pone delante de una persona (la interfaz, los mensajes del backend, el informe pericial con sus anexos y lo que escribe el agente) se emite en el idioma que elija el perito, en *Configuración → Apariencia → Idioma*. Por defecto, inglés. Lo que **no** se traduce nunca es el contenido del caso: el nombre que le pusiste, el título de un hallazgo o el resumen que escribió el agente viajan tal cual, porque traducir un dato del expediente sería inventarlo.
-- **Maletín completo en el compose.** Las herramientas forenses viajan en las imágenes `toolkit-windows` y `toolkit-unix` que construye el propio compose (RULE 1).
+Todo lo que entra pasa por el mismo hash-gate y la misma cadena de custodia, venga de un disco de 500 GB o de un PDF.
+
+## Principios
+
+- **Un solo comando.** `docker compose up --build` levanta la interfaz, el backend, el modelo local y los dos maletines. No hay instalador, ni auto-update, ni un paso de instalación por herramienta.
+- **Sin API keys.** Tú eliges quién ejecuta los prompts: Claude Code, Codex CLI, Gemini CLI u Ollama. Los tres CLIs corren con tu propia suscripción, a partir de una sesión guardada en un volumen del stack. En el proyecto no existe ninguna clave de proveedor, y esas sesiones no salen de tu máquina, no se escriben en los logs ni se exponen por la API.
+- **Privacidad explícita.** Ollama es la opción 100 % local. Si eliges un ejecutor de nube, la aplicación te avisa de que sale contenido derivado del caso y lo deja anotado en el audit log. Y sin ejecutor elegido no hay análisis: nunca se escoge uno por ti.
+- **Cadena de custodia.** Lectura en solo lectura a nivel de bloque, SHA-256 baseline en la ingesta, audit log encadenado por hash y el comando literal, el argv, registrado en cada ejecución.
+- **En inglés o en castellano.** La interfaz, los mensajes del backend, el informe con sus anexos y lo que escribe el agente salen en el idioma que elijas (*Configuración → Apariencia → Idioma*; por defecto, inglés). El contenido del caso no se traduce nunca: el nombre que le pusiste, el título de un hallazgo o el resumen que redactó el agente viajan tal cual, porque traducir un dato del expediente sería inventarlo.
+- **El maletín viaja en el compose.** Las herramientas forenses van dentro de las imágenes `toolkit-windows` y `toolkit-unix`, que construye el propio compose. No hay nada que compilar ni configurar aparte.
 
 ## Instalación
 
-Prerequisitos:
+Necesitas dos cosas:
 
-1. **Docker con el plugin Compose** (Docker Desktop en Windows/macOS; `docker-ce` + `docker-compose-plugin` en Linux).
-2. **Un ejecutor de IA**, a tu elección:
-   - **Ollama** — no requiere nada más: el propio compose levanta el servicio (100 % local).
-   - **Claude Code**, **Codex CLI** o **Gemini CLI** — tu propia suscripción/cuenta (los CLIs ya vienen instalados en la imagen `api`; solo falta la sesión, ver abajo).
+1. **Docker con el plugin Compose.** Docker Desktop en Windows y macOS; `docker-ce` más `docker-compose-plugin` en Linux.
+2. **Un ejecutor de IA.** Ollama no requiere nada más, porque lo levanta el propio compose. Si prefieres Claude Code, Codex CLI o Gemini CLI, los binarios ya vienen en la imagen `api` y solo falta iniciar sesión con tu cuenta.
 
 ```bash
 git clone https://github.com/Rorouh/Agentopsy.git
@@ -39,21 +41,23 @@ cd Agentopsy
 docker compose up --build
 ```
 
-Abre <http://127.0.0.1:5173> en el navegador. Todos los puertos se publican únicamente en `127.0.0.1`: nada queda expuesto fuera de tu máquina.
+Abre <http://127.0.0.1:5173> en el navegador. Todos los puertos se publican solo en `127.0.0.1`, así que nada queda expuesto fuera de tu máquina.
 
-> **Apple Silicon / arm64.** Los dos maletines se fijan a `platform: linux/amd64` en el compose: el PPA GIFT (plaso, sleuthkit, libyal, bulk-extractor) no publica paquetes arm64, así que en Mac ARM se construyen y ejecutan **bajo emulación** (Rosetta/QEMU) — funcionan igual que en x86 pero su build y sus análisis pesados van más lentos. En un host x86_64 esto coincide con la plataforma nativa: sin coste. Detalle en [`docker/README.md`](docker/README.md).
+> **Apple Silicon.** Los dos maletines se fijan a `linux/amd64` porque el PPA GIFT (plaso, sleuthkit, libyal, bulk-extractor) no publica paquetes arm64. En un Mac ARM funcionan igual, pero bajo emulación: el build y los análisis pesados tardan más. En un host x86_64 no cuesta nada. Más detalle en [`docker/README.md`](docker/README.md).
 
-### Sesión de los CLIs (solo si usas un ejecutor cloud)
+### Iniciar sesión en un ejecutor de nube
 
-El HOME del servicio `api` vive en el volumen `agentopsy-cli-auth`. En el primer arranque, el entrypoint **seedea** a ese volumen las credenciales que ya existan en tu host (`~/.claude`, `~/.claude.json`, `~/.codex`, `~/.gemini`, montadas en solo lectura como staging); desde entonces los CLIs leen y **refrescan sus tokens solo en el volumen**, nunca en tus ficheros.
+Sáltate este apartado si vas a usar Ollama.
 
-**Conectar desde la web (recomendado).** Si un ejecutor aparece *No disponible* en *Ajustes → Ejecutores / IA* (o en el selector de proveedor del chat), pulsa **«Conectar»**: Agentopsy lanza el login del propio CLI dentro del contenedor y te muestra en un diálogo la **URL** a abrir y el **código** del flujo *device*/OAuth, sin abrir una terminal. La sesión se guarda en el volumen `agentopsy-cli-auth` igual que el login manual.
+El HOME del servicio `api` es el volumen `agentopsy-cli-auth`. Si en el primer arranque ya tenías sesión abierta en tu host (`~/.claude`, `~/.claude.json`, `~/.codex`, `~/.gemini`), el entrypoint la copia ahí dentro. A partir de ese momento los CLIs leen y renuevan sus tokens solo en el volumen, nunca en tus ficheros.
 
-- **Codex** (`codex login --device-auth`): abre la URL e **introduce el código en el navegador**; el diálogo pasa a *Disponible* solo cuando terminas.
-- **Claude Code** (`claude auth login`): abre la URL, autoriza y **pega de vuelta** en el diálogo el código que te da el navegador.
-- **Gemini**: el login individual lo rechaza Google en el servidor (`IneligibleTierError`), así que no puede relayarse; el diálogo degrada al comando manual exacto + un botón **«Comprobar»** (RULE 2 — nunca un spinner infinito).
+**Desde la web, que es lo cómodo.** Si un ejecutor aparece como *No disponible* en *Ajustes → Ejecutores / IA*, pulsa «Conectar»: Agentopsy lanza el login del CLI dentro del contenedor y te enseña la URL y el código en un diálogo, sin pasar por la terminal.
 
-**Login manual** (o si prefieres la terminal / no había nada que seedear — p. ej. Claude Code en macOS guarda la sesión en el Keychain), **una única vez dentro del contenedor**:
+- **Codex.** Abre la URL e introduce el código en el navegador. El diálogo pasa a *Disponible* cuando terminas.
+- **Claude Code.** Abre la URL, autoriza y pega de vuelta en el diálogo el código que te dé el navegador.
+- **Gemini.** Google rechaza este login en el servidor (`IneligibleTierError`), así que no se puede relayar. El diálogo te da el comando manual exacto y un botón «Comprobar», en lugar de dejarte ante un spinner que no acaba nunca.
+
+**Desde la terminal**, si lo prefieres o si no había nada que copiar (Claude Code en macOS, por ejemplo, guarda la sesión en el Keychain). Una sola vez:
 
 ```bash
 docker compose exec -it api claude auth login          # Claude Code
@@ -61,86 +65,17 @@ docker compose exec -it api codex login --device-auth  # Codex CLI (flujo device
 docker compose exec -it -e NO_BROWSER=true api gemini  # Gemini CLI (imprime URL; pega el código)
 ```
 
-La sesión persiste entre reinicios. Comprueba el estado en *Ajustes → Ejecutores* (o `GET /api/capabilities`). Para **revocar/limpiar**: `docker compose down -v` elimina el volumen de sesiones (y los modelos de Ollama descargados).
+La sesión sobrevive a los reinicios. Puedes comprobarla en *Ajustes → Ejecutores* o con `GET /api/capabilities`. Para revocarla, `docker compose down -v` borra el volumen de sesiones, y con él los modelos que hubiera descargado Ollama.
 
-> **Aviso**: si el proveedor rota el *refresh token* al renovarlo dentro del volumen, la sesión de tu host podría invalidarse; en ese caso mantén sesiones separadas (login dentro del contenedor) en vez de seedear.
+> **Cuidado con el token de refresco.** Si tu proveedor lo rota al renovarlo dentro del volumen, la sesión de tu host puede quedar invalidada. Si eso te importa, no copies nada: inicia sesión directamente en el contenedor y mantén las dos sesiones separadas.
 
-> **Windows**: el compose usa la variable `HOME` para localizar el staging de credenciales. Si tu shell no la define (PowerShell/cmd fuera de WSL), copia [`.env.example`](.env.example) a `.env` y apunta `HOME` a tu perfil de usuario — o sáltate el seeding e inicia sesión dentro del contenedor.
+> **Windows.** El compose usa la variable `HOME` para localizar las credenciales del host. Si tu shell no la define (PowerShell o cmd fuera de WSL), copia [`.env.example`](.env.example) a `.env` y apúntala a tu perfil de usuario. O sáltate la copia e inicia sesión dentro del contenedor.
 
-## Arquitectura
+## Documentación
 
-```text
-                      navegador → http://127.0.0.1:5173
-                                    │
-┌─ docker compose (puertos SOLO en 127.0.0.1) ─────────────────────────────┐
-│                                   ▼                                      │
-│  web            frontend React servido por su contenedor                 │
-│    │  HTTP (red interna del compose)                                     │
-│    ▼                                                                     │
-│  api            FastAPI — backend/agentopsy, el núcleo completo:          │
-│                 · dispatcher (resolver, shell=False, argv literal)       │
-│                 · EvidenceManager (hash gate, read-only a nivel bloque)  │
-│                 · ArtifactStore (manifest + sha256 por run)              │
-│                 · AuditLog (append-only, encadenado por hash)            │
-│    │                                                                     │
-│    ├──► CAPA DE EJECUCIÓN — a elección del usuario (sin default):        │
-│    │      claude -p · codex exec · gemini -p                             │
-│    │      (CLIs instalados en la imagen api; sesión en el volumen        │
-│    │       agentopsy-cli-auth — seeded del host o login en contenedor)    │
-│    │      ollama ──HTTP──► servicio ollama (100 % local)                 │
-│    ▼                                                                     │
-│  toolkit-windows · toolkit-unix                                          │
-│                 maletines forenses — imágenes construidas por el         │
-│                 compose; evidencias montadas en SOLO LECTURA             │
-└──────────────────────────────────────────────────────────────────────────┘
-```
-
-Documentación técnica:
-
-- [Maletín contenedorizado](docker/README.md) — los dos toolkits, uso y seguridad del contenedor.
-- Comportamiento del agente: [`agentes/README.md`](agentes/README.md) y sus dos ficheros por idioma,
-  [`agentes/agent.md`](agentes/agent.md) (castellano) y [`agentes/agent.en.md`](agentes/agent.en.md) (inglés).
-- Invariantes de arquitectura, forenses y de seguridad: [`CLAUDE.md`](CLAUDE.md).
-
-## Desarrollo local
-
-Sección para contribuidores del proyecto. **El usuario final solo necesita la sección Instalación.**
-
-Requisitos:
-
-- Docker con el plugin Compose.
-- Python 3.12 (para la suite de tests en venv; la suite no necesita Docker).
-
-```bash
-# Stack completo
-docker compose up --build
-
-# Reconstruir un servicio concreto
-docker compose build api
-
-# Tests del backend (venv local)
-cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev,mcp]"   # el extra [mcp] no es opcional: tests/test_mcp_toolkit.py
-                              # importa `mcp` a nivel de módulo y sin él pytest
-                              # falla al recolectar, igual que en CI
-pytest
-
-# Backend standalone para depurar (imprime url 127.0.0.1 + token)
-python -m agentopsy.server
-```
-
-### Servidor MCP standalone
-
-El maletín se expone también como servidor MCP estándar para clientes externos (Claude Desktop, Continue, Cline).
-
-```bash
-cd backend
-source .venv/bin/activate
-pip install -e ".[mcp]"
-AGENTOPSY_CLOUD_CONSENT=manual_test python -m agentopsy.mcp
-```
+- [`docker/README.md`](docker/README.md) — los dos maletines: qué traen, cómo se usan y qué privilegios piden.
+- [`agentes/README.md`](agentes/README.md) — cómo se configura el agente, con sus dos ficheros de comportamiento: [`agent.md`](agentes/agent.md) en castellano y [`agent.en.md`](agentes/agent.en.md) en inglés.
+- [`CLAUDE.md`](CLAUDE.md) — la arquitectura y los invariantes forenses y de seguridad que el proyecto no rompe.
 
 ## Equipo
 
