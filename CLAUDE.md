@@ -38,7 +38,9 @@ api    (backend/, FastAPI)        agentopsy/ = ALL the logic. routers/ are thin 
    │                                           in the agentopsy-cli-auth volume — seeded once
    │                                           from the host creds (ro staging) or created by
    │                                           in-container login (own subscription, NO API keys)
-   │     ollama                                HTTP to the compose ollama service (100% local)
+   │     ollama                                HTTP to the Ollama the operator chose (100% local):
+   │                                           the compose service by default, or the one on the
+   │                                           operator's own machine (Settings beats the env)
    ▼
 toolkit-windows / toolkit-unix    the forensic toolkits ("maletines") — images built by the
                                   compose; evidence mounted read-only
@@ -405,7 +407,13 @@ tool against the maletín it lives in and degrades with an actionable reason.
 Code, Codex CLI, Gemini CLI, Ollama) plus the `ExecutorBackend` adapter into the
 agent loop. The operator selects one explicitly; there is no default. Sessions
 live in the `agentopsy-cli-auth` volume and can be created or renewed from the UI
-without leaving the app. Session transport sends only the delta when
+without leaving the app. WHICH Ollama is an operator choice too: `agentopsy.config`
+reads `config.json` BEFORE the environment, so the `OLLAMA_HOST` saved in Settings
+beats the compose baseline, and `executors.ollama.resolve_host` turns a loopback
+URL into the host machine when the deployment declared `AGENTOPSY_HOST_GATEWAY`
+(the compose sets `host.docker.internal` plus the matching `extra_hosts`). Unset,
+nothing is rewritten; when it applies, both URLs travel in the availability reason
+and in the audit event. Session transport sends only the delta when
 `session_guard` can ACCOUNT for the session, and the CLI subprocesses run in a
 neutral empty cwd so no host `CLAUDE.md`/`AGENTS.md`/`GEMINI.md` leaks into the
 model's context.

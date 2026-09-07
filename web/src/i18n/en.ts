@@ -628,6 +628,10 @@ export const en = {
     ") is not accepted by {model}: the turn would fail. Pick one of the ones above.",
   "settings.modelByCli": "The model is managed by this provider's CLI.",
   "settings.saveHost": "Save host",
+  "settings.ollamaHostHint":
+    "Write http://localhost:11434 to use the Ollama running on your own machine, or http://ollama:11434 for the one the compose starts. If it cannot be reached, start it listening on every interface: OLLAMA_HOST=0.0.0.0 ollama serve.",
+  "settings.ollamaHostFromEnv":
+    "Right now the deployment sets it. What you save here wins over that variable.",
   "settings.isDefaultEngine": "is the default engine",
   "settings.useAsDefault": "use as default",
   "settings.renewSession": "Renew the {name} session",

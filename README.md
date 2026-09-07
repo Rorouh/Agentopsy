@@ -45,6 +45,35 @@ Abre <http://127.0.0.1:5173> en el navegador. Todos los puertos se publican solo
 
 > **Apple Silicon.** Los dos maletines se fijan a `linux/amd64` porque el PPA GIFT (plaso, sleuthkit, libyal, bulk-extractor) no publica paquetes arm64. En un Mac ARM funcionan igual, pero bajo emulación: el build y los análisis pesados tardan más. En un host x86_64 no cuesta nada. Más detalle en [`docker/README.md`](docker/README.md).
 
+### Usar el Ollama de tu equipo
+
+El compose levanta su propio servicio `ollama`, y con eso ya funciona. Pero lo normal es que el modelo grande que quieras usar ya lo tengas servido en tu máquina, sobre tu GPU y con los modelos que te has descargado. Agentopsy puede hablar con ese:
+
+1. En una terminal de tu equipo, arranca el modelo como lo harías siempre:
+
+   ```bash
+   ollama run qwen2.5:32b
+   ```
+
+2. En la web, *Ajustes → Ejecutores / IA → Ollama*, escribe `http://localhost:11434` en el campo de host y pulsa «Guardar host».
+
+3. Elige el modelo en el mismo panel (la lista es la real de tu equipo, la que devuelve `ollama list`) y selecciona Ollama como ejecutor.
+
+Dos detalles de por qué esto funciona:
+
+- **Lo que guardas en Ajustes manda.** El compose fija `OLLAMA_HOST=http://ollama:11434` como línea base del despliegue; el valor que guardas en la web gana sobre esa variable, así que no hay que editar el compose.
+- **`localhost` significa tu equipo, no el contenedor.** Dentro del contenedor `api` esa URL apuntaría al propio contenedor, donde no escucha nadie, así que se resuelve al nombre por el que se alcanza la máquina anfitriona (`host.docker.internal`, declarado en el compose junto al `extra_hosts` que lo hace funcionar también en Linux). La resolución no es silenciosa: sale en el motivo cuando algo falla y queda registrada en el audit log junto a lo que escribiste.
+
+Si el panel sigue diciendo que Ollama no responde, es que tu Ollama solo escucha en loopback y ningún contenedor puede alcanzarlo. Pasa sobre todo en Linux, donde `host.docker.internal` es la IP del puente y no la loopback del host; con Docker Desktop (macOS y Windows) suele funcionar sin tocar nada. Arráncalo entonces escuchando en todas las interfaces:
+
+```bash
+OLLAMA_HOST=0.0.0.0 ollama serve
+```
+
+En la app de escritorio la opción equivalente es *Expose Ollama to the network*. El mensaje de la interfaz te dice exactamente esto cuando ocurre, con las dos URLs implicadas.
+
+Si prefieres volver al Ollama del compose, escribe `http://ollama:11434` en ese mismo campo. Y si no vas a usar el del compose, puedes ahorrarte su arranque con `docker compose up --build --scale ollama=0`.
+
 ### Iniciar sesión en un ejecutor de nube
 
 Sáltate este apartado si vas a usar Ollama.

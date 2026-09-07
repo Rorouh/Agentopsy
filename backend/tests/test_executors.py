@@ -840,7 +840,7 @@ def _set_config(client: TestClient, key: str, value: str) -> object:
 def test_cloud_model_key_set_and_unset(client: TestClient, clean_config: None) -> None:
     r = _set_config(client, "CLAUDE_CODE_MODEL", "opus")
     assert r.status_code == 200 and r.json() == {
-        "key": "CLAUDE_CODE_MODEL", "set": True, "preview": "opus",
+        "key": "CLAUDE_CODE_MODEL", "set": True, "preview": "opus", "source": "config",
     }
     assert config.get("CLAUDE_CODE_MODEL") == "opus"
     # Empty clears it back to the CLI default (RULE 2), not a 422.

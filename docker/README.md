@@ -161,6 +161,26 @@ El maletín queda **habilitado para que el `api` lo consulte** así:
   opción 100 % local; si se elige un ejecutor respaldado por cloud (Claude
   Code, Codex CLI, Gemini CLI), la herramienta advierte de que contenido
   derivado del caso sale a ese proveedor y lo registra en el audit log.
+- **Qué Ollama**, también lo elige el operador. El compose fija
+  `OLLAMA_HOST=http://ollama:11434` en el servicio `api` como línea base del
+  despliegue (su propio servicio `ollama`, sin puerto publicado), y lo que el
+  perito guarde en *Ajustes* gana sobre esa variable
+  (`backend/agentopsy/config.py`: primero `config.json`, después el entorno).
+  Escribiendo `http://localhost:11434` se usa el Ollama que corre en el equipo
+  del perito, con sus modelos y su GPU. Dentro del contenedor esa URL apuntaría
+  al propio contenedor, así que se resuelve al nombre por el que se alcanza la
+  máquina anfitriona, declarado por el despliegue en `AGENTOPSY_HOST_GATEWAY`
+  junto al `extra_hosts: host.docker.internal:host-gateway` que lo hace resolver
+  también en Linux. Sin esa declaración no se reescribe nada (RULE 2: no se
+  inventa una pasarela). La reescritura viaja en el motivo de
+  `/api/capabilities` y en el evento de auditoría, junto a lo que el perito
+  escribió. Del lado del host, con Docker Desktop (macOS y Windows) el reenvío
+  llega hasta la loopback del anfitrión y no hay nada que tocar; en Linux
+  `host.docker.internal` resuelve a la IP del puente, así que Ollama tiene que
+  escuchar fuera de loopback (`OLLAMA_HOST=0.0.0.0 ollama serve`, o *Expose
+  Ollama to the network* en la app). Es exactamente lo que dice el motivo cuando
+  falla. Esto no publica nada nuevo hacia fuera: los puertos del compose siguen
+  atados a `127.0.0.1` (SECURITY INVARIANT 1).
 
 ## Notas de seguridad del contenedor
 

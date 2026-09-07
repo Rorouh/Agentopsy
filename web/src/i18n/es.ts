@@ -599,6 +599,10 @@ export const es: Record<MessageKey, string> = {
     ") no lo admite {model}: el turno fallaría. Elige uno de los de arriba.",
   "settings.modelByCli": "El modelo lo gestiona el CLI de este proveedor.",
   "settings.saveHost": "Guardar host",
+  "settings.ollamaHostHint":
+    "Escribe http://localhost:11434 para usar el Ollama que corre en tu equipo, o http://ollama:11434 para el que levanta el compose. Si no lo alcanza, arráncalo escuchando en todas las interfaces: OLLAMA_HOST=0.0.0.0 ollama serve.",
+  "settings.ollamaHostFromEnv":
+    "Ahora mismo lo fija el despliegue. Lo que guardes aquí manda sobre esa variable.",
   "settings.isDefaultEngine": "es el motor por defecto",
   "settings.useAsDefault": "usar por defecto",
   "settings.renewSession": "Renovar sesión de {name}",

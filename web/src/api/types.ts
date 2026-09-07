@@ -622,6 +622,11 @@ export interface ToolUsage {
 export interface ConfigKeyStatus {
   set: boolean;
   preview: string | null;
+  // De qué capa sale el valor: "config" lo guardó el operador en Ajustes,
+  // "env" lo fija el despliegue (el compose). Lo guardado GANA sobre el entorno
+  // (backend/agentopsy/config.py), y sin este dato las dos cosas se pintan
+  // igual aunque no se comporten igual al editarlas.
+  source: "config" | "env" | null;
 }
 
 export interface ConfigSnapshot {

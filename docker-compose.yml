@@ -120,10 +120,23 @@ services:
       AGENTOPSY_HOME: /cases
       # Comportamiento del agente: un único agentes/agent.md (ver agentes/README.md).
       AGENTOPSY_AGENTS_DIR: /opt/agentopsy/agentes
-      # Ejecutor 100 % local: el api llega a Ollama por la red interna del
-      # compose (el servicio no publica puerto al host). Es la clave que lee
-      # agentopsy.executors.ollama vía agentopsy.config.
+      # Ejecutor 100 % local: LÍNEA BASE del despliegue, no la última palabra.
+      # Apunta al servicio `ollama` de este compose, alcanzable por la red
+      # interna (no publica puerto al host). Es la clave que lee
+      # agentopsy.executors.ollama vía agentopsy.config, y lo que el perito
+      # guarde en Ajustes GANA sobre esta variable (ver agentopsy/config.py):
+      # así se puede apuntar a otro Ollama sin editar el compose.
       OLLAMA_HOST: http://ollama:11434
+      # Nombre por el que, DESDE ESTE CONTENEDOR, se resuelve la máquina que
+      # ejecuta Docker. Lo declara el despliegue porque solo el despliegue lo
+      # sabe; sin él no hay reescritura ninguna (RULE 2, nada se inventa).
+      # Con él, un `http://localhost:11434` guardado en Ajustes deja de
+      # significar "este contenedor" (donde no escucha nadie) y pasa a
+      # significar "el Ollama de mi equipo": el perito arranca su modelo grande
+      # con `ollama run qwen2.5:32b` en su propia GPU y Agentopsy lo usa. La
+      # reescritura no es silenciosa: sale en la razón de /api/capabilities, en
+      # el evento de auditoría y junto al campo de Ajustes.
+      AGENTOPSY_HOST_GATEWAY: host.docker.internal
       # Bandeja de entrada de evidencias que la UI lista en "Registrar
       # evidencia". El perito deja el fichero en ./evidence del host o lo SUBE
       # desde el navegador (drag-and-drop) — por eso el api la monta rw (ver más
@@ -141,6 +154,14 @@ services:
       # api + ambos maletines para exigir cabecera compartida.
       AGENTOPSY_TOOLKIT_UNIX_URL: http://toolkit-unix:8666
       AGENTOPSY_TOOLKIT_WINDOWS_URL: http://toolkit-windows:8666
+    # Docker Desktop (macOS/Windows) ya publica `host.docker.internal`; en Linux
+    # NO existe salvo que se declare, y `host-gateway` es el valor especial que
+    # Docker resuelve a la puerta de enlace del host. Con esta línea, la misma
+    # configuración de Ajustes funciona en los tres sistemas operativos. No abre
+    # nada hacia fuera: es resolución de nombre de salida, y todos los puertos
+    # publicados siguen atados a 127.0.0.1 (SECURITY INVARIANT 1).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       # Mismas carpetas del host que los maletines (interpolación al parsear el
       # compose): api y toolkits deben ver la MISMA evidencia y los MISMOS casos.

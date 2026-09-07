@@ -355,12 +355,16 @@ CATALOGO["gemini.reportedError"] = {
 
 # --- ejecutores: Ollama --------------------------------------------------------
 CATALOGO["ollama.hostUnset"] = {
-    "en": "OLLAMA_HOST is not configured. In the compose it is set by the api service (http://ollama:11434); in a standalone run, define it in Settings or as an environment variable. Agentopsy does not assume a default host (RULE 2).",
-    "es": "OLLAMA_HOST no está configurado. En el compose lo fija el servicio api (http://ollama:11434); en ejecución standalone defínelo en Settings o como variable de entorno. Agentopsy no asume un host por defecto (RULE 2).",
+    "en": "OLLAMA_HOST is not configured. Set it in Settings: http://ollama:11434 for the Ollama the compose starts, or http://localhost:11434 for the one running on your own machine. Agentopsy does not assume a default host (RULE 2).",
+    "es": "OLLAMA_HOST no está configurado. Fíjalo en Ajustes: http://ollama:11434 para el Ollama que levanta el compose, o http://localhost:11434 para el que corre en tu propio equipo. Agentopsy no asume un host por defecto (RULE 2).",
 }
 CATALOGO["ollama.noAnswer"] = {
     "en": "Ollama does not answer at {host} ({error}). Check that the service is up (`docker compose ps ollama`) or fix OLLAMA_HOST.",
     "es": "Ollama no responde en {host} ({error}). Comprueba que el servicio está levantado (`docker compose ps ollama`) o corrige OLLAMA_HOST.",
+}
+CATALOGO["ollama.noAnswerHostMachine"] = {
+    "en": "Ollama does not answer at {configured}, which from the api container is contacted at {effective} ({error}). Check that Ollama is running on your machine (`ollama list`) and that it listens on every interface, not only on loopback: start it with OLLAMA_HOST=0.0.0.0 ollama serve, or turn on «Expose Ollama to the network» in the Ollama app. Bound to loopback alone, no container can reach it.",
+    "es": "Ollama no responde en {configured}, que desde el contenedor api se contacta en {effective} ({error}). Comprueba que Ollama está corriendo en tu equipo (`ollama list`) y que escucha en todas las interfaces, no solo en loopback: arráncalo con OLLAMA_HOST=0.0.0.0 ollama serve, o activa «Exponer Ollama en la red» en la app de Ollama. Si solo escucha en loopback, ningún contenedor puede alcanzarlo.",
 }
 CATALOGO["ollama.hostUnsetForList"] = {
     "en": "OLLAMA_HOST is not configured, models cannot be listed (RULE 2: no silent defaults).",

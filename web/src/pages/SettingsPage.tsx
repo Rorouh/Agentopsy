@@ -383,32 +383,45 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
                                 </div>
                               )}
 
-                              {/* El host de Ollama sigue siendo configurable: en el
-                                  compose llega por entorno, pero una ejecución
-                                  standalone lo necesita. */}
+                              {/* El host de Ollama es donde el perito elige QUÉ
+                                  Ollama usa: el que levanta el compose o el que
+                                  ya tiene corriendo en su equipo (con sus
+                                  modelos y su GPU). El compose fija una línea
+                                  base por entorno y lo guardado aquí gana sobre
+                                  ella (backend/agentopsy/config.py); por eso la
+                                  nota avisa cuando el valor a la vista todavía
+                                  es el del despliegue. */}
                               {id === "ollama" && (
-                                <div className="engine-custom">
-                                  <label className="visually-hidden" htmlFor="ollama-host">
-                                    Ollama host
-                                  </label>
-                                  <input
-                                    id="ollama-host"
-                                    className="field-input field-input--sm"
-                                    value={ollamaHostDraft}
-                                    onChange={(e) => setOllamaHostDraft(e.target.value)}
-                                    placeholder="http://ollama:11434"
-                                  />
-                                  <button
-                                    type="button"
-                                    className="link-action"
-                                    disabled={
-                                      savingKey === "OLLAMA_HOST" || !ollamaHostDraft.trim()
-                                    }
-                                    onClick={() => void saveKey("OLLAMA_HOST", ollamaHostDraft)}
-                                  >
-                                    {t("settings.saveHost")}
-                                  </button>
-                                </div>
+                                <>
+                                  <div className="engine-custom">
+                                    <label className="visually-hidden" htmlFor="ollama-host">
+                                      Ollama host
+                                    </label>
+                                    <input
+                                      id="ollama-host"
+                                      className="field-input field-input--sm"
+                                      value={ollamaHostDraft}
+                                      onChange={(e) => setOllamaHostDraft(e.target.value)}
+                                      placeholder="http://localhost:11434"
+                                    />
+                                    <button
+                                      type="button"
+                                      className="link-action"
+                                      disabled={
+                                        savingKey === "OLLAMA_HOST" || !ollamaHostDraft.trim()
+                                      }
+                                      onClick={() => void saveKey("OLLAMA_HOST", ollamaHostDraft)}
+                                    >
+                                      {t("settings.saveHost")}
+                                    </button>
+                                  </div>
+                                  <div className="engine-note">
+                                    {t("settings.ollamaHostHint")}
+                                    {config?.keys.OLLAMA_HOST?.source === "env" && (
+                                      <> {t("settings.ollamaHostFromEnv")}</>
+                                    )}
+                                  </div>
+                                </>
                               )}
 
                               {status.available ? (
