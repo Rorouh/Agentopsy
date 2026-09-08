@@ -10,6 +10,7 @@ import type {
   ExecutorId,
   ExecutorModels,
   ExecutorStatus,
+  LocalCapabilities,
   StreamEvent,
 } from "../api/types";
 import { ExecutorLoginModal } from "../components/ExecutorLoginModal";
@@ -305,6 +306,40 @@ function ToolChain({ activity, streaming }: { activity: StreamEvent[]; streaming
             </div>
           );
         }
+        // Motor local-fit-llm: el plan del investigador, el veredicto del
+        // revisor y sus órdenes. Es lo que el perito ve en lugar de un spinner.
+        if (ev.type === "tareas") {
+          const marca: Record<string, string> = { pendiente: "[ ]", en_curso: "[>]", hecha: "[x]", descartada: "[-]" };
+          return (
+            <div className="toolchain-line toolchain-line--dim" key={i}>
+              {t("chat.tasks")}:{" "}
+              {ev.tareas.map((x) => `${marca[x.estado] ?? "[ ]"} ${x.texto}`).join(" · ")}
+            </div>
+          );
+        }
+        if (ev.type === "revision") {
+          return (
+            <div className="toolchain-line" key={i}>
+              <span className={ev.approved ? "toolchain-ok" : "toolchain-err"}>{ev.approved ? "✓" : "↺"}</span>
+              &nbsp;&nbsp;{t(ev.approved ? "chat.reviewApproved" : "chat.reviewRequested")}
+              {ev.text ? <span className="toolchain-note">{" · "}{ev.text}</span> : null}
+            </div>
+          );
+        }
+        if (ev.type === "plan") {
+          return (
+            <div className="toolchain-line toolchain-line--dim" key={i}>
+              {t("chat.reviewPlan")}: {ev.text}
+            </div>
+          );
+        }
+        if (ev.type === "orden") {
+          return (
+            <div className="toolchain-line toolchain-line--dim" key={i}>
+              {t("chat.reviewOrder")}: {ev.text}
+            </div>
+          );
+        }
         return null;
       })}
     </div>
@@ -334,6 +369,8 @@ const MODEL_CONFIG_KEY: Record<ExecutorId, string> = {
   codex: "CODEX_MODEL",
   gemini: "GEMINI_MODEL",
   ollama: "OLLAMA_MODEL",
+  // Motor local-fit-llm: la clave vive en su propio servicio (/api-local/config).
+  "local-fit-llm": "LOCALFIT_MODEL",
 };
 
 // Config key que persiste la POTENCIA (nivel de razonamiento) por proveedor
@@ -383,6 +420,31 @@ export function ChatPage({
   const [modelSaving, setModelSaving] = useState(false);
   const [providerModels, setProviderModels] = useState<ExecutorModels | null>(null);
   const [modelsLoading, setModelsLoading] = useState(false);
+  // Capacidades del SEGUNDO backend (motor local-fit-llm, /api-local). Si el
+  // servicio no está, la entrada del selector se pinta no disponible con la
+  // razón, nunca se oculta (RULE 2). Al montar, si la pestaña ya estaba en
+  // modo local, se restaura la selección: sin recarga, sin paso manual (RF-7).
+  const [localCaps, setLocalCaps] = useState<LocalCapabilities | null>(null);
+  const [localCapsError, setLocalCapsError] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    api.local
+      .capabilities()
+      .then((c) => {
+        if (!alive) return;
+        setLocalCaps(c);
+        setLocalCapsError(null);
+      })
+      .catch((e) => {
+        if (!alive) return;
+        setLocalCaps(null);
+        setLocalCapsError(e instanceof ApiError ? e.detail : String(e));
+      });
+    if (api.backend.get() === "local") setExecutor("local-fit-llm");
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const logRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -506,6 +568,11 @@ export function ChatPage({
   const selectExecutor = (id: ExecutorId) => {
     setExecutor(id);
     setOpenMenu(null);
+    // Elegir el motor local CAMBIA EL BACKEND al que habla el chat (RF-6):
+    // el prefijo pasa a /api-local y nada más; volver a un ejecutor del api lo
+    // deshace. La cabecera lo muestra en todo momento (RF-9).
+    api.backend.set(id === "local-fit-llm" ? "local" : "api");
+    if (id === "local-fit-llm") return; // no es un ejecutor del api: no se persiste allí
     api.config.set("DEFAULT_EXECUTOR", id).catch(() => {
       /* persistencia best-effort */
     });
@@ -523,11 +590,29 @@ export function ChatPage({
     return loaded.find((a) => a.os_profile === activeProfile) ?? null;
   }, [caps, activeProfile]);
 
-  const executorEntries: [ExecutorId, ExecutorStatus][] = caps
-    ? (Object.entries(caps.executors) as [ExecutorId, ExecutorStatus][])
-    : [];
+  // La entrada del motor local va al final de la lista de ejecutores del api:
+  // misma forma (name/local/available/reason), otro backend detrás.
+  const localEntry: [ExecutorId, ExecutorStatus] = [
+    "local-fit-llm",
+    localCaps
+      ? {
+          name: localCaps.engine.name,
+          local: true,
+          available: localCaps.model.available,
+          reason: localCaps.model.available ? null : localCaps.model.reason,
+        }
+      : { name: "Local fit LLM", local: true, available: false, reason: localCapsError ?? t("chat.queryingCaps") },
+  ];
+  const executorEntries: [ExecutorId, ExecutorStatus][] = [
+    ...(caps ? (Object.entries(caps.executors) as [ExecutorId, ExecutorStatus][]) : []),
+    localEntry,
+  ];
   const executorStatus: ExecutorStatus | null =
-    executor && caps ? caps.executors[executor] ?? null : null;
+    executor === "local-fit-llm"
+      ? localEntry[1]
+      : executor && caps
+        ? caps.executors[executor] ?? null
+        : null;
 
   // ── Compositor autoexpandible ─────────────────────────────────────────────
   // El alto se recalcula en cada cambio del texto: primero `auto`, para que

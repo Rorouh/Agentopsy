@@ -36,6 +36,7 @@ const MODEL_CONFIG_KEY: Record<ExecutorId, string> = {
   codex: "CODEX_MODEL",
   gemini: "GEMINI_MODEL",
   ollama: "OLLAMA_MODEL",
+  "local-fit-llm": "LOCALFIT_MODEL",
 };
 
 const TIMEOUT_OPTIONS = [60, 120, 300];

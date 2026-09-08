@@ -1,7 +1,27 @@
 // Tipos espejo de los contratos JSON del servicio api (backend/agentopsy/routers/*).
 // Convención: snake_case 1:1 con el backend, sin transformaciones en el cliente.
 
-export type ExecutorId = "claude-code" | "codex" | "gemini" | "ollama";
+// `local-fit-llm` no es un ejecutor del api: es el SEGUNDO BACKEND (motor para
+// 8 GB sin GPU, agentopsy-local-fit-llm). Elegirlo en el chat cambia el prefijo
+// al que la web habla (/api-local) sin reiniciar nada (RF-6, RF-7).
+export type ExecutorId = "claude-code" | "codex" | "gemini" | "ollama" | "local-fit-llm";
+
+export type BackendId = "api" | "local";
+
+// GET /api-local/capabilities: qué tiene el motor local (modelo, memoria,
+// maletines). `model.available=false` trae la razón accionable (RULE 2).
+export interface LocalCapabilities {
+  engine: { id: string; name: string; local: boolean };
+  model: { available: boolean; reason: string | null; name: string | null };
+  memory: string | null;
+  maletines: Record<string, { available: boolean; reason?: string; stage?: string }>;
+  tools: string[];
+}
+
+export interface LocalModels {
+  current: string | null;
+  models: { name: string; size: number | null }[];
+}
 
 // Análisis del agente lanzado en SEGUNDO PLANO (POST /api/agent/analyze). Corre
 // desacoplado de la conexión: una desconexión no lo aborta. Se consulta por id.
@@ -133,6 +153,13 @@ export type StreamEvent =
     }
   | { type: "finding"; iteration: number; title: string; severity: string }
   | { type: "final"; iteration: number; text: string; exhausted?: boolean }
+  // Propios del motor local-fit-llm (dos agentes): la lista de tareas que el
+  // investigador escribe y mantiene (RA-6), el veredicto del revisor y sus
+  // órdenes cortas al investigador. El api nunca los emite.
+  | { type: "tareas"; iteration: number; tareas: { id: number; texto: string; estado: string }[]; agent?: string }
+  | { type: "revision"; iteration: number; approved: boolean; orders: string[]; text: string; agent?: string }
+  | { type: "orden"; iteration: number; text: string; agent?: string }
+  | { type: "plan"; iteration: number; orders: string[]; text: string; agent?: string }
   | {
       type: "done";
       reply: string;
@@ -191,7 +218,8 @@ export interface Capabilities {
   container_runtime: boolean;
   toolkits: Record<string, MaletinStatus>;
   tools: Record<string, ToolStatus>;
-  executors: Record<ExecutorId, ExecutorStatus>;
+  // Parcial: `local-fit-llm` no es un ejecutor del api, es el otro backend.
+  executors: Partial<Record<ExecutorId, ExecutorStatus>>;
   agents: { root: string; loaded: AgentSummary[] };
 }
 

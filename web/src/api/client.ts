@@ -11,6 +11,9 @@ import type {
   AdjudicateRequest,
   AgentFinding,
   AgentJob,
+  BackendId,
+  LocalCapabilities,
+  LocalModels,
   GraphCaseView,
   GraphFindingView,
   GraphIndex,
@@ -118,23 +121,77 @@ function baseHeaders(token: string): Record<string, string> {
   return { "X-Agentopsy-Token": token, [LANG_HEADER]: getLang() };
 }
 
-let tokenPromise: Promise<string> | null = null;
+// ── Dos backends, un prefijo activo ─────────────────────────────────────────
+// El motor agéntico (`api`, prefijo /api) y el motor local para 8 GB sin GPU
+// (`local-fit-llm`, prefijo /api-local) conviven levantados (RF-8). Elegir el
+// modo local en el chat cambia el prefijo de las llamadas al AGENTE y nada
+// más: casos, evidencia, hallazgos y documentos viven en el mismo disco y se
+// siguen leyendo del api. Sin reinicio, sin recarga (RF-6, RF-7). El modo se
+// recuerda por pestaña (sessionStorage) y se anuncia a quien quiera pintarlo
+// (RF-9: la UI dice siempre qué backend atiende).
+export const BACKEND_PREFIX: Record<BackendId, string> = { api: "/api", local: "/api-local" };
+export const BACKEND_STORAGE_KEY = "agentopsy.backend";
 
-function getToken(): Promise<string> {
-  if (!tokenPromise) {
-    tokenPromise = (async () => {
-      const res = await fetch("/api/session");
+let backend: BackendId = (() => {
+  try {
+    return sessionStorage.getItem(BACKEND_STORAGE_KEY) === "local" ? "local" : "api";
+  } catch {
+    return "api";
+  }
+})();
+const backendListeners = new Set<(b: BackendId) => void>();
+
+export function getBackend(): BackendId {
+  return backend;
+}
+
+export function setBackend(next: BackendId): void {
+  if (next === backend) return;
+  backend = next;
+  try {
+    sessionStorage.setItem(BACKEND_STORAGE_KEY, next);
+  } catch {
+    /* sin storage: el modo vive solo en memoria */
+  }
+  backendListeners.forEach((cb) => cb(next));
+}
+
+export function onBackendChange(cb: (b: BackendId) => void): () => void {
+  backendListeners.add(cb);
+  return () => backendListeners.delete(cb);
+}
+
+function backendOf(path: string): BackendId {
+  return path.startsWith(BACKEND_PREFIX.local + "/") ? "local" : "api";
+}
+
+function agentPrefix(): string {
+  return BACKEND_PREFIX[backend];
+}
+
+// Un token por backend: cada servicio genera el suyo en memoria y lo entrega
+// por su propio /session (mismo origen, mismo esquema anti-CSRF).
+const tokenPromises: Record<BackendId, Promise<string> | null> = { api: null, local: null };
+
+function resetToken(which: BackendId): void {
+  tokenPromises[which] = null;
+}
+
+function getToken(which: BackendId = "api"): Promise<string> {
+  if (!tokenPromises[which]) {
+    tokenPromises[which] = (async () => {
+      const res = await fetch(`${BACKEND_PREFIX[which]}/session`);
       if (!res.ok) throw new ApiError(res.status, await readDetail(res));
       const body = (await res.json()) as { token: string };
       return body.token;
     })().catch((err) => {
-      // El bootstrap falló (api aún arrancando): permite reintentar en la
+      // El bootstrap falló (servicio aún arrancando): permite reintentar en la
       // siguiente llamada en vez de cachear el fallo para siempre.
-      tokenPromise = null;
+      tokenPromises[which] = null;
       throw err;
     });
   }
-  return tokenPromise;
+  return tokenPromises[which]!;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -147,11 +204,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       },
     });
 
-  let res = await doFetch(await getToken());
+  const which = backendOf(path);
+  let res = await doFetch(await getToken(which));
   if (res.status === 401) {
-    // Token rotado (el servicio api se reinició): re-bootstrap una única vez.
-    tokenPromise = null;
-    res = await doFetch(await getToken());
+    // Token rotado (el servicio se reinició): re-bootstrap una única vez.
+    resetToken(which);
+    res = await doFetch(await getToken(which));
   }
   if (!res.ok) throw new ApiError(res.status, await readDetail(res));
   return (await res.json()) as T;
@@ -165,7 +223,7 @@ function post<T>(path: string, body: unknown): Promise<T> {
 // llevarlo) y la dispara desde un blob mismo-origen. El nombre de fichero sale
 // del Content-Disposition del backend; `fallback` si el servidor no lo manda.
 async function download(path: string, fallback: string): Promise<void> {
-  const token = await getToken();
+  const token = await getToken(backendOf(path));
   const res = await fetch(path, { headers: baseHeaders(token) });
   if (!res.ok) throw new ApiError(res.status, await readDetail(res));
   const blob = await res.blob();
@@ -227,12 +285,12 @@ function upload<T>(
       xhr.send(form);
     });
 
-  return getToken()
+  return getToken("api")
     .then(attempt)
     .catch(async (err) => {
       if (err instanceof ApiError && err.status === 401) {
-        tokenPromise = null;
-        return attempt(await getToken());
+        resetToken("api");
+        return attempt(await getToken("api"));
       }
       throw err;
     });
@@ -251,23 +309,48 @@ export const api = {
 
   agents: () => request<{ root: string; agents: AgentSummary[] }>("/api/agents"),
 
-  query: (req: QueryRequest) => post<QueryResponse>("/api/agent/query", req),
+  // Las llamadas al AGENTE van al backend activo (api o local-fit-llm): es el
+  // único grupo de rutas que cambia de prefijo al elegir el modo local.
+  query: (req: QueryRequest) => post<QueryResponse>(`${agentPrefix()}/agent/query`, req),
 
   // Análisis en SEGUNDO PLANO: arranca un job y devuelve su id al instante; el
   // análisis sigue aunque el cliente se desconecte. Se sondea con getJob.
   analyze: (req: QueryRequest) =>
-    post<{ job_id: string; status: string; case_id: string }>("/api/agent/analyze", req),
+    post<{ job_id: string; status: string; case_id: string }>(`${agentPrefix()}/agent/analyze`, req),
   getJob: (jobId: string, since = 0) =>
-    request<AgentJob>(`/api/agent/jobs/${encodeURIComponent(jobId)}?since=${since}`),
+    request<AgentJob>(`${agentPrefix()}/agent/jobs/${encodeURIComponent(jobId)}?since=${since}`),
   // Botón «Parar»: pide detener un análisis en curso. Parada cooperativa, el
   // loop del agente termina limpio conservando lo persistido en caliente.
   cancelJob: (jobId: string) =>
     post<{ job_id: string; cancel_requested: boolean; status: string }>(
-      `/api/agent/jobs/${encodeURIComponent(jobId)}/cancel`,
+      `${agentPrefix()}/agent/jobs/${encodeURIComponent(jobId)}/cancel`,
       {},
     ),
   listCaseJobs: (caseId: string) =>
-    request<AgentJob[]>(`/api/cases/${encodeURIComponent(caseId)}/agent/jobs`),
+    request<AgentJob[]>(`${agentPrefix()}/cases/${encodeURIComponent(caseId)}/agent/jobs`),
+
+  // Backend activo (RF-6 … RF-9): elegir, consultar y escuchar cambios.
+  backend: { get: getBackend, set: setBackend, onChange: onBackendChange },
+
+  // El motor local-fit-llm: sus capacidades, sus modelos y su configuración.
+  // Todo bajo /api-local; el token lo entrega ese mismo servicio.
+  local: {
+    async health(): Promise<{ ok: boolean; engine: string }> {
+      const res = await fetch(`${BACKEND_PREFIX.local}/health`);
+      if (!res.ok) throw new ApiError(res.status, await readDetail(res));
+      return (await res.json()) as { ok: boolean; engine: string };
+    },
+    capabilities: () => request<LocalCapabilities>(`${BACKEND_PREFIX.local}/capabilities`),
+    models: () => request<LocalModels>(`${BACKEND_PREFIX.local}/models`),
+    config: {
+      get: () => request<ConfigSnapshot>(`${BACKEND_PREFIX.local}/config`),
+      set: (key: string, value: string) =>
+        post<{ key: string; set: boolean; preview: string | null; note: string | null }>(
+          `${BACKEND_PREFIX.local}/config`,
+          { key, value },
+        ),
+    },
+  },
 
   // Igual que query() pero recibe el progreso del agente en vivo: llama a
   // `onEvent` por cada evento NDJSON (reasoning / tool_call / tool_result /
@@ -277,17 +360,18 @@ export const api = {
     onEvent: (ev: StreamEvent) => void,
     signal?: AbortSignal,
   ): Promise<void> => {
+    const which = getBackend();
     const doFetch = (token: string) =>
-      fetch("/api/agent/query/stream", {
+      fetch(`${BACKEND_PREFIX[which]}/agent/query/stream`, {
         method: "POST",
         headers: { ...baseHeaders(token), "Content-Type": "application/json" },
         body: JSON.stringify(req),
         signal,
       });
-    let res = await doFetch(await getToken());
+    let res = await doFetch(await getToken(which));
     if (res.status === 401) {
-      tokenPromise = null;
-      res = await doFetch(await getToken());
+      resetToken(which);
+      res = await doFetch(await getToken(which));
     }
     if (!res.ok) throw new ApiError(res.status, await readDetail(res));
     if (!res.body) throw new ApiError(0, tr("http.noStreamBody"));
@@ -606,9 +690,23 @@ export const api = {
   },
 
   config: {
-    get: () => request<ConfigSnapshot>("/api/config"),
+    // Las claves LOCALFIT_* son del motor local y viven en su propio endpoint;
+    // el snapshot las funde con las del api para que la UI las lea de un sitio.
+    // Si el motor local no está, sus claves simplemente no aparecen.
+    get: async (): Promise<ConfigSnapshot> => {
+      const snap = await request<ConfigSnapshot>("/api/config");
+      try {
+        const local = await request<ConfigSnapshot>(`${BACKEND_PREFIX.local}/config`);
+        return { ...snap, keys: { ...snap.keys, ...local.keys } };
+      } catch {
+        return snap;
+      }
+    },
     set: (key: string, value: string) =>
-      post<{ key: string; set: boolean; preview: string }>("/api/config", { key, value }),
+      post<{ key: string; set: boolean; preview: string }>(
+        key.startsWith("LOCALFIT_") ? `${BACKEND_PREFIX.local}/config` : "/api/config",
+        { key, value },
+      ),
     executors: () => request<{ executors: ExecutorId[] }>("/api/config/executors"),
   },
 
@@ -616,8 +714,21 @@ export const api = {
   // los instalados; los CLIs cloud, atajos + texto libre (allow_custom) que se
   // pasan como --model, Agentopsy no puede enumerar su catálogo sin API key
   // (SECURITY 7). El modelo elegido se persiste por proveedor (MODEL_CONFIG_KEY).
-  executorModels: (id: ExecutorId) =>
-    request<ExecutorModels>(`/api/executors/${id}/models`),
+  executorModels: async (id: ExecutorId): Promise<ExecutorModels> => {
+    if (id !== "local-fit-llm") return request<ExecutorModels>(`/api/executors/${id}/models`);
+    // El motor local lista los modelos instalados en Ollama; se eligen desde
+    // aquí y quedan en LOCALFIT_MODEL (projects/config.json), sin tocar código.
+    const local = await request<LocalModels>(`${BACKEND_PREFIX.local}/models`);
+    return {
+      executor: id,
+      editable: true,
+      allow_custom: true,
+      models: local.models.map((m) => m.name),
+      note: null,
+      model_details: [],
+      reasoning: null,
+    };
+  },
 
   // Login web de un ejecutor CLI cloud (Codex/Claude). Todos los POST llevan el
   // token de sesión (SECURITY INVARIANT 3). El código de un solo uso solo viaja
@@ -626,7 +737,7 @@ export const api = {
   executorLogin: {
     // Capacidad de relay de los ejecutores cloud (batch, para Ajustes).
     capabilities: () =>
-      request<{ executors: Record<ExecutorId, ExecutorLoginCapability> }>(
+      request<{ executors: Partial<Record<ExecutorId, ExecutorLoginCapability>> }>(
         "/api/executors/login-capabilities",
       ),
     // `force` renueva una sesión que el sondeo da por buena: el CLI de Claude

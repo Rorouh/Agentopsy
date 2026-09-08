@@ -485,6 +485,15 @@ export const en = {
   "executor.pick": "Choose an executor…",
   "executor.unavailable": "{name} (unavailable)",
   "executor.local": "local",
+  "chat.tasks": "Investigator tasks",
+  "chat.reviewApproved": "Reviewer approves",
+  "chat.reviewRequested": "Reviewer asks for more",
+  "chat.reviewPlan": "Reviewer plan",
+  "chat.reviewOrder": "Reviewer order",
+  "shell.backendApi": "Backend: api",
+  "shell.backendLocal": "Backend: local-fit-llm",
+  "shell.backendApiTitle": "The agent is served by the agentic engine (api service). Switch backends by picking Local fit LLM as the executor in the chat.",
+  "shell.backendLocalTitle": "The agent is served by the local engine for 8 GB without GPU (local-fit-llm service). Pick another executor in the chat to return to the api.",
   "executor.notAvailable": "{name} is not available.",
 
   // --- vocabulario del grafo: nodos ----------------------------------------

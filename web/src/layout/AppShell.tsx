@@ -1,4 +1,6 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { api } from "../api/client";
+import type { BackendId } from "../api/types";
 import { Sidebar } from "./Sidebar";
 import { ErrorState } from "../ui/ErrorState";
 import { useShellHeader } from "./shellHeader";
@@ -36,6 +38,11 @@ export function AppShell({ activeView, onViewChange, error, children }: AppShell
   } = useActiveCase();
   const [searchOpen, setSearchOpen] = useState(false);
   const [newCaseOpen, setNewCaseOpen] = useState(false);
+  // Qué backend atiende al agente, visible en TODA vista (RF-9): el api
+  // (motor agéntico) o local-fit-llm (motor para 8 GB sin GPU). Se actualiza
+  // al elegir el modo en el chat, sin recargar (RF-7).
+  const [backend, setBackendState] = useState<BackendId>(api.backend.get());
+  useEffect(() => api.backend.onChange(setBackendState), []);
 
   return (
     <div className="app">
@@ -63,6 +70,12 @@ export function AppShell({ activeView, onViewChange, error, children }: AppShell
             </h1>
           </div>
           <div className="shell-header-right">
+            <div
+              className={`shell-header-meta shell-backend shell-backend--${backend}`}
+              title={t(backend === "local" ? "shell.backendLocalTitle" : "shell.backendApiTitle")}
+            >
+              {t(backend === "local" ? "shell.backendLocal" : "shell.backendApi")}
+            </div>
             {payload?.meta && <div className="shell-header-meta">{payload.meta}</div>}
             {payload?.action && <div className="shell-header-action">{payload.action}</div>}
           </div>

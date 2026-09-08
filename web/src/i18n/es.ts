@@ -458,6 +458,15 @@ export const es: Record<MessageKey, string> = {
   "executor.pick": "Elige un ejecutor…",
   "executor.unavailable": "{name} (no disponible)",
   "executor.local": "local",
+  "chat.tasks": "Tareas del investigador",
+  "chat.reviewApproved": "El revisor aprueba",
+  "chat.reviewRequested": "El revisor pide revisar",
+  "chat.reviewPlan": "Plan del revisor",
+  "chat.reviewOrder": "Orden del revisor",
+  "shell.backendApi": "Backend: api",
+  "shell.backendLocal": "Backend: local-fit-llm",
+  "shell.backendApiTitle": "El agente lo atiende el motor agéntico (servicio api). Cambia de backend eligiendo Local fit LLM como ejecutor en el chat.",
+  "shell.backendLocalTitle": "El agente lo atiende el motor local para 8 GB sin GPU (servicio local-fit-llm). Elige otro ejecutor en el chat para volver al api.",
   "executor.notAvailable": "{name} no está disponible.",
 
   // --- vocabulario del grafo: nodos ----------------------------------------
