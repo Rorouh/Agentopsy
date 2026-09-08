@@ -1374,3 +1374,172 @@ de coste cero.
 
 **Siguiente prueba pendiente**: análisis completo con el recordatorio al final,
 para ver si el 7B mantiene el rumbo más allá de la primera llamada.
+
+---
+
+# Spike del motor `local-fit-llm` (2026-09-08)
+
+Primera medición del motor implementado en `agentopsy-local-fit-llm/` (dos
+agentes, investigador y revisor, un prompt pequeño por paso) sobre el volcado de
+referencia (`memdump.mem`, 958 MB, Win7 con DVWA y sqlmap) y el hardware de
+siempre (i7-1260P, CPU, sin GPU). Ollama del compose (0.31.1), maletín windows.
+
+## Qué funciona de punta a punta
+
+- Ingesta con hash (2,5 s el volcado de 1 GB), cadena verificada, ejecuciones
+  reales en el maletín (`file_info`, `xxd_head`, `strings_head`, `volatility3`,
+  `bulk_extractor`, `hashdeep`), artefactos con `manifest.json`, `buscar` y
+  `leer_artefacto` sobre salidas de 50 MB (1,4 M líneas de `strings`).
+- El bucle completo con un modelo con guion (tests) y con los modelos reales:
+  el investigador ejecuta, el revisor da órdenes cortas y el turno se cierra con
+  respuesta, chat, estado del agente y auditoría (`model_call` por llamada).
+- Cada llamada al modelo cabe en la ventana antes de enviarse. Medido:
+  1.200-2.400 tokens de prompt con `num_ctx 4096`. Un volcado hex tokeniza a
+  ~2,3 chars/token (el resto de la prosa a ~3,3): la calibración se persiste.
+
+## Reloj de pared por llamada (lo que decide)
+
+| modelo | prefill medido | tokens/s prefill | segundos por paso (1.500 tok) |
+|---|---|---|---|
+| `agentopsy-q25-3b` | 21-70 s | 25-73 (73 solo cuando el prefijo estaba en caché) | 45-70 |
+| `agentopsy-q25-7b` | 90-150 s | ~12-15 | 100-150 |
+
+El prompt de sistema (identidad + firmas) es estable entre pasos para que
+llama-server reutilice la caché del prefijo; se nota (21 s frente a 45 s) pero
+no siempre: la parte variable cambia cada paso.
+
+## Turnos completos
+
+| corrida | modelo | pasos | llamadas | tokens prompt | herramientas | hallazgos | minutos |
+|---|---|---|---|---|---|---|---|
+| spike1 (prompt v1) | 3B | 17 | 19 | 32.480 | 17 | 0 | 22,2 |
+| spike2 (v1 + prefijo estable) | 3B | 10 | 11 | 20.241 | 8 | 0 | 13,7 |
+| medida 1 (v2: retirar herramientas hechas) | 3B | 14 | 16 | 25.967 | 14 | 0 | 14,0 |
+| medida 1 | 7B | 14 | 16 | 25.612 | 14 | 0 | 27,1 |
+| medida 2 (v3: identidad sin nombres de herramienta, hechos al final, 6+3 pasos, 2 rondas) | 7B | 12 | 15 | 29.176 | 12 | 0 | 49,7 |
+
+(La ficha completa, con respuestas, en `agentopsy-local-fit-llm/mediciones/`.)
+
+## Lo que se ve
+
+1. **Ninguno de los dos modelos completa un análisis básico.** Cero hallazgos en
+   todas las corridas. Las llamadas salen bien formadas (JSON válido, parámetros
+   correctos, `bulk_extractor` con `email`+`net` funcionó a la primera con el
+   3B), pero el criterio no llega: ni el 3B ni el 7B escriben su lista de tareas
+   aunque se les pida al final del prompt, y los dos vuelven una y otra vez a
+   «identificar el sistema operativo» (`file_info`, `volatility3`) aunque la
+   herramienta ya no esté en la lista y el prompt termine diciendo que fue
+   rechazada. Ninguno usó `buscar` sobre las salidas de `strings` que tenía.
+2. **El revisor sí aporta la forma correcta de trabajo**: sus órdenes son
+   cortas y concretas («busca X en el run Y con la herramienta Z») y el
+   investigador las sigue mejor que un objetivo abierto. Pero el 3B como
+   revisor inventa herramientas (whoami, chkrootkit) y aprueba informes vacíos;
+   con la lista de herramientas en su prompt el 7B las nombra bien, aunque
+   cruza herramienta y dato («revisa usuarios con bulk_extractor»).
+3. **El tiempo no da**: a 45-70 s por paso con el 3B y 100-150 con el 7B, un
+   turno de 10 pasos más revisión son 14 y 27 minutos. El presupuesto de RP-1
+   (10 min) exige o ~6 pasos con el 3B o un prefill mucho más corto.
+4. `volatility3` falla en este volcado por falta de símbolos (igual que en la
+   corrida de referencia): el motor lo retira de la lista tras el primer
+   fallo estructural y lo dice, pero el modelo lo sigue pidiendo de memoria.
+
+## Qué se cierra de las preguntas abiertas
+
+- **Modelo (pregunta 3)**: el 3B no vale como investigador; el 7B tampoco en
+  este bucle abierto. Queda por probar un modelo con razonamiento (qwen3:4b,
+  que exige Ollama >= 0.9 para `think:false`) y un 7B con órdenes del revisor
+  como única entrada.
+- **Pasos por análisis (pregunta 4)**: con lo medido, un turno útil tiene que
+  caber en 6-8 pasos; el resto se va en repeticiones.
+- **Memoria A frente a B (pregunta 1)**: sin medir. El camino B está
+  implementado (`LOCALFIT_MEMORIA=embeddings`), pero comparar memorias no tiene
+  sentido mientras el agente no use `buscar`.
+- **Segundo agente (pregunta 7)**: ya está. La señal de que hace falta es
+  clara: el investigador solo no mantiene el rumbo; el revisor es quien lo
+  reconduce.
+
+## Siguiente paso propuesto
+
+Invertir el reparto: que el revisor descomponga la pregunta del perito en
+órdenes concretas desde el principio (no solo tras un informe) y que el
+investigador ejecute cada orden en 2-3 pasos. Es el mismo diseño con la
+iniciativa en el agente que ha demostrado tenerla. Y medir `qwen3:4b` con
+razonamiento acotado.
+
+## Adenda: la terminal del maletín (decisión de Daniel, 2026-09-08)
+
+Durante el spike, el modelo pequeño insistía en pedir una herramienta `cmd` con una
+orden de shell dentro, incluso con la lista de herramientas delante. Se probó a
+rechazarla y a filtrar las órdenes del revisor que la nombraban; el agente perdía
+pasos igual. **Decisión: dársela.** `LOCALFIT_SHELL=true` expone `shell(comando)`,
+una terminal dentro del maletín, con `$EVIDENCIA` en solo lectura y `$OUT` como
+directorio de trabajo.
+
+No cambia la custodia: el `argv` literal (`bash -lc ...`) va al registro encadenado,
+la versión del binario se le pregunta al maletín (el manifiesto solo cubre las tools
+del catálogo), el `stdout` se sella y se hashea, y los ficheros de `$OUT` se hashean
+uno a uno.
+
+Lo que sí cambia son dos invariantes de seguridad del repo, y por eso viene apagada:
+el modelo pasa de emitir un id cerrado con parámetros tipados a emitir una orden
+(SECURITY INVARIANT 5), y aparece un intérprete donde no había ninguno (INVARIANT 4).
+La evidencia es dato hostil; el sandbox es el contenedor, no el host, y el maletín
+tiene red hacia el resto del compose. Encendida para evidencia propia, apagada para
+instruir un caso ajeno.
+
+## Segunda tanda: reparto invertido y terminal (2026-09-08)
+
+Cambio de reparto (`LOCALFIT_REPARTO=revisor`): el revisor descompone la pregunta
+del perito en 2-4 órdenes concretas ANTES de tocar nada, y el investigador ejecuta
+cada una en 3-4 pasos. Además se le quitó del camino todo lo que le hacía perder
+pasos (herramientas retiradas cuando ya no sirven, llamadas repetidas rechazadas
+con su resultado anterior, erratas de nombre corregidas, búsquedas multi-término)
+y se le puso delante la determinación pericial en cuanto hay material sin calificar.
+
+| corrida | modelo | terminal | minutos | pasos | herramientas | hallazgos nuevos |
+|---|---|---|---|---|---|---|
+| reparto libre | 3B | no | 14,0 | 14 | 14 | 0 |
+| reparto libre | 7B | no | 27,1 | 14 | 14 | 0 |
+| reparto revisor | 3B | no | 6,3 | 8 | 4 | 1 |
+| reparto revisor | 3B | no | 8,2 | 10 | 4 | 0 |
+| reparto revisor | 3B | sí | 12,2 | 14 | 0 | 0 |
+| reparto revisor | 7B | sí | 20,1 | 6 | 1 | 2 |
+
+### Lo que cambia y lo que no
+
+**El bucle está sano.** Se acabaron las repeticiones infinitas, las herramientas
+inventadas y los pasos gastados en deletrear. El turno del 3B baja de 14 a 6-8
+minutos y por primera vez aparecen hallazgos registrados por un modelo local.
+
+**El reparto invertido es el acierto.** Las órdenes del revisor son ejecutables y
+el investigador las sigue; con objetivo abierto se perdía. Y el revisor planifica
+bien solo si ve las FIRMAS de las herramientas y el estado real del caso: con solo
+los nombres ordenaba leer artefactos inexistentes o inventaba una herramienta `cmd`.
+
+**El techo sigue siendo el criterio del modelo, y ahora se ve exactamente dónde**:
+en convertir una observación en hallazgo. El 3B ve `sqlmap/1.0-dev-nongit-20150902`
+en la salida de una búsqueda, no lo registra, y el revisor redacta después que no
+hay rastro de sqlmap: una afirmación falsa sobre material que el propio agente tenía
+delante. El 7B sí registra lo que ve, pero a 134 s por llamada un turno se va a 20
+minutos, el doble del presupuesto de RP-1.
+
+**La terminal (`LOCALFIT_SHELL=true`) no arregla al 3B pero desbloquea al 7B**: en su
+primer paso emitió `grep -ai 'Computername=' $EVIDENCIA | head -20` y sacó el nombre
+del equipo. Un comando hace lo que antes eran tres pasos, que es justo lo que un
+modelo lento necesita. Comprobado a mano, esto sale de un solo comando:
+
+```
+grep -ahoi -e 'WIN-L0ZZQ76PMUF' -e 'sqlmap' -e 'phpshell' "$ARTEFACTOS"/*/stdout.txt | sort | uniq -c | sort -rn
+   7330 sqlmap
+   3649 WIN-L0ZZQ76PMUF
+    255 phpshell
+```
+
+### Lo que queda por probar
+
+1. **7B con la terminal y menos pasos** (2 órdenes de 2 pasos): si un comando bien
+   puesto responde la pregunta, el presupuesto de 10 minutos vuelve a estar en juego.
+2. **Un modelo de 4B con razonamiento acotado** (`qwen3:4b` con `LOCALFIT_THINK=false`,
+   que exige Ollama >= 0.9; el del compose es 0.31.1 y lo ignora).
+3. **Camino A frente a camino B de memoria**: sigue sin medirse, y ahora sí tiene
+   sentido, porque el agente por fin usa `buscar` de verdad.
