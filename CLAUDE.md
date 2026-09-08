@@ -46,7 +46,15 @@ agentes/agent.md                  the ONE behavioral file the agent reads, in Sp
 agentes/agent.en.md               its English twin, picked by the language axis
 ```
 
-Five compose services (`web`, `api`, `ollama`, `toolkit-windows`, `toolkit-unix`), all Linux
+Six compose services (`web`, `api`, `local-fit-llm`, `ollama`, `toolkit-windows`,
+`toolkit-unix`), all Linux containers. `local-fit-llm` (`agentopsy-local-fit-llm/`) is the
+SECOND backend: the engine for 8 GB hosts without GPU (two agents, investigator + reviewer,
+one small prompt per step over the same maletines and the same case directory). nginx
+publishes it under `/api-local/`; the web routes the chat to it when the operator picks
+`Local fit LLM` as executor, and shows which backend is serving at all times. Requirements
+and design: `REQUISITOS-local-fit-llm.md`, `DISENO-local-fit-llm.md`. Its turn is a LangGraph graph and
+can be traced to LangSmith ONLY when the operator sets `LANGSMITH_TRACING=true` (opt-in cloud egress of
+case-derived text; documented in its README, never on by default). All Linux
 containers — the runtime environment is identical on the three host OSs. **Nothing ships
 outside `docker compose up --build`; no API keys anywhere.**
 

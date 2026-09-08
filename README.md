@@ -27,6 +27,7 @@ Todo lo que entra pasa por el mismo hash-gate y la misma cadena de custodia, ven
 - **Cadena de custodia.** Lectura en solo lectura a nivel de bloque, SHA-256 baseline en la ingesta, audit log encadenado por hash y el comando literal, el argv, registrado en cada ejecución.
 - **En inglés o en castellano.** La interfaz, los mensajes del backend, el informe con sus anexos y lo que escribe el agente salen en el idioma que elijas (*Configuración → Apariencia → Idioma*; por defecto, inglés). El contenido del caso no se traduce nunca: el nombre que le pusiste, el título de un hallazgo o el resumen que redactó el agente viajan tal cual, porque traducir un dato del expediente sería inventarlo.
 - **El maletín viaja en el compose.** Las herramientas forenses van dentro de las imágenes `toolkit-windows` y `toolkit-unix`, que construye el propio compose. No hay nada que compilar ni configurar aparte.
+- **Un modo para equipos de 8 GB sin GPU.** El servicio `local-fit-llm` es un segundo motor (dos agentes, investigador y revisor, con un prompt pequeño por paso) que convive con el `api` y usa los mismos maletines y casos. Se elige en el chat como ejecutor «Local fit LLM» y la cabecera muestra en todo momento qué backend atiende. Detalle: [`agentopsy-local-fit-llm/README.md`](agentopsy-local-fit-llm/README.md).
 
 ## Instalación
 

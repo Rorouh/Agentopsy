@@ -1,6 +1,7 @@
 # Agentopsy `local-fit-llm` — documento de diseño
 
-**Estado**: propuesta, sin implementar. **Revisión 2** — 2026-09-08.
+**Estado**: implementado en `agentopsy-local-fit-llm/` (dos agentes: investigador y
+revisor; ver su `README.md`). En medición. **Revisión 2** — 2026-09-08.
 Requisitos que cumple: [`REQUISITOS-local-fit-llm.md`](REQUISITOS-local-fit-llm.md).
 Mediciones que lo sustentan: [`NOTAS-BUILD.md`](NOTAS-BUILD.md).
 

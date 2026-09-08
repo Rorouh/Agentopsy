@@ -6,7 +6,7 @@ Unix-like). Es la base sobre la que los agentes de IA hacen *tool-calling*
 (sección «Cómo lo consulta la IA»).
 
 Los dos maletines son parte del compose raíz del repo (`docker-compose.yml`,
-cinco servicios: `web`, `api`, `ollama` y los dos maletines). Este directorio
+seis servicios: `web`, `api`, `local-fit-llm`, `ollama` y los dos maletines). Este directorio
 contiene los Dockerfiles de los servicios (`api/`, `web/`,
 `docker/forensic-toolkit/`) y este README documenta los maletines en concreto.
 
@@ -47,7 +47,7 @@ contiene los Dockerfiles de los servicios (`api/`, `web/`,
 
 ```
 Agentopsy/                          # raíz del repo
-├── docker-compose.yml              # el compose raíz: los CINCO servicios
+├── docker-compose.yml              # el compose raíz: los SEIS servicios
 ├── evidence/                       # <- coloca aquí las evidencias (.raw/.vmdk/.E01)
 ├── projects/                       # <- salidas, casos e informes
 └── docker/
