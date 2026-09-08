@@ -13,6 +13,10 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
+      // Los dos backends, como en el nginx de producción: /api → api:8000 y
+      // /api-local → local-fit-llm:8001. El orden importa: el prefijo más
+      // largo se declara antes para que /api no se lo trague.
+      "/api-local": { target: "http://127.0.0.1:8001", changeOrigin: false },
       "/api": { target: "http://127.0.0.1:8000", changeOrigin: false },
       "/ws": { target: "http://127.0.0.1:8000", changeOrigin: false, ws: true },
     },

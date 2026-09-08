@@ -103,6 +103,9 @@ services:
       - "127.0.0.1:5173:80"
     depends_on:
       - api
+      # nginx resuelve el upstream de /api-local/ al arrancar: el motor local
+      # tiene que existir en la red antes que la web.
+      - local-fit-llm
 
   # --- Backend FastAPI + CLIs de la capa de ejecución -------------------------
   api:
@@ -180,6 +183,79 @@ services:
         - python
         - -c
         - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # --- Motor local-fit-llm (8 GB sin GPU) ---------------------------------------
+  # Segundo backend, convive con `api` (RF-8). El nginx del servicio web lo
+  # publica bajo /api-local/; la web enruta a él cuando el operador elige el
+  # modo local (RF-6). Mismos montajes que el api (casos, evidencias, agentes)
+  # y mismo formato en disco: un caso se ve igual desde los dos motores. La
+  # evidencia se monta :ro (RC-2). Sin puerto publicado: solo la red interna.
+  # Diseño y requisitos: DISENO-local-fit-llm.md, REQUISITOS-local-fit-llm.md.
+  local-fit-llm:
+    build:
+      context: .
+      dockerfile: agentopsy-local-fit-llm/Dockerfile
+    image: agentopsy/local-fit-llm:0.1
+    container_name: agentopsy-local-fit-llm
+    restart: unless-stopped
+    environment:
+      AGENTOPSY_HOME: /cases
+      LOCALFIT_HOME_MALETIN: /cases
+      AGENTOPSY_EVIDENCE_DIR: /evidence
+      LOCALFIT_EVIDENCE_DIR_MALETIN: /evidence
+      OLLAMA_HOST: http://ollama:11434
+      AGENTOPSY_TOOLKIT_UNIX_URL: http://toolkit-unix:8666
+      AGENTOPSY_TOOLKIT_WINDOWS_URL: http://toolkit-windows:8666
+      AGENTOPSY_UI_ORIGINS: http://127.0.0.1:5173,http://localhost:5173
+      # Modelo y camino de memoria: se leen en CADA petición (RM-4, RA-9). El
+      # operador los elige en la web (se guardan en projects/config.json) o los
+      # fija aquí; una variable de entorno no vacía manda sobre config.json.
+      # Sin modelo elegido, el motor lo dice (RULE 2), no adivina uno.
+      LOCALFIT_MODEL: ${LOCALFIT_MODEL:-}
+      LOCALFIT_MEMORIA: ${LOCALFIT_MEMORIA:-}
+      LOCALFIT_EMBED_MODEL: ${LOCALFIT_EMBED_MODEL:-}
+      LOCALFIT_NUM_CTX: ${LOCALFIT_NUM_CTX:-4096}
+      LOCALFIT_NUM_PREDICT: ${LOCALFIT_NUM_PREDICT:-400}
+      LOCALFIT_THINK: ${LOCALFIT_THINK:-}
+      LOCALFIT_REPARTO: ${LOCALFIT_REPARTO:-}
+      # Terminal libre dentro del maletín (opt-in, apagada salvo que se pida). Con ella
+      # el modelo emite ÓRDENES en vez de un id de herramienta: ver el README del motor,
+      # apartado «La terminal del maletín», antes de encenderla con evidencia ajena.
+      LOCALFIT_SHELL: ${LOCALFIT_SHELL:-}
+      LOCALFIT_MAX_PASOS: ${LOCALFIT_MAX_PASOS:-}
+      LOCALFIT_MAX_PASOS_ORDEN: ${LOCALFIT_MAX_PASOS_ORDEN:-}
+      LOCALFIT_MAX_RONDAS_REVISION: ${LOCALFIT_MAX_RONDAS_REVISION:-}
+      LOCALFIT_MODEL_REVISOR: ${LOCALFIT_MODEL_REVISOR:-}
+      # Observabilidad OPT-IN (LangSmith): vacío = no se envía nada a ningún sitio.
+      # Con LANGSMITH_TRACING=true salen prompts y resúmenes de herramientas al
+      # endpoint configurado; la clave se pasa desde el .env del host, nunca aquí.
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-agentopsy-local-fit-llm}
+      LANGSMITH_ENDPOINT: ${LANGSMITH_ENDPOINT:-}
+    volumes:
+      - ${AGENTOPSY_EVIDENCE_DIR:-./evidence}:/evidence:ro   # evidencias en SOLO LECTURA (RC-2)
+      - ${AGENTOPSY_CASES_DIR:-./projects}:/cases           # los mismos casos que el api
+    depends_on:
+      toolkit-windows:
+        condition: service_healthy
+      toolkit-unix:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    # Límite de RAM del motor: el presupuesto de 8 GB se lo lleva el modelo en
+    # ollama, no este proceso (RP-4).
+    mem_limit: 512m
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/api-local/health', timeout=3)"
       interval: 15s
       timeout: 5s
       retries: 5
