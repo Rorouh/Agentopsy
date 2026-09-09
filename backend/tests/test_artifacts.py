@@ -6,6 +6,7 @@ import hashlib
 import json
 
 import pytest
+from _procedencia import anclar_run
 from _symlink_support import requires_symlinks
 
 from agentopsy.artifacts.store import ArtifactStore, OutputFile
@@ -360,7 +361,9 @@ class TestResolveOutputDir:
         (out / "recovered" / "sub").mkdir()
         (out / "recovered" / "sub" / "cookies.sqlite").write_bytes(b"galletas")
         (out / "suelto.txt").write_text("no es del arbol")
-        store.finalize_run(case.id, run_id, exit_code=0, stdout="", stderr="")
+        anclar_run(store._cases, case.id, store.finalize_run(
+            case.id, run_id, exit_code=0, stdout="", stderr=""
+        ))
         return run_id, out
 
     def test_resolves_a_directory_and_sums_its_subtree(self, store, case):
@@ -383,7 +386,9 @@ class TestResolveOutputDir:
         (out2 / "recovered" / "places.sqlite").write_bytes(b"historial")
         (out2 / "recovered" / "sub").mkdir()
         (out2 / "recovered" / "sub" / "cookies.sqlite").write_bytes(b"OTRAS galletas")
-        store.finalize_run(case.id, run_id2, exit_code=0, stdout="", stderr="")
+        anclar_run(store._cases, case.id, store.finalize_run(
+            case.id, run_id2, exit_code=0, stdout="", stderr=""
+        ))
         _, after, _ = store.resolve_output_dir(case.id, run_id2, "recovered")
         assert before != after
 
@@ -397,7 +402,7 @@ class TestResolveOutputDir:
 
     def test_unknown_directory_raises(self, store, case):
         run_id, _ = self._run_with_tree(store, case)
-        with pytest.raises(KeyError, match="no output directory"):
+        with pytest.raises(KeyError, match="no produjo el directorio de salida"):
             store.resolve_output_dir(case.id, run_id, "inexistente")
 
     def test_traversal_is_rejected(self, store, case):
@@ -410,5 +415,5 @@ class TestResolveOutputDir:
         """`suelto.txt` SÍ está en el manifiesto, pero como fichero: pedirlo como
         directorio tiene que fallar, no devolverlo igualmente."""
         run_id, _ = self._run_with_tree(store, case)
-        with pytest.raises(KeyError, match="no output directory"):
+        with pytest.raises(KeyError, match="no produjo el directorio de salida"):
             store.resolve_output_dir(case.id, run_id, "suelto.txt")

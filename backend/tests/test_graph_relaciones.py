@@ -28,6 +28,7 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
+from _procedencia import crear_run, procedencia
 from agentopsy.executors import EXECUTOR_IDS
 from agentopsy.i18n import LANG_HEADER, t
 from agentopsy.audit.log import AuditLog
@@ -510,9 +511,12 @@ def http(caso, monkeypatch):
 
 
 def _hallazgo(http_env) -> str:
+    # Procedencia REAL: el hallazgo cita una ejecución materializada (F03).
+    run = crear_run(http_env["cases"], http_env["case"].id)
+    http_env["run"] = run
     f = http_env["findings"].append(http_env["case"].id, {
         "title": TITULO, "summary": RESUMEN, "severity": "high",
-        "run_id": str(uuid.uuid4()), "artifact_sha256": "a" * 64, "tool_id": "tsk_fls",
+        **procedencia(run),
     })
     return f.id
 
@@ -619,7 +623,8 @@ def test_the_end_to_end_extraction_lands_in_the_view_with_its_provenance(http, m
     assert all("x" in n and "y" in n for n in vista["nodos"])
     # La mitad VERIFICADA de la ficha sale del hallazgo, no del modelo.
     assert vista["procedencia"]["tool_id"] == "tsk_fls"
-    assert vista["procedencia"]["artifact_sha256"] == "a" * 64
+    # El hash es el que el manifiesto de la ejecución registró, no una constante.
+    assert vista["procedencia"]["artifact_sha256"] == http["run"]["stdout_sha256"]
     # Y el grafo se etiqueta por lo que es en la propia respuesta. El aviso viaja
     # DENTRO de la figura exportada, así que se emite en el idioma de la petición.
     assert vista["aviso"] == t("graph.proposalNotice", "en")

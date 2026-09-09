@@ -16,14 +16,20 @@ INVARIANT 4:
 
 from __future__ import annotations
 
-import uuid
 
 import pytest
 
 from agentopsy.audit.log import AuditLog
+from _procedencia import crear_run, procedencia
 from agentopsy.cases import CaseManager
 from agentopsy.findings.store import FindingStore
-from agentopsy.reports.works import STATUS_INCOMPLETO, audited_argvs, tool_runs
+from agentopsy.reports.works import (
+    STATUS_INCOMPLETO,
+    audited_argvs,
+    render_argv,
+    tokenizar_comando,
+    tool_runs,
+)
 
 
 @pytest.fixture
@@ -116,7 +122,9 @@ def test_run_without_finish_is_incomplete_not_dropped(caso) -> None:
 def test_findings_are_crossed_by_run_id(caso) -> None:
     cases, findings, case_id = caso
     audit = _audit(cases, case_id)
-    run_a, run_b = str(uuid.uuid4()), str(uuid.uuid4())
+    # Ejecuciones REALES: desde F03 un hallazgo no cita un run inventado.
+    ejecuciones = [crear_run(cases, case_id) for _ in range(2)]
+    run_a, run_b = (e["run_id"] for e in ejecuciones)
     for rid in (run_a, run_b):
         audit.append({
             "action": "tool_run_start", "case_id": case_id, "run_id": rid,
@@ -128,16 +136,21 @@ def test_findings_are_crossed_by_run_id(caso) -> None:
         })
     f1 = findings.append(case_id, {
         "title": "Tarea programada", "summary": "updater", "severity": "high",
-        "run_id": run_a, "artifact_sha256": "b" * 64, "tool_id": "tsk_fls",
+        **procedencia(ejecuciones[0]),
     })
     f2 = findings.append(case_id, {
         "title": "Otro", "summary": "otro", "severity": "low",
-        "run_id": run_b, "artifact_sha256": "c" * 64, "tool_id": "tsk_fls",
+        **procedencia(ejecuciones[1]),
     })
-    # Un descarte sin run_id no cuelga de ninguna corrida.
+    # Un descarte sin run_id no cuelga de ninguna corrida, pero SÍ declara qué
+    # se examinó y con qué límite (F03: «no se pudo» no es «no se encontró»).
     findings.append(case_id, {
         "title": "Via cerrada", "summary": "sin resultado", "severity": "low",
         "finding_kind": "descarte",
+        "alcance_examinado": (
+            "Se listó el arranque con tsk_fls sobre la particion 2; no hay "
+            "entradas de persistencia. Limite: no se examinaron los hives."
+        ),
     })
 
     runs = {r["run_id"]: r for r in tool_runs(case_id, cases=cases, findings=findings)}
@@ -145,6 +158,60 @@ def test_findings_are_crossed_by_run_id(caso) -> None:
     assert runs[run_b]["finding_ids"] == [f2.id]
 
 
-def test_audited_argvs_normalises_whitespace_only() -> None:
-    runs = [{"argv_literal": "tsk_fls  -m   C:/ /evidence/x.E01"}, {"argv_literal": ""}]
-    assert audited_argvs(runs) == {"tsk_fls -m C:/ /evidence/x.E01"}
+def test_audited_argvs_renders_the_argv_preserving_boundaries() -> None:
+    """El corpus sale del ARRAY, no de un texto: los límites entre argumentos
+    sobreviven y un argumento con espacios no se confunde con dos.
+
+    Colapsar espacios, que es lo que se hacía hasta 2026-09-08, hacía idénticos
+    `grep "a b" f` y `grep a b f`, que buscan cosas distintas (F04)."""
+    runs = [
+        {"argv": ["tsk_fls", "-m", "C:/", "/evidence/x.E01"]},
+        {"argv": ["grep", "a b", "f.txt"]},
+        {"argv": []},
+        {"argv_literal": "sin argv no entra"},
+    ]
+    corpus = audited_argvs(runs)
+    assert corpus == {
+        "tsk_fls -m C:/ /evidence/x.E01": ["tsk_fls", "-m", "C:/", "/evidence/x.E01"],
+        'grep "a b" f.txt': ["grep", "a b", "f.txt"],
+    }
+    # Y el texto canónico se vuelve a tokenizar EXACTAMENTE en el array de origen.
+    for canonico, argv in corpus.items():
+        assert tokenizar_comando(canonico) == argv
+
+# -- F04: los comandos conservan sus límites entre argumentos ----------------
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["grep", "a b", "f.txt"],
+        ["grep", "a", "b", "f.txt"],
+        ["regripper", "-r", "/evidence/SOFTWARE hive", "-f", "software"],
+        ["tsk_fls", "-r", r"C:\Users\perito\disco.raw"],
+        ["python", "-c", 'print("hola mundo")'],
+        ["eco", "comilla simple: it's"],
+        ["eco", ""],
+        ["eco", "tab\there"],
+    ],
+)
+def test_render_argv_round_trips_every_shape(argv) -> None:
+    """Espacios, comillas, barras invertidas y vacíos: el texto que se publica
+    se vuelve a tokenizar EXACTAMENTE en el array registrado."""
+    texto = render_argv(argv)
+    assert tokenizar_comando(texto) == argv
+
+
+def test_collapsing_spaces_is_not_an_equivalence() -> None:
+    """El defecto reproducido: dos comandos distintos daban la misma cadena."""
+    con_frase = ["grep", "a b", "f.txt"]
+    con_dos = ["grep", "a", "b", "f.txt"]
+    assert render_argv(con_frase) != render_argv(con_dos)
+    # Y la comparación por tokens no los confunde en ninguna dirección.
+    assert tokenizar_comando(render_argv(con_frase)) != con_dos
+    assert tokenizar_comando(render_argv(con_dos)) != con_frase
+
+
+def test_a_malformed_command_is_not_tokenised_into_something_plausible() -> None:
+    """Una comilla sin cerrar no es un comando: se dice, no se adivina."""
+    assert tokenizar_comando('grep "a b f.txt') is None

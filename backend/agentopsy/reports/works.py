@@ -17,9 +17,17 @@ apartado 9 y el corpus de argv auditados contra el que se valida cada bloque
 Dos reglas gobiernan este módulo, y las dos vienen de FORENSIC INVARIANT 4:
 
 1. **El ``argv`` es el del audit, token a token.** Nunca se reconstruye desde
-   los parámetros, ni se normaliza, ni se "arregla". ``argv_literal`` es
-   simplemente ese array unido por espacios, para que el redactor pueda citarlo
-   sin re-teclearlo — y para que el validador compare la cita contra el original.
+   los parámetros, ni se normaliza, ni se "arregla". ``argv_literal`` es su
+   representación TEXTUAL, generada aquí con el escape adecuado
+   (``render_argv``), para que el redactor pueda citarla sin re-teclearla y para
+   que el validador compare la cita contra el original.
+
+   Unir el array por espacios a secas, como se hacía hasta 2026-09-08, perdía
+   los LÍMITES entre argumentos: ``["grep", "a b", "f.txt"]`` y
+   ``["grep", "a", "b", "f.txt"]`` producían el mismo texto, y el validador del
+   informe, que además colapsaba espacios, aceptaba el uno por el otro
+   (auditoría 2026-09-07, F04). Un comando que un tercero no puede reejecutar
+   tal cual no es el comando ejecutado.
 2. **Lo que el audit no dice, no se dice.** Un run sin ``tool_version`` no
    inventa ``"unknown"`` (queda ``None``); un run sin ``tool_run_finish`` —el
    transporte se cayó, el api se reinició— aparece con ``status`` ``incompleto``
@@ -32,6 +40,7 @@ toca la red.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from agentopsy.audit.log import AuditLog
@@ -56,6 +65,84 @@ _FINISH_KEYS = (
     "stderr_sha256",
     "output_files_count",
 )
+
+
+#: Un token con espacios, con comillas o vacío NO se puede imprimir a pelo: sin
+#: comillas dejaría de ser un token al releerlo.
+_NECESITA_COMILLAS = re.compile(r"""[\s"']|^$""")
+
+
+def _citar(token: str) -> str:
+    """Un argumento con el escape adecuado para que se relea como UN argumento."""
+    if not _NECESITA_COMILLAS.search(token):
+        return token
+    escapado = token.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escapado}"'
+
+
+def render_argv(argv: list[str]) -> str:
+    """La representación TEXTUAL de un argv, generada desde el array registrado.
+
+    Es lo que el informe imprime y lo que un tercero copia para reejecutar. Los
+    límites entre argumentos sobreviven: un argumento con espacios sale
+    entrecomillado, y volver a tokenizarlo (``tokenizar_comando``) devuelve el
+    array de partida.
+    """
+    return " ".join(_citar(str(a)) for a in argv)
+
+
+def tokenizar_comando(texto: str) -> list[str] | None:
+    """Los tokens de un comando escrito, RESPETANDO las comillas.
+
+    Es la mitad que faltaba de la comprobación del informe: comparar textos con
+    los espacios colapsados hacía indistinguibles ``grep "a b" f`` y
+    ``grep a b f``. Tokenizando, el primero da tres tokens y el segundo cuatro, y
+    solo el que casa con el array auditado pasa.
+
+    La barra invertida NO escapa fuera de las comillas dobles: una ruta de
+    Windows es un token corriente, no una secuencia de escape. Dentro de comillas
+    dobles sí escapa la comilla y a sí misma, que es lo que ``render_argv`` emite.
+
+    Devuelve ``None`` si el texto está mal formado (una comilla sin cerrar): eso
+    no es un comando, y tratarlo como si lo fuera sería adivinar.
+    """
+    tokens: list[str] = []
+    actual: list[str] = []
+    abierto = False
+    comilla: str | None = None
+    i = 0
+    while i < len(texto):
+        c = texto[i]
+        if comilla is None:
+            if c.isspace():
+                if abierto:
+                    tokens.append("".join(actual))
+                    actual = []
+                    abierto = False
+            elif c in "\"'":
+                comilla = c
+                abierto = True
+            else:
+                actual.append(c)
+                abierto = True
+        elif (
+            c == "\\"
+            and comilla == '"'
+            and i + 1 < len(texto)
+            and texto[i + 1] in '"\\'
+        ):
+            actual.append(texto[i + 1])
+            i += 1
+        elif c == comilla:
+            comilla = None
+        else:
+            actual.append(c)
+        i += 1
+    if comilla is not None:
+        return None
+    if abierto:
+        tokens.append("".join(actual))
+    return tokens
 
 
 def tool_runs(
@@ -101,7 +188,7 @@ def tool_runs(
                 # INVARIANT 4: el argv AUDITADO. `argv_literal` es ese array
                 # unido, para citarlo sin re-teclearlo — no una reconstrucción.
                 "argv": argv_list,
-                "argv_literal": " ".join(argv_list),
+                "argv_literal": render_argv(argv_list),
                 "started_at": event.get("ts_utc"),
                 "status": STATUS_INCOMPLETO,
                 "finished_at": None,
@@ -144,14 +231,31 @@ def tool_runs(
     return [runs[rid] for rid in orden]
 
 
-def audited_argvs(runs: list[dict[str, Any]]) -> set[str]:
-    """El conjunto de comandos literales auditados, normalizados por espacios.
+def audited_argvs(runs: list[dict[str, Any]]) -> dict[str, list[str]]:
+    """Los comandos auditados del caso: texto canónico -> array ``argv``.
 
     Es el corpus contra el que ``agentopsy.reports.writer`` valida cada bloque
     ``code`` del informe: un comando que el redactor no haya copiado de aquí no
     se publica (FORENSIC INVARIANT 4 — el informe cita el comando EJECUTADO, no
-    el que el modelo cree que se ejecutó)."""
-    return {" ".join(r["argv_literal"].split()) for r in runs if r.get("argv_literal")}
+    el que el modelo cree que se ejecutó).
+
+    Devuelve el ARRAY junto al texto porque la comparación se hace token a
+    token: así un argumento con espacios se distingue de dos argumentos, que es
+    justo lo que la normalización por espacios borraba.
+    """
+    corpus: dict[str, list[str]] = {}
+    for r in runs:
+        argv = r.get("argv")
+        if isinstance(argv, list) and argv:
+            tokens = [str(a) for a in argv]
+            corpus[render_argv(tokens)] = tokens
+    return corpus
 
 
-__all__ = ["STATUS_INCOMPLETO", "audited_argvs", "tool_runs"]
+__all__ = [
+    "STATUS_INCOMPLETO",
+    "audited_argvs",
+    "render_argv",
+    "tokenizar_comando",
+    "tool_runs",
+]

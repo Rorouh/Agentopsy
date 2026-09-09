@@ -1,18 +1,23 @@
-"""Almacén de documentos + integridad + PDF pericial.
+"""Almacén de documentos + integridad + aprobación + PDF pericial.
 
-Los gates que importan: el SHA-256 es real y verificable; firmar no invalida el
+Los gates que importan: el SHA-256 es real y verificable; aprobar no invalida el
 hash (cambia estado, no contenido); un final no se borra (cadena de custodia);
-crear/firmar/eliminar quedan en el audit hash-encadenado; el PDF sale bien
-formado. RULE 2: caso sin docs → []; id inexistente → KeyError.
+crear, aprobar y eliminar quedan en el audit hash-encadenado; el PDF sale bien
+formado. RULE 2: caso sin docs a []; id inexistente a KeyError.
+
+Y los de F04: un documento ALTERADO no se aprueba, ni siquiera si ya figuraba
+como final; aprobar exige declarar la revisión exacta que se revisó; el
+manifiesto de fuentes es obligatorio para aprobar; y el PDF de un documento que
+no supera sus comprobaciones sale marcado como borrador, no como si fuera válido.
 """
 
 from __future__ import annotations
 
-import json
 import re
 import zlib
 
 import pytest
+from _informe import aprobar as _aprobar_caso, hallazgo, informe, montar_caso
 
 from agentopsy.audit.log import AuditLog
 from agentopsy.cases import CaseManager
@@ -27,8 +32,49 @@ def tmp_case(tmp_path) -> tuple[CaseManager, str]:
     return cases, case.id
 
 
+@pytest.fixture
+def aprobable(tmp_path):
+    """Un caso con evidencia, ejecución, hallazgo e informe: aprobable de verdad.
+
+    Los tests que APRUEBAN no pueden trabajar sobre un documento con el
+    manifiesto vacío: desde la reauditoría de 2026-09-08 un informe sin un solo
+    hallazgo detrás no se aprueba, y eso es lo correcto. El resto de tests de
+    este fichero (hash, listado, PDF, traversal) siguen con ``tmp_case``, que es
+    todo lo que necesitan.
+    """
+    caso = montar_caso(tmp_path, nombre="Murcielago")
+    h = hallazgo(caso)
+    return caso, informe(caso, h)
+
+
+#: Un manifiesto de fuentes VACÍO pero presente: el documento declara que no se
+#: apoya en ninguna evidencia, ejecución ni hallazgo, lo cual es cierto para
+#: estos documentos sintéticos. Sin la clave no se podría aprobar, y con ella se
+#: aprueba comprobando (que es el punto): declarar cero fuentes es distinto de
+#: no declarar ninguna.
+_SIN_FUENTES = {
+    "case_id": "",
+    "evidencias": [],
+    "evidencias_sha256": {},
+    "artefactos": [],
+    "hallazgos": [],
+    "limitaciones_exigidas": [],
+}
+
+
+def _aprobar(store, case_id: str, doc):
+    """Aprueba declarando la revisión exacta, como hace la superficie."""
+    return store.approve(
+        case_id,
+        doc.id,
+        sha256_revisado=store.verify(case_id, doc.id)["recomputed_sha256"],
+        revisor="Daniel Ramos Camargo",
+    )
+
+
 def _payload(**over):
     base = {
+        "fuentes": dict(_SIN_FUENTES),
         "title": "Informe pericial forense — Caso Murciélago",
         "type": "Informe final",
         "author": "Daniel Ramos Camargo",
@@ -69,24 +115,25 @@ def test_create_persists_with_real_sha256(tmp_case) -> None:
     assert [d.id for d in store.list(case_id)] == [doc.id]
 
 
-def test_signing_marks_final_without_breaking_integrity(tmp_case) -> None:
-    cases, case_id = tmp_case
-    store = DocumentStore(cases)
-    doc = store.create(case_id, _payload())
-    signed = store.sign(case_id, doc.id)
-    assert signed.status == "final"
-    # Firmar cambia el estado, NO el contenido → el hash sigue válido.
+def test_signing_marks_final_without_breaking_integrity(aprobable) -> None:
+    caso, doc = aprobable
+    store, case_id = caso["documents"], caso["case"].id
+    aprobado = _aprobar_caso(caso, doc, revisor="Daniel Ramos Camargo")
+    assert aprobado.status == "final"
+    # Aprobar cambia el estado, NO el contenido: el hash sigue válido.
     assert store.verify(case_id, doc.id)["ok"] is True
-    assert signed.sha256 == doc.sha256
+    assert aprobado.sha256 == doc.sha256
+    # Y queda la traza del acto humano: quién, cuándo y sobre qué contenido.
+    assert aprobado.approved_by == "Daniel Ramos Camargo"
+    assert aprobado.approved_at
+    assert aprobado.approved_sha256 == doc.sha256
 
 
-def test_final_document_cannot_be_deleted(tmp_case) -> None:
-    cases, case_id = tmp_case
-    store = DocumentStore(cases)
-    doc = store.create(case_id, _payload())
-    store.sign(case_id, doc.id)
+def test_final_document_cannot_be_deleted(aprobable) -> None:
+    caso, doc = aprobable
+    _aprobar_caso(caso, doc)
     with pytest.raises(ValueError, match="chain of custody"):
-        store.delete(case_id, doc.id)
+        caso["documents"].delete(caso["case"].id, doc.id)
 
 
 def test_draft_delete_and_missing_is_keyerror(tmp_case) -> None:
@@ -112,17 +159,20 @@ def test_create_rejects_unknown_block_type(tmp_case) -> None:
             sections=[{"num": "1", "title": "x", "blocks": [{"t": "video"}]}]))
 
 
-def test_create_and_actions_are_audited(tmp_case) -> None:
-    cases, case_id = tmp_case
-    store = DocumentStore(cases)
-    doc = store.create(case_id, _payload())
-    store.sign(case_id, doc.id)
+def test_create_and_actions_are_audited(aprobable) -> None:
+    caso, doc = aprobable
+    cases, case_id = caso["cases"], caso["case"].id
+    _aprobar_caso(caso, doc, revisor="Daniel Ramos Camargo")
     log = AuditLog(cases.case_dir(case_id) / "audit.jsonl")
     assert log.verify()
-    actions = [json.loads(x)["action"] for x in
-               (cases.case_dir(case_id) / "audit.jsonl").read_text().splitlines() if x.strip()]
+    entradas = log.entries()
+    actions = [e["action"] for e in entradas]
     assert "document_created" in actions
-    assert "document_signed" in actions
+    assert "document_approved" in actions
+    # La entrada de aprobación lleva quién, cuándo y el hash aprobado.
+    aprobacion = next(e for e in entradas if e["action"] == "document_approved")
+    assert aprobacion["approved_by"] == "Daniel Ramos Camargo"
+    assert aprobacion["approved_sha256"] == doc.sha256
 
 
 def test_pdf_is_well_formed(tmp_case) -> None:
@@ -155,11 +205,23 @@ _MINIMO_POR_PAGINA = 260
 
 
 def _texto_por_pagina(pdf: bytes) -> list[str]:
-    """El texto que lleva cada hoja, leído de los flujos de contenido."""
+    """El texto que lleva cada hoja, leído de los flujos de contenido.
+
+    El corte del flujo se busca con una expresión regular sobre los bytes del
+    PDF, así que de vez en cuando los datos COMPRIMIDOS contienen la secuencia
+    ``endstream`` y el flujo sale truncado. Con ``decompress`` eso levantaba, se
+    caía al camino del texto plano y la hoja se leía con cero caracteres: el
+    test fallaba una vez de cada treinta y pico, sin que el PDF tuviera nada.
+
+    ``decompressobj`` infla el prefijo que sí es válido, que es lo que este
+    ayudante necesita: una lectura aproximada del texto de cada hoja para
+    comprobar que no queda ninguna casi vacía. No es un lector de PDF y no
+    pretende serlo.
+    """
     hojas = []
     for m in _FLUJO.finditer(pdf):
         try:
-            crudo = zlib.decompress(m.group(1))
+            crudo = zlib.decompressobj().decompress(m.group(1))
         except zlib.error:
             crudo = m.group(1)
         hojas.append(" ".join(_MARCA_TEXTO.findall(crudo.decode("latin-1", "replace"))))

@@ -443,10 +443,113 @@ export interface AgentFinding {
   // Cuándo OCURRIÓ el hecho en la evidencia (distinto de created_at, cuándo se
   // registró el hallazgo). ISO-8601 libre; null si no aplica.
   observed_at?: string | null;
-  // SHA-256 del output del run que lo sostiene (custodia del derivado).
+  // SHA-256 del output del run que lo sostiene (custodia del derivado). Es un
+  // atajo de lectura: la procedencia COMPLETA vive en `references`.
   artifact_sha256?: string | null;
-  // "afirmacion" (afirma algo de la evidencia, exige run_id) | "descarte".
+  // "afirmacion" (afirma algo de la evidencia, exige una fuente verificada)
+  // | "descarte" (una vía que no aportó) | "limitacion" (algo que NO se pudo
+  // examinar; el único tipo que puede citar una ejecución fallida).
   finding_kind?: string;
+  // Las FUENTES verificadas del hallazgo. Un hallazgo puede tener varias: un
+  // mismo hecho puede sostenerse en el $MFT y en un EVTX.
+  references?: FindingReference[];
+  // Qué se examinó, con qué herramienta y con qué límite. Obligatorio en un
+  // descarte y en una limitación: «no se pudo analizar» y «no se encontró» no
+  // son la misma frase.
+  alcance_examinado?: string | null;
+  // Revisión vigente. Revisar NO sobrescribe: añade una revisión y conserva la
+  // anterior, así que un informe que citó la 2 sigue apuntando a lo que citó.
+  revision?: number;
+  // SHA-256 del contenido canónico de ESTA revisión.
+  content_sha256?: string;
+  // El content_sha256 de la revisión que esta sustituye; null en la primera.
+  supersedes?: string | null;
+  motivo_revision?: string | null;
+  // "verificada" cuando la procedencia se comprobó al escribirla;
+  // "no_verificada" en los hallazgos anteriores al contrato, que se leen pero
+  // NO reciben las garantías nuevas.
+  provenance_state?: string;
+  // Por dónde entró la escritura: "agent" | "rest" | "mcp".
+  origin?: string;
+}
+
+// El localizador de una cita: dónde, DENTRO del artefacto, está lo que el
+// hallazgo afirma. `lineas` es 1-based e inclusivo; `bytes` es 0-based con
+// `hasta` exclusivo; `registro` nombra una entrada y no tiene aritmética.
+export interface FindingLocator {
+  tipo: "lineas" | "bytes" | "registro";
+  desde?: number;
+  hasta?: number;
+  valor?: string;
+}
+
+// Una FUENTE del hallazgo, tal y como el backend la persistió.
+export interface FindingReference {
+  case_id?: string;
+  evidence_id: string | null;
+  run_id: string;
+  tool_id: string;
+  artefacto: "stdout" | "stderr" | "fichero";
+  relpath: string | null;
+  sha256: string;
+  localizador: FindingLocator | null;
+  extracto: string | null;
+  estado: "verificada" | "no_verificada";
+  derivada: boolean;
+  run_status: string;
+  exit_code: number | null;
+  resultado_parcial: boolean;
+  tool_version?: string | null;
+  evidence_baseline_sha256?: string | null;
+  motivo_no_verificada?: string | null;
+}
+
+// Una fuente ABIERTA AHORA por el backend (GET …/findings/{id}/sources). Es lo
+// que la interfaz pinta al «abrir la cita»: la resolución la hace el servidor a
+// partir del id del hallazgo, nunca de una ruta que mande el cliente.
+export interface ResolvedSource {
+  run_id: string | null;
+  tool_id: string | null;
+  tool_version?: string | null;
+  evidence_id: string | null;
+  artefacto: string | null;
+  relpath: string | null;
+  sha256_registrado: string | null;
+  sha256?: string;
+  anclaje?: "anclado" | "sin_ancla";
+  size?: number;
+  localizador: FindingLocator | null;
+  // VALIDACIÓN TÉCNICA de la fuente. No dice nada sobre si el perito da por
+  // buena la interpretación: eso es revisión humana y va aparte.
+  // `localizador_invalido`: los bytes casan con su hash, pero la cita señala una
+  // posición que no existe en el artefacto. No es lo mismo que estar alterada, y
+  // decirlo mal mandaría a mirar donde no está el problema.
+  estado:
+    | "verificada"
+    | "alterada"
+    | "ausente"
+    | "localizador_invalido"
+    | "no_verificable";
+  estado_registrado: string;
+  motivo?: string;
+  // Sólo cuando `estado` es "verificada": enseñar el extracto de una fuente que
+  // no verifica sería presentarlo como comprobado.
+  extracto?: string | null;
+  resultado_parcial: boolean;
+  exit_code: number | null;
+  evidence_sha256?: string;
+  evidence_estado?: string;
+  evidence_motivo?: string;
+}
+
+export interface FindingSources {
+  finding_id: string;
+  revision: number;
+  content_sha256: string;
+  finding_kind: string;
+  provenance_state: string;
+  alcance_examinado: string | null;
+  fuentes: ResolvedSource[];
 }
 
 // ── MITRE ATT&CK ────────────────────────────────────────────────────────────
@@ -492,6 +595,20 @@ export interface DocumentBlock {
   // PDF ya la imprimía; la web también debe mostrarla, es lo que permite a un
   // perito contrario reejecutar.
   meta?: string;
+  // El RESPALDO del bloque: en qué revisión de qué hallazgo se apoya. Obligatorio
+  // en los bloques de los apartados 6 y 9 que afirman sobre la evidencia, y es lo
+  // que permite abrir su fuente desde la propia conclusión.
+  refs?: BlockCitation[];
+  // El bloque declara una LIMITACIÓN con este código, en vez de afirmar un hecho
+  // sobre la evidencia. La comprobación de aprobación cruza los códigos
+  // declarados con los que el material exige.
+  limitacion?: string;
+}
+
+// Una cita del contenido: la revisión CONCRETA de un hallazgo, no «el hallazgo».
+export interface BlockCitation {
+  finding_id: string;
+  revision: number;
 }
 
 export interface DocumentSection {
@@ -514,6 +631,128 @@ export interface DocumentMeta {
   summary: string;
   sha256: string;
   page_count: number;
+  // Cuándo y quién APROBÓ el documento como final, y sobre qué contenido
+  // exacto. null mientras es borrador. NO es una firma criptográfica: es la
+  // traza de un acto humano auditado.
+  approved_at?: string | null;
+  approved_by?: string | null;
+  approved_sha256?: string | null;
+  // Versión de esquema. 1 son los documentos anteriores al manifiesto de
+  // fuentes: se leen y se exportan como borrador, pero no se aprueban con
+  // garantías que nunca tuvieron.
+  schema_version?: number;
+}
+
+// Un BLOQUEO de aprobación: por qué este documento no puede pasar a final.
+export interface ApprovalBlocker {
+  codigo: string;
+  mensaje: string;
+  detalle: string;
+}
+
+// El estado de una fuente del informe, tal y como la comprobación la ve hoy.
+export interface ApprovalSource {
+  tipo: "evidencia" | "artefacto" | "hallazgo";
+  estado:
+    | "verificada"
+    | "alterada"
+    | "ausente"
+    | "superada"
+    | "alterado"
+    | "revisado"
+    | "sin_ancla"
+    | "sin_procedencia"
+    | "baseline_incoherente"
+    | "verificacion_negativa";
+  evidence_id?: string;
+  run_id?: string;
+  referencia?: string;
+  finding_id?: string;
+  revision?: number;
+  revision_vigente?: number;
+  sha256?: string;
+  sha256_esperado?: string;
+  content_sha256?: string;
+  content_sha256_esperado?: string;
+  anclaje?: string;
+  procedencia?: string;
+  motivo?: string;
+}
+
+// Lo que la pantalla de aprobación pinta ANTES de decidir: la revisión exacta
+// que se va a aprobar, el estado de cada fuente y lo que falta.
+export interface DocumentChecks {
+  document_id: string;
+  case_id: string;
+  status: "draft" | "final";
+  version: string;
+  aprobable: boolean;
+  sha256_actual: string;
+  sha256_registrado: string;
+  bloqueos: ApprovalBlocker[];
+  fuentes: ApprovalSource[];
+  // Las CITAS del contenido: qué bloque se apoya en qué revisión de qué
+  // hallazgo, y si ese respaldo está en el manifiesto del informe.
+  citas: DocumentCitationState[];
+  // Estado del snapshot de procedencia. Los tres digests tienen que coincidir:
+  // el recomputado sobre el manifiesto, el que el documento declara y el que
+  // quedó anclado en la cadena al crearlo.
+  procedencia: {
+    schema_version: number;
+    digest_declarado: string;
+    digest_actual: string;
+    digest_anclado: string;
+  };
+}
+
+// El estado de UNA cita del contenido, tal y como la comprobación la ve hoy.
+export interface DocumentCitationState {
+  num: string;
+  bloque: number;
+  finding_id: string;
+  revision: number;
+  en_manifiesto: boolean;
+  estado: string;
+}
+
+// La FUENTE de una conclusión, abierta y verificada por el backend. Es el
+// recorrido completo: conclusión, revisión de hallazgo, ejecución, artefacto,
+// localizador y extracto.
+export interface DocumentCitation {
+  case_id: string;
+  document_id: string;
+  finding_id: string;
+  revision: number;
+  conclusiones: Array<{
+    num: string;
+    titulo: string;
+    bloque: number;
+    tipo: string;
+    texto: string;
+  }>;
+  titulo: string;
+  resumen: string;
+  severidad: string;
+  finding_kind: string;
+  observed_at: string | null;
+  alcance_examinado: string | null;
+  provenance_state: string;
+  content_sha256: string;
+  content_sha256_recomputado: string;
+  // El hallazgo dice lo que decía. Falso significa que se ha reescrito, y
+  // entonces lo que se lee no es lo que el informe citó.
+  integridad_ok: boolean;
+  // Si esta revisión estaba en el manifiesto que sostenía el informe.
+  en_manifiesto: boolean;
+  fuentes: ResolvedSource[];
+}
+
+// «Aprobar como final». `sha256` es el hash del contenido que el investigador
+// ACABA de revisar: si entre su revisión y esta llamada el contenido cambió, el
+// backend no aprueba, porque aprobaría algo que nadie ha mirado.
+export interface ApproveDocumentRequest {
+  sha256: string;
+  approved_by?: string;
 }
 
 // Documento completo (ficha + cuerpo).

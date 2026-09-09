@@ -15,6 +15,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from _procedencia import anclar_run
 
 from _custody import context_for, register_evidence, wire_dispatcher_custody
 from _symlink_support import requires_symlinks
@@ -307,7 +308,9 @@ def test_derived_input_rejects_free_artifact_path_and_accepts_verified_ref(
     )
     produced = out_dir / "data.json"
     produced.write_text('{"value": 7}', encoding="utf-8")
-    store.finalize_run(case.id, source_run, exit_code=0, stdout="", stderr="")
+    anclar_run(cases, case.id, store.finalize_run(
+        case.id, source_run, exit_code=0, stdout="", stderr=""
+    ))
 
     with pytest.raises(dispatcher.ToolExecutionError, match="DERIVED_INPUT"):
         dispatcher.execute(

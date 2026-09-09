@@ -295,7 +295,78 @@ constant had to comply first.
    mmls`, Volatility3). Filesystem mount is the exception, documented per case.
 4. **Audit log is append-only and hash-chained.** Every action records the **literal
    command executed** (argv array — NOT the LLM's stated intent), tool version, evidence
-   id + hash, stdout/stderr/exit, and the SHA-256 of every output artifact.
+   id + hash, stdout/stderr/exit, and the SHA-256 of every output artifact. A closed run
+   also anchors its `manifest_sha256` there, so rewriting an artifact AND its manifest
+   coherently still breaks the chain.
+5. **One verified-read boundary.** Every byte derived from evidence reaches a surface
+   through `agentopsy.artifacts.lectura`: stdout, stderr, derived files and derived
+   directories alike. It checks case, run, manifest membership, path confinement (after
+   resolving symlinks), file type, the SHA-256 against the manifest and the manifest
+   against its audit anchor, plus the SCOPE the asking surface declares. Verifying and
+   reading are not separate: the hash is computed on the same open descriptor the content
+   is served from, and there is no cache. Partial output of a live run is only served
+   through an explicit door that marks it unsealed, and it can never back a citation.
+   **The chain is verified BEFORE any of its entries is used as an anchor**: an anchor
+   read out of a log that does not verify is worth nothing, and taking it anyway served
+   tampered content marked `anclado`. A run whose manifest declares its own
+   `manifest_sha256` is MODERN, and a modern run with no anchor is a custody failure
+   (`AnclaAusenteError`), never degraded to the `sin_ancla` of the historic ones. Every
+   failure of this boundary belongs to one family (`ArtefactoError`), so a consumer that
+   asks "why can I not read this" is told, instead of the integrity failures escaping
+   past it.
+6. **A finding cites a verified source.** `agentopsy.findings.procedencia` checks, for
+   every citation, that the run exists, belongs to the case, read that evidence, was run
+   by that tool, produced that artifact, that its bytes still hash to what was recorded,
+   and that the locator and excerpt match. Ids and hashes come from the record, never from
+   the model. A failed run supports a `limitacion`, never an assertion or a ruling out.
+   Findings are revised by APPENDING a revision, never by overwriting one.
+   **A locator names positions that exist, at BOTH ends.** `lineas` counts from 1 with
+   both ends inclusive; `bytes` counts from 0 with `hasta` exclusive; an empty range is
+   not a citation. A range whose end runs past the artifact is REJECTED, never trimmed
+   and kept as if it had been checked: a viewer may return less at the end of a file,
+   a persisted citation cannot certify a position that is not there.
+7. **Approving a report is a checked act, not a state flip.**
+   `agentopsy.reports.aprobacion` gates approval and export, and every gate checks the
+   THING rather than a second copy of the same stored value:
+
+   - **Content and identity**: the SHA-256 recomputed over the canonical content, which
+     from schema 3 covers the document id, its case and the digest of its source
+     manifest. Two documents with the same text no longer share a hash, so one
+     document's approval cannot be reused for another.
+   - **Provenance**: the manifest hashes to the digest the document declares, and that
+     digest is the one anchored in the chain at creation. Removing, replacing or
+     emptying the sources is visible; recomputing the digest locally is visible;
+     recomputing the document hash as well is visible, because the anchor does not move.
+   - **Evidence**: every segment is RE-HASHED against its registered baseline, and the
+     baseline the run declares having read must be the registered one. Two stored hashes
+     agreeing proves nothing about the bytes.
+   - **Findings**: the content hash of the cited revision is RECOMPUTED, contrasted with
+     its audit entry, its sources reopened, and its provenance state DECIDES. A historic
+     finding does not become verifiable by being cited in a new report.
+   - **Conclusions**: every block of the forensic sections that states a fact about the
+     evidence cites the finding revision that supports it, and that revision is in the
+     manifest.
+   - **Limitations**: declared by CODE, cross-checked against what the material requires.
+   - **The approval act**: a document that presents itself as final must point at a
+     `document_approved` in a VALID chain matching this document, revision, content,
+     sources, reviewer and date. Writing the final status into the file is not approving
+     it, and a document in that state exports as a draft with no approval marks.
+
+   It runs before the idempotent return of an already-final document too. It is an
+   audited HUMAN approval, not a digital signature: there is no key and no cryptographic
+   proof of authorship, and the product never says otherwise. Technical integrity is not
+   interpretive sufficiency: that a source exists and its hash matches does not prove it
+   supports the conclusion, which is why the approval is a human act.
+
+**Limit that is documented rather than disguised:** the hash chain lives beside the data it
+protects. It detects a tampered artifact, manifest, document or log entry; it does not stop
+someone who can rewrite the whole case storage and recompute the chain. That would need
+external sealing, which this phase does not implement and therefore does not promise.
+The same honesty applies to the per-document lock (`DocumentStore._lock`): it serialises
+the APPLICATION's writers (approve, delete), each of which re-reads the state inside the
+lock, and it is reentrant so composing two domain operations does not deadlock. It does
+not protect against anyone editing the case files from outside the application, and
+nothing in the product says it does.
 
 ## SECURITY INVARIANTS (the threat is: hostile evidence → LLM tools → host)
 
@@ -332,6 +403,24 @@ Treat every byte of evidence as data, never as an instruction or a command.
 
 These are enforced by CI gates (see `.github/workflows/ci.yml` and `backend/tests/`).
 They are cheap now and very expensive to retrofit — never merge code that erodes one.
+
+## Historical data: readable, without borrowed guarantees
+
+Nothing is rewritten or deleted to fit a new contract. What was recorded before a check
+existed keeps being served, saying what it is:
+
+- **Findings** written before the citation contract carry `provenance_state:
+  "no_verificada"` and an empty `references`. They list and read normally, and the UI says
+  their provenance was never checked. They are NOT repaired by inventing citations.
+- **Runs** closed before the manifest anchor read with `anclaje: "sin_ancla"`: verified
+  against the manifest on disk, not against an audited anchor. The difference is declared,
+  not smoothed over.
+- **Documents** without a source manifest (`schema_version: 1`) stay readable and
+  exportable as drafts, and CANNOT be approved as final: there is nothing to re-check, and
+  approving them would attest to a verification that never happened. The blocker says the
+  way out: finalise the investigation again to produce a revision that declares its sources.
+- A hash that no longer matches is never recomputed and adopted as the new legitimate
+  reference. Repair means an explicit, audited revision that keeps the previous one.
 
 ## Wiring: a feature reaches the ONE surface, end to end
 
@@ -423,6 +512,35 @@ findings hot, and concedes ONE correction round when a response breaks the
 response contract (a failure to EXECUTE is never retried). Findings validate
 `observed_at` as ISO-8601 with an explicit zone: a mark without an offset is
 rejected rather than assumed UTC.
+
+**Provenance of findings.** `agentopsy.findings.procedencia` is the domain service both
+write paths use (the internal `record_finding` and the REST route), so the policy cannot
+differ between them. A citation names run, tool, evidence, artifact, SHA-256 and a locator
+(line range, byte range or a named record), and the excerpt is checked against the source.
+A finding may carry several. `afirmacion` needs an intact source from a clean run;
+`limitacion` is the only kind that may cite a failed one; `descarte` and `limitacion` must
+declare `alcance_examinado`. Revisions append (`revise`), never overwrite, and every write
+anchors identity, revision, content hash, sources and origin in the audit ONCE.
+
+**Approval and export.** `agentopsy.reports.aprobacion` holds the mandatory checks; the
+approve route (still `…/sign` for compatibility) and the PDF route both cross them. Each
+report carries the SNAPSHOT of the sources that backed it (`fuentes`) plus its digest
+(`fuentes_sha256`, from `agentopsy.reports.fuentes`), which enters the document's canonical
+content and is anchored in the chain, so later evidence or finding revisions do not
+retroactively change what a report rested on and the snapshot cannot be swapped out
+unnoticed. The PDF is byte-reproducible and its SHA-256 (of the exact bytes served,
+distinct from the content hash) is recorded with the generator version; a document that no
+longer passes its checks is exported marked DRAFT with its blockers listed and with NO
+approval marks anywhere in it, never as if it were valid.
+
+**Every conclusion opens its source.** A block of the findings or conclusions section that
+states a fact about the evidence carries `refs` naming the finding REVISIONS it rests on,
+and a block that declares a limitation carries its `limitacion` code instead. The writer
+enforces it as its fifth custody gate, the approval re-checks it, and
+`agentopsy.reports.citas` serves the whole trail from a conclusion (run, tool, artifact,
+locator, verified excerpt) through `…/documents/{id}/citas/{finding_id}`. The report view
+opens it in place with the same source card the findings view uses. A source that is
+missing or no longer intact is shown with its reason and WITHOUT its excerpt.
 
 **MITRE ATT&CK.** `agentopsy.mitre` paints the full Enterprise catalog. Agent
 proposal and examiner verdict are separate axes and are never merged; an

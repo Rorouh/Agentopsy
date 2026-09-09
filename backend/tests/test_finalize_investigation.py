@@ -23,6 +23,7 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
+from _procedencia import crear_run, procedencia
 from agentopsy.i18n import LANG_HEADER, t
 from agentopsy.cases.manager import CaseManager
 from agentopsy.evidence import EvidenceManager
@@ -53,13 +54,29 @@ def tool_usage_de(cases: CaseManager):
 PORT = 51120
 
 
-def _reply() -> str:
-    """Una respuesta VÁLIDA del redactor: cubre el índice canónico exacto."""
+def _reply(hallazgo=None) -> str:
+    """Una respuesta VÁLIDA del redactor: cubre el índice canónico exacto.
+
+    Cuando se le pasa el hallazgo del caso, los apartados 6 y 9 citan su
+    revisión: son los que afirman sobre la evidencia, y sin la cita la quinta
+    puerta rechaza la redacción, que es lo que tiene que hacer (RA07).
+    """
+    refs = (
+        [{"finding_id": hallazgo.id, "revision": hallazgo.revision}]
+        if hallazgo is not None
+        else []
+    )
+
+    def _bloque(n: str) -> dict:
+        bloque = {"t": "p", "text": f"Redaccion de la seccion {n}."}
+        if refs and n in ("6", "9"):
+            bloque["refs"] = [dict(r) for r in refs]
+        return bloque
+
     return json.dumps({
         "resumen": "Informe pericial del caso Murcielago.",
         "secciones": [
-            {"num": n, "titulo": titulos()[n],
-             "bloques": [{"t": "p", "text": f"Redaccion de la seccion {n}."}]}
+            {"num": n, "titulo": titulos()[n], "bloques": [_bloque(n)]}
             for n in NUMS
         ],
     }, ensure_ascii=False)
@@ -144,12 +161,13 @@ def auth(client):
     return {"X-Agentopsy-Token": client.app.state.token}
 
 
-def _con_hallazgo(entorno) -> None:
-    entorno["findings"].append(entorno["case"].id, {
+def _con_hallazgo(entorno):
+    # Procedencia REAL: el hallazgo cita una ejecución materializada (F03).
+    run = crear_run(entorno["cases"], entorno["case"].id)
+    return entorno["findings"].append(entorno["case"].id, {
         "title": "Tarea programada de persistencia",
         "summary": "Se crea la tarea `updater`.",
-        "severity": "high", "run_id": str(uuid.uuid4()),
-        "artifact_sha256": "a" * 64, "tool_id": "tsk_fls",
+        "severity": "high", **procedencia(run),
     })
 
 
@@ -258,8 +276,8 @@ def test_the_surface_is_token_gated(client, entorno) -> None:
 def test_finalizing_writes_the_report_in_the_background(
     client, auth, entorno, monkeypatch
 ) -> None:
-    _con_hallazgo(entorno)
-    _use(entorno, _Executor(), monkeypatch)
+    hallazgo = _con_hallazgo(entorno)
+    _use(entorno, _Executor(text=_reply(hallazgo)), monkeypatch)
     case_id = entorno["case"].id
 
     started = client.post(

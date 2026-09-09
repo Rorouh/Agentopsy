@@ -23,6 +23,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -30,6 +31,22 @@ from typing import Any
 from filelock import FileLock
 
 GENESIS = "0" * 64
+
+
+@dataclass(frozen=True)
+class EstadoCadena:
+    """The result of verifying the chain: valid or not, and where it broke.
+
+    ``indice_roto`` is 1-based over the non-empty lines of the log, so it names a
+    line the examiner can open. ``motivo`` is a development-facing string: the
+    surfaces translate the FACT (the chain does not verify) into their own
+    product message, they do not forward this text.
+    """
+
+    valida: bool
+    entradas: int
+    indice_roto: int | None = None
+    motivo: str | None = None
 
 
 def _canonical(obj: dict[str, Any]) -> bytes:
@@ -88,16 +105,74 @@ class AuditLog:
                 out.append(json.loads(line))
         return out
 
-    def verify(self) -> bool:
+    def estado(self) -> "EstadoCadena":
+        """Verify the chain and say WHERE it broke, not just whether it did.
+
+        ``verify()`` answers a yes/no question, and a yes/no answer is not enough
+        for the consumers that use audited entries as ANCHORS of trust
+        (``agentopsy.artifacts.lectura``): they need to refuse an anchor read out
+        of a broken chain, and they need to name the entry that broke it so the
+        examiner can look at it. A malformed line (truncated write, hand-edited
+        JSON) is a break like any other, reported as such instead of raising a
+        ``JSONDecodeError`` at the caller.
+
+        A log that does not exist yet is ``valida=True`` with ``entradas=0``:
+        there is no chain to break. That is NOT the same as an existing log whose
+        chain fails, and the two are never collapsed into the same answer.
+        """
+        if not self.path.exists():
+            return EstadoCadena(valida=True, entradas=0)
         prev = GENESIS
-        for line in self.path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
+        indice = 0
+        try:
+            lineas = self.path.read_text(encoding="utf-8").splitlines()
+        except OSError as exc:
+            return EstadoCadena(
+                valida=False, entradas=0, indice_roto=0, motivo=f"unreadable log: {exc}"
+            )
+        for linea in lineas:
+            if not linea.strip():
                 continue
-            entry = json.loads(line)
+            indice += 1
+            try:
+                entry = json.loads(linea)
+            except json.JSONDecodeError as exc:
+                return EstadoCadena(
+                    valida=False,
+                    entradas=indice,
+                    indice_roto=indice,
+                    motivo=f"entry {indice} is not valid JSON: {exc}",
+                )
+            if not isinstance(entry, dict) or "entry_hash" not in entry:
+                return EstadoCadena(
+                    valida=False,
+                    entradas=indice,
+                    indice_roto=indice,
+                    motivo=f"entry {indice} carries no entry_hash",
+                )
             recorded = entry.pop("entry_hash")
-            if entry["prev_hash"] != prev:
-                return False
+            if entry.get("prev_hash") != prev:
+                return EstadoCadena(
+                    valida=False,
+                    entradas=indice,
+                    indice_roto=indice,
+                    motivo=f"entry {indice} does not chain to the previous one",
+                )
             if hashlib.sha256(_canonical(entry)).hexdigest() != recorded:
-                return False
+                return EstadoCadena(
+                    valida=False,
+                    entradas=indice,
+                    indice_roto=indice,
+                    motivo=f"entry {indice} does not hash to its recorded entry_hash",
+                )
             prev = recorded
-        return True
+        return EstadoCadena(valida=True, entradas=indice)
+
+    def verify(self) -> bool:
+        """Whether the whole chain verifies. Thin wrapper over :meth:`estado`.
+
+        It never raises on a corrupt log: a log that cannot be parsed is a log
+        that does not verify, which is the honest answer and the one every caller
+        already handles.
+        """
+        return self.estado().valida

@@ -8,13 +8,15 @@ real) — so no test fakes the property it claims to prove.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
 
 from agentopsy.cases.manager import CaseManager
 from agentopsy.findings.store import Finding, FindingStore
+from _procedencia import anclar_run, crear_run, procedencia
+from agentopsy.artifacts.store import ArtifactStore
+from agentopsy.audit.log import AuditLog
 from agentopsy.timeline import builder
 from agentopsy.timeline.builder import (
     assemble_investigation_timeline,
@@ -200,31 +202,34 @@ def test_build_investigation_timeline_reads_audit_and_findings(
     monkeypatch.setattr(builder, "case_manager", cases)
     monkeypatch.setattr(builder, "finding_store", findings)
 
+    # La entrada se añade por `AuditLog.append` (no con un `write_text` crudo):
+    # el hallazgo que viene después escribe su propia entrada de procedencia en
+    # la MISMA cadena, y una línea sin `entry_hash` la rompería.
     audit_path = cases.case_dir(case.id) / "audit.jsonl"
-    audit_path.write_text(
-        json.dumps(
-            {
-                "action": "tool_run_start",
-                "ts_utc": "2026-07-15T10:00:00+00:00",
-                "run_id": "r1",
-                "tool_id": "tsk_fls",
-                "argv": ["fls"],
-            }
-        )
-        + "\n",
-        encoding="utf-8",
+    AuditLog(audit_path).append(
+        {
+            "action": "tool_run_start",
+            "ts_utc": "2026-07-15T10:00:00+00:00",
+            "run_id": "r1",
+            "tool_id": "tsk_fls",
+            "argv": ["fls"],
+        }
     )
+    run = crear_run(cases, case.id)
     findings.append(
         case.id,
         {
-            "title": "t", "summary": "s", "severity": "low", "tool_id": "tsk_fls",
-            # Hallazgo afirmativo: el store exige procedencia (run_id) — RULE 2.
-            "run_id": "11111111-1111-4111-8111-111111111111",
+            "title": "t", "summary": "s", "severity": "low",
+            # Hallazgo afirmativo: el store exige procedencia VERIFICADA (F03).
+            **procedencia(run),
         },
     )
 
     events = build_investigation_timeline(case.id)
-    kinds = sorted(e["kind"] for e in events)
+    # Las CLASES presentes: la cronología mezcla ejecuciones y hallazgos. Se
+    # comparan sin repetir porque el número de ejecuciones no es lo que este
+    # test fija (la fixture ancla las suyas en la misma cadena).
+    kinds = sorted({e["kind"] for e in events})
     assert kinds == ["finding", "tool_run"]
 
 
@@ -313,6 +318,32 @@ def _fake_cases(tmp_path):
     return _Cases()
 
 
+def _bodyfile_run(cases, case_id: str, body: str) -> str:
+    """Materializa un bodyfile de ``fls -m`` como ArtifactRun REAL y devuelve su id.
+
+    Desde F02 la cronología no abre ``out/stdout.bin`` a pelo: lo pide a la
+    frontera de lectura verificada, que exige que el fichero esté DECLARADO en el
+    manifiesto de un run cerrado y que sus bytes casen con el hash registrado. Un
+    bodyfile escrito a mano bajo un id inventado ya no se lee, y eso es
+    exactamente lo que la cronología tenía que dejar de hacer: pintar una
+    cronología sobre bytes que nadie había verificado.
+    """
+    store = ArtifactStore(cases)
+    run_id, out_dir = store.start_run(
+        case_id,
+        "tsk_fls",
+        ["fls", "-r", "-m", "/"],
+        evidence_id=_EVIDENCE_ID,
+        evidence_baseline_sha256="a" * 64,
+        tool_version="sleuthkit 4.12.1",
+    )
+    (out_dir / "stdout.bin").write_text(body, encoding="utf-8")
+    anclar_run(cases, case_id, store.finalize_run(
+        case_id, run_id, exit_code=0, stdout="", stderr=""
+    ))
+    return run_id
+
+
 def test_run_filesystem_timeline_runs_fls_and_parses_bodyfile(
     monkeypatch, tmp_path
 ) -> None:
@@ -320,6 +351,7 @@ def test_run_filesystem_timeline_runs_fls_and_parses_bodyfile(
     monkeypatch.setattr(builder, "case_manager", cases)
 
     body = "0|/etc/passwd|5|r/r|0|0|4096|100|100|100|100"
+    creados: list[str] = []
 
     def fake_execute(tool_id, params, *, case_id, os_profile, evidence_context):
         # Bare filesystem image: mmls finds no partition table (exit 1) → single fls at
@@ -329,10 +361,8 @@ def test_run_filesystem_timeline_runs_fls_and_parses_bodyfile(
         assert tool_id == "tsk_fls"
         assert params["body_format"] is True and params["recursive"] is True
         assert "partition_offset" not in params
-        run_id = "run-abc"
-        out_dir = cases.case_dir(case_id) / "artifacts" / run_id / "out"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / "stdout.bin").write_text(body, encoding="utf-8")
+        run_id = _bodyfile_run(cases, case_id, body)
+        creados.append(run_id)
         return {"exit_code": 0, "run_id": run_id, "stderr_sample": ""}
 
     monkeypatch.setattr(builder.dispatcher, "execute", fake_execute)
@@ -344,8 +374,8 @@ def test_run_filesystem_timeline_runs_fls_and_parses_bodyfile(
     assert result["timezone"] == "UTC"
     assert result["total_events"] == 1
     assert result["events"][0]["macb"] == "macb"
-    assert result["fls_run_id"] == "run-abc"
-    assert result["fls_run_ids"] == ["run-abc"]
+    assert result["fls_run_id"] == creados[0]
+    assert result["fls_run_ids"] == creados
     assert result["partition_count"] == 0
     assert result["generated_at"].endswith("Z")
     # /etc/passwd es credencial → aparece en los eventos relevantes con su porqué.
@@ -364,12 +394,17 @@ def test_run_filesystem_timeline_persists_result_and_is_loadable(
     monkeypatch.setattr(builder, "case_manager", cases)
 
     body = "0|/etc/passwd|5|r/r|0|0|4096|100|100|100|100"
+    creados: list[str] = []
 
     def fake_execute(tool_id, params, *, case_id, os_profile, evidence_context):
-        run_id = "run-abc"
-        out_dir = cases.case_dir(case_id) / "artifacts" / run_id / "out"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / "stdout.bin").write_text(body, encoding="utf-8")
+        if tool_id == "tsk_mmls":
+            return {
+                "exit_code": 1,
+                "run_id": None,
+                "stderr_sample": "Cannot determine partition type",
+            }
+        run_id = _bodyfile_run(cases, case_id, body)
+        creados.append(run_id)
         return {"exit_code": 0, "run_id": run_id, "stderr_sample": ""}
 
     monkeypatch.setattr(builder.dispatcher, "execute", fake_execute)
@@ -390,7 +425,7 @@ def test_run_filesystem_timeline_persists_result_and_is_loadable(
     assert loaded is not None
     assert loaded["total_events"] == 1
     assert loaded["events"][0]["path"] == "/etc/passwd"
-    assert loaded["fls_run_id"] == "run-abc"
+    assert loaded["fls_run_id"] == creados[0]
 
 
 def test_load_filesystem_timeline_none_when_never_generated(
@@ -443,6 +478,8 @@ def test_run_filesystem_timeline_partitioned_merges_partitions(monkeypatch, tmp_
     cases = _fake_cases(tmp_path)
     monkeypatch.setattr(builder, "case_manager", cases)
 
+    por_offset: dict[int, str] = {}
+
     def fake_execute(tool_id, params, *, case_id, os_profile, evidence_context):
         if tool_id == "tsk_mmls":
             return _mmls_parsed(
@@ -454,20 +491,18 @@ def test_run_filesystem_timeline_partitioned_merges_partitions(monkeypatch, tmp_
         assert tool_id == "tsk_fls"
         off = params["partition_offset"]
         assert params["mount_point"].startswith("/p")
-        run_id = f"run-off{off}"
-        out_dir = cases.case_dir(case_id) / "artifacts" / run_id / "out"
-        out_dir.mkdir(parents=True, exist_ok=True)
         # one distinct file per partition so the merge is observable
         body = f"0|{params['mount_point']}/file{off}|{off}|r/r|0|0|10|100|100|100|100"
-        (out_dir / "stdout.bin").write_text(body, encoding="utf-8")
+        run_id = _bodyfile_run(cases, case_id, body)
+        por_offset[off] = run_id
         return {"exit_code": 0, "run_id": run_id, "stderr_sample": ""}
 
     monkeypatch.setattr(builder.dispatcher, "execute", fake_execute)
     result = run_filesystem_timeline("case-1", _Handle(tmp_path / "disk.vmdk"), _Ctx(), "unix")
 
     assert result["partition_count"] == 2  # only the two Linux partitions counted
-    assert result["fls_run_ids"] == ["run-off2048", "run-off51200"]
-    assert result["fls_run_id"] == "run-off2048"
+    assert result["fls_run_ids"] == [por_offset[2048], por_offset[51200]]
+    assert result["fls_run_id"] == por_offset[2048]
     assert result["skipped_partitions"] == []
     assert result["total_events"] == 2  # one file from each partition, merged
     paths = {e["path"] for e in result["events"]}
@@ -480,6 +515,8 @@ def test_run_filesystem_timeline_skips_unreadable_partition_nonfatal(monkeypatch
     cases = _fake_cases(tmp_path)
     monkeypatch.setattr(builder, "case_manager", cases)
 
+    por_offset: dict[int, str] = {}
+
     def fake_execute(tool_id, params, *, case_id, os_profile, evidence_context):
         if tool_id == "tsk_mmls":
             return _mmls_parsed(
@@ -489,16 +526,16 @@ def test_run_filesystem_timeline_skips_unreadable_partition_nonfatal(monkeypatch
         off = params["partition_offset"]
         if off == 51200:
             return {"exit_code": 1, "run_id": None, "stderr_sample": "Cannot determine file system type"}
-        run_id = f"run-off{off}"
-        out_dir = cases.case_dir(case_id) / "artifacts" / run_id / "out"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / "stdout.bin").write_text(f"0|/x|{off}|r/r|0|0|10|100|100|100|100", encoding="utf-8")
+        run_id = _bodyfile_run(
+            cases, case_id, f"0|/x|{off}|r/r|0|0|10|100|100|100|100"
+        )
+        por_offset[off] = run_id
         return {"exit_code": 0, "run_id": run_id, "stderr_sample": ""}
 
     monkeypatch.setattr(builder.dispatcher, "execute", fake_execute)
     result = run_filesystem_timeline("case-1", _Handle(tmp_path / "disk.vmdk"), _Ctx(), "unix")
 
-    assert result["fls_run_ids"] == ["run-off2048"]
+    assert result["fls_run_ids"] == [por_offset[2048]]
     assert result["total_events"] == 1
     assert len(result["skipped_partitions"]) == 1
     assert result["skipped_partitions"][0]["partition_offset"] == 51200
@@ -537,20 +574,30 @@ _QUERY_BODY = "\n".join(
 
 
 def _persist_query_timeline(monkeypatch, tmp_path):
-    """Genera y persiste una super-timeline con `_QUERY_BODY` y devuelve `cases`."""
+    """Genera y persiste una super-timeline con `_QUERY_BODY`.
+
+    Devuelve ``(cases, run_id)``: el run_id es el del ArtifactRun REAL que
+    materializó el bodyfile, porque desde F02 la consulta lo relee por la
+    frontera verificada y un id inventado ya no resuelve a nada.
+    """
     cases = _fake_cases(tmp_path)
     monkeypatch.setattr(builder, "case_manager", cases)
+    creados: list[str] = []
 
     def fake_execute(tool_id, params, *, case_id, os_profile, evidence_context):
-        run_id = "run-query"
-        out_dir = cases.case_dir(case_id) / "artifacts" / run_id / "out"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / "stdout.bin").write_text(_QUERY_BODY, encoding="utf-8")
+        if tool_id == "tsk_mmls":
+            return {
+                "exit_code": 1,
+                "run_id": None,
+                "stderr_sample": "Cannot determine partition type",
+            }
+        run_id = _bodyfile_run(cases, case_id, _QUERY_BODY)
+        creados.append(run_id)
         return {"exit_code": 0, "run_id": run_id, "stderr_sample": ""}
 
     monkeypatch.setattr(builder.dispatcher, "execute", fake_execute)
     run_filesystem_timeline("case-1", _Handle(tmp_path / "img.raw"), _Ctx(), "unix")
-    return cases
+    return cases, creados[0]
 
 
 def test_query_no_timeline_is_actionable_not_empty(monkeypatch, tmp_path) -> None:
@@ -562,20 +609,19 @@ def test_query_no_timeline_is_actionable_not_empty(monkeypatch, tmp_path) -> Non
 
 
 def test_query_date_range_matches_all_events_that_day(monkeypatch, tmp_path) -> None:
-    _persist_query_timeline(monkeypatch, tmp_path)
+    _cases, run_id = _persist_query_timeline(monkeypatch, tmp_path)
     res = builder.query_filesystem_timeline(
         "case-1", _EVIDENCE_ID, date_from="2024-01-25", date_to="2024-01-25"
     )
     assert res["status"] == "ok"
     assert res["matched"] == 3
     assert res["total_events"] == 3
-    assert res["fls_run_id"] == "run-query"
+    assert res["fls_run_id"] == run_id
 
 
-def _write_bodyfile(cases, case_id: str, run_id: str, body: str) -> None:
-    out = cases.case_dir(case_id) / "artifacts" / run_id / "out"
-    out.mkdir(parents=True, exist_ok=True)
-    (out / "stdout.bin").write_text(body, encoding="utf-8")
+def _write_bodyfile(cases, case_id: str, body: str) -> str:
+    """Un bodyfile como ArtifactRun real; devuelve el run_id que le tocó."""
+    return _bodyfile_run(cases, case_id, body)
 
 
 def test_query_merges_multiple_partition_bodyfiles(monkeypatch, tmp_path) -> None:
@@ -583,32 +629,34 @@ def test_query_merges_multiple_partition_bodyfiles(monkeypatch, tmp_path) -> Non
     re-reads and MERGES every partition's bodyfile, not just the first."""
     cases = _fake_cases(tmp_path)
     monkeypatch.setattr(builder, "case_manager", cases)
-    _write_bodyfile(cases, "case-1", "run-a", "0|/p2/a|1|r/r|0|0|10|100|100|100|100")
-    _write_bodyfile(cases, "case-1", "run-b", "0|/p3/b|2|r/r|0|0|10|100|100|100|100")
+    run_a = _write_bodyfile(cases, "case-1", "0|/p2/a|1|r/r|0|0|10|100|100|100|100")
+    run_b = _write_bodyfile(cases, "case-1", "0|/p3/b|2|r/r|0|0|10|100|100|100|100")
     builder._persist_fs_timeline(
         "case-1", _EVIDENCE_ID,
-        {"evidence_id": _EVIDENCE_ID, "events": [], "fls_run_ids": ["run-a", "run-b"]},
+        {"evidence_id": _EVIDENCE_ID, "events": [], "fls_run_ids": [run_a, run_b]},
     )
     res = builder.query_filesystem_timeline("case-1", _EVIDENCE_ID)
     assert res["status"] == "ok"
     assert res["total_events"] == 2
     assert {e["path"] for e in res["events"]} == {"/p2/a", "/p3/b"}
-    assert res["fls_run_ids"] == ["run-a", "run-b"]
+    assert res["fls_run_ids"] == [run_a, run_b]
 
 
 def test_query_backward_compat_single_fls_run_id(monkeypatch, tmp_path) -> None:
     """An older timeline persisted with only ``fls_run_id`` (no list) still queries."""
     cases = _fake_cases(tmp_path)
     monkeypatch.setattr(builder, "case_manager", cases)
-    _write_bodyfile(cases, "case-1", "old-run", "0|/etc/passwd|1|r/r|0|0|10|100|100|100|100")
+    antiguo = _write_bodyfile(
+        cases, "case-1", "0|/etc/passwd|1|r/r|0|0|10|100|100|100|100"
+    )
     builder._persist_fs_timeline(
         "case-1", _EVIDENCE_ID,
-        {"evidence_id": _EVIDENCE_ID, "events": [], "fls_run_id": "old-run"},
+        {"evidence_id": _EVIDENCE_ID, "events": [], "fls_run_id": antiguo},
     )
     res = builder.query_filesystem_timeline("case-1", _EVIDENCE_ID)
     assert res["status"] == "ok"
     assert res["total_events"] == 1
-    assert res["fls_run_id"] == "old-run"
+    assert res["fls_run_id"] == antiguo
 
 
 def test_query_empty_date_is_materialised_zero_not_inferred(monkeypatch, tmp_path) -> None:

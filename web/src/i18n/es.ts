@@ -332,6 +332,81 @@ export const es: Record<MessageKey, string> = {
   "severity.critical": "crítica",
   "severity.all": "Todas",
   "findingKind.descarte": "descarte",
+  "findingKind.limitacion": "limitación",
+  "finding.scope": "Qué se examinó, y con qué límite",
+  "finding.revision": "Revisión",
+  "finding.provenanceState": "Procedencia",
+  "finding.verified": "verificada contra el registro",
+  "finding.unverified": "sin verificar (se registró antes de esta comprobación)",
+
+  "source.section": "Fuentes de este hallazgo",
+  "source.open": "Abrir la cita ({count})",
+  "source.loading": "Abriendo las fuentes…",
+  "source.loadFailed": "No se pudieron abrir las fuentes:",
+  "source.none": "Este hallazgo no declara ninguna fuente que abrir.",
+  "source.legacy":
+    "Este hallazgo se registró antes de que las fuentes se verificaran, así que su procedencia no está comprobada. Se conserva y se lee, pero no tiene las garantías de una cita verificada.",
+  "source.artifact": "Artefacto",
+  "source.locator": "Localizador",
+  "source.locatorLines": "líneas {from} a {to}",
+  "source.locatorBytes": "bytes {from} a {to}",
+  "source.locatorRecord": "registro {value}",
+  "source.state.verificada": "Integridad verificada",
+  "source.state.alterada": "Integridad fallida",
+  "source.state.ausente": "Fuente no encontrada",
+  "source.state.no_verificable": "No verificable",
+  "source.state.localizador_invalido": "Localizador imposible",
+  "source.noAnchor": "Manifiesto sin ancla de auditoría",
+  "source.partial": "Ejecución que no terminó correctamente (exit {exit})",
+  "source.noExcerpt": "La cita nombra el artefacto entero, sin localizador a un punto concreto.",
+  "source.blocked.alterada":
+    "Los bytes de esta fuente ya no casan con el SHA-256 que se registró para ella. El extracto NO se muestra, porque no sería el que se citó.",
+  "source.blocked.ausente":
+    "Esta fuente no se puede leer en el caso. No es que no contenga nada: es que no se puede alcanzar para comprobarla.",
+  "source.blocked.no_verificable":
+    "Esta cita se registró antes de que las fuentes se verificaran, así que no hay contra qué comprobarla.",
+  "source.blocked.localizador_invalido":
+    "Los bytes de esta fuente son los que se registraron, pero la cita señala una posición que no existe en el artefacto. No se recorta el rango: una cita no puede certificar posiciones inexistentes.",
+  "source.blocksApproval":
+    "Mientras esto siga así, un informe que se apoye en este hallazgo no se puede aprobar como final.",
+  "source.technicalOnly":
+    "Esto comprueba la INTEGRIDAD de la fuente: que sus bytes son los que se registraron. Si sostiene el hallazgo lo decides tú como perito.",
+
+  "doc.approve": "Aprobar como final",
+  "doc.approveTitle": "Aprobar como final",
+  "doc.approveWhatItIs":
+    "Es una aprobación humana auditada, no una firma digital criptográfica: queda quién la hizo, cuándo y sobre qué contenido exacto. Un tercero puede comprobar que el contenido no ha cambiado desde entonces; no quién lo aprobó.",
+  "doc.approveRevision": "Revisión que se va a aprobar",
+  "doc.approveNoBlockers": "No queda ninguna comprobación pendiente. Se puede aprobar.",
+  "doc.approveBlockers": "Lo que impide su aprobación",
+  "doc.approveSources": "Fuentes del informe",
+  "doc.blockSupport": "Respaldo:",
+  "doc.citationTitle": "Fuente de la conclusión",
+  "doc.citationClose": "Cerrar",
+  "doc.citationLoading": "Abriendo la fuente…",
+  "doc.citationFailed": "No se ha podido abrir la fuente de esta conclusión.",
+  "doc.citationFinding": "Hallazgo",
+  "doc.citationRevision": "revisión {n}",
+  "doc.citationNoSources": "Este hallazgo no cita ninguna fuente que abrir.",
+  "doc.citationFindingTampered":
+    "El contenido de este hallazgo ya no da su propio hash registrado: se ha reescrito, así que lo que se lee no es lo que el informe citó.",
+  "doc.citationOutsideManifest":
+    "Esta revisión no está en el manifiesto de fuentes del informe, así que no es lo que sostuvo esta conclusión cuando se redactó.",
+  "doc.citationHumanReview":
+    "Que la fuente exista y su hash coincida es integridad técnica. Que respalde lo que la conclusión afirma lo decide el perito.",
+  "doc.openSource": "Abrir la fuente",
+  "doc.approveCancel": "Cancelar",
+  "doc.approveConfirm": "Aprobar esta revisión",
+  "doc.approveChecking": "Pasando las comprobaciones…",
+  "doc.approved": "Informe aprobado como final. La aprobación queda en la cadena de auditoría.",
+  "doc.approveBlocked":
+    "El informe no se puede aprobar: hay comprobaciones que no pasan. Resuélvelas y vuelve a intentarlo.",
+  "doc.sourceState.verificada": "verificada",
+  "doc.sourceState.alterada": "alterada",
+  "doc.sourceState.ausente": "ausente",
+  "doc.sourceState.superada": "superada por una revisión más nueva",
+  "doc.exportDraftWarning":
+    "Este documento no está aprobado como final: el PDF exportado sale marcado BORRADOR en todas sus páginas.",
   "findingKind.afirmacion": "afirmación",
 
   // --- fase 5: hallazgos ---------------------------------------------------

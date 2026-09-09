@@ -359,6 +359,81 @@ export const en = {
   "severity.critical": "critical",
   "severity.all": "All",
   "findingKind.descarte": "ruled out",
+  "findingKind.limitacion": "limitation",
+  "finding.scope": "What was examined, and with what limit",
+  "finding.revision": "Revision",
+  "finding.provenanceState": "Provenance",
+  "finding.verified": "verified against the record",
+  "finding.unverified": "not verified (recorded before this check existed)",
+
+  "source.section": "Sources of this finding",
+  "source.open": "Open the citation ({count})",
+  "source.loading": "Opening the sources…",
+  "source.loadFailed": "The sources could not be opened:",
+  "source.none": "This finding declares no source to open.",
+  "source.legacy":
+    "This finding was recorded before sources were verified, so its provenance has not been checked. It is kept and readable, but it does not carry the guarantees of a verified citation.",
+  "source.artifact": "Artifact",
+  "source.locator": "Locator",
+  "source.locatorLines": "lines {from} to {to}",
+  "source.locatorBytes": "bytes {from} to {to}",
+  "source.locatorRecord": "record {value}",
+  "source.state.verificada": "Integrity verified",
+  "source.state.alterada": "Integrity failed",
+  "source.state.ausente": "Source not found",
+  "source.state.no_verificable": "Not verifiable",
+  "source.state.localizador_invalido": "Impossible locator",
+  "source.noAnchor": "Manifest with no audit anchor",
+  "source.partial": "Run that did not finish cleanly (exit {exit})",
+  "source.noExcerpt": "The citation names the whole artifact, with no locator to a specific spot.",
+  "source.blocked.alterada":
+    "The bytes of this source no longer match the SHA-256 that was recorded for it. The excerpt is NOT shown, because it would not be the one that was cited.",
+  "source.blocked.ausente":
+    "This source cannot be read from the case. It is not that it holds nothing: it is that it cannot be reached to check it.",
+  "source.blocked.no_verificable":
+    "This citation was recorded before sources were verified, so there is nothing to check it against.",
+  "source.blocked.localizador_invalido":
+    "The bytes of this source are the ones that were recorded, but the citation points at a position that does not exist in the artifact. The range is not trimmed: a citation cannot certify positions that are not there.",
+  "source.blocksApproval":
+    "While this stands, a report that rests on this finding cannot be approved as final.",
+  "source.technicalOnly":
+    "This checks the INTEGRITY of the source: that its bytes are the ones recorded. Whether it supports the finding is your call as examiner.",
+
+  "doc.approve": "Approve as final",
+  "doc.approveTitle": "Approve as final",
+  "doc.approveWhatItIs":
+    "An audited human approval, not a cryptographic digital signature: it records who approved it, when, and over which exact content. A third party can check that the content has not changed since; not who approved it.",
+  "doc.approveRevision": "Revision to be approved",
+  "doc.approveNoBlockers": "No pending checks. It can be approved.",
+  "doc.approveBlockers": "What is preventing its approval",
+  "doc.approveSources": "Sources of the report",
+  "doc.blockSupport": "Support:",
+  "doc.citationTitle": "Source of the conclusion",
+  "doc.citationClose": "Close",
+  "doc.citationLoading": "Opening the source…",
+  "doc.citationFailed": "The source of this conclusion could not be opened.",
+  "doc.citationFinding": "Finding",
+  "doc.citationRevision": "revision {n}",
+  "doc.citationNoSources": "This finding cites no source to open.",
+  "doc.citationFindingTampered":
+    "The content of this finding no longer hashes to its own recorded digest: it has been rewritten, so what is being read is not what the report cited.",
+  "doc.citationOutsideManifest":
+    "This revision is not in the source manifest of the report, so it is not what supported this conclusion when it was written.",
+  "doc.citationHumanReview":
+    "That the source exists and its hash matches is technical integrity. Whether it supports what the conclusion states is the examiner's call.",
+  "doc.openSource": "Open the source",
+  "doc.approveCancel": "Cancel",
+  "doc.approveConfirm": "Approve this revision",
+  "doc.approveChecking": "Running the checks…",
+  "doc.approved": "Report approved as final. The approval is recorded in the audit chain.",
+  "doc.approveBlocked":
+    "The report cannot be approved: there are checks that do not pass. Solve them and try again.",
+  "doc.sourceState.verificada": "verified",
+  "doc.sourceState.alterada": "altered",
+  "doc.sourceState.ausente": "missing",
+  "doc.sourceState.superada": "superseded by a newer revision",
+  "doc.exportDraftWarning":
+    "This document is not approved as final: the exported PDF comes out marked DRAFT on every page.",
   "findingKind.afirmacion": "assertion",
 
   // --- fase 5: hallazgos ---------------------------------------------------

@@ -47,6 +47,13 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - name: Type-check SPA
         run: npm run typecheck
+      # Pruebas de INTERFAZ (vitest + jsdom): comprueban comportamiento real,
+      # no que una cadena exista en un .tsx. Cubren abrir la cita de un hallazgo
+      # (que enseña la fuente verificada y NO enseña el extracto de una alterada)
+      # y la pantalla de aprobación (que identifica la revisión exacta y lista
+      # sus bloqueos). Ver web/src/pages/*.test.tsx.
+      - name: Test SPA
+        run: npm test
       # `npm run build` repite el typecheck y compila con Vite — es el mismo
       # comando que ejecuta docker/web/Dockerfile, así que un Dockerfile roto
       # por tipos se detecta aquí sin construir la imagen.

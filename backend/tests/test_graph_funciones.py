@@ -16,12 +16,12 @@ está rotulado con el nombre de su función:
 
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass, field
 
 import pytest
 from fastapi.testclient import TestClient
 
+from _procedencia import crear_run, procedencia
 from agentopsy.cases.manager import CaseManager
 from agentopsy.findings.store import FindingStore
 from agentopsy.graph import inventario, vistas
@@ -259,9 +259,11 @@ def http(tmp_path, monkeypatch):
 
 
 def _con_grafo(http_env, *, hints: list[str], nodos, relaciones) -> str:
+    # Procedencia REAL: el hallazgo cita una ejecución materializada (F03).
+    run = crear_run(http_env["cases"], http_env["case"].id)
     f = http_env["findings"].append(http_env["case"].id, {
         "title": "key.exe ejecutado por jcloudy", "summary": "jcloudy ejecutó key.exe",
-        "severity": "high", "run_id": str(uuid.uuid4()), "mitre_hints": hints,
+        "severity": "high", **procedencia(run), "mitre_hints": hints,
     })
     http_env["store"].save(
         http_env["case"].id, f.id, {"nodos": nodos, "relaciones": relaciones}

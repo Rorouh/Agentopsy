@@ -4,33 +4,42 @@ URI scheme: ``artifact://<case_id>/<run_id>/<relpath>``.
 
 The MCP client (Claude Desktop) calls ``resources/read`` with one of these
 URIs after seeing it as a ``ResourceLink`` content block in a tool response.
-We resolve the URI back to the case-anchored artifact directory, enforce the
-boundary (must live inside ``~/.agentopsy/cases/<case>/artifacts/<run>/``,
-must not escape via ``..``), apply a size cap, and return the bytes as
-``ReadResourceContents`` — the duck-typed dataclass the SDK's
-``@server.read_resource()`` decorator expects (``.content``,
+The URI is parsed here and the bytes are served THROUGH
+``agentopsy.artifacts.lectura`` — the single verified-read boundary — so this
+surface applies exactly the same policy as the agent's ``leer_artefacto``, the
+REST reader and the timeline: the file has to belong to the run's manifest, the
+run has to be sealed, the path has to stay confined after resolving symlinks,
+and the bytes have to re-hash to the digest the manifest recorded and the audit
+anchored. Until 2026-09-08 this handler opened the resolved path directly, so
+altering ``stdout.txt`` and re-reading it through MCP returned the altered text
+with no error (auditoría 2026-09-07, F02).
+
+The payload comes back as ``ReadResourceContents`` — the duck-typed dataclass
+the SDK's ``@server.read_resource()`` decorator expects (``.content``,
 ``.mime_type``, ``.meta``). Returning ``TextResourceContents`` directly was a
-plan-stage bug: the decorator iterates over our return and reads
-``.content``, which would crash on ``TextResourceContents`` (whose payload is
-under ``.text``). Verified by the robustness panel — F1 of the round-1
-review.
+plan-stage bug: the decorator iterates over our return and reads ``.content``,
+which would crash on ``TextResourceContents`` (whose payload is under
+``.text``). Verified by the robustness panel — F1 of the round-1 review.
 
 Why a separate handler module:
 - Keeps ``toolkit.py`` focused on the tool surface.
-- The boundary check is critical (CLAUDE.md security gate 6 — canonicalize
-  paths in the backend); easier to test in isolation.
+- The URI parsing and the mapping onto the verified-read boundary are easier to
+  test in isolation (CLAUDE.md security gate 6 — canonicalize paths in the
+  backend).
 """
 
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
 from mcp import types
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 
-from agentopsy.cases.manager import case_manager
+from agentopsy.artifacts import lectura
 
 
 # Max bytes returned in a single resources/read. Larger artefacts must be
@@ -69,71 +78,111 @@ def parse_artifact_uri(uri: str) -> ArtifactRef:
     return ArtifactRef(case_id=m["case"], run_id=m["run"], relpath=m["rel"])
 
 
+def referencia_de(ref: ArtifactRef) -> str:
+    """The URI's relpath as the verified-read boundary names an artifact.
+
+    ``stdout.txt`` / ``stderr.txt`` at the run-dir root are the ``stdout`` /
+    ``stderr`` channels; anything under ``out/`` is a derived file named by its
+    manifest relpath. Anything else (``manifest.json``, a path outside those two
+    shapes) is NOT an artifact of the run and is refused here rather than
+    resolved: the manifest is custody metadata, not readable content.
+    """
+    rel = ref.relpath.strip().replace("\\", "/")
+    if rel in ("stdout.txt", "stderr.txt"):
+        return rel[: -len(".txt")]
+    if rel.startswith("out/"):
+        return rel[len("out/") :]
+    raise ValueError(
+        f"artifact URI {ref.relpath!r} does not name an artifact of run "
+        f"{ref.run_id}: expected stdout.txt, stderr.txt or out/<relpath>"
+    )
+
+
+@contextmanager
+def _abrir(ref: ArtifactRef) -> Iterator[lectura.Lectura]:
+    """Open the referenced artifact through the verified-read boundary, mapping
+    its domain errors onto the exception contract ``toolkit.py`` handles."""
+    referencia = referencia_de(ref)
+    try:
+        with lectura.abrir_verificado(
+            ref.case_id, ref.run_id, referencia, ambito=lectura.AMBITO_MCP
+        ) as leida:
+            yield leida
+    except (lectura.ArtefactoInexistente, lectura.ArtefactoNoSellado) as exc:
+        raise FileNotFoundError(str(exc)) from exc
+    # La integridad rota (bytes alterados, manifiesto reescrito, cadena que no
+    # verifica) NO se traduce aquí: sube con su tipo. Convertirla en «no
+    # encontrado» haría creer que el artefacto no está, cuando el problema es que
+    # está y ya no vale. Quien la enmarca con su motivo es el servidor MCP, que
+    # captura toda la familia (RA05 c y e).
+    except (lectura.ArtefactoFueraDeAmbito, lectura.LocalizadorInvalido) as exc:
+        raise ValueError(str(exc)) from exc
+
+
 def resolve_artifact_path(ref: ArtifactRef) -> Path:
-    """Return the absolute, canonical filesystem path of the referenced artifact.
+    """Return the absolute, canonical filesystem path of the referenced artifact,
+    AFTER the verified-read boundary has cleared it.
+
+    Kept as a named entry point because the boundary check is the interesting
+    part to test in isolation. It re-hashes the bytes exactly as
+    ``read_artifact`` does, so it is never a cheaper "just resolve the path"
+    shortcut that a caller could take to skip the gate.
 
     Raises:
         KeyError: if the case does not exist.
-        FileNotFoundError: if the artifact file does not exist.
-        ValueError: if the resolved path escapes the case's artifacts dir
-            (defence against ``..`` traversal in the URI's relpath).
+        FileNotFoundError: if the artifact file does not exist, is not declared
+            in the run's manifest, or the run is not sealed yet.
+        ValueError: if the URI does not name an artifact of the run, or the
+            resolved path escapes the run directory.
+        ArtifactIntegrityError: if the bytes no longer match the manifest.
     """
-    case_dir = case_manager.case_dir(ref.case_id)  # raises KeyError on missing
-    artifacts_root = (case_dir / "artifacts" / ref.run_id).resolve()
-    candidate = (artifacts_root / ref.relpath).resolve()
-    # Path-traversal guard: candidate must live INSIDE artifacts_root.
-    if artifacts_root != candidate and artifacts_root not in candidate.parents:
-        raise ValueError(
-            f"artifact URI {ref.relpath!r} escapes the artifacts directory of "
-            f"run {ref.run_id} (case {ref.case_id})"
-        )
-    if not candidate.is_file():
-        raise FileNotFoundError(f"artifact not found: {candidate}")
-    return candidate
+    with _abrir(ref) as leida:
+        return leida.ruta
 
 
 def read_artifact(uri: str) -> list[ReadResourceContents]:
-    """Resolve + read an ``artifact://`` URI. Returns the SDK's expected
-    ``Iterable[ReadResourceContents]`` so the ``@server.read_resource()``
-    decorator can wrap it into the wire-shape ``TextResourceContents`` /
-    ``BlobResourceContents`` itself.
+    """Resolve + read an ``artifact://`` URI through the verified-read boundary.
+
+    Returns the SDK's expected ``Iterable[ReadResourceContents]`` so the
+    ``@server.read_resource()`` decorator can wrap it into the wire-shape
+    ``TextResourceContents`` / ``BlobResourceContents`` itself.
 
     For files larger than ``MAX_BYTES`` we return the first chunk with a
-    ``truncated`` flag in the meta so the client knows there is more.
+    ``truncated`` flag in the meta so the client knows there is more. The meta
+    also carries the VERIFIED provenance (run, tool, evidence, the SHA-256 the
+    bytes were checked against, and whether the manifest is anchored in the
+    audit chain): the client is reading evidence-derived bytes and has to be
+    able to say what they are and what guarantee they carry.
     """
     ref = parse_artifact_uri(uri)
-    path = resolve_artifact_path(ref)
-
-    size = path.stat().st_size
-    truncated = size > MAX_BYTES
-    with path.open("rb") as fh:
-        raw = fh.read(MAX_BYTES)
+    with _abrir(ref) as leida:
+        raw = leida.bytes_(MAX_BYTES)
+        truncated = leida.size > MAX_BYTES
+        meta = {
+            "truncated": truncated,
+            "size_bytes": leida.size,
+            "verified": True,
+            **leida.procedencia(),
+        }
+        suffix = leida.ruta.suffix.lower()
 
     # Decide text vs binary on the first chunk.
     try:
-        _probe = raw[:_TEXT_PROBE].decode("utf-8")
+        raw[:_TEXT_PROBE].decode("utf-8")
         # If the probe decoded but the rest fails, fall through to text decode
-        # with errors="replace" — the artefact is probably text with a
-        # single non-utf8 byte; better to return readable text than blob.
+        # with errors="replace" — the artefact is probably text with a single
+        # non-utf8 byte; better to return readable text than blob.
         text = raw.decode("utf-8", errors="replace")
         mime = "text/plain; charset=utf-8"
-        if path.suffix.lower() == ".json":
+        if suffix == ".json":
             mime = "application/json"
-        elif path.suffix.lower() == ".csv":
+        elif suffix == ".csv":
             mime = "text/csv"
-        return [
-            ReadResourceContents(
-                content=text,
-                mime_type=mime,
-                meta={"truncated": truncated, "size_bytes": size},
-            )
-        ]
+        return [ReadResourceContents(content=text, mime_type=mime, meta=meta)]
     except UnicodeDecodeError:
         return [
             ReadResourceContents(
-                content=raw,
-                mime_type="application/octet-stream",
-                meta={"truncated": truncated, "size_bytes": size},
+                content=raw, mime_type="application/octet-stream", meta=meta
             )
         ]
 
@@ -213,6 +262,7 @@ def build_resource_links_for_run(
 __all__ = [
     "ArtifactRef",
     "MAX_BYTES",
+    "referencia_de",
     "build_resource_links_for_run",
     "parse_artifact_uri",
     "read_artifact",

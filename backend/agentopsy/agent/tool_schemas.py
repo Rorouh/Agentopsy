@@ -872,10 +872,54 @@ _INTERNAL_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             },
             "finding_kind": {
                 "type": "string",
-                "enum": ["afirmacion", "descarte"],
+                "enum": ["afirmacion", "descarte", "limitacion"],
                 "description": (
                     t("schema.findingKind")
                 ),
+            },
+            "alcance_examinado": {
+                "type": "string",
+                "maxLength": 2000,
+                "description": t("schema.findingScope"),
+            },
+            # El contrato TIPADO de citas (F03). Varias fuentes por hallazgo, cada
+            # una con su artefacto y su localizador, todas verificadas contra el
+            # registro antes de persistir nada.
+            "references": {
+                "type": "array",
+                "maxItems": 20,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "run_id": {"type": "string"},
+                        "evidence_id": {"type": "string"},
+                        "tool_id": {"type": "string"},
+                        "artefacto": {
+                            "type": "string",
+                            "enum": ["stdout", "stderr", "fichero"],
+                        },
+                        "relpath": {"type": "string"},
+                        "sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+                        "localizador": {
+                            "type": "object",
+                            "properties": {
+                                "tipo": {
+                                    "type": "string",
+                                    "enum": ["lineas", "bytes", "registro"],
+                                },
+                                "desde": {"type": "integer", "minimum": 0},
+                                "hasta": {"type": "integer", "minimum": 0},
+                                "valor": {"type": "string", "maxLength": 500},
+                            },
+                            "required": ["tipo"],
+                            "additionalProperties": False,
+                        },
+                        "extracto": {"type": "string", "maxLength": 2000},
+                    },
+                    "required": ["run_id"],
+                    "additionalProperties": False,
+                },
+                "description": t("schema.findingReferences"),
             },
             "mitre_hints": {
                 "type": "array",

@@ -83,7 +83,7 @@ la «telaraña» de documentos de un caso: se entra por uno y se salta a los dem
 | Papel (analogía) | Dónde vive en Agentopsy | Con qué lo escribes / lees |
 |---|---|---|
 | **FICHA / REGISTRO del caso**: perfil, husos, cuentas, hitos, `run_id` que citarás luego, qué queda abierto | grafo de conocimiento del caso (`knowledge/`) | `anotar_conocimiento(doc_id, section, content)` · `consultar_conocimiento(doc_id)` |
-| **HALLAZGOS con evidencia**: la cadena de custodia de conclusiones | `findings.jsonl` + audit encadenado | `record_finding(title, summary, severity, tool_id?, run_id?, mitre_hints?, observed_at?)` |
+| **HALLAZGOS con evidencia**: la cadena de custodia de conclusiones | `findings.jsonl` + audit encadenado | `record_finding(title, summary, severity, references?, finding_kind?, alcance_examinado?, mitre_hints?, observed_at?)` |
 | **Salida CRUDA de cada herramienta**: el `output/` inviolable | artefactos del caso (cada corrida guarda su salida entera + hash) | se crea sola al ejecutar; la relees con `leer_artefacto(run_id, fichero?, buscar?)` |
 | **ENTREGABLES**: el informe pericial | subsistema de documentos | lo redacta el modelo al FINALIZAR la investigación, a partir de tus hallazgos y de la evidencia registrada; cuanto mejor sea tu `summary` y tu procedencia, mejor será el informe |
 
@@ -107,6 +107,58 @@ que citar más tarde. Nodos sugeridos (créalos tú, no vienen dados):
 
 Un **nodo del grafo no es un hallazgo**: es para navegar y no recargar. La custodia son
 los `record_finding` + el audit. **Un hallazgo sin registrar todavía no cuenta.**
+
+### Las FUENTES de un hallazgo: cita el sitio, no la sensación
+
+Agentopsy **comprueba tu procedencia contra el registro** antes de guardar nada. No es una
+formalidad: si citas una ejecución que no existe, una herramienta que no la ejecutó, una
+evidencia que no leyó o un hash que no es el suyo, el hallazgo **se rechaza entero** y te
+vuelve el motivo. Los identificadores y los hashes **salen del registro**, no de tu
+memoria: los tienes en la respuesta de cada herramienta y en `leer_artefacto`.
+
+Una cita se escribe en `references`, y cada una nombra:
+
+- `run_id`: la ejecución que produjo el material. Es lo único obligatorio.
+- `artefacto`: `stdout`, `stderr` o `fichero` (con su `relpath`).
+- `localizador`: dónde exactamente, con su semántica exacta.
+  `{"tipo":"lineas","desde":42,"hasta":44}` cuenta desde 1 y los DOS extremos son
+  inclusivos, como lo lee un humano. `{"tipo":"bytes","desde":0,"hasta":512}` cuenta
+  desde 0 con `hasta` EXCLUSIVO, como se direcciona un rango. `{"tipo":"registro",
+  "valor":"Run\\updater"}` nombra una entrada y no tiene aritmética.
+  Los dos extremos se comprueban contra el contenido real: un rango cuyo final se
+  pase del final del artefacto se rechaza, no se recorta. Citar «de la línea 1 a la
+  999999» de un fichero de tres líneas no es citar tres líneas.
+- `extracto`: el texto LITERAL que hay ahí. Agentopsy lo **comprueba** contra la fuente: si
+  no es lo que el localizador señala, se rechaza. Cópialo, no lo parafrasees.
+
+La evidencia, la herramienta y el hash puedes omitirlos: Agentopsy los toma del manifiesto
+de esa ejecución, donde son únicos. Lo que declares, en cambio, tiene que casar.
+
+**Varias fuentes por hallazgo** cuando el hecho se sostiene en más de un sitio (el `$MFT` y
+un EVTX): las dos se comprueban, y perder una empobrece el informe.
+
+### Tres naturalezas, y la diferencia es el punto
+
+`finding_kind` no es una etiqueta decorativa: gobierna qué procedencia se te admite.
+
+- **`afirmacion`** (por defecto): afirmas algo sobre la evidencia. Exige una fuente íntegra
+  de una ejecución que **terminó bien**.
+- **`limitacion`**: documenta que algo **NO se pudo examinar** (la herramienta falló, la
+  salida vino a medias). Es el ÚNICO tipo que puede citar una ejecución con `exit` distinto
+  de cero. Un fallo es información pericial y no se tira; lo que no se puede es escribirlo
+  como si fuera un resultado.
+- **`descarte`**: una vía que no aportó.
+
+Los dos últimos **deben** declarar `alcance_examinado`: qué se examinó, con qué herramienta
+y con qué límite. «No se pudo analizar» y «no se encontró» no son la misma frase, y un
+descarte sin alcance permite leer la primera como la segunda.
+
+### Corregirte no borra lo anterior
+
+Si un hallazgo ya registrado estaba mal, **no lo reescribes**: se añade una revisión con su
+motivo y la anterior sigue ahí. Un informe que citó la revisión 2 sigue apuntando a lo que
+citó. Por eso vale la pena registrar en caliente aunque no estés seguro del todo: corregir
+es barato y no borra tu rastro.
 
 ### `observed_at`: cuándo pasó EN EL DISPOSITIVO
 

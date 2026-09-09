@@ -25,6 +25,7 @@ from openpyxl import load_workbook
 from agentopsy.i18n import CATALOGO, t
 from agentopsy.cases import CaseManager
 from agentopsy.findings.store import FindingStore
+from _procedencia import crear_run, procedencia
 from agentopsy.mitre.coverage import CoverageStore
 from agentopsy.mitre.export import (
     NAVIGATOR_LAYER_VERSION,
@@ -48,16 +49,22 @@ def _col(nombre_es: str) -> str:
     return nombre_es
 
 
-#: Procedencia válida (UUID4) para hallazgos afirmativos — el store la exige
-#: (anti-alucinación, RULE 2); estos tests ejercitan la export MITRE, no ese gate.
-_RUN_ID = "11111111-1111-4111-8111-111111111111"
-
-
+#: Procedencia REAL para los hallazgos afirmativos de estos tests. Desde F03 el
+#: almacén verifica que la ejecución exista, sea de este caso, haya leído esa
+#: evidencia y haya producido ese artefacto con ese hash, así que un UUID
+#: constante ya no sirve: hay que materializar la ejecución (`_procedencia`).
 @pytest.fixture
 def tmp_case(tmp_path) -> tuple[CaseManager, str]:
     cases = CaseManager(root=tmp_path / "cases")
     case = cases.create(name="Caso export", examiner="ramos", os_profile="windows")
     return cases, case.id
+
+
+@pytest.fixture
+def proc(tmp_case) -> dict:
+    """La procedencia de una ejecución real de este caso."""
+    cases, case_id = tmp_case
+    return procedencia(crear_run(cases, case_id))
 
 
 #: El bloque de procedencia de la hoja de cobertura (lo que hay antes de la tabla).
@@ -117,7 +124,7 @@ def test_sheet_empty_case_is_header_only(tmp_case) -> None:
     assert rows == [list(hoja_header())]
 
 
-def test_sheet_row_for_an_agent_proposal(tmp_case) -> None:
+def test_sheet_row_for_an_agent_proposal(tmp_case, proc) -> None:
     cases, case_id = tmp_case
     findings = FindingStore(cases)
     coverage = CoverageStore(cases, findings)
@@ -125,7 +132,7 @@ def test_sheet_row_for_an_agent_proposal(tmp_case) -> None:
         "title": "Inyección",
         "summary": "malfind: región RWX.",
         "severity": "high",
-        "run_id": _RUN_ID,
+        **proc,
         "mitre_hints": ["T1055"],
     })
     rows = _rows(coverage_to_hoja(coverage.coverage(case_id)))
@@ -146,13 +153,13 @@ def test_sheet_row_for_an_agent_proposal(tmp_case) -> None:
     assert row[idx[_col('Celda de la matriz')]] == "T1055"
 
 
-def test_sheet_carries_the_examiner_verdict_and_rationale(tmp_case) -> None:
+def test_sheet_carries_the_examiner_verdict_and_rationale(tmp_case, proc) -> None:
     cases, case_id = tmp_case
     findings = FindingStore(cases)
     coverage = CoverageStore(cases, findings)
     f = findings.append(case_id, {
         "title": "Inyección", "summary": "malfind.", "severity": "high",
-        "run_id": _RUN_ID,
+        **proc,
         "mitre_hints": ["T1055"],
     })
     coverage.adjudicate(
@@ -210,14 +217,14 @@ def test_navigator_layer_is_valid_and_empty_when_no_coverage(tmp_case) -> None:
     assert "Caso export" in layer["name"]
 
 
-def test_navigator_layer_colors_by_axis(tmp_case) -> None:
+def test_navigator_layer_colors_by_axis(tmp_case, proc) -> None:
     cases, case_id = tmp_case
     findings = FindingStore(cases)
     coverage = CoverageStore(cases, findings)
     # Propuesta del agente sin dictaminar → color de propuesta.
     findings.append(case_id, {
         "title": "Persistencia", "summary": "run key.", "severity": "medium",
-        "run_id": _RUN_ID,
+        **proc,
         "mitre_hints": ["T1547.001"],
     })
     # Dictamen del perito → color de veredicto.
@@ -235,14 +242,14 @@ def test_navigator_layer_colors_by_axis(tmp_case) -> None:
     assert all(t["enabled"] for t in layer["techniques"])
 
 
-def test_navigator_layer_verdict_wins_over_proposal_color(tmp_case) -> None:
+def test_navigator_layer_verdict_wins_over_proposal_color(tmp_case, proc) -> None:
     """Si una técnica está propuesta Y dictaminada, el color lo manda el dictamen."""
     cases, case_id = tmp_case
     findings = FindingStore(cases)
     coverage = CoverageStore(cases, findings)
     findings.append(case_id, {
         "title": "Inyección", "summary": "malfind.", "severity": "high",
-        "run_id": _RUN_ID,
+        **proc,
         "mitre_hints": ["T1055"],
     })
     coverage.adjudicate(case_id, "T1055", "sospechosa", "Indicio.")

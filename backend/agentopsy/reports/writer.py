@@ -22,12 +22,28 @@ se publica nada):
    ``DocumentStore`` valida, con sus campos, acotados y coercionados. Un bloque
    inventado no llega al almacén.
 3. **Referentes cerrados**, ``_validar_referentes``: toda técnica ``Txxxx``,
-   todo UUID y toda cadena hexadecimal que el informe cite debe existir ya en el
-   material del caso. Un referente desconocido rechaza la redacción completa.
+   todo UUID y toda cadena hexadecimal que el informe cite debe pertenecer al
+   conjunto de ENTIDADES VERIFICADAS del caso (``material.referentes``): el id
+   del caso, los de sus evidencias, ejecuciones, hallazgos y revisiones, y los
+   hashes que esos registros fijaron. No vale que el token aparezca en algún
+   sitio del texto del material: hasta 2026-09-08 el conjunto se sacaba de una
+   expresión regular sobre el volcado entero del material, así que un
+   identificador citado dentro de la prosa de un hallazgo se autorizaba a sí
+   mismo (auditoría 2026-09-07, F04). Y la puerta cubre TODO el documento, el
+   ``resumen`` incluido, que antes no pasaba por ella.
 4. **Comandos literales**, ``_validar_comandos``: cada bloque ``code`` debe
-   coincidir, token a token, con un ``argv`` auditado del caso. El informe cita
-   el comando EJECUTADO, no el que el modelo cree que se ejecutó (FORENSIC
-   INVARIANT 4). Los bloques ``code`` están reservados a eso.
+   coincidir, TOKEN A TOKEN, con un ``argv`` auditado del caso, y el bloque
+   queda fijado a la representación que Agentopsy genera desde ese array
+   (``works.render_argv``). Comparar textos con los espacios colapsados hacía
+   indistinguibles ``grep "a b" f`` y ``grep a b f``, que son dos comandos
+   distintos. El informe cita el comando EJECUTADO, no el que el modelo cree que
+   se ejecutó (FORENSIC INVARIANT 4). Los bloques ``code`` están reservados a eso.
+
+Antes de las cuatro puertas hay una condición de ENTRADA: si el material del
+caso llega con la cadena de auditoría rota (``integridad.hash_chain_verified``
+falso), no se redacta. No es una puerta más: es que no tiene sentido gastar
+minutos de modelo, y dinero del perito, en un informe que no se va a poder
+aprobar (ver ``agentopsy.reports.aprobacion``).
 
 Cuando una puerta rechaza, el motivo vuelve al modelo en UNA ronda de corrección
 (``MAX_REPARACIONES``) antes de darse por perdida la redacción: cada puerta
@@ -68,9 +84,21 @@ from typing import Any
 
 from agentopsy.i18n import Mensaje, t
 from agentopsy.executors.base import PromptExecutor
-from agentopsy.reports.indice import NUMS, contrato_del_indice, titulos
+from agentopsy.reports.aprobacion import manifiesto_de_fuentes
+from agentopsy.reports.fuentes import (
+    limitacion_de_bloque,
+    limitaciones_declaradas,
+    refs_de_bloque,
+    validar_refs,
+)
+from agentopsy.reports.indice import (
+    NUMS,
+    contrato_del_indice,
+    exige_respaldo,
+    titulos,
+)
 from agentopsy.reports.material import build_material
-from agentopsy.reports.works import audited_argvs
+from agentopsy.reports.works import audited_argvs, tokenizar_comando
 
 #: Presupuesto de tiempo de la redacción. Un informe pericial completo es la
 #: respuesta más larga que Agentopsy le pide a un modelo, así que no cabe en el
@@ -117,6 +145,9 @@ _UUID_RE = re.compile(
 #: (un tamaño en bytes, un contador) no se confunde con un hash y no dispara un
 #: falso rechazo. Un hash real siempre trae letras.
 _HEX_RE = re.compile(r"\b(?=[0-9a-f]*[a-f])[0-9a-f]{8,64}\b")
+#: La misma forma, anclada: sirve para decidir si un VALOR del material es un
+#: hash (y por tanto un referente autorizado), no para buscarlo dentro de un texto.
+_HEX_ENTERO_RE = re.compile(r"[0-9a-f]{8,64}")
 
 #: ESTILO del informe pericial (regla de producto, 2026-07-30). Tres signos que
 #: un informe de Agentopsy no lleva NUNCA:
@@ -342,9 +373,26 @@ def _normalizar_bloques(num: str, raw: Any) -> list[dict[str, Any]]:
         if not isinstance(block, dict):
             raise ReportWriteError(f"apartado {num}: un bloque no es un objeto JSON")
         tipo = str(block.get("t", "")).strip()
+        # El RESPALDO del bloque: en qué revisión de qué hallazgo se apoya, o qué
+        # limitación declara. Se construye aparte y se pega a cada bloque
+        # conocido, porque esta función levanta SOLO claves conocidas a propósito
+        # (una clave inventada por el modelo no llega al almacén) y sin esto las
+        # citas del modelo se perderían por el camino.
+        try:
+            respaldo: dict[str, Any] = {}
+            refs = validar_refs(block, num=num)
+            if refs:
+                respaldo["refs"] = refs
+            limitacion = limitacion_de_bloque(block)
+            if limitacion:
+                respaldo["limitacion"] = limitacion
+        except ValueError as exc:
+            raise ReportWriteError(str(exc)) from exc
 
         if tipo in ("p", "h3", "quote", "code"):
-            out.append({"t": tipo, "text": _texto(num, tipo, block.get("text"))})
+            out.append({
+                "t": tipo, "text": _texto(num, tipo, block.get("text")), **respaldo
+            })
 
         elif tipo == "list":
             items_raw = block.get("items")
@@ -366,6 +414,7 @@ def _normalizar_bloques(num: str, raw: Any) -> list[dict[str, Any]]:
                 "t": "list",
                 "items": items,
                 "ordered": bool(block.get("ordered", False)),
+                **respaldo,
             })
 
         elif tipo == "kv":
@@ -389,7 +438,7 @@ def _normalizar_bloques(num: str, raw: Any) -> list[dict[str, Any]]:
                     "k": str(pair.get("k", "")).strip(),
                     "v": str(pair.get("v", "")).strip(),
                 })
-            out.append({"t": "kv", "pairs": pairs})
+            out.append({"t": "kv", "pairs": pairs, **respaldo})
 
         elif tipo == "table":
             headers_raw = block.get("headers")
@@ -432,7 +481,9 @@ def _normalizar_bloques(num: str, raw: Any) -> list[dict[str, Any]]:
                     )
                 cells += [""] * (len(headers) - len(cells))
                 rows.append(cells)
-            out.append({"t": "table", "headers": headers, "rows": rows})
+            out.append({
+                "t": "table", "headers": headers, "rows": rows, **respaldo
+            })
 
         elif tipo == "finding":
             sev = str(block.get("sev", "")).strip()
@@ -446,6 +497,7 @@ def _normalizar_bloques(num: str, raw: Any) -> list[dict[str, Any]]:
                 "sev": sev,
                 "title": _texto(num, "finding", block.get("title")),
                 "text": str(block.get("text", "")).strip(),
+                **respaldo,
             }
             tags_raw = block.get("tags")
             if isinstance(tags_raw, list) and tags_raw:
@@ -466,13 +518,80 @@ def _normalizar_bloques(num: str, raw: Any) -> list[dict[str, Any]]:
 # ── puerta 3: referentes cerrados ─────────────────────────────────────────────
 
 
-def _referentes(text: str) -> dict[str, set[str]]:
-    lowered = text.lower()
-    return {
-        "tecnica": {m.lower() for m in _TECH_RE.findall(text)},
-        "uuid": {m.lower() for m in _UUID_RE.findall(text)},
-        "hex": set(_HEX_RE.findall(lowered)),
-    }
+def _referentes(material: dict[str, Any]) -> dict[str, set[str]]:
+    """Los referentes AUTORIZADOS, construidos desde las ENTIDADES del material.
+
+    No es una regex sobre el volcado del material: eso autorizaba cualquier
+    identificador que apareciese en la prosa de un hallazgo, incluido uno que el
+    propio modelo hubiera escrito allí (auditoría 2026-09-07, F04). Aquí se
+    enumeran las entidades una a una: el caso, sus evidencias, sus ejecuciones,
+    sus hallazgos con sus fuentes, sus revisiones y la cadena de auditoría, y de
+    cada una se toman su identificador y sus hashes REGISTRADOS.
+    """
+    uuids: set[str] = set()
+    hexes: set[str] = set()
+    tecnicas: set[str] = set()
+
+    def _uuid(valor: Any) -> None:
+        texto = str(valor or "").strip().lower()
+        if texto and _UUID_RE.fullmatch(texto):
+            uuids.add(texto)
+
+    def _hex(valor: Any) -> None:
+        texto = str(valor or "").strip().lower()
+        if texto and _HEX_ENTERO_RE.fullmatch(texto):
+            hexes.add(texto)
+
+    _uuid((material.get("caso") or {}).get("id"))
+
+    for ev in material.get("evidencias") or []:
+        _uuid(ev.get("evidence_id"))
+        _hex(ev.get("sha256_baseline"))
+        _hex(ev.get("hash_de_registro"))
+        for seg in ev.get("segmentos_ewf") or []:
+            _hex(seg.get("sha256") if isinstance(seg, dict) else seg)
+        verificacion = ev.get("verificacion")
+        if isinstance(verificacion, dict):
+            _hex(verificacion.get("sha256"))
+
+    for h in material.get("hallazgos") or []:
+        _uuid(h.get("id"))
+        _uuid(h.get("evidence_id"))
+        _uuid(h.get("run_id"))
+        _hex(h.get("artifact_sha256"))
+        _hex(h.get("content_sha256"))
+        for ref in h.get("referencias") or []:
+            if not isinstance(ref, dict):
+                continue
+            _uuid(ref.get("run_id"))
+            _uuid(ref.get("evidence_id"))
+            _hex(ref.get("sha256"))
+        for tid in h.get("mitre_hints") or []:
+            tecnicas.add(str(tid).lower())
+
+    for t_ in material.get("trabajos") or []:
+        _uuid(t_.get("run_id"))
+        _uuid(t_.get("evidence_id"))
+        for clave in ("baseline_sha256", "stdout_sha256", "stderr_sha256", "manifest_sha256"):
+            _hex(t_.get(clave))
+        for entrada in t_.get("derived_inputs") or []:
+            if isinstance(entrada, dict):
+                _uuid(entrada.get("source_run_id"))
+                _hex(entrada.get("sha256"))
+        for fid in t_.get("finding_ids") or []:
+            _uuid(fid)
+
+    for rev in material.get("revisiones") or []:
+        _hex(rev.get("sha256"))
+        _uuid(rev.get("document_id"))
+
+    for entrada in material.get("mitre") or []:
+        tecnicas.add(str(entrada.get("technique_id", "")).lower())
+
+    integridad = material.get("integridad") or {}
+    _hex(integridad.get("cadena_entry_hash"))
+
+    return {"tecnica": tecnicas, "uuid": uuids, "hex": hexes}
 
 
 def _texto_de_secciones(sections: list[dict[str, Any]]) -> str:
@@ -492,17 +611,26 @@ def _lista_de_fallos(fallos: list[str]) -> str:
 
 
 def _validar_referentes(
-    sections: list[dict[str, Any]], permitidos: dict[str, set[str]]
+    sections: list[dict[str, Any]],
+    permitidos: dict[str, set[str]],
+    *,
+    resumen: str = "",
 ) -> None:
-    """Todo referente que el informe cite debe existir YA en el material del
-    caso. Un hash o un run puede citarse por prefijo (así los abrevian los
-    informes), de modo que un token hex vale si es prefijo de uno permitido,
-    pero un token que EXTIENDA un prefijo permitido es fabricación.
+    """Todo referente que el informe cite debe pertenecer a las entidades
+    VERIFICADAS del caso. Un hash o un run puede citarse por prefijo (así los
+    abrevian los informes), de modo que un token hex vale si es prefijo de uno
+    permitido, pero un token que EXTIENDA un prefijo permitido es fabricación.
+
+    Cubre TODO el documento: el ``resumen`` viaja aquí junto a las secciones,
+    porque es la primera frase que lee un tercero y hasta 2026-09-08 no pasaba
+    por esta puerta, así que un UUID inventado en él se publicaba (F04). Las
+    secciones se serializan enteras, de modo que listas, tablas, pares
+    clave-valor, etiquetas y metadatos entran igual que los párrafos.
 
     Recoge TODAS las violaciones antes de rechazar: la ronda de corrección tiene
     que poder arreglarlas de una vez, no descubrir la siguiente en el intento
     siguiente."""
-    text = _texto_de_secciones(sections)
+    text = _texto_de_secciones(sections) + "\n" + (resumen or "")
     fallos: list[str] = []
     for tid in sorted(set(_TECH_RE.findall(text))):
         if tid.lower() not in permitidos["tecnica"]:
@@ -512,7 +640,12 @@ def _validar_referentes(
     for uid in sorted(set(_UUID_RE.findall(text))):
         if uid.lower() not in permitidos["uuid"]:
             fallos.append(f"el identificador {uid} no pertenece a este caso")
-    for token in sorted(set(_HEX_RE.findall(text.lower()))):
+    # Los UUID ya se han comprobado ARRIBA, y sus tramos (`7e9f1a2b`,
+    # `0c1d2e3f4a5b`) son cadenas hexadecimales que dispararían un falso rechazo
+    # aquí. Se retiran del texto antes de buscar hashes: cada referente se juzga
+    # una vez, por lo que es.
+    texto_hex = _UUID_RE.sub(" ", text).lower()
+    for token in sorted(set(_HEX_RE.findall(texto_hex))):
         if not any(h.startswith(token) for h in permitidos["hex"]):
             fallos.append(
                 str(Mensaje("writer.hexAbsent", token=token))
@@ -526,23 +659,36 @@ def _validar_referentes(
 # ── puerta 4: comandos literales ──────────────────────────────────────────────
 
 
-def _validar_comandos(sections: list[dict[str, Any]], argvs: set[str]) -> None:
-    """Cada bloque ``code`` debe ser un ``argv`` AUDITADO del caso, token a
-    token (el espaciado es lo único que se normaliza), y el bloque queda FIJADO a
-    la forma auditada: lo que el informe imprime es el comando del log, no la
-    transcripción del modelo con su espaciado.
+def _validar_comandos(
+    sections: list[dict[str, Any]], argvs: dict[str, list[str]]
+) -> None:
+    """Cada bloque ``code`` debe ser un ``argv`` AUDITADO del caso, TOKEN A
+    TOKEN, y el bloque queda FIJADO a la representación que Agentopsy genera
+    desde ese array: lo que el informe imprime es el comando del log, con sus
+    límites entre argumentos, no la transcripción del modelo.
+
+    La comparación tokeniza respetando las comillas (``works.tokenizar_comando``)
+    en lugar de colapsar espacios. Colapsándolos, ``grep "a b" f`` y
+    ``grep a b f`` eran la misma cadena, y son dos comandos distintos: el
+    primero busca la frase «a b», el segundo busca «a» en dos ficheros
+    (auditoría 2026-09-07, F04).
 
     FORENSIC INVARIANT 4: el informe cita el comando que se EJECUTÓ, tomado del
     log de auditoría, no una reconstrucción ni la intención declarada por el
     modelo. Por eso los bloques ``code`` están reservados a esto."""
+    por_tokens = {tuple(argv): canonico for canonico, argv in argvs.items()}
     fallos: list[str] = []
     for section in sections:
         for block in section["blocks"]:
             if block.get("t") != "code":
                 continue
-            citado = " ".join(str(block.get("text", "")).split())
-            if citado in argvs:
-                block["text"] = citado
+            citado = str(block.get("text", "")).strip()
+            tokens = tokenizar_comando(citado)
+            canonico = por_tokens.get(tuple(tokens)) if tokens is not None else None
+            if canonico is not None:
+                # El texto que se publica lo genera Agentopsy desde el array
+                # auditado, no lo copia del modelo.
+                block["text"] = canonico
                 continue
             fallos.append(f"apartado {section['num']}: «{citado[:160]}»")
     if not fallos:
@@ -565,6 +711,81 @@ def _validar_comandos(sections: list[dict[str, Any]], argvs: set[str]) -> None:
 
 
 # ── estilo: la tipografía del producto ────────────────────────────────────────
+
+
+# ── puerta 5: el respaldo de lo que se afirma ─────────────────────────────────
+
+
+def _validar_respaldo(
+    sections: list[dict[str, Any]],
+    material: dict[str, Any],
+    fuentes_snapshot: dict[str, Any],
+) -> None:
+    """Cada conclusión forense cita su respaldo, y cada limitación exigida consta.
+
+    Las cuatro puertas anteriores comprueban que el informe tenga la estructura
+    pactada, que sus bloques sean válidos, que no invente identificadores y que
+    los comandos sean los auditados. Ninguna comprobaba que una CONCLUSIÓN dijera
+    en qué se apoya, así que un párrafo del apartado de hallazgos podía afirmar
+    cualquier cosa mientras no citara un UUID inventado (reauditoría 2026-09-08,
+    RA07).
+
+    Tres cosas, y las tres deterministas:
+
+    1. Un bloque que afirma sobre la evidencia (apartados 6 y 9, tipos de bloque
+       que afirman) tiene que declarar ``refs``. El texto metodológico, los
+       subtítulos y los comandos quedan fuera: exigirles una cita produciría
+       citas de adorno, que es peor que no tenerlas.
+    2. Cada cita tiene que apuntar a una revisión de hallazgo QUE ESTÁ EN EL
+       MATERIAL. Citar otra sería citar algo que el redactor no tenía delante.
+    3. Cada limitación exigida por el material tiene que estar declarada por su
+       CÓDIGO en un bloque, no descrita en prosa: la prosa no se puede cruzar con
+       una lista, y «el apartado 9 tiene texto» valía como declaración.
+
+    Se recogen TODAS las violaciones (no la primera) para que la ronda de
+    corrección las arregle de una vez.
+    """
+    permitidas = {
+        (str(h.get("id")), int(h.get("revision") or 1))
+        for h in material.get("hallazgos") or []
+        if h.get("id")
+    }
+
+    sin_respaldo: list[str] = []
+    fuera: list[str] = []
+    for sec in sections:
+        num = str(sec.get("num", ""))
+        for indice, bloque in enumerate(sec.get("blocks") or []):
+            refs = refs_de_bloque(bloque)
+            if not refs and exige_respaldo(num, bloque):
+                sin_respaldo.append(f"{num}#{indice} ({bloque.get('t')})")
+                continue
+            for ref in refs:
+                clave = (str(ref["finding_id"]), int(ref["revision"] or 1))
+                if clave not in permitidas:
+                    fuera.append(f"{num}#{indice} -> {clave[0]} r{clave[1]}")
+
+    fallos: list[str] = []
+    if sin_respaldo:
+        fallos.append(
+            str(Mensaje("writer.claimsWithoutSupport", blocks=_lista_de_fallos(sin_respaldo)))
+        )
+    if fuera:
+        fallos.append(
+            str(Mensaje("writer.citationsOutsideMaterial", refs=_lista_de_fallos(fuera)))
+        )
+
+    exigidas = list(fuentes_snapshot.get("limitaciones_exigidas") or [])
+    if exigidas:
+        declaradas = limitaciones_declaradas(sections)
+        faltan = [c for c in exigidas if c not in declaradas]
+        if faltan:
+            fallos.append(
+                str(Mensaje("writer.missingLimitationCodes", codes=", ".join(faltan)))
+            )
+
+    if fallos:
+        raise ReportWriteError(" | ".join(fallos))
 
 
 def _sin_raya(text: str) -> str:
@@ -738,6 +959,28 @@ def write_report(
             Mensaje("writer.noFindings")
         )
 
+    # Condición de ENTRADA (F04): con la cadena de auditoría rota el informe no
+    # se podría aprobar, así que no se redacta. Ahorra minutos de modelo y, sobre
+    # todo, no produce un borrador que aparenta estar bien y no lo está. Un
+    # ``None`` (caso sin audit todavía) NO es un fallo: es que no hay cadena que
+    # verificar, y eso lo dice el propio material.
+    integridad = mat.get("integridad") or {}
+    if integridad.get("hash_chain_verified") is False:
+        raise ReportWriteError(
+            Mensaje("writer.brokenAuditChain", log=integridad.get("audit_log", "audit.jsonl"))
+        )
+
+    # El SNAPSHOT de fuentes se fija ANTES del prompt, no después: la quinta
+    # puerta necesita saber qué limitaciones exige el material, y el modelo
+    # necesita saberlo TAMBIÉN, porque se le va a exigir que las declare por su
+    # código. Pedir algo que no se ha dicho es una trampa, no una puerta.
+    fuentes_snapshot = manifiesto_de_fuentes(case_id, mat)
+    if fuentes_snapshot.get("limitaciones_exigidas"):
+        mat = {
+            **mat,
+            "limitaciones_exigidas": list(fuentes_snapshot["limitaciones_exigidas"]),
+        }
+
     prompt = build_prompt(mat)
     _emit("redactando", executor=executor.id, prompt_chars=len(prompt))
 
@@ -756,15 +999,16 @@ def write_report(
         # porque su contexto no la lleva).
         context["reasoning_effort"] = reasoning_effort
 
-    permitidos = _referentes(json.dumps(mat, ensure_ascii=False, default=str))
+    permitidos = _referentes(mat)
     argvs = audited_argvs(mat.get("trabajos") or [])
-
     def _validar(text: str) -> tuple[str, list[dict[str, Any]]]:
         envelope = _parse_reply(text)
         resumen = _resumen(envelope.get("resumen"))
         sections = _validar_indice(envelope.get("secciones"))
-        _validar_referentes(sections, permitidos)
+        # El resumen cruza la MISMA puerta de referentes que las secciones.
+        _validar_referentes(sections, permitidos, resumen=resumen)
         _validar_comandos(sections, argvs)
+        _validar_respaldo(sections, mat, fuentes_snapshot)
         return resumen, sections
 
     result = executor.run(prompt, context)
@@ -849,6 +1093,12 @@ def write_report(
         "version": version,
         "author": autor,
         "sections": sections,
+        # El SNAPSHOT de lo que sostiene este informe, fijado antes de validar.
+        # Es lo que la aprobación vuelve a comprobar, y lo que impide que una
+        # evidencia registrada mañana cambie retroactivamente el respaldo de un
+        # informe ya aprobado (F04). Es el MISMO objeto contra el que se validó
+        # el respaldo de las conclusiones, no uno reconstruido después.
+        "fuentes": fuentes_snapshot,
     }
 
 

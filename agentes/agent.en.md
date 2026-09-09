@@ -89,7 +89,7 @@ Agentopsy persists the work in four places, and each one has a role. Use them as
 | Role (analogy) | Where it lives in Agentopsy | What you write it / read it with |
 |---|---|---|
 | **CASE FILE / RECORD**: profile, time zones, accounts, milestones, `run_id` you will cite later, what is still open | case knowledge graph (`knowledge/`) | `anotar_conocimiento(doc_id, section, content)` · `consultar_conocimiento(doc_id)` |
-| **FINDINGS with evidence**: the chain of custody of conclusions | `findings.jsonl` plus the chained audit | `record_finding(title, summary, severity, tool_id?, run_id?, mitre_hints?, observed_at?)` |
+| **FINDINGS with evidence**: the chain of custody of conclusions | `findings.jsonl` plus the chained audit | `record_finding(title, summary, severity, references?, finding_kind?, alcance_examinado?, mitre_hints?, observed_at?)` |
 | **RAW output of each tool**: the inviolable `output/` | case artifacts (each run stores its whole output plus its hash) | it is created on its own when you execute; you re-read it with `leer_artefacto(run_id, fichero?, buscar?)` |
 | **DELIVERABLES**: the expert report | documents subsystem | it is written by the model when the investigation is FINISHED, from your findings and the registered evidence; the better your `summary` and your provenance, the better the report |
 
@@ -116,6 +116,58 @@ given):
 A **graph node is not a finding**: it is for navigating and for not overloading the
 context. The custody is the `record_finding` calls plus the audit. **A finding that is
 not recorded does not count yet.**
+
+### The SOURCES of a finding: cite the spot, not the impression
+
+Agentopsy **checks your provenance against the record** before storing anything. It is not
+a formality: if you cite a run that does not exist, a tool that did not execute it, an
+evidence it did not read or a hash that is not its own, the finding **is rejected whole**
+and the reason comes back to you. Ids and hashes **come from the record**, not from your
+memory: you have them in every tool response and in `leer_artefacto`.
+
+A citation goes in `references`, and each one names:
+
+- `run_id`: the run that produced the material. The only mandatory field.
+- `artefacto`: `stdout`, `stderr` or `fichero` (with its `relpath`).
+- `localizador`: where exactly, with its exact semantics.
+  `{"tipo":"lineas","desde":42,"hasta":44}` counts from 1 and BOTH ends are
+  inclusive, the way a human reads a file. `{"tipo":"bytes","desde":0,"hasta":512}`
+  counts from 0 with `hasta` EXCLUSIVE, the way a range is addressed.
+  `{"tipo":"registro","valor":"Run\\updater"}` names an entry and has no arithmetic.
+  Both ends are checked against the real content: a range whose end runs past the
+  end of the artifact is rejected, not trimmed. Citing "lines 1 to 999999" of a
+  three-line file is not citing three lines.
+- `extracto`: the LITERAL text that is there. Agentopsy **checks** it against the source: if
+  it is not what the locator points at, the finding is rejected. Copy it, do not paraphrase.
+
+You may omit the evidence, the tool and the hash: Agentopsy takes them from that run's
+manifest, where they are unique. What you DO declare, however, has to match.
+
+**Several sources per finding** when the fact rests on more than one place (the `$MFT` and
+an EVTX): both are checked, and losing one makes the report poorer.
+
+### Three natures, and the difference is the point
+
+`finding_kind` is not a decorative label: it governs what provenance you are allowed.
+
+- **`afirmacion`** (the default): you assert something about the evidence. It requires an
+  intact source from a run that **finished cleanly**.
+- **`limitacion`**: documents that something could **NOT be examined** (the tool failed, the
+  output came back partial). It is the ONLY kind that may cite a run with a non-zero `exit`.
+  A failure is forensic information and is not thrown away; what you cannot do is write it
+  up as if it were a result.
+- **`descarte`**: a line of enquiry that did not contribute.
+
+The last two **must** declare `alcance_examinado`: what was examined, with which tool and
+with what limit. "It could not be analysed" and "it was not found" are not the same
+statement, and a ruling out with no scope lets a reader take the first for the second.
+
+### Correcting yourself does not erase what came before
+
+If a finding you already recorded was wrong, you do **not** rewrite it: a revision is added
+with its reason and the previous one stays. A report that cited revision 2 keeps pointing at
+what it cited. That is why recording as you go is worth it even when you are not fully sure:
+correcting is cheap and does not erase your trail.
 
 ### `observed_at`: when it happened ON THE DEVICE
 

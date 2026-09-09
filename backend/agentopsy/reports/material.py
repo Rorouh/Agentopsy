@@ -253,7 +253,13 @@ def _hallazgos_material(finding_list: list[Any]) -> list[dict[str, Any]]:
     """Los hallazgos ÍNTEGROS: el ``summary`` completo (donde viven las
     entidades concretas — usuarios, equipos, ficheros, direcciones) y la
     procedencia completa, sin truncar hashes (un perito contrario debe poder
-    reejecutar)."""
+    reejecutar).
+
+    Viajan además la REVISIÓN y el hash de contenido de cada uno: un informe se
+    refiere a una revisión concreta, no a «el hallazgo, como esté el día que se
+    lea» (F03/F04). Y sus FUENTES verificadas, que son lo que permite abrir la
+    cita desde el informe y lo que el redactor puede citar con seguridad de que
+    existe."""
     return [
         {
             "id": f.id,
@@ -269,6 +275,11 @@ def _hallazgos_material(finding_list: list[Any]) -> list[dict[str, Any]]:
             "run_id": f.run_id,
             "artifact_sha256": getattr(f, "artifact_sha256", None),
             "mitre_hints": list(f.mitre_hints),
+            "revision": getattr(f, "revision", 1),
+            "content_sha256": getattr(f, "content_sha256", ""),
+            "procedencia": getattr(f, "provenance_state", "no_verificada"),
+            "alcance_examinado": getattr(f, "alcance_examinado", None),
+            "referencias": list(getattr(f, "references", []) or []),
         }
         for f in finding_list
     ]
@@ -330,6 +341,7 @@ def _revisiones_material(
     SHA-256 se fija al persistirla."""
     return [
         {
+            "document_id": d.id,
             "version": d.version,
             "fecha": d.created_at,
             "autor": d.author,
@@ -385,11 +397,20 @@ def _coste_reportado(audit_path: Path) -> dict[str, Any] | None:
 
 def _integridad_material(case_id: str, *, cases: CaseManager) -> dict[str, Any]:
     audit_path = cases.case_dir(case_id) / "audit.jsonl"
+    log = AuditLog(audit_path)
     material: dict[str, Any] = {
         "audit_log": "audit.jsonl",
-        "hash_chain_verified": AuditLog(audit_path).verify() if audit_path.is_file() else None,
+        "hash_chain_verified": log.verify() if audit_path.is_file() else None,
         "herramienta": f"Agentopsy {__version__}",
     }
+    # El último eslabón de la cadena: es lo que el informe cita para fijar
+    # «hasta aquí llegaba el registro cuando se redactó», y lo que la aprobación
+    # vuelve a comprobar (agentopsy.reports.aprobacion).
+    if audit_path.is_file():
+        entradas = log.entries()
+        if entradas:
+            material["cadena_entry_hash"] = entradas[-1].get("entry_hash")
+            material["cadena_entradas"] = len(entradas)
     coste = _coste_reportado(audit_path)
     if coste is not None:
         material["coste_reportado"] = coste

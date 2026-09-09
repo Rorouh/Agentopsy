@@ -46,6 +46,7 @@ from agentopsy.mcp.jira_tools import (
     select_evidence,
 )
 from agentopsy.mcp.redaction import get_redaction_mode
+from agentopsy.artifacts.lectura import ArtefactoError
 from agentopsy.mcp.resources import (
     build_resource_links_for_run,
     read_artifact,
@@ -192,8 +193,11 @@ def build_server(consent_ref: str) -> tuple[Server, Lifecycle]:
         # The parser + path-traversal guard live in agentopsy.mcp.resources.
         try:
             return read_artifact(str(uri))
-        except (ValueError, KeyError, FileNotFoundError) as exc:
+        except (ValueError, KeyError, FileNotFoundError, ArtefactoError) as exc:
             # RULE 2 — fail loud with an actionable error, no fallback.
+            # ``ArtefactoError`` covers the whole verified-read family, integrity
+            # and a broken audit chain included: those are the failures that must
+            # NOT reach the client as an empty read (reauditoría 2026-09-08, RA05).
             raise RuntimeError(f"cannot read artifact {uri!r}: {exc}") from exc
 
     return server, lifecycle

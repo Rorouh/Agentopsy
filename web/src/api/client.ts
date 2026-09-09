@@ -10,6 +10,7 @@ import { LANG_HEADER, getLang, tr } from "../i18n/state";
 import type {
   AdjudicateRequest,
   AgentFinding,
+  ApproveDocumentRequest,
   AgentJob,
   GraphCaseView,
   GraphFindingView,
@@ -24,10 +25,13 @@ import type {
   ConfigSnapshot,
   CreateCaseRequest,
   CustodyAct,
+  DocumentChecks,
+  DocumentCitation,
   DocumentMeta,
   DocumentFull,
   DocumentVerifyResult,
   FinalizeInvestigationRequest,
+  FindingSources,
   ReportJob,
   EvidenceHandle,
   EvidenceMetadata,
@@ -517,6 +521,19 @@ export const api = {
       ),
 
     // ── Documentos / informes del caso ──────────────────────────────────────
+    // Las FUENTES de un hallazgo, abiertas y verificadas por el BACKEND. La
+    // interfaz manda el id del hallazgo, nunca una ruta: nada de lo que el
+    // modelo escribió se usa como enlace de confianza.
+    findingSources: (caseId: string, findingId: string, revision?: number) =>
+      request<FindingSources>(
+        `/api/cases/${encodeURIComponent(caseId)}/findings/${encodeURIComponent(findingId)}/sources` +
+          (revision != null ? `?revision=${revision}` : ""),
+      ),
+    // Todas las revisiones de un hallazgo, de la más antigua a la más nueva.
+    findingRevisions: (caseId: string, findingId: string) =>
+      request<AgentFinding[]>(
+        `/api/cases/${encodeURIComponent(caseId)}/findings/${encodeURIComponent(findingId)}/revisions`,
+      ),
     listDocuments: (caseId: string) =>
       request<DocumentMeta[]>(`/api/cases/${encodeURIComponent(caseId)}/documents`),
     getDocument: (caseId: string, docId: string) =>
@@ -543,10 +560,35 @@ export const api = {
         `/api/cases/${encodeURIComponent(caseId)}/documents/${encodeURIComponent(docId)}/verify`,
         {},
       ),
-    signDocument: (caseId: string, docId: string) =>
+    // TODO lo que hay que comprobar antes de aprobar, con sus bloqueos. Es lo
+    // que la pantalla de aprobación pinta; no aprueba nada.
+    documentChecks: (caseId: string, docId: string) =>
+      request<DocumentChecks>(
+        `/api/cases/${encodeURIComponent(caseId)}/documents/${encodeURIComponent(docId)}/checks`,
+      ),
+    // La FUENTE de una conclusión del informe. Se manda el documento, el
+    // hallazgo y la revisión; el backend resuelve la ejecución, el artefacto, el
+    // localizador y el extracto, y los verifica ahora. Devuelve 404 si ESTE
+    // documento no cita esa revisión: no es una puerta a cualquier hallazgo.
+    documentCitation: (
+      caseId: string,
+      docId: string,
+      findingId: string,
+      revision: number,
+    ) =>
+      request<DocumentCitation>(
+        `/api/cases/${encodeURIComponent(caseId)}/documents/${encodeURIComponent(docId)}` +
+          `/citas/${encodeURIComponent(findingId)}?revision=${encodeURIComponent(revision)}`,
+      ),
+    // «Aprobar como final» (ruta histórica /sign). Aprobación humana AUDITADA,
+    // no una firma digital. `sha256` ata el acto a la revisión que se revisó: el
+    // backend rechaza la aprobación si el contenido cambió desde entonces, y lo
+    // hace AUNQUE el cliente llame directamente (la interfaz no es la que
+    // decide).
+    signDocument: (caseId: string, docId: string, req: ApproveDocumentRequest) =>
       post<DocumentFull>(
         `/api/cases/${encodeURIComponent(caseId)}/documents/${encodeURIComponent(docId)}/sign`,
-        {},
+        req,
       ),
     deleteDocument: (caseId: string, docId: string) =>
       request<{ deleted: boolean }>(

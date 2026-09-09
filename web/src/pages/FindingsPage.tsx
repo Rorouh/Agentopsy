@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
-import type { AgentFinding } from "../api/types";
+import type { AgentFinding, FindingSources, ResolvedSource } from "../api/types";
 import type { ViewId } from "../navigation/navItems";
 import { useActiveCase } from "../state/activeCase";
 import { useCaseStream } from "../state/casePulse";
 import { usePublishShellHeader } from "../layout/shellHeader";
 import { useLang, type MessageKey } from "../i18n";
 import { useFormat } from "../utils/format";
+import { SourceCard } from "../components/SourceCard";
 
 interface FindingsPageProps {
   onNavigate?: (view: ViewId) => void;
@@ -249,7 +250,9 @@ export function FindingsPage({ onNavigate }: FindingsPageProps) {
                 <span className="hallazgo-card-title">{f.title}</span>
                 <span className="hallazgo-card-summary">{f.summary}</span>
                 <span className="hallazgo-card-meta">
-                  {f.finding_kind === "descarte" ? `${t("findingKind.descarte")} · ` : ""}
+                  {f.finding_kind && f.finding_kind !== "afirmacion"
+                    ? `${t(`findingKind.${f.finding_kind}` as never)} · `
+                    : ""}
                   {t(SEVERITY_KEY[f.severity])}
                   {f.tool_id ? ` · ${f.tool_id}` : ""}
                   {f.mitre_hints.length > 0 ? ` · ${f.mitre_hints.length} ATT&CK` : ""}
@@ -277,6 +280,33 @@ export function FindingsPage({ onNavigate }: FindingsPageProps) {
 function FindingDetail({ finding: f }: { finding: AgentFinding }) {
   const { t } = useLang();
   const { formatDate, na } = useFormat();
+  const { activeCase } = useActiveCase();
+  const [sources, setSources] = useState<FindingSources | null>(null);
+  const [openSources, setOpenSources] = useState(false);
+  const [sourcesError, setSourcesError] = useState<string | null>(null);
+
+  // Las fuentes se piden AL ABRIR la cita, no al pintar la lista: resolverlas
+  // re-hashea cada artefacto, y hacerlo para cada tarjeta del rail sería
+  // trabajo caro que nadie ha pedido.
+  const abrirFuentes = useCallback(async () => {
+    setOpenSources(true);
+    if (!activeCase || sources) return;
+    try {
+      setSourcesError(null);
+      setSources(await api.cases.findingSources(activeCase.id, f.id));
+    } catch (e) {
+      setSourcesError(e instanceof Error ? e.message : String(e));
+    }
+  }, [activeCase, f.id, sources]);
+
+  // Cambiar de hallazgo cierra la cita anterior: lo que se ve tiene que ser del
+  // hallazgo que está abierto.
+  useEffect(() => {
+    setSources(null);
+    setOpenSources(false);
+    setSourcesError(null);
+  }, [f.id]);
+
   // Una fecha que el store guardó sin formato reconocible se pinta TAL CUAL: es
   // dato del caso, y sustituirla por un blanco escondería lo que de verdad hay.
   const fecha = (iso: string | null | undefined): string => {
@@ -285,7 +315,7 @@ function FindingDetail({ finding: f }: { finding: AgentFinding }) {
   };
   const kv: Array<[string, string]> = [
     [t("finding.severity"), t(SEVERITY_KEY[f.severity])],
-    [t("finding.kind"), t(f.finding_kind === "descarte" ? "findingKind.descarte" : "findingKind.afirmacion")],
+    [t("finding.kind"), t(`findingKind.${f.finding_kind ?? "afirmacion"}` as never)],
     [t("finding.tool"), f.tool_id ?? na],
     [t("finding.run"), f.run_id ?? na],
     [t("finding.evidence"), f.evidence_id ?? na],
@@ -293,6 +323,11 @@ function FindingDetail({ finding: f }: { finding: AgentFinding }) {
     [t("finding.recordedAt"), fecha(f.created_at)],
     [t("finding.confidence"), f.confidence != null ? `${Math.round(f.confidence * 100)}%` : na],
     [t("finding.artifactHash"), f.artifact_sha256 ?? na],
+    [t("finding.revision"), String(f.revision ?? 1)],
+    [
+      t("finding.provenanceState"),
+      t(f.provenance_state === "verificada" ? "finding.verified" : "finding.unverified"),
+    ],
   ];
 
   return (
@@ -300,7 +335,7 @@ function FindingDetail({ finding: f }: { finding: AgentFinding }) {
       <div className="report-metarow">
         <span className={`sev-badge sev-badge--${f.severity}`}>{t(SEVERITY_KEY[f.severity])}</span>
         <span className="report-doc-meta">
-          {t(f.finding_kind === "descarte" ? "findingKind.descarte" : "findingKind.afirmacion")} ·{" "}
+          {t(`findingKind.${f.finding_kind ?? "afirmacion"}` as never)} ·{" "}
           {t("finding.recordedOn", { date: fecha(f.created_at) })}
         </span>
       </div>
@@ -311,6 +346,15 @@ function FindingDetail({ finding: f }: { finding: AgentFinding }) {
         <h1 className="report-title">{f.title}</h1>
         <p className="report-summary">{f.summary}</p>
       </div>
+
+      {f.alcance_examinado && (
+        // Lo que se examinó y con qué límite. Es lo que impide leer «no se pudo
+        // analizar» como «no se encontró».
+        <div className="report-callout" data-testid="alcance">
+          <span className="eyebrow">{t("finding.scope")}</span>
+          <p className="report-p">{f.alcance_examinado}</p>
+        </div>
+      )}
 
       <section className="report-section">
         <div className="report-section-head">
@@ -330,6 +374,43 @@ function FindingDetail({ finding: f }: { finding: AgentFinding }) {
       <section className="report-section">
         <div className="report-section-head">
           <span className="report-section-num">02</span>
+          <span className="eyebrow">{t("source.section")}</span>
+        </div>
+        {f.provenance_state === "no_verificada" ? (
+          // Un hallazgo anterior al contrato de citas: se conserva y se lee,
+          // pero no se le atribuye una verificación que nunca ocurrió.
+          <p className="report-p report-p--muted" data-testid="procedencia-historica">
+            {t("source.legacy")}
+          </p>
+        ) : !openSources ? (
+          <button
+            type="button"
+            className="link-action"
+            onClick={abrirFuentes}
+            data-testid="abrir-cita"
+          >
+            {t("source.open", { count: (f.references ?? []).length })}
+          </button>
+        ) : sourcesError ? (
+          <p className="report-p" data-testid="fuentes-error">
+            {t("source.loadFailed")} {sourcesError}
+          </p>
+        ) : !sources ? (
+          <p className="report-p report-p--muted">{t("source.loading")}</p>
+        ) : sources.fuentes.length === 0 ? (
+          <p className="report-p report-p--muted">{t("source.none")}</p>
+        ) : (
+          <div className="fuente-lista">
+            {sources.fuentes.map((s, i) => (
+              <SourceCard key={`${s.run_id}-${s.relpath ?? s.artefacto}-${i}`} source={s} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="report-section">
+        <div className="report-section-head">
+          <span className="report-section-num">03</span>
           <span className="eyebrow">{t("finding.attackCorrelation")}</span>
         </div>
         {f.mitre_hints.length === 0 ? (

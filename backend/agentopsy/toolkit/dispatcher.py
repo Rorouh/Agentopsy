@@ -408,6 +408,12 @@ def execute(
             "stdout_sha256": artifact_run.stdout_sha256 if artifact_run else None,
             "stderr_sha256": artifact_run.stderr_sha256 if artifact_run else None,
             "output_files_count": len(artifact_run.output_files) if artifact_run else None,
+            # ANCLA del manifiesto en la cadena encadenada (auditoría F02): el
+            # digest canónico de los campos de custodia del manifiesto que se
+            # acaba de cerrar. La frontera de lectura lo recomputa y lo compara,
+            # así que reescribir un artefacto Y su hash en el manifiesto obliga
+            # además a reescribir esta entrada, que rompe el encadenado.
+            "manifest_sha256": artifact_run.manifest_sha256 if artifact_run else None,
             # Every closure path preserves the forensic context + version (INVARIANT 4).
             **custody_fields,
         }
@@ -470,6 +476,8 @@ def execute(
             "stdout_sha256": artifact_run.stdout_sha256,
             "stderr_sha256": artifact_run.stderr_sha256,
             "output_files_count": len(artifact_run.output_files),
+            # Misma ancla del manifiesto que el cierre por error (INVARIANT 4).
+            "manifest_sha256": artifact_run.manifest_sha256,
             # Same evidence context + tool version as the paired start (INVARIANT 4).
             **custody_fields,
         },

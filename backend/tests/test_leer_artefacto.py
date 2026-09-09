@@ -12,6 +12,10 @@ Gates:
   distinguir mayúsculas.
 - Pagina de verdad: `hay_mas`/`siguiente_desde` y nada de truncados silenciosos.
 - Confinamiento: no se puede leer un run de OTRO caso ni una ruta arbitraria.
+- Los rechazos son errores de DOMINIO de la frontera de lectura verificada
+  (`agentopsy.artifacts.lectura`), cada uno con su clase: referencia
+  inexistente, fuera de ámbito, no sellada, integridad rota o localizador
+  inválido. Ninguno se degrada a una lectura vacía.
 - Un binario NO se sirve como texto: error accionable que nombra la alternativa.
 - Lo que vuelve al modelo va marcado NO CONFIABLE (son bytes derivados de
   evidencia hostil).
@@ -24,11 +28,17 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from _procedencia import anclar_run
 
 from agentopsy.i18n import t
 from agentopsy.agent.agent import ForensicAgent
 from _agent_pkg import make_package
 from agentopsy.agent.tool_schemas import internal_tool_specs
+from agentopsy.artifacts.lectura import (
+    ArtefactoFueraDeAmbito,
+    ArtefactoInexistente,
+    LocalizadorInvalido,
+)
 from agentopsy.artifacts.store import ArtifactStore
 from agentopsy.cases.manager import CaseManager
 from agentopsy.models.base import FinalAnswer, ModelBackend, ModelCapabilities, ToolCall
@@ -83,7 +93,9 @@ def store_run(tmp_path):
     run_id, _out = store.start_run(
         case.id, "regripper", ["rip.pl", "-r", "SAM", "-p", "samparse"], **_PROV
     )
-    store.finalize_run(case.id, run_id, exit_code=0, stdout=stdout, stderr="")
+    anclar_run(cases, case.id, store.finalize_run(
+        case.id, run_id, exit_code=0, stdout=stdout, stderr=""
+    ))
     return store, cases, case.id, run_id
 
 
@@ -124,9 +136,9 @@ def test_buscar_es_subcadena_literal_no_regex(store_run) -> None:
 def test_lee_stderr(store_run) -> None:
     store, cases, case_id, _run_id = store_run
     run_id, _out = store.start_run(case_id, "tsk_fls", ["fls"], **_PROV)
-    store.finalize_run(
+    anclar_run(cases, case_id, store.finalize_run(
         case_id, run_id, exit_code=1, stdout="", stderr="Cannot determine fs type"
-    )
+    ))
     body = store.read_run_output(case_id, run_id, fichero="stderr")
     assert "Cannot determine" in body["lineas"][0]
 
@@ -174,7 +186,9 @@ def test_lee_un_fichero_de_out_declarado_en_el_manifiesto(tmp_path) -> None:
     store = ArtifactStore(cases)
     run_id, out = store.start_run(case.id, "mftecmd", ["MFTECmd.exe"], **_PROV)
     (out / "mft.csv").write_text("ruta,fecha\n/Confidential.xls,2021-03-23\n", "utf-8")
-    store.finalize_run(case.id, run_id, exit_code=0, stdout="", stderr="")
+    anclar_run(cases, case.id, store.finalize_run(
+        case.id, run_id, exit_code=0, stdout="", stderr=""
+    ))
 
     body = store.read_run_output(case.id, run_id, fichero="mft.csv", buscar="Confidential")
     assert body["devueltas"] == 1
@@ -182,8 +196,9 @@ def test_lee_un_fichero_de_out_declarado_en_el_manifiesto(tmp_path) -> None:
 
 
 def test_fichero_de_out_inexistente_falla(store_run) -> None:
+    """Y falla como REFERENCIA INEXISTENTE, no como una lectura de cero líneas."""
     store, _cases, case_id, run_id = store_run
-    with pytest.raises(KeyError):
+    with pytest.raises(ArtefactoInexistente, match="no produjo el artefacto"):
         store.read_run_output(case_id, run_id, fichero="no-existe.csv")
 
 
@@ -193,20 +208,20 @@ def test_fichero_de_out_inexistente_falla(store_run) -> None:
 def test_no_se_puede_leer_un_run_de_otro_caso(store_run) -> None:
     store, cases, _case_id, run_id = store_run
     otro = cases.create(name="otro", examiner="e", os_profile="windows")
-    with pytest.raises(KeyError):
+    with pytest.raises(ArtefactoInexistente, match="no existe en el caso"):
         store.read_run_output(otro.id, run_id)
 
 
 @pytest.mark.parametrize("bad", ["../../etc/passwd", "/etc/passwd", "..", ""])
 def test_relpath_que_intenta_escapar_se_rechaza(store_run, bad) -> None:
     store, _cases, case_id, run_id = store_run
-    with pytest.raises((ValueError, KeyError)):
+    with pytest.raises((ArtefactoFueraDeAmbito, LocalizadorInvalido)):
         store.read_run_output(case_id, run_id, fichero=bad)
 
 
 def test_run_id_invalido_se_rechaza(store_run) -> None:
     store, _cases, case_id, _run_id = store_run
-    with pytest.raises(ValueError, match="run_id"):
+    with pytest.raises(LocalizadorInvalido, match="run_id"):
         store.read_run_output(case_id, "no-es-un-uuid")
 
 
@@ -216,7 +231,9 @@ def test_un_binario_no_se_sirve_como_texto(tmp_path) -> None:
     store = ArtifactStore(cases)
     run_id, out = store.start_run(case.id, "tsk_icat", ["icat"], **_PROV)
     (out / "stdout.bin").write_bytes(b"MZ\x00\x90\x00\x03" + b"\x00" * 100)
-    store.finalize_run(case.id, run_id, exit_code=0, stdout="", stderr="")
+    anclar_run(cases, case.id, store.finalize_run(
+        case.id, run_id, exit_code=0, stdout="", stderr=""
+    ))
 
     with pytest.raises(ValueError, match="BINARIO"):
         store.read_run_output(case.id, run_id, fichero="stdout.bin")

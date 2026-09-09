@@ -22,6 +22,8 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
+from agentopsy.artifacts import lectura
+from agentopsy.artifacts.store import ArtifactStore
 from agentopsy.i18n import Mensaje, t
 from agentopsy.cases.manager import case_manager
 from agentopsy.evidence_context import EvidenceContext
@@ -683,19 +685,35 @@ def query_filesystem_timeline(
 
 
 def _read_run_stdout(case_id: str, run_id: str) -> str:
-    """Read the ``fls -m`` bodyfile of an anchored run.
+    """Read the ``fls -m`` bodyfile of an anchored run, THROUGH the verified-read
+    boundary.
 
-    In `-m` mode fls's stdout IS the bodyfile, and the dispatcher captures it (byte-exact,
-    hashed) as the run's ``out/stdout.bin`` output artifact — the same referenceable file
-    ``mactime`` consumes as a ``{run_id, relpath}`` input. Reading it is confined to the
-    case directory the dispatcher just wrote to.
+    In `-m` mode fls's stdout IS the bodyfile, and the dispatcher captures it
+    (byte-exact, hashed) as the run's ``out/stdout.bin`` output artifact — the same
+    referenceable file ``mactime`` consumes as a ``{run_id, relpath}`` input.
+
+    Until 2026-09-08 this opened that path directly, so the timeline was the one
+    consumer of a derived artifact that never re-hashed it: a tampered bodyfile
+    painted a tampered chronology with no error (auditoría 2026-09-07, F02). It now
+    goes through ``agentopsy.artifacts.lectura``, which checks manifest membership,
+    confinement, the seal, the audit anchor and the SHA-256 before a single event is
+    parsed. A broken artifact raises rather than yielding an empty timeline: "no
+    events" and "the source is compromised" are not the same statement (RULE 2).
     """
-    bodyfile_path = (
-        case_manager.case_dir(case_id) / "artifacts" / run_id / "out" / "stdout.bin"
-    )
-    if not bodyfile_path.is_file():
+    # El almacén se ata al `case_manager` de ESTE módulo, no al singleton: la
+    # cronología lee por el mismo gestor de casos con el que la llamaron.
+    store = ArtifactStore(case_manager)
+    try:
+        with lectura.abrir_verificado(
+            case_id, run_id, "stdout.bin", ambito=lectura.AMBITO_TIMELINE, store=store
+        ) as leida:
+            return leida.texto()
+    except lectura.ArtefactoIntegridadError as exc:
         raise RuntimeError(
-            f"no se encontró el bodyfile de tsk_fls en {bodyfile_path}, el run "
-            f"{run_id} no materializó su artefacto de bodyfile."
-        )
-    return bodyfile_path.read_text(encoding="utf-8", errors="replace")
+            f"el bodyfile de tsk_fls del run {run_id} no supera la comprobación de "
+            f"integridad y NO se puede pintar como cronología: {exc}"
+        ) from exc
+    except lectura.ArtefactoError as exc:
+        raise RuntimeError(
+            f"no se pudo leer el bodyfile de tsk_fls del run {run_id}: {exc}"
+        ) from exc

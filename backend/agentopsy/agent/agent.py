@@ -59,6 +59,7 @@ from agentopsy.agent.tool_schemas import (
     internal_tool_specs,
     tool_specs,
 )
+from agentopsy.artifacts.lectura import ArtefactoError
 from agentopsy.artifacts.store import artifact_store
 from agentopsy.audit import AuditLog
 from agentopsy.evidence import EvidenceManager
@@ -663,18 +664,24 @@ class ForensicAgent:
                             # Inject evidence_id automatically if the model didn't.
                             if not params.get("evidence_id"):
                                 params["evidence_id"] = evidence_id
-                            finding = finding_store.append(case_id, params)
-                            body = {"finding_id": finding.id, "stored": True}
+                            finding = finding_store.append(
+                                case_id, params, origin="agent"
+                            )
+                            body = {
+                                "finding_id": finding.id,
+                                "revision": finding.revision,
+                                "content_sha256": finding.content_sha256,
+                                "references": finding.references,
+                                "stored": True,
+                            }
                             protected_ids.add(finding.id)
                             tools_since_finding = 0  # cerró el bucle: registró
-                            # F3 — record the finding's provenance in the audit chain
-                            # (only the id; the finding body lives in findings.jsonl).
-                            self._audit_event(
-                                "agent_finding",
-                                case_id=case_id,
-                                evidence_id=evidence_id,
-                                finding_id=finding.id,
-                            )
+                            # La procedencia la ancla el ALMACÉN en la cadena
+                            # (`finding_recorded`: identidad, revisión, hash del
+                            # contenido, fuentes y origen). El bucle ya no añade
+                            # un `agent_finding` propio: eran dos entradas para
+                            # un mismo acto, y el audit contaría dos escrituras
+                            # donde hubo una (auditoría 2026-09-07, F03).
                             emit({
                                 "type": "finding",
                                 "iteration": iteration + 1,
@@ -771,6 +778,10 @@ class ForensicAgent:
                         # Es un `grep` SIN shell: el modelo pasa un run_id (nunca una
                         # ruta), el store confina el fichero dentro del run y `buscar` es
                         # una subcadena literal, jamás una regex del modelo.
+                        # Todo pasa por la frontera de lectura verificada, así que un
+                        # artefacto alterado, no sellado o de otro caso vuelve al modelo
+                        # como error de DOMINIO con su motivo, nunca como una lectura
+                        # vacía que parecería «no hay nada ahí» (RULE 2, auditoría F02).
                         try:
                             params = dict(call.params)
                             body = artifact_store.read_run_output(
@@ -781,7 +792,7 @@ class ForensicAgent:
                                 desde=params.get("desde", 1),
                                 lineas=params.get("lineas", 200),
                             )
-                        except (KeyError, ValueError, OSError) as exc:
+                        except (KeyError, ValueError, OSError, ArtefactoError) as exc:
                             body = {"error": f"leer_artefacto rejected: {exc}"}
                         # UNTRUSTED: son bytes derivados de la evidencia (dato hostil),
                         # exactamente igual que el resultado de ejecutar la herramienta.

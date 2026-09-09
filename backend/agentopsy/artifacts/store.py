@@ -22,7 +22,8 @@ import re
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path, PurePosixPath
+from pathlib import Path
+from collections.abc import Iterable
 from typing import Any, Literal
 
 from agentopsy.i18n import Mensaje
@@ -116,6 +117,12 @@ class ArtifactRun:
     # build manifest, resolved by the dispatcher BEFORE the start). ``None`` only on
     # legacy manifests.
     tool_version: str | None = None
+    # Digest canónico de los campos de custodia del manifiesto, fijado al cerrar
+    # el run. El dispatcher lo copia al ``tool_run_finish``, y la frontera de
+    # lectura lo recomputa contra ese ancla: es lo que hace detectable una
+    # reescritura COHERENTE de artefacto + manifiesto. ``None`` en manifiestos
+    # anteriores al anclaje, que se leen declarando ``anclaje='sin_ancla'``.
+    manifest_sha256: str | None = None
 
 
 class ArtifactStore:
@@ -129,6 +136,16 @@ class ArtifactStore:
     def _runs_dir(self, case_id: str) -> Path:
         # ``case_dir`` raises KeyError on unknown case_id — propagate.
         return self._cases.case_dir(case_id) / "artifacts"
+
+    def case_artifacts_dir(self, case_id: str) -> Path:
+        """``<case_dir>/artifacts`` — the run root of a case.
+
+        Public because ``agentopsy.artifacts.lectura`` (the single verified-read
+        boundary) needs it to resolve a run without reaching into a private
+        attribute. Raises ``KeyError`` on an unknown case, like every other path
+        accessor here.
+        """
+        return self._runs_dir(case_id)
 
     def _run_dir(self, case_id: str, run_id: str) -> Path:
         if not _UUID4_RE.match(run_id):
@@ -148,6 +165,14 @@ class ArtifactStore:
             relpath = path.relative_to(out_dir).as_posix()
             files.append(OutputFile(relpath=relpath, sha256=sha256, size=size))
         return files
+
+    def manifest_to_run(self, case_id: str, manifest: dict) -> ArtifactRun:
+        """Build the canonical :class:`ArtifactRun` from an already-read manifest.
+
+        Public sibling of ``_manifest_to_run`` for the verified-read boundary,
+        which reads (and anchors) the manifest itself before handing it over.
+        """
+        return self._manifest_to_run(case_id, manifest)
 
     @staticmethod
     def _manifest_to_run(case_id: str, manifest: dict) -> ArtifactRun:
@@ -172,6 +197,7 @@ class ArtifactStore:
             evidence_id=manifest.get("evidence_id"),
             evidence_baseline_sha256=manifest.get("evidence_baseline_sha256"),
             tool_version=manifest.get("tool_version"),
+            manifest_sha256=manifest.get("manifest_sha256"),
         )
 
     def _open_manifest(self, case_id: str, run_id: str) -> tuple[Path, dict]:
@@ -225,6 +251,15 @@ class ArtifactStore:
                 "error_message": error_message,
             }
         )
+        # ANCLAJE del manifiesto (auditoría 2026-09-07, F02). El digest canónico
+        # de los campos de custodia se escribe aquí y el dispatcher lo copia al
+        # ``tool_run_finish``, así que reescribir un artefacto Y su hash en el
+        # manifiesto ya no basta para pasar por íntegro: haría falta reescribir
+        # también la cadena encadenada. Import diferido porque
+        # ``agentopsy.artifacts.lectura`` construye sobre este módulo.
+        from agentopsy.artifacts.lectura import manifest_digest
+
+        manifest["manifest_sha256"] = manifest_digest(manifest)
         _atomic_write_json(run_dir / "manifest.json", manifest)
         return self._manifest_to_run(case_id, manifest)
 
@@ -395,44 +430,35 @@ class ArtifactStore:
         """Resolve one output file of a run to its on-disk path, RE-HASHED against the
         manifest — the custody gate for a derived-artifact input (FORENSIC INVARIANTS 1-2).
 
-        Confines the path under the run's ``out/`` (rejects absolute / ``..`` / symlink
-        escape), then re-computes its chunked SHA-256 and compares it to the digest the
-        producing run recorded when it closed. Returns ``(resolved_path, sha256, size)``.
+        Since 2026-09-08 this is a THIN ADAPTER over
+        ``agentopsy.artifacts.lectura.abrir_verificado``, the single verified-read
+        boundary: one implementation of the integrity policy, one place where the
+        confinement, the manifest membership, the seal and the manifest anchor are
+        checked. What this method adds is the legacy exception contract its callers
+        (the dispatcher's derived-input handoff) already handle.
 
-        Raises ``ValueError`` if ``relpath`` is not a confined relative path, ``KeyError``
-        if the run or the named output file is unknown (or the file is gone from disk),
-        and ``ArtifactIntegrityError`` if the bytes no longer match the manifest.
+        Returns ``(resolved_path, sha256, size)``. Raises ``ValueError`` if
+        ``relpath`` is not a confined relative path, ``KeyError`` if the run or the
+        named output file is unknown (or the file is gone from disk, or the run is
+        not sealed yet), and ``ArtifactIntegrityError`` if the bytes no longer match
+        the manifest.
         """
-        if not isinstance(relpath, str) or not relpath:
-            raise ValueError("relpath must be a non-empty string")
-        rel = PurePosixPath(relpath)
-        if rel.is_absolute() or ".." in rel.parts:
-            raise ValueError(
-                f"relpath must be relative and must not escape out/: {relpath!r}"
-            )
-        run = self.get_run(case_id, run_id)  # KeyError if unknown; validates the UUID
-        match = next((of for of in run.output_files if of.relpath == relpath), None)
-        if match is None:
-            raise KeyError(
-                f"run {run_id} for case {case_id} produced no output file {relpath!r} "
-                f"(outputs: {[of.relpath for of in run.output_files]})"
-            )
-        out_dir = (self._run_dir(case_id, run_id) / "out").resolve()
-        target = (out_dir / rel).resolve()
-        # Defence in depth: the real path must live under out/ (no symlink escape).
-        if target != out_dir and out_dir not in target.parents:
-            raise ValueError(f"resolved artifact path escapes out/: {relpath!r}")
-        if not target.is_file():
-            raise KeyError(
-                f"artifact file {relpath!r} of run {run_id} is missing on disk"
-            )
-        sha256, size = _hash_file(target)
-        if sha256 != match.sha256:
-            raise ArtifactIntegrityError(
-                f"derived artifact {relpath!r} of run {run_id} no longer matches its "
-                f"manifest SHA-256 (expected {match.sha256}, got {sha256})"
-            )
-        return target, sha256, size
+        from agentopsy.artifacts import lectura
+
+        try:
+            with lectura.abrir_verificado(
+                case_id, run_id, relpath, ambito=lectura.AMBITO_REST, store=self
+            ) as leida:
+                if leida.clase != "fichero":
+                    raise ValueError(
+                        f"resolve_output_file espera un fichero de salida declarado "
+                        f"en el manifiesto, no {relpath!r}"
+                    )
+                return leida.ruta, leida.sha256, leida.size
+        except (lectura.ArtefactoFueraDeAmbito, lectura.LocalizadorInvalido) as exc:
+            raise ValueError(str(exc)) from exc
+        except (lectura.ArtefactoInexistente, lectura.ArtefactoNoSellado) as exc:
+            raise KeyError(str(exc)) from exc
 
     def resolve_output_dir(
         self, case_id: str, run_id: str, relpath: str
@@ -445,74 +471,32 @@ class ArtifactStore:
         it: it is the common prefix of one or more entries, and the custody gate has to
         cover the WHOLE subtree, not a representative file.
 
-        Same confinement as the file variant (rejects absolute / ``..`` / symlink
-        escape), then re-computes the chunked SHA-256 of every manifest entry under the
-        prefix and compares each one. Returns ``(resolved_path, tree_sha256, total_size)``.
+        Delegates to ``agentopsy.artifacts.lectura.verificar_directorio``, which checks
+        the MEMBER SET in both directions: every manifest entry under the prefix must
+        be on disk with its recorded hash, AND every file on disk under the prefix must
+        be a manifest entry. Verifying only the known files would leave the door open
+        to a tool consuming an extra file dropped in afterwards, which the manifest
+        never saw (auditoría 2026-09-07, F02).
 
-        ``tree_sha256`` is a digest OF THE SUBTREE, not of any file: the SHA-256 of the
-        manifest entries sorted by relpath, one ``"<relpath>\0<sha256>\n"`` line each.
-        It is deterministic, it changes if any file changes, is added or is removed, and
-        it is what travels into the audit as the derived input's digest so a third party
+        Returns ``(resolved_path, tree_sha256, total_size)``. ``tree_sha256`` is a
+        digest OF THE SUBTREE, not of any file: the SHA-256 of the manifest entries
+        sorted by relpath, one ``"<relpath>\\0<sha256>\\n"`` line each. It is
+        deterministic, it changes if any file changes, is added or is removed, and it
+        is what travels into the audit as the derived input's digest so a third party
         can tell exactly which tree was consumed (FORENSIC INVARIANT 4).
 
-        Raises ``ValueError`` if ``relpath`` is not a confined relative path, ``KeyError``
-        if the run is unknown or no manifest entry lives under the prefix (or a file is
-        gone from disk), and ``ArtifactIntegrityError`` if any file no longer matches.
+        Same legacy exception contract as ``resolve_output_file``.
         """
-        if not isinstance(relpath, str) or not relpath:
-            raise ValueError("relpath must be a non-empty string")
-        rel = PurePosixPath(relpath)
-        if rel.is_absolute() or ".." in rel.parts:
-            raise ValueError(
-                f"relpath must be relative and must not escape out/: {relpath!r}"
-            )
-        run = self.get_run(case_id, run_id)  # KeyError if unknown; validates the UUID
-        prefix = relpath.rstrip("/") + "/"
-        members = sorted(
-            (of for of in run.output_files if of.relpath.startswith(prefix)),
-            key=lambda of: of.relpath,
-        )
-        if not members:
-            raise KeyError(
-                f"run {run_id} for case {case_id} produced no output directory "
-                f"{relpath!r} (outputs: {[of.relpath for of in run.output_files]})"
-            )
-        out_dir = (self._run_dir(case_id, run_id) / "out").resolve()
-        target = (out_dir / rel).resolve()
-        # Defence in depth: the real path must live under out/ (no symlink escape).
-        if target != out_dir and out_dir not in target.parents:
-            raise ValueError(f"resolved artifact path escapes out/: {relpath!r}")
-        if not target.is_dir():
-            raise KeyError(
-                f"artifact directory {relpath!r} of run {run_id} is missing on disk"
-            )
+        from agentopsy.artifacts import lectura
 
-        tree = hashlib.sha256()
-        total_size = 0
-        for member in members:
-            member_path = (out_dir / PurePosixPath(member.relpath)).resolve()
-            if out_dir not in member_path.parents:
-                raise ValueError(
-                    f"resolved artifact path escapes out/: {member.relpath!r}"
-                )
-            if not member_path.is_file():
-                raise KeyError(
-                    f"artifact file {member.relpath!r} of run {run_id} is missing "
-                    "on disk"
-                )
-            sha256, size = _hash_file(member_path)
-            if sha256 != member.sha256:
-                raise ArtifactIntegrityError(
-                    f"derived artifact {member.relpath!r} of run {run_id} no longer "
-                    f"matches its manifest SHA-256 (expected {member.sha256}, got "
-                    f"{sha256})"
-                )
-            tree.update(member.relpath.encode("utf-8"))
-            tree.update(b"\0")
-            tree.update(sha256.encode("ascii"))
-            tree.update(b"\n")
-            total_size += size
-        return target, tree.hexdigest(), total_size
+        try:
+            return lectura.verificar_directorio(
+                case_id, run_id, relpath, ambito=lectura.AMBITO_REST, store=self
+            )
+        except (lectura.ArtefactoFueraDeAmbito, lectura.LocalizadorInvalido) as exc:
+            raise ValueError(str(exc)) from exc
+        except (lectura.ArtefactoInexistente, lectura.ArtefactoNoSellado) as exc:
+            raise KeyError(str(exc)) from exc
 
     def list_runs(self, case_id: str) -> list[ArtifactRun]:
         """Return every run with a manifest, sorted by ``started_at`` descending."""
@@ -543,7 +527,7 @@ class ArtifactStore:
         desde: int = 1,
         lineas: int = 200,
     ) -> dict[str, Any]:
-        """Lee y filtra por LÍNEAS la salida de un run ya ejecutado.
+        """Lee y filtra por LÍNEAS la salida VERIFICADA de un run ya ejecutado.
 
         Es lo que le faltaba al agente para poder mirar lo que él mismo produjo: hasta
         ahora solo veía un ``stdout_sample`` de 2000 chars, así que una salida de
@@ -556,24 +540,16 @@ class ArtifactStore:
         (case-insensitive), nunca una expresión regular del modelo.
 
         ``fichero`` es ``"stdout"``/``"stderr"`` o el ``relpath`` de un fichero de
-        salida declarado en el manifiesto — en ese caso pasa por
-        ``resolve_output_file``, que re-hashea contra el manifiesto (custodia).
+        salida declarado en el manifiesto. Los TRES pasan hoy por la misma frontera
+        (``agentopsy.artifacts.lectura``), que re-hashea contra el manifiesto y contra
+        el ancla auditada: antes solo lo hacía el derivado, y alterar ``stdout.txt``
+        devolvía el texto alterado sin un error (auditoría 2026-09-07, F02).
 
         Devuelve un dict con el tramo pedido y CUÁNTO queda, para que el agente pueda
         paginar en vez de pedir "todo". Un fichero binario NO se sirve como texto: se
         devuelve un error accionable que nombra las herramientas adecuadas (RULE 2).
         """
-        run = self.get_run(case_id, run_id)  # KeyError si el run no es de este caso
-
-        if fichero in ("stdout", "stderr"):
-            target = self._run_dir(case_id, run_id) / f"{fichero}.txt"
-            if not target.is_file():
-                raise KeyError(
-                    Mensaje("artifacts.notPersisted", run_id=run_id, file=fichero)
-                )
-        else:
-            # Fichero de salida declarado: confinado y re-hasheado contra el manifiesto.
-            target, _sha, _size = self.resolve_output_file(case_id, run_id, fichero)
+        from agentopsy.artifacts import lectura
 
         try:
             desde = max(1, int(desde))
@@ -583,55 +559,116 @@ class ArtifactStore:
 
         needle = (buscar or "").strip().lower() or None
 
-        with target.open("rb") as fh:
-            head = fh.read(8192)
-        if b"\x00" in head:
-            raise ValueError(
-                Mensaje("artifacts.isBinary", file=repr(fichero), run_id=run_id)
-            )
+        with lectura.abrir_verificado(
+            case_id, run_id, fichero, ambito=lectura.AMBITO_AGENTE, store=self
+        ) as leida:
+            if leida.es_binario():
+                raise ValueError(
+                    Mensaje("artifacts.isBinary", file=repr(fichero), run_id=run_id)
+                )
+            pagina = _paginar(leida.lineas(), needle=needle, desde=desde, lineas=lineas)
+            procedencia = leida.procedencia()
 
-        total = 0
-        matched = 0
-        picked: list[str] = []
-        chars = 0
-        truncated_by_size = False
-        # Se recorre en streaming: una salida de `fls -r` puede pesar decenas de MB y
-        # no debe cargarse entera en memoria para contar sus líneas.
-        with target.open("r", encoding="utf-8", errors="replace") as fh:
-            for raw in fh:
-                total += 1
-                line = raw.rstrip("\n")
-                if needle is not None and needle not in line.lower():
-                    continue
-                matched += 1
-                # `desde` numera sobre las líneas RELEVANTES (las que casan con el
-                # filtro), que es lo que el agente espera al paginar una búsqueda.
-                if matched < desde:
-                    continue
-                if len(picked) >= lineas:
-                    continue
-                if chars + len(line) > _MAX_CHARS_PER_READ:
-                    truncated_by_size = True
-                    continue
-                picked.append(line)
-                chars += len(line) + 1
-
-        relevantes = matched if needle is not None else total
-        siguiente = desde + len(picked)
         return {
             "run_id": run_id,
-            "tool_id": run.tool_id,
+            "tool_id": leida.tool_id,
             "fichero": fichero,
             "buscar": buscar,
-            "total_lineas": total,
-            "lineas_relevantes": relevantes,
-            "desde": desde,
-            "devueltas": len(picked),
-            "hay_mas": siguiente <= relevantes,
-            "siguiente_desde": siguiente if siguiente <= relevantes else None,
-            "truncado_por_tamano": truncated_by_size,
-            "lineas": picked,
+            "procedencia": procedencia,
+            **pagina,
         }
+
+
+def _paginar(
+    fuente: Iterable[str], *, needle: str | None, desde: int, lineas: int
+) -> dict[str, Any]:
+    """Pagina un flujo de líneas con un cursor que SIEMPRE progresa.
+
+    El cursor (``desde`` / ``siguiente_desde``) es una posición inequívoca: el
+    índice, 1-based, de la primera línea RELEVANTE que NO se ha devuelto. Antes
+    no lo era, y ahí estaba el bloqueo que la auditoría reprodujo: una línea más
+    larga que el presupuesto de caracteres se saltaba con ``continue``, así que
+    la página salía vacía y ``siguiente_desde`` volvía a apuntar a la misma
+    línea, indefinidamente (F02).
+
+    Ahora una línea que no cabe se resuelve de dos maneras, y las dos avanzan:
+
+    - Si la página ya lleva algo, se CORTA ahí. El cursor apunta a esa línea, que
+      es exactamente la primera no devuelta, y la siguiente página la sirve.
+    - Si la página está vacía, esa línea sola no cabe entera: se devuelve
+      FRAGMENTADA (los primeros caracteres del presupuesto) y se declara en
+      ``fragmentadas`` con cuántos caracteres tenía y cuántos van. Recortar en
+      silencio sería peor que no devolverla; devolver cero y no avanzar era el
+      bug.
+
+    Los topes de memoria y de respuesta se conservan: se recorre en streaming y
+    nunca entra en la respuesta más de ``_MAX_CHARS_PER_READ`` de contenido.
+    """
+    total = 0
+    matched = 0
+    picked: list[str] = []
+    fragmentadas: list[dict[str, int]] = []
+    chars = 0
+    # Dos motivos DISTINTOS de cerrar la página, y no significan lo mismo: que se
+    # llene por el número de líneas pedidas es paginación normal; que se corte
+    # por el presupuesto de caracteres es un recorte, y eso es lo que declara
+    # `truncado_por_tamano`. Fundirlos haría que toda página completa pareciera
+    # recortada.
+    cerrada = False
+    por_tamano = False
+    for raw in fuente:
+        total += 1
+        # `Lectura.lineas()` ya entrega la línea sin su marca de fin de línea.
+        line = raw
+        if needle is not None and needle not in line.lower():
+            continue
+        matched += 1
+        # `desde` numera sobre las líneas RELEVANTES (las que casan con el
+        # filtro), que es lo que el agente espera al paginar una búsqueda.
+        if matched < desde:
+            continue
+        if cerrada or len(picked) >= lineas:
+            cerrada = True
+            continue  # se sigue recorriendo solo para contar `total`/`matched`
+        if chars + len(line) > _MAX_CHARS_PER_READ:
+            if picked:
+                # Cabe en la página siguiente entera: se corta aquí y el cursor
+                # apunta a ESTA línea.
+                cerrada = True
+                por_tamano = True
+                continue
+            # Ni sola cabe: se fragmenta y se DECLARA.
+            trozo = line[:_MAX_CHARS_PER_READ]
+            picked.append(trozo)
+            fragmentadas.append(
+                {
+                    "linea": matched,
+                    "chars_totales": len(line),
+                    "chars_incluidos": len(trozo),
+                }
+            )
+            chars += len(trozo) + 1
+            continue
+        picked.append(line)
+        chars += len(line) + 1
+
+    relevantes = matched if needle is not None else total
+    siguiente = desde + len(picked)
+    return {
+        "total_lineas": total,
+        "lineas_relevantes": relevantes,
+        "desde": desde,
+        "devueltas": len(picked),
+        "hay_mas": siguiente <= relevantes,
+        "siguiente_desde": siguiente if siguiente <= relevantes else None,
+        # Se conserva el nombre histórico del campo (lo leen la SPA y los tests):
+        # significa "esta página se ha recortado por el tope de TAMAÑO", no que
+        # se haya llenado de líneas. `fragmentadas` dice además QUÉ línea se
+        # sirvió a trozos.
+        "truncado_por_tamano": bool(por_tamano or fragmentadas),
+        "fragmentadas": fragmentadas,
+        "lineas": picked,
+    }
 
 
 artifact_store = ArtifactStore(case_manager)

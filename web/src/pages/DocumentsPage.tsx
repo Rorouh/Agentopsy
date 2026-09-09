@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, api } from "../api/client";
 import type {
+  ApprovalSource,
   Capabilities,
   DocumentBlock,
+  BlockCitation,
+  DocumentChecks,
+  DocumentCitation,
   DocumentFull,
   DocumentMeta,
   DocumentVerifyResult,
@@ -12,6 +16,7 @@ import type {
   ReportJob,
 } from "../api/types";
 import { usePublishShellHeader } from "../layout/shellHeader";
+import { SourceCard } from "../components/SourceCard";
 import { useLang, type MessageKey } from "../i18n";
 import { useActiveCase } from "../state/activeCase";
 import { useCaseStream } from "../state/casePulse";
@@ -96,6 +101,14 @@ export function DocumentsPage() {
 
   const [busy, setBusy] = useState(false);
   const [verify, setVerify] = useState<DocumentVerifyResult | null>(null);
+  // La pantalla de APROBACIÓN: qué revisión se va a aprobar y qué la bloquea.
+  const [approving, setApproving] = useState(false);
+  const [checks, setChecks] = useState<DocumentChecks | null>(null);
+  // La CITA abierta: qué revisión de qué hallazgo se está mirando, y lo que el
+  // backend devolvió al abrirla. `null` cuando no hay ninguna abierta.
+  const [cita, setCita] = useState<BlockCitation | null>(null);
+  const [citaData, setCitaData] = useState<DocumentCitation | null>(null);
+  const [citaError, setCitaError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [perito, setPerito] = useState<FinalizeInvestigationRequest>({});
   const [caps, setCaps] = useState<Capabilities | null>(null);
@@ -329,6 +342,13 @@ export function DocumentsPage() {
     [showNotice],
   );
 
+  // Cambiar de documento cierra la pantalla de aprobación: lo que se aprueba
+  // tiene que ser lo que se está mirando.
+  useEffect(() => {
+    setApproving(false);
+    setChecks(null);
+  }, [selectedId]);
+
   const onVerify = () =>
     runAction(async () => {
       if (!activeCase || !selectedDoc) return;
@@ -351,13 +371,31 @@ export function DocumentsPage() {
     [activeCase, selectedDoc, runAction],
   );
 
-  const onSign = () =>
+  // «Aprobar como final» es DOS pasos, y esa es la parte importante: primero se
+  // lee QUÉ se va a aprobar y qué lo bloquea, y solo después se aprueba, atando
+  // el acto al hash de la revisión que se acaba de mirar. Pulsar un botón sin
+  // ver la revisión es exactamente lo que la comprobación (h) impide.
+  const onOpenApproval = () =>
     runAction(async () => {
       if (!activeCase || !selectedDoc) return;
-      const signed = await api.cases.signDocument(activeCase.id, selectedDoc.id);
-      setSelectedDoc(signed);
+      setChecks(await api.cases.documentChecks(activeCase.id, selectedDoc.id));
+      setApproving(true);
+    });
+
+  const onApprove = () =>
+    runAction(async () => {
+      if (!activeCase || !selectedDoc || !checks) return;
+      const approved = await api.cases.signDocument(activeCase.id, selectedDoc.id, {
+        // El hash de la revisión REVISADA, no «el actual»: si el contenido
+        // cambió entre la lectura y esta llamada, el backend lo rechaza.
+        sha256: checks.sha256_actual,
+        approved_by: activeCase.examiner,
+      });
+      setSelectedDoc(approved);
+      setApproving(false);
+      setChecks(null);
       await refreshDocs(activeCase.id);
-      showNotice(t("doc.signed"));
+      showNotice(t("doc.approved"));
     });
 
   const onDelete = () =>
@@ -438,6 +476,32 @@ export function DocumentsPage() {
       ) : undefined,
     },
     [activeCase?.id, documents.length, finals, selectedDoc?.id, busy, onDownload, t, tn],
+  );
+
+  // Abrir la fuente de una conclusión. La resolución la hace el BACKEND: aquí se
+  // manda el documento, el hallazgo y la revisión, nunca una ruta ni un hash
+  // (SECURITY INVARIANT 5). Un fallo se dice; no se pinta una ficha vacía, que
+  // se leería como «esta conclusión no tiene fuente».
+  const onOpenCita = useCallback(
+    async (ref: BlockCitation) => {
+      if (!activeCase || !selectedDoc) return;
+      setCita(ref);
+      setCitaData(null);
+      setCitaError(null);
+      try {
+        setCitaData(
+          await api.cases.documentCitation(
+            activeCase.id,
+            selectedDoc.id,
+            ref.finding_id,
+            ref.revision,
+          ),
+        );
+      } catch (e) {
+        setCitaError(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [activeCase, selectedDoc],
   );
 
   if (casesPhase === "loading") {
@@ -681,8 +745,14 @@ export function DocumentsPage() {
               {/* Un documento FINAL no se borra: es cadena de custodia. */}
               {selectedDoc.status === "draft" && (
                 <>
-                  <button type="button" className="link-action" disabled={busy} onClick={onSign}>
-                    {t("doc.signAsFinal")}
+                  <button
+                    type="button"
+                    className="link-action"
+                    disabled={busy}
+                    onClick={onOpenApproval}
+                    data-testid="abrir-aprobacion"
+                  >
+                    {t("doc.approve")}
                   </button>
                   <button
                     type="button"
@@ -695,6 +765,18 @@ export function DocumentsPage() {
                 </>
               )}
             </div>
+
+            {approving && checks && (
+              <ApprovalPanel
+                checks={checks}
+                busy={busy}
+                onCancel={() => {
+                  setApproving(false);
+                  setChecks(null);
+                }}
+                onConfirm={onApprove}
+              />
+            )}
 
             {/* El resultado de verificar tiene DOS caras, y la mala, hash
                 recalculado ≠ registrado, es la que importa. No puede quedarse
@@ -716,6 +798,19 @@ export function DocumentsPage() {
               {selectedDoc.summary && <p className="report-summary">{selectedDoc.summary}</p>}
             </div>
 
+            {cita && (
+              <CitationPanel
+                cita={cita}
+                data={citaData}
+                error={citaError}
+                onClose={() => {
+                  setCita(null);
+                  setCitaData(null);
+                  setCitaError(null);
+                }}
+              />
+            )}
+
             {selectedDoc.sections.map((sec, si) => (
               <section className="report-section" key={si}>
                 <div className="report-section-head">
@@ -723,7 +818,7 @@ export function DocumentsPage() {
                   <span className="eyebrow eyebrow--section">{sec.title}</span>
                 </div>
                 {sec.blocks.map((b, bi) => (
-                  <Block key={bi} b={b} />
+                  <Block key={bi} b={b} onOpenCita={onOpenCita} />
                 ))}
               </section>
             ))}
@@ -751,7 +846,225 @@ const SEV_KEY: Record<string, MessageKey> = {
 };
 
 // Bloques del documento. SEC INV 8: todo se pinta como TEXTO.
-function Block({ b }: { b: DocumentBlock }) {
+
+// La pantalla de APROBACIÓN. Su trabajo es que nadie apruebe sin ver qué
+// aprueba: identifica la REVISIÓN exacta (por su hash), enumera los bloqueos
+// pendientes y dice qué es y qué no es esta aprobación.
+//
+// El botón deshabilitado NO es la garantía: el backend vuelve a comprobarlo
+// todo aunque el cliente llame a la ruta directamente. Esto es la parte que
+// hace que el perito pueda decidir con información, no la que impide el fallo.
+export function ApprovalPanel({
+  checks,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  checks: DocumentChecks;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const { t } = useLang();
+  return (
+    <section className="report-section aprobacion" data-testid="panel-aprobacion">
+      <div className="report-section-head">
+        <span className="eyebrow">{t("doc.approveTitle")}</span>
+      </div>
+
+      <p className="report-p report-p--muted">{t("doc.approveWhatItIs")}</p>
+
+      <div className="report-kv">
+        <div className="report-kv-row">
+          <span className="report-kv-k">{t("doc.approveRevision")}</span>
+          <span className="report-kv-v" data-testid="revision-aprobada">
+            {checks.version} · sha256 {checks.sha256_actual}
+          </span>
+        </div>
+      </div>
+
+      {checks.bloqueos.length === 0 ? (
+        <p className="report-p" data-testid="sin-bloqueos">
+          {t("doc.approveNoBlockers")}
+        </p>
+      ) : (
+        <div className="aprobacion-bloqueos" data-testid="bloqueos">
+          <span className="eyebrow">{t("doc.approveBlockers")}</span>
+          <ul className="report-list-ul">
+            {checks.bloqueos.map((b) => (
+              <li key={`${b.codigo}-${b.detalle}`} data-testid={`bloqueo-${b.codigo}`}>
+                {b.mensaje}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {checks.fuentes.length > 0 && (
+        <div className="aprobacion-fuentes">
+          <span className="eyebrow">{t("doc.approveSources")}</span>
+          <ul className="report-list-ul">
+            {checks.fuentes.map((f: ApprovalSource, i) => (
+              <li key={`${f.tipo}-${i}`}>
+                {f.tipo}: {f.run_id ?? f.evidence_id ?? f.finding_id}{" "}
+                <span className={`fuente-badge fuente-badge--${f.estado}`}>
+                  {t(`doc.sourceState.${f.estado}` as never)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="report-actions">
+        <button type="button" className="link-action" onClick={onCancel} disabled={busy}>
+          {t("doc.approveCancel")}
+        </button>
+        <button
+          type="button"
+          className="link-action"
+          onClick={onConfirm}
+          // Deshabilitado por comodidad, NO por seguridad: la comprobación que
+          // cuenta la hace el backend en cada llamada.
+          disabled={busy || !checks.aprobable}
+          data-testid="confirmar-aprobacion"
+        >
+          {busy ? t("doc.approveChecking") : t("doc.approveConfirm")}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+// El panel que enseña el RESPALDO de una conclusión: qué revisión de qué
+// hallazgo la sostiene y, dentro, cada fuente con su localizador y su extracto
+// verificado. Reutiliza la misma ficha que la pantalla de Hallazgos: una fuente
+// es una fuente, y dos fichas distintas acabarían diciendo cosas distintas.
+export function CitationPanel({
+  cita,
+  data,
+  error,
+  onClose,
+}: {
+  cita: BlockCitation;
+  data: DocumentCitation | null;
+  error: string | null;
+  onClose: () => void;
+}) {
+  const { t } = useLang();
+  return (
+    <section className="report-section cita-panel" data-testid="panel-cita">
+      <div className="report-section-head">
+        <span className="eyebrow">{t("doc.citationTitle")}</span>
+        <button
+          type="button"
+          className="link-action"
+          onClick={onClose}
+          data-testid="cerrar-cita"
+        >
+          {t("doc.citationClose")}
+        </button>
+      </div>
+
+      {error ? (
+        // Una fuente que no se puede abrir NO se presenta como verificada ni
+        // como inexistente: se dice qué ha pasado.
+        <div className="fuente-error" data-testid="cita-error">
+          <p className="report-p">{t("doc.citationFailed")}</p>
+          <p className="report-p report-p--muted">{error}</p>
+        </div>
+      ) : !data ? (
+        <p className="report-p report-p--muted" data-testid="cita-cargando">
+          {t("doc.citationLoading")}
+        </p>
+      ) : (
+        <>
+          <div className="report-kv">
+            <div className="report-kv-row">
+              <span className="report-kv-k">{t("doc.citationFinding")}</span>
+              <span className="report-kv-v" data-testid="cita-hallazgo">
+                {data.titulo} · {t("doc.citationRevision", { n: data.revision })}
+              </span>
+            </div>
+          </div>
+          <p className="report-p">{data.resumen}</p>
+
+          {!data.integridad_ok && (
+            <div className="fuente-error" data-testid="cita-alterada">
+              <p className="report-p">{t("doc.citationFindingTampered")}</p>
+            </div>
+          )}
+          {!data.en_manifiesto && (
+            <div className="fuente-error" data-testid="cita-fuera">
+              <p className="report-p">{t("doc.citationOutsideManifest")}</p>
+            </div>
+          )}
+
+          {data.fuentes.length === 0 ? (
+            <p className="report-p report-p--muted">{t("doc.citationNoSources")}</p>
+          ) : (
+            data.fuentes.map((f, i) => <SourceCard key={i} source={f} />)
+          )}
+
+          {/* Integridad técnica no es suficiencia interpretativa: que la fuente
+              exista y su hash case no demuestra que respalde la conclusión. */}
+          <p className="report-p report-p--muted">{t("doc.citationHumanReview")}</p>
+        </>
+      )}
+    </section>
+  );
+}
+
+// El pie de RESPALDO de un bloque: en qué se apoya lo que acaba de afirmar, con
+// la acción de abrirlo. Es lo que convierte una conclusión en algo que se puede
+// comprobar sin salir del informe.
+function BlockRefs({
+  refs,
+  onOpenCita,
+}: {
+  refs?: BlockCitation[];
+  onOpenCita?: (ref: BlockCitation) => void;
+}) {
+  const { t } = useLang();
+  if (!refs || refs.length === 0) return null;
+  return (
+    <div className="bloque-refs" data-testid="bloque-refs">
+      <span className="bloque-refs-label">{t("doc.blockSupport")}</span>
+      {refs.map((r) => (
+        <button
+          key={`${r.finding_id}-${r.revision}`}
+          type="button"
+          className="link-action"
+          onClick={() => onOpenCita?.(r)}
+          data-testid="abrir-cita"
+          title={r.finding_id}
+        >
+          {r.finding_id.slice(0, 8)} · {t("doc.citationRevision", { n: r.revision })}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Block({
+  b,
+  onOpenCita,
+}: {
+  b: DocumentBlock;
+  onOpenCita?: (ref: BlockCitation) => void;
+}) {
+  // El bloque y, debajo, su respaldo. Se compone aquí y no dentro de cada rama
+  // del switch para que ningún tipo de bloque se quede sin él por olvido: una
+  // conclusión sin su pie de respaldo se lee como una conclusión sin fuente.
+  return (
+    <>
+      <BlockBody b={b} />
+      <BlockRefs refs={b.refs} onOpenCita={onOpenCita} />
+    </>
+  );
+}
+
+function BlockBody({ b }: { b: DocumentBlock }) {
   const { t } = useLang();
   switch (b.t) {
     case "p":

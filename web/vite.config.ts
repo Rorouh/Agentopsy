@@ -1,4 +1,5 @@
 import react from "@vitejs/plugin-react";
+/// <reference types="vitest" />
 import { defineConfig } from "vite";
 
 // La SPA se sirve en la RAÍZ del servicio `web` (nginx) — base "/". En
@@ -18,4 +19,14 @@ export default defineConfig({
     },
   },
   build: { outDir: "dist", emptyOutDir: true },
+  // Las pruebas de interfaz corren en jsdom y COMPROBAN COMPORTAMIENTO: que
+  // abrir una cita pinta lo que el backend devuelve y que la pantalla de
+  // aprobación enseña sus bloqueos. Buscar una cadena en el .tsx no probaría
+  // nada de eso (la interfaz podría no llegar a renderizarla nunca).
+  test: {
+    environment: "jsdom",
+    globals: true,
+    include: ["src/**/*.test.tsx", "src/**/*.test.ts"],
+    setupFiles: ["./src/test/setup.ts"],
+  },
 });

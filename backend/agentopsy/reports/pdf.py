@@ -3,18 +3,31 @@
 numeradas H2/H3, tablas, hallazgos con severidad, citas y listas, con
 cabecera/pie por página). fpdf2 es pure-python (sin libs de sistema).
 
+Un BORRADOR se exporta (un perito quiere leer su informe antes de aprobarlo),
+pero sale identificado como tal: la palabra en la cabecera de TODAS sus páginas,
+en la portada y en el pie, más la lista de lo que bloquea su aprobación. Un PDF
+sin esa marca se puede pasar por definitivo, y hasta 2026-09-08 la exportación
+no distinguía ninguno de los dos casos: no exigía la comprobación de integridad
+ni decía en qué estado estaba el documento (auditoría 2026-09-07, F04).
+
+El SHA-256 de los BYTES exactos que se sirven lo ancla el llamador en el audit
+(``DocumentStore.registrar_exportacion``). Es un hash DISTINTO del ``sha256`` del
+documento: aquel cubre el contenido estructurado, este el fichero que sale.
+
 Usa las fuentes core (latin-1): la tipografía unicode del contenido (— … · → ✓)
 se normaliza antes de escribir; los acentos españoles sí están en latin-1.
 """
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 from fpdf import FPDF
 from fpdf.fonts import FontFace
 
 from agentopsy.i18n import t
+from agentopsy.reports.fuentes import refs_de_bloque
 from agentopsy.reports.store import Document
 
 _INK = (20, 23, 29)       # #14171d
@@ -85,8 +98,19 @@ class _Report(FPDF):
     header_right = "Confidencial"
     footer_left = ""
     footer_author = ""
+    #: Marca de BORRADOR. Cuando lleva texto se imprime en la cabecera de cada
+    #: página: un borrador tiene que ser reconocible en cualquier hoja suelta,
+    #: no solo en la portada.
+    draft_mark = ""
 
     def header(self) -> None:  # noqa: D401 — fpdf2 hook
+        if self.draft_mark:
+            # En TODAS las páginas: una hoja suelta de un borrador tiene que
+            # seguir diciendo que lo es.
+            self.set_y(5)
+            self.set_font("Helvetica", "B", 8)
+            self.set_text_color(*_ACCENT)
+            self.cell(0, 4, self.draft_mark, align="C", new_x="LMARGIN", new_y="NEXT")
         self.set_y(9)
         self.set_font("Courier", "", 7.5)
         self.set_text_color(*_FAINT)
@@ -107,21 +131,94 @@ class _Report(FPDF):
         self.cell(self.epw / 2, 4, _s(f"{self.footer_author}  -  pag. {self.page_no()}"), align="R")
 
 
-def render_pdf(doc: Document) -> bytes:
+def render_pdf(doc: Document, *, bloqueos: list[dict] | None = None) -> bytes:
+    """Los bytes del PDF del documento.
+
+    ``bloqueos`` son los motivos por los que NO se puede aprobar como final
+    (``agentopsy.reports.aprobacion``). Cuando el documento es un borrador, o
+    cuando trae bloqueos, el PDF sale marcado en la cabecera de cada página y la
+    portada lista esos motivos: exportar un borrador es legítimo, pasarlo por
+    definitivo no.
+    """
+    bloqueos = list(bloqueos or [])
+    es_borrador = doc.status != "final" or bool(bloqueos)
+
     pdf = _Report(orientation="P", unit="mm", format="A4")
+    # REPRODUCIBLE: la fecha de creación del PDF sale del documento, no del reloj
+    # del momento. Sin esto, dos exportaciones del MISMO informe dan bytes
+    # distintos, y entonces el SHA-256 que se registra no sirve para que un
+    # tercero compruebe el fichero que tiene en la mano contra el del expediente.
+    pdf.set_creation_date(_fecha_de(doc, borrador=es_borrador))
+    pdf.set_producer("Agentopsy")
+    pdf.set_creator("Agentopsy")
     pdf.set_margins(left=18, top=17, right=18)
     pdf.set_auto_page_break(auto=True, margin=16)
     pdf.header_right = _s(f"Confidencial - {doc.case_id}")
     pdf.footer_left = _s(doc.type)
     pdf.footer_author = _s(f"Perito: {doc.author}")
+    if es_borrador:
+        pdf.draft_mark = _s(t("approval.draftLabel"))
     pdf.add_page()
 
     _cover(pdf, doc)
+    if es_borrador:
+        _aviso_borrador(pdf, doc, bloqueos)
     _toc(pdf, doc)
     for sec in doc.sections:
         _section(pdf, sec)
-    _signature(pdf, doc)
+    _signature(pdf, doc, borrador=es_borrador)
     return bytes(pdf.output())
+
+
+def _fecha_de(doc: Document, *, borrador: bool = False) -> datetime:
+    """La marca temporal del documento, para que el PDF sea reproducible.
+
+    Se toma la de APROBACIÓN cuando existe (es el instante que el informe
+    atestigua) y la de creación si no. Un valor ilegible degrada a la época UTC:
+    lo que importa aquí es que sea DETERMINISTA, no qué hora concreta se
+    imprima, y esa hora ya viaja en la portada como dato del expediente.
+    """
+    # Un documento que sale como BORRADOR no data su PDF en su aprobación: esa
+    # aprobación es justamente la que no se sostiene, y usarla metería un dato de
+    # aprobación en los bytes del fichero (RA04 e).
+    crudo = ((None if borrador else doc.approved_at) or doc.created_at or "").strip()
+    candidato = crudo[:-1] + "+00:00" if crudo.endswith(("Z", "z")) else crudo
+    try:
+        marca = datetime.fromisoformat(candidato)
+    except ValueError:
+        return datetime(1970, 1, 1, tzinfo=timezone.utc)
+    return marca if marca.tzinfo else marca.replace(tzinfo=timezone.utc)
+
+
+def _aviso_borrador(pdf: _Report, doc: Document, bloqueos: list[dict]) -> None:
+    """El estado REAL del documento, en la portada y con sus motivos.
+
+    Un documento que no está aprobado lo dice, y si además hay algo que impide
+    aprobarlo, lo enumera: el perito no tiene que ir a otra pantalla a averiguar
+    por qué el botón no le deja.
+    """
+    pdf.ln(3)
+    pdf.set_draw_color(*_ACCENT)
+    pdf.set_line_width(0.6)
+    y = pdf.get_y()
+    pdf.line(pdf.l_margin, y, pdf.l_margin + pdf.epw, y)
+    pdf.set_line_width(0.2)
+    pdf.ln(3)
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.set_text_color(*_ACCENT)
+    pdf.multi_cell(
+        0, 6, _s(t("pdf.draftBanner", label=t("approval.draftLabel"))),
+        new_x="LMARGIN", new_y="NEXT",
+    )
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(*_BODY)
+    if bloqueos:
+        pdf.ln(1)
+        pdf.multi_cell(0, 5, _s(t("pdf.draftBlockers")), new_x="LMARGIN", new_y="NEXT")
+        for b in bloqueos:
+            texto = str(b.get("mensaje") or b.get("codigo") or "")
+            pdf.multi_cell(0, 5, _s(f"- {texto}"), new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(3)
 
 
 # ── portada ──────────────────────────────────────────────────────────────────
@@ -266,6 +363,29 @@ def _section(pdf: _Report, sec: dict[str, Any]) -> None:
         _block(pdf, b)
 
 
+def _citas(pdf: _Report, b: dict[str, Any]) -> None:
+    """La línea de respaldo de un bloque: qué revisión de qué hallazgo lo sostiene.
+
+    Va en el PDF porque el PDF es lo que sale del expediente: un tercero que lo
+    lea tiene que poder pedir esos hallazgos por su identificador y su revisión,
+    y no puede hacerlo si la cita solo existe en la pantalla (RA07 i).
+    """
+    refs = refs_de_bloque(b)
+    if not refs:
+        return
+    _reservar(pdf, 6)
+    pdf.set_font("Helvetica", "I", 7.5)
+    pdf.set_text_color(*_FAINT)
+    texto = "; ".join(
+        f"{r['finding_id']} rev. {r['revision']}" for r in refs
+    )
+    pdf.multi_cell(
+        0, 4, _s(t("pdf.blockSources", refs=texto)),
+        new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR",
+    )
+    pdf.ln(1)
+
+
 def _block(pdf: _Report, b: dict[str, Any]) -> None:
     t = b.get("t")
     if t == "p":
@@ -310,6 +430,7 @@ def _block(pdf: _Report, b: dict[str, Any]) -> None:
         _table(pdf, b.get("headers", []) or [], b.get("rows", []) or [])
     elif t == "finding":
         _finding(pdf, b)
+    _citas(pdf, b)
 
 
 def _kv(pdf: _Report, pairs: list[dict[str, Any]]) -> None:
@@ -387,7 +508,14 @@ def _finding(pdf: _Report, b: dict[str, Any]) -> None:
 _ALTO_FIRMA = 34.0
 
 
-def _signature(pdf: _Report, doc: Document) -> None:
+def _signature(pdf: _Report, doc: Document, *, borrador: bool = False) -> None:
+    """El pie del informe. Un BORRADOR no lleva ni una señal de aprobación.
+
+    Un documento cuyo estado dice ``final`` pero que ya no supera sus
+    comprobaciones se exporta marcado como borrador, y entonces enseñar «Aprobado
+    por X el día Y» en su última página sería contradecir la marca de todas las
+    demás. La marca y el pie tienen que decir lo mismo (RA04 e).
+    """
     _reservar(pdf, _ALTO_FIRMA)
     pdf.ln(6)
     pdf.set_draw_color(*_RULE)
@@ -395,12 +523,33 @@ def _signature(pdf: _Report, doc: Document) -> None:
     pdf.ln(3)
     pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(*_FAINT)
-    status = t("pdf.signedFull") if doc.status == "final" else t("pdf.draftFull")
+    aprobado = doc.status == "final" and not borrador
+    status = t("pdf.signedFull") if aprobado else t("pdf.draftFull")
     pdf.multi_cell(
         0,
         5,
         _s(t("pdf.footer", status=status, date=doc.created_at)),
                    new_x="LMARGIN", new_y="NEXT")
+    if aprobado:
+        # Qué es y qué NO es esta aprobación. El informe lo dice él mismo, para
+        # que nadie lea «final» como «firmado digitalmente».
+        pdf.multi_cell(
+            0, 5, _s(t("approval.humanApproval")), new_x="LMARGIN", new_y="NEXT"
+        )
+        if doc.approved_at:
+            pdf.multi_cell(
+                0,
+                5,
+                _s(
+                    t(
+                        "pdf.approvedBy",
+                        who=doc.approved_by or doc.author,
+                        date=doc.approved_at,
+                    )
+                ),
+                new_x="LMARGIN",
+                new_y="NEXT",
+            )
     pdf.set_font("Courier", "", 8)
     pdf.multi_cell(0, 5, _s(f"SHA-256 {doc.sha256}"), new_x="LMARGIN", new_y="NEXT",
                    wrapmode="CHAR")

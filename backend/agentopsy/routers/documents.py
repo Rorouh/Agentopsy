@@ -15,6 +15,14 @@ corre DESACOPLADA de la petición HTTP en el registro de jobs compartido
 (``agentopsy.agent.jobs``, el mismo que sirve al análisis del agente): el cliente
 recibe un ``job_id`` al instante y lo sondea. Cerrar la pestaña no aborta la
 redacción.
+
+**Aprobar y exportar cruzan la MISMA puerta** (``agentopsy.reports.aprobacion``),
+y la cruzan aquí, en el servidor: la interfaz deshabilita un botón, pero el
+cliente puede llamar a estas rutas directamente y hasta 2026-09-08 lo conseguía
+(un documento alterado se marcaba final y se exportaba sin una sola comprobación,
+auditoría 2026-09-07, F04). La ruta pública sigue llamándose ``/sign`` por
+compatibilidad; lo que hace es «Aprobar como final», que es una aprobación humana
+AUDITADA y no una firma digital criptográfica.
 """
 
 from __future__ import annotations
@@ -23,9 +31,12 @@ from collections.abc import Callable
 from dataclasses import asdict
 from typing import Any
 
+import hashlib
+
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 
+from agentopsy import __version__
 from agentopsy.i18n import t, traducir_excepcion
 from agentopsy.agent.jobs import job_registry
 from agentopsy.audit import AuditLog
@@ -39,6 +50,8 @@ from agentopsy.executors import (
 )
 from agentopsy.findings.store import finding_store
 from agentopsy.reports import document_store
+from agentopsy.reports.aprobacion import AprobacionBloqueada, comprobar
+from agentopsy.reports.citas import abrir_cita
 from agentopsy.reports.pdf import render_pdf
 from agentopsy.reports.writer import write_report
 from agentopsy.security import require_token
@@ -81,7 +94,35 @@ class FinalizeInvestigationRequest(BaseModel):
     version: str | None = None
 
 
+class ApproveDocumentRequest(BaseModel):
+    """«Aprobar como final»: el acto pericial, con la revisión que se revisó.
+
+    ``sha256`` es el hash del contenido que el investigador ACABA de leer. Es
+    obligatorio y no es burocracia: sin él, entre la pantalla que revisó y esta
+    llamada podría haber cambiado el contenido, y se estaría aprobando algo que
+    nadie ha mirado (F04, comprobación h).
+
+    ``approved_by`` identifica a quien aprueba. Es una aprobación humana
+    auditada, no una firma criptográfica: queda quién dijo aprobarlo, no una
+    prueba de identidad.
+    """
+
+    sha256: str
+    approved_by: str | None = None
+
+
 def _svc_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, AprobacionBloqueada):
+        # 409: el documento existe y la petición es correcta; lo que no se
+        # sostiene es su estado. Los bloqueos viajan ENTEROS para que la
+        # interfaz los pinte todos y no se descubran de uno en uno.
+        return HTTPException(
+            status_code=409,
+            detail={
+                "message": traducir_excepcion(exc),
+                **exc.comprobacion.como_dict(),
+            },
+        )
     if isinstance(exc, KeyError):
         return HTTPException(status_code=404, detail=traducir_excepcion(exc).strip('"'))
     return HTTPException(status_code=422, detail=traducir_excepcion(exc))
@@ -250,8 +291,60 @@ def get_document(case_id: str, doc_id: str) -> dict[str, Any]:
     dependencies=[Depends(require_token)],
 )
 def verify_document(case_id: str, doc_id: str) -> dict[str, Any]:
+    """Integridad del CONTENIDO del documento. Es la comprobación mínima; la
+    completa (fuentes, cadena, hallazgos, limitaciones) es ``/checks``."""
     try:
         return document_store.verify(case_id, doc_id)
+    except (KeyError, ValueError) as exc:
+        raise _svc_error(exc) from exc
+
+
+@router.get(
+    "/api/cases/{case_id}/documents/{doc_id}/checks",
+    dependencies=[Depends(require_token)],
+)
+def document_checks(case_id: str, doc_id: str) -> dict[str, Any]:
+    """TODO lo que hay que comprobar antes de aprobar, con sus bloqueos.
+
+    Es lo que la pantalla de aprobación pinta: la revisión exacta que se va a
+    aprobar, el estado de cada fuente y lo que falta. No aprueba nada; es la
+    lectura previa a decidir.
+    """
+    try:
+        return comprobar(
+            case_id, doc_id, documents=document_store, cases=case_manager
+        ).como_dict()
+    except (KeyError, ValueError) as exc:
+        raise _svc_error(exc) from exc
+
+
+@router.get(
+    "/api/cases/{case_id}/documents/{doc_id}/citas/{finding_id}",
+    dependencies=[Depends(require_token)],
+)
+def document_citation(
+    case_id: str, doc_id: str, finding_id: str, revision: int = 1
+) -> dict[str, Any]:
+    """Abre la FUENTE de una conclusión del informe, desde la conclusión.
+
+    El cliente manda el documento, el hallazgo y la revisión; el backend
+    resuelve la ejecución, el artefacto, el localizador y el extracto, y los
+    verifica AHORA (SECURITY INVARIANT 5: nada de lo que el modelo escribió se
+    usa como enlace de confianza).
+
+    404 si el documento no cita esa revisión: la ruta del informe no es una
+    puerta por la que pedir cualquier hallazgo del caso.
+    """
+    try:
+        return abrir_cita(
+            case_id,
+            doc_id,
+            finding_id,
+            revision=revision,
+            documents=document_store,
+            cases=case_manager,
+            findings=finding_store,
+        )
     except (KeyError, ValueError) as exc:
         raise _svc_error(exc) from exc
 
@@ -260,11 +353,26 @@ def verify_document(case_id: str, doc_id: str) -> dict[str, Any]:
     "/api/cases/{case_id}/documents/{doc_id}/sign",
     dependencies=[Depends(require_token)],
 )
-def sign_document(case_id: str, doc_id: str) -> dict[str, Any]:
+def sign_document(
+    case_id: str, doc_id: str, req: ApproveDocumentRequest
+) -> dict[str, Any]:
+    """APRUEBA COMO FINAL el documento (ruta histórica ``/sign``).
+
+    Aprobación humana AUDITADA, nunca una firma digital: queda quién la hizo,
+    cuándo y sobre qué contenido exacto. Cruza todas las comprobaciones de
+    ``agentopsy.reports.aprobacion``, y las cruza AQUÍ aunque el cliente llame
+    directamente: la interfaz no es la que decide (F04).
+    """
     try:
-        return asdict(document_store.sign(case_id, doc_id))
+        doc = document_store.approve(
+            case_id,
+            doc_id,
+            sha256_revisado=req.sha256,
+            revisor=req.approved_by or "",
+        )
     except (KeyError, ValueError) as exc:
         raise _svc_error(exc) from exc
+    return asdict(doc)
 
 
 @router.delete("/api/cases/{case_id}/documents/{doc_id}", dependencies=[Depends(require_token)])
@@ -281,15 +389,56 @@ def delete_document(case_id: str, doc_id: str) -> dict[str, Any]:
     dependencies=[Depends(require_token)],
 )
 def document_pdf(case_id: str, doc_id: str) -> Response:
-    """Genera el PDF real del documento (fpdf2). La web lo descarga con el token."""
+    """Genera el PDF real del documento (fpdf2). La web lo descarga con el token.
+
+    Un documento FINAL se exporta como tal solo si sus comprobaciones siguen
+    pasando: uno alterado después de aprobarse no sale como si fuera válido,
+    sale marcado como borrador y con sus bloqueos listados en la portada. Un
+    borrador se exporta siempre, marcado en todas sus páginas.
+
+    El SHA-256 de los BYTES exactos que se sirven queda en el audit, junto al
+    documento, su revisión y la versión del generador. Es un hash DISTINTO del
+    del contenido: confundirlos sería atribuirle al PDF una comprobación que no
+    se le ha hecho.
+    """
     try:
         doc = document_store.get(case_id, doc_id)
+        comprobacion = comprobar(
+            case_id, doc_id, documents=document_store, cases=case_manager
+        )
     except (KeyError, ValueError) as exc:
         raise _svc_error(exc) from exc
-    pdf_bytes = render_pdf(doc)
+
+    bloqueos = [b.como_dict() for b in comprobacion.bloqueos]
+    # Un documento que ya no supera sus comprobaciones NO se exporta como final,
+    # aunque su estado diga «final»: se degrada a borrador CON sus motivos, que
+    # es la única salida honesta (RULE 2: no se sustituye en silencio, se dice).
+    borrador = doc.status != "final" or bool(bloqueos)
+    pdf_bytes = render_pdf(doc, bloqueos=bloqueos)
+    sha256 = hashlib.sha256(pdf_bytes).hexdigest()
+
+    try:
+        document_store.registrar_exportacion(
+            case_id,
+            doc_id,
+            sha256=sha256,
+            bytes_=len(pdf_bytes),
+            generador=f"Agentopsy {__version__} fpdf2",
+            borrador=borrador,
+        )
+    except ValueError as exc:
+        # Una exportación final ya registrada no se sustituye en silencio.
+        raise HTTPException(status_code=409, detail=traducir_excepcion(exc)) from exc
+
     filename = f"{doc.id}.pdf"
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            # El hash de lo servido viaja también en la respuesta: quien lo
+            # descarga puede comprobarlo sin abrir el audit.
+            "X-Agentopsy-Pdf-Sha256": sha256,
+            "X-Agentopsy-Pdf-Draft": "1" if borrador else "0",
+        },
     )

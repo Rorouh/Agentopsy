@@ -1,0 +1,113 @@
+{
+  "evidence_bytes": {
+    "esperado": "bloqueada (evidencia_alterada)",
+    "real_evidence_verify": false,
+    "aprobable": false,
+    "bloqueos": [
+      "evidencia_alterada"
+    ]
+  },
+  "finding_body": {
+    "esperado": "bloqueada (hallazgo_alterado)",
+    "stored_hash_matches_actual_content": false,
+    "aprobable": false,
+    "bloqueos": [
+      "hallazgo_alterado"
+    ]
+  },
+  "finding_rehashed": {
+    "esperado": "bloqueada (hallazgo_revisado o hallazgo_sin_ancla)",
+    "aprobable": false,
+    "bloqueos": [
+      "hallazgo_revisado"
+    ]
+  },
+  "sources_removed": {
+    "esperado": "bloqueada antes y despues de sustituir las fuentes",
+    "blocked_before_removing_sources": true,
+    "document_hash_still_valid": true,
+    "aprobable": false,
+    "bloqueos": [
+      "procedencia_alterada",
+      "manifiesto_invalido",
+      "cita_fuera_del_manifiesto"
+    ]
+  },
+  "sources_rehashed": {
+    "esperado": "bloqueada (procedencia_no_casa / ancla_no_casa)",
+    "aprobable": false,
+    "bloqueos": [
+      "ancla_no_casa",
+      "procedencia_no_casa",
+      "manifiesto_invalido",
+      "cita_fuera_del_manifiesto"
+    ]
+  },
+  "forged_final": {
+    "esperado": "PDF marcado borrador (X-Agentopsy-Pdf-Draft: 1)",
+    "approval_events": 0,
+    "pdf_status": 200,
+    "pdf_draft_header": "1",
+    "bloqueos": [
+      "aprobacion_sin_acta"
+    ]
+  },
+  "broken_audit_anchor": {
+    "esperado": "lectura rechazada (CadenaRotaError)",
+    "audit_chain_valid": false,
+    "read_accepted": false,
+    "error": "CadenaRotaError"
+  },
+  "anchor_deleted": {
+    "esperado": "lectura rechazada, nunca degradada a sin_ancla",
+    "read_accepted": false,
+    "error": "CadenaRotaError"
+  },
+  "locator_bounds": {
+    "esperado": "rechazados; el rango valido se acepta",
+    "actual_bytes": 141,
+    "actual_lines": 3,
+    "fin_fuera_de_rango": {
+      "accepted": false,
+      "error": "ProcedenciaError"
+    },
+    "inicio_fuera_de_rango": {
+      "accepted": false,
+      "error": "ProcedenciaError"
+    },
+    "bytes_fin_fuera_de_rango": {
+      "accepted": false,
+      "error": "ProcedenciaError"
+    },
+    "bytes_rango_vacio": {
+      "accepted": false,
+      "error": "ProcedenciaError"
+    },
+    "rango_valido": {
+      "accepted": true,
+      "hasta": 3
+    }
+  },
+  "legacy_finding": {
+    "esperado": "legible, pero el informe nuevo NO se aprueba",
+    "finding_state": "no_verificada",
+    "references": [],
+    "legible": true,
+    "aprobable": false,
+    "bloqueos": [
+      "manifiesto_invalido",
+      "hallazgo_alterado"
+    ]
+  },
+  "recorrido_valido": {
+    "esperado": "aprobable, final y PDF NO borrador",
+    "aprobable": true,
+    "bloqueos": [],
+    "status": "final",
+    "reaprobable_tras_aprobar": true,
+    "citas": 2,
+    "pdf_status": 200,
+    "pdf_draft_header": "0",
+    "cadena_valida": true
+  }
+}

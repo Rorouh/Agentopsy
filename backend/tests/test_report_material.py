@@ -22,6 +22,7 @@ import pytest
 
 from agentopsy.i18n import _LANG_ACTUAL, set_current_lang
 from agentopsy.audit.log import AuditLog
+from _procedencia import crear_run, procedencia
 from agentopsy.cases import CaseManager
 from agentopsy.evidence import EvidenceManager
 from agentopsy.findings.store import FindingStore
@@ -100,13 +101,16 @@ def test_evidence_carries_its_verified_custody(entorno) -> None:
 
 
 def test_findings_travel_whole_with_full_hashes(entorno) -> None:
-    run_id = str(uuid.uuid4())
-    sha = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    # Procedencia REAL: el hash del artefacto sale del manifiesto de la
+    # ejecución, no de una constante (F03).
+    run = crear_run(entorno["cases"], entorno["case"].id, tool_id="tsk_fls")
+    run_id = run["run_id"]
+    sha = run["stdout_sha256"]
     entorno["findings"].append(entorno["case"].id, {
         "title": "Tarea programada de persistencia",
         "summary": "Se crea la tarea `updater` que ejecuta C:/Users/Public/update.exe.",
         "severity": "high", "confidence": 0.9, "observed_at": "2026-03-14T08:12:44Z",
-        "run_id": run_id, "artifact_sha256": sha, "tool_id": "tsk_fls",
+        **procedencia(run),
         "mitre_hints": ["T1053.005"],
     })
     material = _build(entorno)
@@ -171,11 +175,11 @@ def test_the_material_holds_no_prose(entorno) -> None:
 
 def test_a_truncated_collection_is_declared(entorno) -> None:
     case_id = entorno["case"].id
-    run_id = str(uuid.uuid4())
+    proc = procedencia(crear_run(entorno["cases"], case_id))
     for i in range(MAX_HALLAZGOS + 3):
         entorno["findings"].append(case_id, {
             "title": f"Hallazgo {i}", "summary": f"detalle {i}", "severity": "low",
-            "run_id": run_id, "artifact_sha256": "a" * 64,
+            **proc,
         })
 
     material = _build(entorno)

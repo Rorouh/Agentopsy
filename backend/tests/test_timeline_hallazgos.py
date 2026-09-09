@@ -13,6 +13,8 @@ un caso inexistente, y que un caso sin hallazgos trae su mensaje).
 from __future__ import annotations
 
 import pytest
+
+from _procedencia import crear_run, procedencia
 from fastapi.testclient import TestClient
 
 from agentopsy.i18n import LANG_HEADER, t
@@ -322,11 +324,13 @@ def test_http_serves_the_incident_axis_with_what_stayed_out(client, auth, cases)
     from agentopsy.timeline import hallazgos as hallazgos_mod
 
     store = hallazgos_mod.finding_store
+    # Procedencia REAL sobre el mismo gestor de casos del cliente HTTP (F03).
+    run = crear_run(cases, case.id)
     store.append(case.id, {
         "title": "Cuenta local creada durante el incidente",
         "summary": "resumen",
         "severity": "high",
-        "run_id": _RUN_ID,
+        **procedencia(run),
         "observed_at": "2021-03-23T19:07:38Z",
     })
     store.append(case.id, {
@@ -334,6 +338,10 @@ def test_http_serves_the_incident_axis_with_what_stayed_out(client, auth, cases)
         "summary": "resumen",
         "severity": "low",
         "finding_kind": "descarte",
+        "alcance_examinado": (
+            "Se revisó el registro de eventos de seguridad con hayabusa; no hay "
+            "inicios de sesión remotos. Limite: no se examinó la RAM."
+        ),
     })
 
     res = client.get(f"/api/cases/{case.id}/timeline/findings", headers=auth)

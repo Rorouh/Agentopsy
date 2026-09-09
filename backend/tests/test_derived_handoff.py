@@ -27,6 +27,7 @@ import json
 from pathlib import Path
 
 import pytest
+from _procedencia import anclar_run
 
 from _custody import context_for, register_evidence, wire_dispatcher_custody
 from agentopsy.artifacts.store import ArtifactIntegrityError, ArtifactStore
@@ -479,7 +480,9 @@ def case(cases):
 def _finished_run_with_output(store: ArtifactStore, case_id: str, payload: bytes) -> str:
     run_id, out_dir = store.start_run(case_id, "tsk_icat", argv=["icat"], **_PROV)
     (out_dir / "stdout.bin").write_bytes(payload)
-    store.finalize_run(case_id, run_id, exit_code=0, stdout="", stderr="")
+    anclar_run(store._cases, case_id, store.finalize_run(
+        case_id, run_id, exit_code=0, stdout="", stderr=""
+    ))
     return run_id
 
 
@@ -495,7 +498,7 @@ def test_resolve_output_file_mismatch_raises_integrity(store, case) -> None:
     run_id = _finished_run_with_output(store, case.id, _HIVE_BYTES)
     # Overwrite the bytes after the manifest recorded their hash.
     (store._run_dir(case.id, run_id) / "out" / "stdout.bin").write_bytes(b"different")
-    with pytest.raises(ArtifactIntegrityError, match="no longer matches"):
+    with pytest.raises(ArtifactIntegrityError, match="ya no casa"):
         store.resolve_output_file(case.id, run_id, "stdout.bin")
 
 
@@ -508,5 +511,5 @@ def test_resolve_output_file_unknown_relpath_raises_keyerror(store, case) -> Non
 @pytest.mark.parametrize("bad", ["/etc/passwd", "../../secret", "a/../../b"])
 def test_resolve_output_file_rejects_traversal(store, case, bad) -> None:
     run_id = _finished_run_with_output(store, case.id, _HIVE_BYTES)
-    with pytest.raises(ValueError, match="relative|escape"):
+    with pytest.raises(ValueError, match="relativa|escapa"):
         store.resolve_output_file(case.id, run_id, bad)

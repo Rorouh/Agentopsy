@@ -903,16 +903,40 @@ class EvidenceManager:
         self._cases.apply_detected_evidence(case_id, record, evidence_id)
         return self.get(case_id, evidence_id)
 
-    def verify(self, case_id: str, evidence_id: str) -> bool:
+    def comprobar_integridad(self, case_id: str, evidence_id: str) -> dict:
+        """Re-hash EVERY file that backs the evidence, with NO side effects.
+
+        This is the pure half of :meth:`verify`: it reads the bytes that are on
+        disk RIGHT NOW and compares them against the registered baseline, segment
+        by segment. It writes no ``verification.json`` and appends no audit
+        entry, which is what makes it callable from a read-only surface (the
+        approval checks a report shows before anyone approves anything).
+
+        Why it exists (reauditoría 2026-09-08, RA02): approval used to compare
+        two STORED hashes with each other, so altering the evidence bytes left
+        both stored values agreeing and the report approvable, even with
+        ``verify`` returning false. Comparing metadata to metadata proves
+        nothing; the only thing that proves the evidence is intact is reading it.
+
+        **There is no cache and no reuse of an older verification.** A matching
+        size and mtime prove nothing, and a verification from last Tuesday says
+        what was true last Tuesday. On a large image this costs a full read, and
+        that is the price of the claim being true at the moment it is made.
+
+        Returns ``{"evidence_id", "verificada", "segmentos": [...]}`` where each
+        segment carries its expected and current hash and size. Raises
+        ``KeyError`` / ``ValueError`` exactly like :meth:`get` when the evidence
+        does not exist or a recorded segment file is missing from the set.
+        """
         handle = self.get(case_id, evidence_id)
         evidence_dir = self._evidence_dir(case_id, evidence_id)
 
-        # Re-hash EVERY file that backs the evidence. For an EWF set that is all of
+        # EVERY file that backs the evidence. For an EWF set that is all of
         # ``original.E01`` … ``original.E0N`` — a change to ANY segment breaks the
         # chain of custody, so verification is the AND over the whole set (a
-        # truncated/altered ``.E05`` must NOT pass just because ``.E01`` is intact).
-        # Single-file / legacy evidence (no segments recorded) re-hashes the one
-        # original file, exactly as before.
+        # truncated/altered ``.E05`` must NOT pass just because ``.E01`` is
+        # intact). Single-file / legacy evidence (no segments recorded) re-hashes
+        # the one original file.
         segments = handle.segments or (
             EvidenceSegment(
                 name=handle.original_path.name,
@@ -928,11 +952,49 @@ class EvidenceManager:
                 cur_sha, cur_size = _sha256_file(seg_path)
                 ok = cur_sha == seg.sha256 and cur_size == seg.size
             else:
-                cur_sha, ok = "", False  # a missing segment fails custody, loudly
+                # A missing segment fails custody, loudly. Size stays -1 rather
+                # than 0: a 0-byte file and an absent file are not the same fact.
+                cur_sha, cur_size, ok = "", -1, False
             verified = verified and ok
             segment_results.append(
-                {"name": seg.name, "verified": ok, "current_sha256": cur_sha}
+                {
+                    "name": seg.name,
+                    "verified": ok,
+                    "current_sha256": cur_sha,
+                    "baseline_sha256": seg.sha256,
+                    "current_size": cur_size,
+                    "baseline_size": seg.size,
+                    "present": cur_size >= 0,
+                }
             )
+        return {
+            "evidence_id": evidence_id,
+            "case_id": case_id,
+            "verificada": verified,
+            "baseline_sha256": handle.sha256,
+            "segmentos": segment_results,
+        }
+
+    def verify(self, case_id: str, evidence_id: str) -> bool:
+        """The AUDITED verification: re-hash the evidence and RECORD the result.
+
+        The reading is :meth:`comprobar_integridad`; what this adds is the act:
+        the result is persisted next to ``baseline.json`` and hash-chained into
+        the case audit log, so the examiner can answer "I verified this on day X
+        with result Y" without reopening the app.
+        """
+        handle = self.get(case_id, evidence_id)
+        resultado = self.comprobar_integridad(case_id, evidence_id)
+        evidence_dir = self._evidence_dir(case_id, evidence_id)
+        verified = bool(resultado["verificada"])
+        segment_results = [
+            {
+                "name": seg["name"],
+                "verified": seg["verified"],
+                "current_sha256": seg["current_sha256"],
+            }
+            for seg in resultado["segmentos"]
+        ]
 
         # Persist the result so it survives navigation / app restarts. The record
         # lives next to baseline.json and the same fact is hash-chained into the

@@ -73,6 +73,50 @@ INDICE: tuple[SeccionIndice, ...] = tuple(
 #: del redactor exige a la respuesta del modelo.
 NUMS: tuple[str, ...] = tuple(s.num for s in INDICE)
 
+#: El apartado donde vive lo que quedó FUERA del análisis («Conclusiones y
+#: limitaciones»). Es una constante nombrada, no un literal repartido, porque la
+#: comprobación de aprobación exige que no esté vacío cuando el caso trae
+#: material recortado, ejecuciones fallidas o hallazgos de limitación
+#: (``agentopsy.reports.aprobacion``).
+NUM_LIMITACIONES: str = "9"
+
+#: El apartado de HALLAZGOS. Junto al anterior forma el cuerpo donde el informe
+#: AFIRMA cosas sobre la evidencia, y por eso sus bloques tienen que decir en qué
+#: revisión de qué hallazgo se apoyan (ver :data:`SECCIONES_FORENSES`).
+NUM_HALLAZGOS: str = "6"
+
+#: Los apartados cuyos bloques AFIRMAN sobre la evidencia y por tanto tienen que
+#: citar su respaldo. El resto del informe es contexto, metodología, traza y
+#: recomendaciones: texto que no sostiene un hecho del caso y al que exigirle una
+#: cita forense solo produciría citas de adorno (reauditoría 2026-09-08, RA07 c).
+#:
+#: La consecuencia se hace cumplir en dos sitios, y los dos son el servidor: la
+#: puerta 5 del redactor rechaza la redacción que no las trae, y la comprobación
+#: de aprobación bloquea el documento que llegue sin ellas por cualquier otra vía.
+SECCIONES_FORENSES: tuple[str, ...] = (NUM_HALLAZGOS, NUM_LIMITACIONES)
+
+#: Tipos de bloque que AFIRMAN. Quedan fuera ``h3`` (un subtítulo no afirma),
+#: ``code`` (el comando literal auditado, que la puerta 4 ya compara carácter a
+#: carácter) y ``kv`` (pares de metadato). Obligar a citar un subtítulo sería
+#: exactamente el ruido que RA07 pide evitar.
+TIPOS_QUE_AFIRMAN: tuple[str, ...] = ("p", "quote", "list", "table", "finding")
+
+
+def exige_respaldo(num: str, bloque: dict) -> bool:
+    """Si ESE bloque de ESE apartado tiene que declarar su respaldo.
+
+    Un bloque del apartado de limitaciones que declara un código de limitación
+    está diciendo qué NO se pudo examinar: no afirma un hecho sobre la evidencia
+    y no necesita una cita, necesita ser una limitación declarada, que es lo que
+    la comprobación de aprobación le exige por otro lado.
+    """
+    if num not in SECCIONES_FORENSES:
+        return False
+    if str(bloque.get("t", "")) not in TIPOS_QUE_AFIRMAN:
+        return False
+    return not str(bloque.get("limitacion", "") or "").strip()
+
+
 def titulos(lang: str | None = None) -> dict[str, str]:
     """``num`` al título canónico DEL IDIOMA del informe.
 
@@ -97,4 +141,15 @@ def contrato_del_indice(lang: str | None = None) -> str:
     )
 
 
-__all__ = ["INDICE", "NUMS", "SeccionIndice", "contrato_del_indice", "titulos"]
+__all__ = [
+    "INDICE",
+    "NUMS",
+    "NUM_HALLAZGOS",
+    "NUM_LIMITACIONES",
+    "SECCIONES_FORENSES",
+    "TIPOS_QUE_AFIRMAN",
+    "exige_respaldo",
+    "SeccionIndice",
+    "contrato_del_indice",
+    "titulos",
+]

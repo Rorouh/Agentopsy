@@ -17,21 +17,27 @@ import pytest
 from agentopsy.audit.log import AuditLog
 from agentopsy.cases import CaseManager
 from agentopsy.findings.store import FindingStore
+from _procedencia import crear_run, procedencia
 from agentopsy.mitre import catalog
 from agentopsy.mitre.coverage import CoverageStore
 
 
-#: Procedencia válida para un hallazgo afirmativo: un run_id UUID4 cualquiera. El
-#: store exige `run_id` en un hallazgo afirmativo (anti-alucinación, RULE 2); estos
-#: tests ejercitan MITRE, no ese gate, así que anclan a un run ficticio pero válido.
-_RUN_ID = "11111111-1111-4111-8111-111111111111"
-
-
+#: Procedencia REAL para los hallazgos afirmativos de estos tests. Desde F03 el
+#: almacén verifica que la ejecución exista, sea de este caso, haya leído esa
+#: evidencia y haya producido ese artefacto con ese hash, así que un UUID
+#: constante ya no sirve: hay que materializar la ejecución (`_procedencia`).
 @pytest.fixture
 def tmp_case(tmp_path) -> tuple[CaseManager, str]:
     cases = CaseManager(root=tmp_path / "cases")
     case = cases.create(name="Caso MITRE", examiner="ramos", os_profile="windows")
     return cases, case.id
+
+
+@pytest.fixture
+def proc(tmp_case) -> dict:
+    """La procedencia de una ejecución real de este caso."""
+    cases, case_id = tmp_case
+    return procedencia(crear_run(cases, case_id))
 
 
 # ── catálogo ─────────────────────────────────────────────────────────────────
@@ -111,20 +117,20 @@ def test_enterprise_as_dict_is_serialisable_with_sub_counts() -> None:
 # ── mitre_hints en los hallazgos ─────────────────────────────────────────────
 
 
-def test_finding_accepts_mitre_hints_from_the_seed(tmp_case) -> None:
+def test_finding_accepts_mitre_hints_from_the_seed(tmp_case, proc) -> None:
     cases, case_id = tmp_case
     store = FindingStore(cases)
     finding = store.append(case_id, {
         "title": "Inyección de código en explorer.exe",
         "summary": "malfind encontró una región RWX con shellcode.",
         "severity": "high",
-        "run_id": _RUN_ID,
+        **proc,
         "mitre_hints": ["T1055"],
     })
     assert finding.mitre_hints == ["T1055"]
 
 
-def test_finding_rejects_a_hallucinated_technique_id(tmp_case) -> None:
+def test_finding_rejects_a_hallucinated_technique_id(tmp_case, proc) -> None:
     """SECURITY INVARIANT 5: el LLM no inventa ids; el servidor lo hace cumplir."""
     cases, case_id = tmp_case
     store = FindingStore(cases)
@@ -133,21 +139,21 @@ def test_finding_rejects_a_hallucinated_technique_id(tmp_case) -> None:
             "title": "Hallazgo con técnica inventada",
             "summary": "El modelo se sacó un id de la manga.",
             "severity": "high",
-            "run_id": _RUN_ID,
+            **proc,
             "mitre_hints": ["T9999"],
         })
     # Y no se ha persistido nada.
     assert store.list(case_id) == []
 
 
-def test_finding_deduplicates_hints(tmp_case) -> None:
+def test_finding_deduplicates_hints(tmp_case, proc) -> None:
     cases, case_id = tmp_case
     store = FindingStore(cases)
     f = store.append(case_id, {
         "title": "Hallazgo",
         "summary": "Resumen.",
         "severity": "low",
-        "run_id": _RUN_ID,
+        **proc,
         "mitre_hints": ["T1055", "T1055"],
     })
     assert f.mitre_hints == ["T1055"]
@@ -180,7 +186,7 @@ def test_findings_written_before_the_field_existed_still_load(tmp_case) -> None:
 # ── cobertura: propuesta del agente vs dictamen del operador ─────────────────
 
 
-def test_agent_proposals_are_derived_from_real_findings(tmp_case) -> None:
+def test_agent_proposals_are_derived_from_real_findings(tmp_case, proc) -> None:
     cases, case_id = tmp_case
     findings = FindingStore(cases)
     coverage = CoverageStore(cases, findings)
@@ -189,7 +195,7 @@ def test_agent_proposals_are_derived_from_real_findings(tmp_case) -> None:
         "title": "Inyección",
         "summary": "malfind: región RWX.",
         "severity": "high",
-        "run_id": _RUN_ID,
+        **proc,
         "mitre_hints": ["T1055"],
     })
 
@@ -202,7 +208,7 @@ def test_agent_proposals_are_derived_from_real_findings(tmp_case) -> None:
     assert entries[0]["status"] is None
 
 
-def test_annotate_anchors_techniques_to_an_existing_finding(tmp_case) -> None:
+def test_annotate_anchors_techniques_to_an_existing_finding(tmp_case, proc) -> None:
     """La correlación bajo demanda: annotate ancla técnicas a un hallazgo ya
     registrado y aparecen como propuestas (mismo eje 1 que los hints)."""
     cases, case_id = tmp_case
@@ -213,7 +219,7 @@ def test_annotate_anchors_techniques_to_an_existing_finding(tmp_case) -> None:
         "title": "sshd escuchando",
         "summary": "netscan: 22/tcp LISTENING.",
         "severity": "medium",
-        "run_id": _RUN_ID,
+        **proc,
     })
     coverage.annotate(case_id, f.id, ["T1021", "T1543"])
     proposals = coverage.proposals(case_id)
@@ -221,13 +227,13 @@ def test_annotate_anchors_techniques_to_an_existing_finding(tmp_case) -> None:
     assert proposals["T1543"] == [f.id]
 
 
-def test_annotate_merges_with_record_time_hints_without_duplicates(tmp_case) -> None:
+def test_annotate_merges_with_record_time_hints_without_duplicates(tmp_case, proc) -> None:
     cases, case_id = tmp_case
     findings = FindingStore(cases)
     coverage = CoverageStore(cases, findings)
     f = findings.append(case_id, {
         "title": "malfind", "summary": "RWX.", "severity": "high",
-        "run_id": _RUN_ID,
+        **proc,
         "mitre_hints": ["T1055"],
     })
     coverage.annotate(case_id, f.id, ["T1055", "T1547.001"])  # T1055 ya venía en el hint
@@ -238,11 +244,11 @@ def test_annotate_merges_with_record_time_hints_without_duplicates(tmp_case) -> 
     assert "T1547.001" not in proposals
 
 
-def test_annotate_is_idempotent_last_call_replaces(tmp_case) -> None:
+def test_annotate_is_idempotent_last_call_replaces(tmp_case, proc) -> None:
     cases, case_id = tmp_case
     findings = FindingStore(cases)
     coverage = CoverageStore(cases, findings)
-    f = findings.append(case_id, {"title": "x", "summary": "y", "severity": "low", "run_id": _RUN_ID})
+    f = findings.append(case_id, {"title": "x", "summary": "y", "severity": "low", **proc})
     coverage.annotate(case_id, f.id, ["T1055"])
     coverage.annotate(case_id, f.id, ["T1543"])  # reemplaza
     proposals = coverage.proposals(case_id)
@@ -253,23 +259,23 @@ def test_annotate_is_idempotent_last_call_replaces(tmp_case) -> None:
     assert coverage.proposals(case_id) == {}
 
 
-def test_annotate_rejects_unknown_finding_and_hallucinated_technique(tmp_case) -> None:
+def test_annotate_rejects_unknown_finding_and_hallucinated_technique(tmp_case, proc) -> None:
     cases, case_id = tmp_case
     findings = FindingStore(cases)
     coverage = CoverageStore(cases, findings)
-    f = findings.append(case_id, {"title": "x", "summary": "y", "severity": "low", "run_id": _RUN_ID})
+    f = findings.append(case_id, {"title": "x", "summary": "y", "severity": "low", **proc})
     with pytest.raises(ValueError, match="not found in case"):
         coverage.annotate(case_id, "00000000-0000-4000-8000-000000000000", ["T1055"])
     with pytest.raises(ValueError, match="not in the ATT&CK seed"):
         coverage.annotate(case_id, f.id, ["T9999"])
 
 
-def test_annotate_is_audited(tmp_case) -> None:
+def test_annotate_is_audited(tmp_case, proc) -> None:
     """FORENSIC INVARIANT 4: la propuesta anclada entra en el log hash-encadenado."""
     cases, case_id = tmp_case
     findings = FindingStore(cases)
     coverage = CoverageStore(cases, findings)
-    f = findings.append(case_id, {"title": "x", "summary": "y", "severity": "low", "run_id": _RUN_ID})
+    f = findings.append(case_id, {"title": "x", "summary": "y", "severity": "low", **proc})
     coverage.annotate(case_id, f.id, ["T1055"], note="malfind RWX")
     log = AuditLog(cases.case_dir(case_id) / "audit.jsonl")
     assert log.verify()
@@ -278,7 +284,7 @@ def test_annotate_is_audited(tmp_case) -> None:
     assert "mitre_proposed" in actions
 
 
-def test_a_proposal_never_counts_as_a_verdict(tmp_case) -> None:
+def test_a_proposal_never_counts_as_a_verdict(tmp_case, proc) -> None:
     """El eje del agente y el del operador no se funden nunca."""
     cases, case_id = tmp_case
     findings = FindingStore(cases)
@@ -287,7 +293,7 @@ def test_a_proposal_never_counts_as_a_verdict(tmp_case) -> None:
         "title": "Pista",
         "summary": "Sugiere T1055.",
         "severity": "high",
-        "run_id": _RUN_ID,
+        **proc,
         "mitre_hints": ["T1055"],
     })
     assert coverage.adjudications(case_id) == {}
@@ -373,7 +379,7 @@ def test_cannot_anchor_a_verdict_to_a_finding_from_another_case(tmp_case) -> Non
         )
 
 
-def test_coverage_merges_both_axes_without_confusing_them(tmp_case) -> None:
+def test_coverage_merges_both_axes_without_confusing_them(tmp_case, proc) -> None:
     cases, case_id = tmp_case
     findings = FindingStore(cases)
     coverage = CoverageStore(cases, findings)
@@ -382,7 +388,7 @@ def test_coverage_merges_both_axes_without_confusing_them(tmp_case) -> None:
         "title": "Inyección",
         "summary": "malfind.",
         "severity": "high",
-        "run_id": _RUN_ID,
+        **proc,
         "mitre_hints": ["T1055"],
     })
     # Una técnica dictaminada SIN propuesta del agente (el perito la vio a mano).

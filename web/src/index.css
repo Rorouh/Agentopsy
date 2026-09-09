@@ -2148,6 +2148,87 @@ select option:disabled { color: var(--ink-5); }
   color: var(--ink);
 }
 
+/* ── Fuentes de un hallazgo · abrir la cita ──────────────────────────────── */
+/* Una cita que no verifica NO se pinta como una que sí: el borde y la insignia
+   la separan de un vistazo, y su extracto no se muestra en absoluto. */
+.fuente-lista { display: flex; flex-direction: column; gap: 18px; }
+.fuente-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+}
+.fuente-card.is-broken { border-color: var(--danger); }
+.fuente-head { display: flex; flex-wrap: wrap; gap: 8px; }
+.fuente-badge {
+  font-family: var(--font-mono);
+  font-size: var(--fs-1);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 9px;
+  border: 1px solid var(--line);
+  color: var(--ink-3);
+}
+.fuente-badge--verificada { border-color: var(--ok); color: var(--ok); }
+.fuente-badge--alterada,
+.fuente-badge--ausente { border-color: var(--danger); color: var(--danger); }
+.fuente-badge--no_verificable,
+.fuente-badge--superada,
+.fuente-badge--localizador_invalido,
+.fuente-badge--aviso { border-color: var(--warning); color: var(--warning); }
+.fuente-extracto {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2);
+  line-height: 1.7;
+  margin: 0;
+  padding: 12px 14px;
+  background: var(--surface-2, transparent);
+  border-left: 2px solid var(--accent-soft);
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+.fuente-error { display: flex; flex-direction: column; gap: 8px; }
+
+/* ── El respaldo de una conclusión del informe ───────────────────────────── */
+/* El pie de un bloque que afirma sobre la evidencia: en qué revisión de qué
+   hallazgo se apoya, y el botón que abre su fuente sin salir del informe. Va
+   discreto a propósito: acompaña a la conclusión, no compite con ella. */
+.bloque-refs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin: -6px 0 14px;
+}
+.bloque-refs-label {
+  font-size: var(--fs-1);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.bloque-refs .link-action { font-family: var(--font-mono); font-size: var(--fs-2); }
+.cita-panel {
+  border: 1px solid var(--accent-soft);
+  padding: 18px 20px;
+  gap: 14px;
+}
+
+/* ── Aprobación de un informe ────────────────────────────────────────────── */
+.aprobacion { border: 1px solid var(--line); padding: 18px 20px; gap: 16px; }
+.aprobacion-bloqueos,
+.aprobacion-fuentes { display: flex; flex-direction: column; gap: 8px; }
+.aprobacion-bloqueos { color: var(--danger); }
+.report-list-ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+.report-list-ul li { font-size: var(--fs-3); line-height: 1.7; }
+.report-callout {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border-left: 2px solid var(--accent-soft);
+}
+
 /* ── Servicio · Configuración ────────────────────────────────────────────── */
 .settings { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .settings-bar { padding: 22px 44px 0; flex-shrink: 0; }

@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from _procedencia import crear_run, procedencia
 from agentopsy.agent.agent import ForensicAgent
 from agentopsy.agent.package import (
     AgentPackage,
@@ -220,12 +221,18 @@ class TestAudit:
         )
 
         audit = AuditLog(cases.case_dir(anchored["case"].id) / "audit.jsonl")
+        # Procedencia REAL: desde F03 el store verifica la ejecución citada
+        # contra el registro, así que un UUID cualquiera ya no la sostiene.
+        run = crear_run(
+            cases,
+            anchored["case"].id,
+            evidence_id=anchored["handle"].evidence_id,
+        )
         finding_call = ToolCall(
             tool_id="record_finding",
             params={
                 "title": "Hallazgo", "summary": "algo relevante", "severity": "low",
-                # Hallazgo afirmativo: el store exige procedencia (run_id) — RULE 2.
-                "run_id": "11111111-1111-4111-8111-111111111111",
+                **procedencia(run),
             },
             call_id="c1",
         )
@@ -252,7 +259,11 @@ class TestAudit:
         kinds = [e.get("event") for e in events]
         assert "agent_run_start" in kinds
         assert "agent_cloud_egress" in kinds
-        assert "agent_finding" in kinds
+        # La procedencia del hallazgo la ancla el ALMACÉN (`finding_recorded`,
+        # keyed on "action"), no el bucle del agente: son dos entradas para un
+        # mismo acto y el audit contaría dos escrituras donde hubo una (F03).
+        assert "agent_finding" not in kinds
+        assert "finding_recorded" in [e.get("action") for e in events]
         # The chain is intact.
         assert audit.verify() is True
 
@@ -262,8 +273,14 @@ class TestAudit:
         # No raw evidence bytes in the audit — only hashes/metadata.
         assert SECRET_EMAIL not in audit.path.read_text(encoding="utf-8")
 
-        finding_ev = next(e for e in events if e.get("event") == "agent_finding")
+        finding_ev = next(
+            e for e in events if e.get("action") == "finding_recorded"
+        )
         assert finding_ev["finding_id"]
+        # Y la entrada lleva la procedencia completa: contenido, fuentes y origen.
+        assert len(finding_ev["content_sha256"]) == 64
+        assert finding_ev["origin"] == "agent"
+        assert finding_ev["references"][0]["run_id"] == run["run_id"]
 
     def test_local_run_audits_start_without_egress(self, anchored):
         cases = anchored["cases"]

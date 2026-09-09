@@ -618,9 +618,472 @@ CATALOGO["artifacts.isBinary"] = {
     "en": "{file} of run {run_id} is BINARY: it is not served as text. Use `strings_head` or `xxd_head` over it, or the tool that matches its format.",
     "es": "{file} del run {run_id} es BINARIO: no se sirve como texto. Usa `strings_head` o `xxd_head` sobre él, o la herramienta que corresponda a su formato.",
 }
+# --- frontera de lectura verificada de artefactos (agentopsy.artifacts.lectura) --
+# Las ocho comprobaciones que cruza un byte derivado de la evidencia antes de
+# llegar a una superficie. Van al catálogo porque las lee tanto el perito en la
+# interfaz como el modelo en el cuerpo de error de `leer_artefacto`.
+CATALOGO["artifacts.unknownRun"] = {
+    "en": "run {run_id} does not exist in case {case_id}",
+    "es": "la ejecución {run_id} no existe en el caso {case_id}",
+}
+CATALOGO["artifacts.unreadableManifest"] = {
+    "en": "the manifest of run {run_id} cannot be read: {error}",
+    "es": "el manifiesto de la ejecución {run_id} no se puede leer: {error}",
+}
+CATALOGO["artifacts.foreignRun"] = {
+    "en": "run {run_id} declares it belongs to case {declared}, not to case {case_id} it is being requested from",
+    "es": "la ejecución {run_id} declara pertenecer al caso {declared}, no al caso {case_id} desde el que se pide",
+}
+CATALOGO["artifacts.identityMismatch"] = {
+    "en": "the manifest in directory {run_id} declares it is run {declared}: incoherent identity",
+    "es": "el manifiesto del directorio {run_id} declara ser la ejecución {declared}: identidad incoherente",
+}
+CATALOGO["artifacts.invalidRunId"] = {
+    "en": "invalid run_id (a UUID4 is expected): {run_id}",
+    "es": "run_id inválido (se espera un UUID4): {run_id}",
+}
+CATALOGO["artifacts.emptyReference"] = {
+    "en": "the artifact reference is empty: name `stdout`, `stderr` or the relpath of an output file of the run",
+    "es": "la referencia del artefacto está vacía: nombra `stdout`, `stderr` o el relpath de un fichero de salida del run",
+}
+CATALOGO["artifacts.referenceEscapes"] = {
+    "en": "the reference must be relative and must not escape out/: {reference}",
+    "es": "la referencia debe ser relativa y no puede escapar de out/: {reference}",
+}
+CATALOGO["artifacts.notInManifest"] = {
+    "en": "run {run_id} produced no artifact {reference} (declared outputs: {declared})",
+    "es": "la ejecución {run_id} no produjo el artefacto {reference} (salidas declaradas: {declared})",
+}
+CATALOGO["artifacts.pathEscapes"] = {
+    "en": "the path of artifact {reference} escapes the directory of run {run_id}",
+    "es": "la ruta del artefacto {reference} escapa del directorio de la ejecución {run_id}",
+}
+CATALOGO["artifacts.missingOnDisk"] = {
+    "en": "artifact {reference} of run {run_id} is not on disk (or is not a regular file)",
+    "es": "el artefacto {reference} de la ejecución {run_id} no está en el disco (o no es un fichero regular)",
+}
+CATALOGO["artifacts.stillRunning"] = {
+    "en": "run {run_id} is still in flight: its output is partial and is not a verified final artifact. Wait for it to close, or ask for it through the explicit progress path, which marks it as unsealed.",
+    "es": "la ejecución {run_id} sigue en curso: su salida es parcial y no es un artefacto final verificado. Espera a que cierre, o pídela por la vía explícita de progreso, que la marca como no sellada.",
+}
+CATALOGO["artifacts.noRecordedHash"] = {
+    "en": "run {run_id} closed without recording the hash of {reference}: the artifact is not verifiable and cannot be served as final",
+    "es": "la ejecución {run_id} cerró sin registrar el hash de {reference}: el artefacto no es verificable y no puede servirse como final",
+}
+CATALOGO["artifacts.integrityBroken"] = {
+    "en": "artifact {reference} of run {run_id} no longer matches the SHA-256 of its manifest (expected {expected}, computed {got}): the custody of the derivative is broken",
+    "es": "el artefacto {reference} de la ejecución {run_id} ya no casa con el SHA-256 de su manifiesto (esperado {expected}, calculado {got}): la custodia del derivado está rota",
+}
+CATALOGO["artifacts.anchorBroken"] = {
+    "en": "the manifest of run {run_id} does not match the anchor recorded in the audit chain (expected {expected}, computed {got}): the manifest has been rewritten after the run closed",
+    "es": "el manifiesto de la ejecución {run_id} no casa con el ancla registrada en la cadena de auditoría (esperado {expected}, calculado {got}): el manifiesto ha sido reescrito después de cerrar la ejecución",
+}
+CATALOGO["artifacts.anchorMissing"] = {
+    "en": "run {run_id} closed with its manifest anchored, but no anchor for it is in the audit chain: the entry that recorded it is gone, so the manifest cannot be checked against anything",
+    "es": "la ejecución {run_id} se cerró con su manifiesto anclado, pero en la cadena de auditoría no queda ancla suya: la entrada que la registraba ha desaparecido, así que el manifiesto no se puede comprobar contra nada",
+}
+CATALOGO["artifacts.chainBroken"] = {
+    "en": "the audit chain of case {case_id} does not verify (entry {entry}: {detail}), so no entry in it can be used as a trusted anchor",
+    "es": "la cadena de auditoría del caso {case_id} no verifica (entrada {entry}: {detail}), así que ninguna de sus entradas puede usarse como ancla de confianza",
+}
+CATALOGO["artifacts.outOfScope"] = {
+    "en": "surface {surface} cannot read artifacts of class {kind} (authorised scope: {scope})",
+    "es": "la superficie {surface} no puede leer artefactos de clase {kind} (ámbito autorizado: {scope})",
+}
+CATALOGO["artifacts.partialsForbidden"] = {
+    "en": "surface {surface} cannot read partial outputs: the output of a run in flight is not a verified final artifact",
+    "es": "la superficie {surface} no puede leer salidas parciales: la salida de un trabajo en curso no es un artefacto final verificado",
+}
+CATALOGO["artifacts.unknownDirectory"] = {
+    "en": "run {run_id} produced no output directory {reference}",
+    "es": "la ejecución {run_id} no produjo el directorio de salida {reference}",
+}
+CATALOGO["artifacts.directoryMissingOnDisk"] = {
+    "en": "output directory {reference} of run {run_id} is not on disk",
+    "es": "el directorio de salida {reference} de la ejecución {run_id} no está en el disco",
+}
+CATALOGO["artifacts.directoryIntruders"] = {
+    "en": "output directory {reference} of run {run_id} holds files its manifest does not declare ({intruders}): the member set is not the one recorded when the run closed",
+    "es": "el directorio de salida {reference} de la ejecución {run_id} contiene ficheros que su manifiesto no declara ({intruders}): el conjunto de miembros no es el que se registró al cerrar la ejecución",
+}
+CATALOGO["artifacts.directoryStillRunning"] = {
+    "en": "run {run_id} is still in flight: its output directory is not a verified final artifact",
+    "es": "la ejecución {run_id} sigue en curso: su directorio de salida no es un artefacto final verificado",
+}
+CATALOGO["artifacts.closedRead"] = {
+    "en": "the verified read is already closed: use it inside its `with` block",
+    "es": "la lectura verificada ya está cerrada: úsala dentro de su bloque `with`",
+}
+CATALOGO["artifacts.notAnOutputFile"] = {
+    "en": "{reference} is not an output file declared in the manifest of run {run_id}",
+    "es": "{reference} no es un fichero de salida declarado en el manifiesto de la ejecución {run_id}",
+}
+
 CATALOGO["findings.needProvenance"] = {
     "en": "an affirmative finding requires provenance: pass `run_id` with the ArtifactRun that supports it, or mark `finding_kind=\"descarte\"` if you are documenting a ruled-out line (RULE 2, with no provenance an assertion about the evidence is not recorded).",
     "es": "finding afirmativo requiere procedencia: pasa `run_id` con el ArtifactRun que lo sostiene, o marca `finding_kind=\"descarte\"` si documentas una vía descartada (RULE 2, sin procedencia no se registra una afirmación sobre la evidencia).",
+}
+
+# --- procedencia de un hallazgo (agentopsy.findings.procedencia) ---------------
+# Los motivos por los que una cita NO se sostiene. Van al catálogo porque los lee
+# el modelo (cuerpo de error de `record_finding`) y el perito (detalle del 422).
+CATALOGO["provenance.referenceNotObject"] = {
+    "en": "each source of a finding must be an object with its run, artifact, hash and locator",
+    "es": "cada fuente de un hallazgo debe ser un objeto con su ejecución, artefacto, hash y localizador",
+}
+CATALOGO["provenance.runRequired"] = {
+    "en": "a source needs `run_id`: the ArtifactRun that produced the material it cites",
+    "es": "una fuente necesita `run_id`: el ArtifactRun que produjo el material que cita",
+}
+CATALOGO["provenance.runUnusable"] = {
+    "en": "run {run_id} cannot support a finding: {detail}",
+    "es": "la ejecución {run_id} no puede sostener un hallazgo: {detail}",
+}
+CATALOGO["provenance.runIntegrity"] = {
+    "en": "run {run_id} does not pass the integrity check and cannot support a finding: {detail}",
+    "es": "la ejecución {run_id} no supera la comprobación de integridad y no puede sostener un hallazgo: {detail}",
+}
+CATALOGO["provenance.evidenceMismatch"] = {
+    "en": "the source declares evidence {declared}, but run {run_id} read evidence {actual}",
+    "es": "la fuente declara la evidencia {declared}, pero la ejecución {run_id} leyó la evidencia {actual}",
+}
+CATALOGO["provenance.evidenceMissing"] = {
+    "en": "evidence {evidence_id} is not registered in case {case_id}: {detail}",
+    "es": "la evidencia {evidence_id} no está registrada en el caso {case_id}: {detail}",
+}
+CATALOGO["provenance.runWithoutEvidence"] = {
+    "en": "run {run_id} recorded no evidence, so the evidence the source declares cannot be checked against anything: omit it or cite a run with provenance",
+    "es": "la ejecución {run_id} no registró evidencia, así que la que declara la fuente no se puede comprobar contra nada: omítela o cita una ejecución con procedencia",
+}
+CATALOGO["provenance.toolMismatch"] = {
+    "en": "the source declares tool {declared}, but run {run_id} executed {actual}",
+    "es": "la fuente declara la herramienta {declared}, pero la ejecución {run_id} ejecutó {actual}",
+}
+CATALOGO["provenance.runUnsealed"] = {
+    "en": "run {run_id} is still in flight: its output can still change, so it cannot be cited by any finding. Wait for it to close.",
+    "es": "la ejecución {run_id} sigue en curso: su salida todavía puede cambiar, así que ningún hallazgo puede citarla. Espera a que cierre.",
+}
+CATALOGO["provenance.partialAsAffirmation"] = {
+    "en": "run {run_id} did not finish successfully (status {status}, exit {exit_code}), so it documents a limitation of the analysis, not a positive assertion nor a ruling out: record the finding as `finding_kind=\"limitacion\"` saying what could not be examined",
+    "es": "la ejecución {run_id} no terminó correctamente (estado {status}, exit {exit_code}), así que documenta una limitación del análisis, no una afirmación positiva ni un descarte: registra el hallazgo como `finding_kind=\"limitacion\"` diciendo qué no se pudo examinar",
+}
+CATALOGO["provenance.fileNeedsRelpath"] = {
+    "en": "a source with `artefacto=\"fichero\"` needs the `relpath` of the output file it cites",
+    "es": "una fuente con `artefacto=\"fichero\"` necesita el `relpath` del fichero de salida que cita",
+}
+CATALOGO["provenance.unknownArtifactKind"] = {
+    "en": "unknown artifact kind {got}: it must be `stdout`, `stderr` or `fichero`",
+    "es": "clase de artefacto desconocida {got}: debe ser `stdout`, `stderr` o `fichero`",
+}
+CATALOGO["provenance.shaNotInRun"] = {
+    "en": "no artifact of run {run_id} has the SHA-256 {sha}: the hash does not come from the record",
+    "es": "ningún artefacto de la ejecución {run_id} tiene el SHA-256 {sha}: el hash no sale del registro",
+}
+CATALOGO["provenance.shaAmbiguous"] = {
+    "en": "several artifacts of run {run_id} share the SHA-256 {sha} ({candidates}): name the one you cite with `artefacto` / `relpath`",
+    "es": "varios artefactos de la ejecución {run_id} comparten el SHA-256 {sha} ({candidates}): nombra el que citas con `artefacto` / `relpath`",
+}
+CATALOGO["provenance.badSha"] = {
+    "en": "the SHA-256 of a source must be 64 hex characters",
+    "es": "el SHA-256 de una fuente debe tener 64 caracteres hexadecimales",
+}
+CATALOGO["provenance.shaMismatch"] = {
+    "en": "the source declares SHA-256 {declared} for {reference} of run {run_id}, but its bytes hash to {actual}",
+    "es": "la fuente declara el SHA-256 {declared} para {reference} de la ejecución {run_id}, pero sus bytes dan {actual}",
+}
+CATALOGO["provenance.artifactUnusable"] = {
+    "en": "artifact {reference} of run {run_id} cannot be cited: {detail}",
+    "es": "el artefacto {reference} de la ejecución {run_id} no se puede citar: {detail}",
+}
+CATALOGO["provenance.artifactIntegrity"] = {
+    "en": "artifact {reference} of run {run_id} does not pass the integrity check: {detail}",
+    "es": "el artefacto {reference} de la ejecución {run_id} no supera la comprobación de integridad: {detail}",
+}
+CATALOGO["provenance.locatorNotObject"] = {
+    "en": "`localizador` must be an object with `tipo` and its bounds",
+    "es": "`localizador` debe ser un objeto con `tipo` y sus límites",
+}
+CATALOGO["provenance.locatorType"] = {
+    "en": "unknown locator type {got}: it must be `lineas`, `bytes` or `registro`",
+    "es": "tipo de localizador desconocido {got}: debe ser `lineas`, `bytes` o `registro`",
+}
+CATALOGO["provenance.locatorRecordNeedsValue"] = {
+    "en": "a `registro` locator needs `valor`: the record, key or event id it names",
+    "es": "un localizador `registro` necesita `valor`: el registro, la clave o el id de evento que nombra",
+}
+CATALOGO["provenance.locatorBound"] = {
+    "en": "the `{field}` bound of the locator must be a valid integer; got {got}",
+    "es": "el límite `{field}` del localizador debe ser un entero válido; llegó {got}",
+}
+CATALOGO["provenance.locatorInverted"] = {
+    "en": "the locator is inverted: `desde` {desde} is past `hasta` {hasta}",
+    "es": "el localizador está invertido: `desde` {desde} va después de `hasta` {hasta}",
+}
+CATALOGO["provenance.locatorOutOfRange"] = {
+    "en": "the locator {desde}-{hasta} falls outside {reference}, which holds {total}",
+    "es": "el localizador {desde}-{hasta} cae fuera de {reference}, que tiene {total}",
+}
+CATALOGO["provenance.locatorOnBinary"] = {
+    "en": "{reference} of run {run_id} is BINARY: a line or record locator cannot be verified over it. Cite a byte range, or a derived artifact that is text.",
+    "es": "{reference} de la ejecución {run_id} es BINARIO: sobre él no se puede verificar un localizador de líneas ni de registro. Cita un rango de bytes, o un artefacto derivado que sea texto.",
+}
+CATALOGO["provenance.recordNotFound"] = {
+    "en": "the record {value} does not appear in {reference}",
+    "es": "el registro {value} no aparece en {reference}",
+}
+CATALOGO["provenance.extractNotText"] = {
+    "en": "`extracto` must be the literal text of the source",
+    "es": "`extracto` debe ser el texto literal de la fuente",
+}
+CATALOGO["provenance.extractNeedsLocator"] = {
+    "en": "an `extracto` needs its `localizador`: an excerpt with no position cannot be checked against the source",
+    "es": "un `extracto` necesita su `localizador`: un extracto sin posición no se puede comprobar contra la fuente",
+}
+CATALOGO["provenance.extractMismatch"] = {
+    "en": "the `extracto` is not what the locator points at in {reference} of run {run_id}",
+    "es": "el `extracto` no es lo que el localizador señala en {reference} de la ejecución {run_id}",
+}
+CATALOGO["provenance.tooManyReferences"] = {
+    "en": "a finding carries at most {max} sources; {count} arrived",
+    "es": "un hallazgo lleva como mucho {max} fuentes; llegaron {count}",
+}
+CATALOGO["provenance.referencesNotList"] = {
+    "en": "`references` must be a list of sources",
+    "es": "`references` debe ser una lista de fuentes",
+}
+CATALOGO["provenance.discardNeedsScope"] = {
+    "en": "a ruling-out finding must declare `alcance_examinado`: what was examined, with which tool and with what limit. \"It could not be analysed\" and \"it was not found\" are not the same statement.",
+    "es": "un hallazgo de descarte debe declarar `alcance_examinado`: qué se examinó, con qué herramienta y con qué límite. \"No se pudo analizar\" y \"no se encontró\" no son la misma frase.",
+}
+CATALOGO["provenance.limitationNeedsScope"] = {
+    "en": "a limitation finding must declare `alcance_examinado`: what could not be examined and why the analysis stops there",
+    "es": "un hallazgo de limitación debe declarar `alcance_examinado`: qué no se pudo examinar y por qué el análisis se detiene ahí",
+}
+CATALOGO["provenance.affirmationNeedsSource"] = {
+    "en": "an affirmative finding requires a verified source: pass `run_id` (and, if you cite a specific spot, `artefacto` + `localizador`) of the ArtifactRun that supports it, or record it as `descarte` / `limitacion` (RULE 2: with no provenance an assertion about the evidence is not recorded).",
+    "es": "un hallazgo afirmativo exige una fuente verificada: pasa `run_id` (y, si citas un punto concreto, `artefacto` + `localizador`) del ArtifactRun que lo sostiene, o regístralo como `descarte` / `limitacion` (RULE 2: sin procedencia no se registra una afirmación sobre la evidencia).",
+}
+CATALOGO["provenance.auditRequired"] = {
+    "en": "the finding was not recorded: its provenance entry could not be written to the audit chain ({detail}). A write with no custody record is not a completed write.",
+    "es": "el hallazgo no se registró: su entrada de procedencia no se pudo escribir en la cadena de auditoría ({detail}). Una escritura sin registro de custodia no es una escritura completada.",
+}
+CATALOGO["provenance.unknownFinding"] = {
+    "en": "finding {finding_id} does not exist in case {case_id}",
+    "es": "el hallazgo {finding_id} no existe en el caso {case_id}",
+}
+CATALOGO["provenance.revisionNeedsReason"] = {
+    "en": "a revision of a finding must say why: pass `motivo_revision`",
+    "es": "una revisión de un hallazgo debe decir por qué: pasa `motivo_revision`",
+}
+
+# --- aprobacion y exportacion del informe (agentopsy.reports.aprobacion) ------
+# Los BLOQUEOS que impiden aprobar un informe como final, y las etiquetas de la
+# aprobación. Es texto que lee el perito en el momento de decidir, así que dice
+# qué pasa y qué hacer, no solo que algo falló.
+CATALOGO["approval.blocked"] = {
+    "en": "document {document_id} cannot be approved as final: {reasons}",
+    "es": "el documento {document_id} no se puede aprobar como final: {reasons}",
+}
+CATALOGO["approval.contentTampered"] = {
+    "en": "the content of the document does not match its registered SHA-256 (registered {registered}, recomputed {recomputed}): it has been altered since it was created",
+    "es": "el contenido del documento no casa con su SHA-256 registrado (registrado {registered}, recalculado {recomputed}): ha sido alterado desde que se creó",
+}
+CATALOGO["approval.identityMismatch"] = {
+    "en": "the document declares it belongs to case {declared}, not to case {case_id}",
+    "es": "el documento declara pertenecer al caso {declared}, no al caso {case_id}",
+}
+CATALOGO["approval.anchorMissing"] = {
+    "en": "document {document_id} has no anchor in the audit chain: there is no custody record of its creation, so there is nothing to check its content against",
+    "es": "el documento {document_id} no tiene ancla en la cadena de auditoría: no consta el registro de custodia de su creación, así que no hay contra qué comprobar su contenido",
+}
+CATALOGO["approval.anchorMismatch"] = {
+    "en": "the content does not match the hash anchored in the audit chain (anchored {anchored}, recomputed {recomputed}): altering the document and its local hash together does not get past the chain",
+    "es": "el contenido no casa con el hash anclado en la cadena de auditoría (anclado {anchored}, recalculado {recomputed}): alterar el documento y su hash local a la vez no elude la cadena",
+}
+CATALOGO["approval.chainBroken"] = {
+    "en": "the case's audit chain does not verify: the record of what was done is broken, and a report cannot be approved over a record that is not intact",
+    "es": "la cadena de auditoría del caso no verifica: el registro de lo que se hizo está roto, y no se aprueba un informe sobre un registro que no está íntegro",
+}
+CATALOGO["approval.noSourceManifest"] = {
+    "en": "document {document_id} does not declare the sources it rests on, so there is nothing to re-check. Documents written before 2026-09-08 carry no manifest: they stay readable and exportable as drafts, but approving them as final would attest to a verification that never happened. Finalise the investigation again to produce a revision that does declare them.",
+    "es": "el documento {document_id} no declara las fuentes en las que se apoya, así que no hay nada que volver a comprobar. Los documentos redactados antes del 2026-09-08 no llevan manifiesto: siguen siendo legibles y exportables como borrador, pero aprobarlos como finales daría por hecha una verificación que nunca ocurrió. Vuelve a finalizar la investigación para producir una revisión que sí las declare.",
+}
+CATALOGO["approval.evidenceMissing"] = {
+    "en": "evidence {evidence_id}, which this report used, is no longer registered in the case: {detalle}",
+    "es": "la evidencia {evidence_id}, que este informe usó, ya no está registrada en el caso: {detalle}",
+}
+CATALOGO["approval.evidenceChanged"] = {
+    "en": "evidence {evidence_id} no longer matches the baseline hash the report rests on (expected {expected}, now {actual})",
+    "es": "la evidencia {evidence_id} ya no casa con el hash de referencia sobre el que se apoya el informe (esperado {expected}, ahora {actual})",
+}
+CATALOGO["approval.sourceMissing"] = {
+    "en": "source {reference} of run {run_id}, cited by this report, cannot be read: {detalle}",
+    "es": "la fuente {reference} de la ejecución {run_id}, citada por este informe, no se puede leer: {detalle}",
+}
+CATALOGO["approval.sourceChanged"] = {
+    "en": "source {reference} of run {run_id} no longer matches the hash the report cites (expected {expected}, now {actual})",
+    "es": "la fuente {reference} de la ejecución {run_id} ya no casa con el hash que el informe cita (esperado {expected}, ahora {actual})",
+}
+CATALOGO["approval.sourceIntegrity"] = {
+    "en": "source {reference} of run {run_id} does not pass the integrity check: {detalle}",
+    "es": "la fuente {reference} de la ejecución {run_id} no supera la comprobación de integridad: {detalle}",
+}
+CATALOGO["approval.findingMissing"] = {
+    "en": "finding {finding_id}, which this report rests on, is no longer in the case: {detalle}",
+    "es": "el hallazgo {finding_id}, en el que se apoya este informe, ya no está en el caso: {detalle}",
+}
+CATALOGO["approval.findingChanged"] = {
+    "en": "revision {revision} of finding {finding_id} does not match the content the report rests on: the finding was revised after the draft was generated, so someone has to look at whether the report still says the right thing",
+    "es": "la revisión {revision} del hallazgo {finding_id} no casa con el contenido sobre el que se apoya el informe: el hallazgo se revisó después de generar el borrador, así que alguien tiene que mirar si el informe sigue diciendo lo correcto",
+}
+CATALOGO["approval.findingSuperseded"] = {
+    "en": "the report cites revision {revision} of finding {finding_id}, and the case is already on revision {latest}: the report cites a reading its own author has corrected. Read whether the report still says the right thing, and finalise the investigation again if it does not.",
+    "es": "el informe cita la revisión {revision} del hallazgo {finding_id}, y el caso va ya por la {latest}: el informe cita una lectura que su propio autor ha corregido. Comprueba si el informe sigue diciendo lo correcto y, si no, vuelve a finalizar la investigación.",
+}
+CATALOGO["approval.missingLimitations"] = {
+    "en": "the report does not declare its limitations, and this case has some ({detalle}): section 9, Conclusions and limitations, cannot be left empty when material was cut, a run failed or a finding documents something that could not be examined",
+    "es": "el informe no declara sus limitaciones, y este caso las tiene ({detalle}): la sección 9, Conclusiones y limitaciones, no puede quedar vacía cuando se recortó material, falló una ejecución o un hallazgo documenta algo que no se pudo examinar",
+}
+CATALOGO["approval.reviewNotDeclared"] = {
+    "en": "approving requires declaring which content was reviewed: send the `sha256` of the revision you have just read",
+    "es": "aprobar exige declarar qué contenido se ha revisado: manda el `sha256` de la revisión que acabas de leer",
+}
+CATALOGO["approval.reviewedContentChanged"] = {
+    "en": "the content changed between your review and this approval (you reviewed {reviewed}, it is now {current}): read the current revision again before approving it",
+    "es": "el contenido cambió entre tu revisión y esta aprobación (revisaste {reviewed}, ahora es {current}): vuelve a leer la revisión actual antes de aprobarla",
+}
+# --- reauditoria 2026-09-08: procedencia anclada, evidencia real, acta -------
+CATALOGO["approval.provenanceNotAnchored"] = {
+    "en": "document {document_id} was written under an earlier schema (version {schema}), where its hash did not cover its sources: there is no anchored provenance digest to re-check, so it can be read and exported as a draft but not approved. Finalise the investigation again to produce a revision that declares its sources.",
+    "es": "el documento {document_id} se escribió con un esquema anterior (versión {schema}), en el que su hash no cubría sus fuentes: no hay digest de procedencia anclado que volver a comprobar, así que se puede leer y exportar como borrador pero no aprobar. Vuelve a finalizar la investigación para producir una revisión que declare sus fuentes.",
+}
+CATALOGO["approval.provenanceTampered"] = {
+    "en": "the sources of this report no longer hash to the digest it declares (declared {declared}, recomputed {recomputed}): the provenance snapshot has been removed, replaced or emptied since the report was written",
+    "es": "las fuentes de este informe ya no dan el digest que declara (declarado {declared}, recalculado {recomputed}): el snapshot de procedencia se ha retirado, sustituido o vaciado desde que se redactó el informe",
+}
+CATALOGO["approval.provenanceAnchorMismatch"] = {
+    "en": "the provenance digest of this report does not match the one anchored in the audit chain when it was created (anchored {anchored}, declared {declared})",
+    "es": "el digest de procedencia de este informe no coincide con el que quedó anclado en la cadena de auditoría al crearlo (anclado {anchored}, declarado {declared})",
+}
+CATALOGO["approval.manifestNotAnObject"] = {
+    "en": "the source manifest of document {document_id} is not an object: there is nothing to re-check",
+    "es": "el manifiesto de fuentes del documento {document_id} no es un objeto: no hay nada que volver a comprobar",
+}
+CATALOGO["approval.manifestNoCase"] = {
+    "en": "the source manifest of document {document_id} does not say which case it belongs to",
+    "es": "el manifiesto de fuentes del documento {document_id} no dice de qué caso es",
+}
+CATALOGO["approval.manifestForeignCase"] = {
+    "en": "the source manifest of document {document_id} declares a different case from the one it is stored in",
+    "es": "el manifiesto de fuentes del documento {document_id} declara un caso distinto de aquel en el que está guardado",
+}
+CATALOGO["approval.manifestBadShape"] = {
+    "en": "the source manifest of document {document_id} does not have the shape of a manifest: evidence, artifacts, findings and required limitations must be lists, and the baseline hashes an object",
+    "es": "el manifiesto de fuentes del documento {document_id} no tiene forma de manifiesto: evidencias, artefactos, hallazgos y limitaciones exigidas tienen que ser listas, y los hashes de baseline un objeto",
+}
+CATALOGO["approval.manifestNoFindings"] = {
+    "en": "the source manifest of document {document_id} declares no finding: a report with no finding behind it is not a report that can be approved",
+    "es": "el manifiesto de fuentes del documento {document_id} no declara ningún hallazgo: un informe sin un solo hallazgo detrás no es un informe que se pueda aprobar",
+}
+CATALOGO["approval.manifestBadFinding"] = {
+    "en": "the source manifest of document {document_id} carries a finding entry without a valid identifier, revision or content hash",
+    "es": "el manifiesto de fuentes del documento {document_id} trae una entrada de hallazgo sin identificador, revisión o hash de contenido válidos",
+}
+CATALOGO["approval.manifestBadArtifact"] = {
+    "en": "the source manifest of document {document_id} carries an artifact without a valid run identifier",
+    "es": "el manifiesto de fuentes del documento {document_id} trae un artefacto sin identificador de ejecución válido",
+}
+CATALOGO["approval.manifestBadEvidence"] = {
+    "en": "the source manifest of document {document_id} carries an evidence without a valid identifier",
+    "es": "el manifiesto de fuentes del documento {document_id} trae una evidencia sin identificador válido",
+}
+CATALOGO["approval.evidenceUnreadable"] = {
+    "en": "evidence {evidence_id} cannot be read to verify it: {detalle}",
+    "es": "la evidencia {evidence_id} no se puede leer para verificarla: {detalle}",
+}
+CATALOGO["approval.evidenceBytesChanged"] = {
+    "en": "the bytes of evidence {evidence_id} no longer match its registered baseline (affected segments: {segments}). Approval verifies the evidence itself, not the hash written beside it.",
+    "es": "los bytes de la evidencia {evidence_id} ya no casan con su baseline registrado (segmentos afectados: {segments}). La aprobación verifica la evidencia, no el hash escrito a su lado.",
+}
+CATALOGO["approval.evidenceVerificationFailed"] = {
+    "en": "the last recorded verification of evidence {evidence_id} failed ({at}). Verify it again so the result is recorded in the chain before approving.",
+    "es": "la última verificación registrada de la evidencia {evidence_id} salió negativa ({at}). Vuelve a verificarla para que el resultado quede en la cadena antes de aprobar.",
+}
+CATALOGO["approval.runBaselineMismatch"] = {
+    "en": "run {run_id} says it read evidence {evidence_id} with baseline {actual}, but the evidence registered in the case has baseline {expected}: what that run produced does not support what the report says about this evidence",
+    "es": "la ejecución {run_id} dice haber leído la evidencia {evidence_id} con el baseline {actual}, pero la evidencia registrada en el caso tiene el baseline {expected}: lo que esa ejecución produjo no sostiene lo que el informe afirma sobre esta evidencia",
+}
+CATALOGO["approval.findingTampered"] = {
+    "en": "the content of finding {finding_id} revision {revision} no longer hashes to its own recorded digest (recorded {declared}, recomputed {recomputed}): the finding has been rewritten in place",
+    "es": "el contenido del hallazgo {finding_id} revisión {revision} ya no da su propio digest registrado (registrado {declared}, recalculado {recomputed}): el hallazgo se ha reescrito sobre sí mismo",
+}
+CATALOGO["approval.findingNotAnchored"] = {
+    "en": "finding {finding_id} revision {revision} has no entry in the audit chain: there is nothing that records it was written",
+    "es": "el hallazgo {finding_id} revisión {revision} no tiene entrada en la cadena de auditoría: no hay nada que registre que se escribió",
+}
+CATALOGO["approval.findingAnchorMismatch"] = {
+    "en": "finding {finding_id} revision {revision} does not match the content anchored in the audit chain (anchored {anchored}, stored {declared})",
+    "es": "el hallazgo {finding_id} revisión {revision} no coincide con el contenido anclado en la cadena de auditoría (anclado {anchored}, almacenado {declared})",
+}
+CATALOGO["approval.findingNoProvenance"] = {
+    "en": "finding {finding_id} revision {revision} cites no source, and a finding of kind {detalle} cannot support a conclusion without one. Including an older finding in a new report does not give it a provenance it never had.",
+    "es": "el hallazgo {finding_id} revisión {revision} no cita ninguna fuente, y un hallazgo de tipo {detalle} no puede sostener una conclusión sin ella. Incluir un hallazgo antiguo en un informe nuevo no le da una procedencia que nunca tuvo.",
+}
+CATALOGO["approval.findingUnverifiedProvenance"] = {
+    "en": "the provenance of finding {finding_id} revision {revision} is {detalle}, not verified: it is readable, and it is shown as what it is, but it does not support an approved conclusion",
+    "es": "la procedencia del hallazgo {finding_id} revisión {revision} es {detalle}, no verificada: se puede leer, y se muestra como lo que es, pero no sostiene una conclusión aprobada",
+}
+CATALOGO["approval.findingNoScope"] = {
+    "en": "finding {finding_id} revision {revision} is a {detalle} with no source and does not declare what was examined: without that, what could not be analysed reads like what was not found",
+    "es": "el hallazgo {finding_id} revisión {revision} es un {detalle} sin fuente y no declara qué se examinó: sin eso, lo que no se pudo analizar se lee como lo que no se encontró",
+}
+CATALOGO["approval.findingBrokenSources"] = {
+    "en": "the sources of finding {finding_id} revision {revision} no longer open cleanly ({detalle})",
+    "es": "las fuentes del hallazgo {finding_id} revisión {revision} ya no se abren correctamente ({detalle})",
+}
+CATALOGO["approval.claimWithoutSupport"] = {
+    "en": "{count} block(s) state facts about the evidence without citing the finding revision that supports them ({detalle}). A forensic conclusion has to be openable down to its source.",
+    "es": "{count} bloque(s) afirman hechos sobre la evidencia sin citar la revisión de hallazgo que los respalda ({detalle}). Una conclusión forense tiene que poder abrirse hasta su fuente.",
+}
+CATALOGO["approval.citationOutsideManifest"] = {
+    "en": "the report cites finding revisions that its own source manifest does not declare ({detalle}): what those conclusions would show is not what supported them",
+    "es": "el informe cita revisiones de hallazgo que su propio manifiesto de fuentes no declara ({detalle}): lo que esas conclusiones enseñarían no es lo que las sostuvo",
+}
+CATALOGO["approval.noApprovalAct"] = {
+    "en": "document {document_id} presents itself as final, but the audit chain holds no approval act for it. Writing the final status into the file is not approving it.",
+    "es": "el documento {document_id} se presenta como final, pero en la cadena de auditoría no hay un acto de aprobación suyo. Escribir el estado final en el fichero no es aprobarlo.",
+}
+CATALOGO["approval.approvalActMismatch"] = {
+    "en": "the approval act recorded for document {document_id} does not match what is being served ({detalle}): it approved a different revision, a different content or a different set of sources",
+    "es": "el acta de aprobación registrada para el documento {document_id} no casa con lo que se está sirviendo ({detalle}): aprobó otra revisión, otro contenido u otro conjunto de fuentes",
+}
+CATALOGO["approval.citationNotInDocument"] = {
+    "en": "document {document_id} does not cite revision {revision} of finding {finding_id}: the report route opens the sources a conclusion of THIS report rests on, not any finding in the case",
+    "es": "el documento {document_id} no cita la revisión {revision} del hallazgo {finding_id}: la ruta del informe abre las fuentes en que se apoya una conclusión de ESTE informe, no cualquier hallazgo del caso",
+}
+CATALOGO["approval.draftLabel"] = {
+    "en": "DRAFT",
+    "es": "BORRADOR",
+}
+CATALOGO["approval.humanApproval"] = {
+    "en": "Approved as final by the examiner. It is an audited human approval, not a cryptographic digital signature: what a third party can check is that the content has not changed since it was approved, not who approved it.",
+    "es": "Aprobado como final por el perito. Es una aprobación humana auditada, no una firma digital criptográfica: lo que un tercero puede comprobar es que el contenido no ha cambiado desde que se aprobó, no quién lo aprobó.",
+}
+CATALOGO["approval.alreadyFinal"] = {
+    "en": "document {document_id} is already final and its content is intact; nothing changes",
+    "es": "el documento {document_id} ya es final y su contenido está íntegro; no cambia nada",
+}
+CATALOGO["approval.pdfOverwrite"] = {
+    "en": "a final export of document {document_id} is already recorded ({sha256}) and this one would not match it. Agentopsy does not silently replace a registered export: approve a new revision instead.",
+    "es": "ya consta una exportación final del documento {document_id} ({sha256}) y esta no coincidiría con ella. Agentopsy no sustituye en silencio una exportación registrada: aprueba una revisión nueva.",
+}
+CATALOGO["approval.exportBlocked"] = {
+    "en": "document {document_id} cannot be exported as final: {reasons}. You can export it as a draft, which comes out marked as such on every page.",
+    "es": "el documento {document_id} no se puede exportar como final: {reasons}. Puedes exportarlo como borrador, que sale marcado como tal en todas sus páginas.",
+}
+CATALOGO["approval.notAFinalDocument"] = {
+    "en": "document {document_id} is a draft: it is exported marked DRAFT on every page and does not count as an expert report",
+    "es": "el documento {document_id} es un borrador: se exporta marcado BORRADOR en todas sus páginas y no vale como informe pericial",
 }
 
 # --- perfil de SO del caso -----------------------------------------------------
@@ -919,12 +1382,12 @@ CATALOGO["writer.identity"] = {
     "es": "ENCARGO: {encargo}\n\nEres el perito informático forense que redacta el informe de una investigación post-mortem ya concluida. Escribes en español, en registro pericial: preciso, sobrio, sin adjetivos que la evidencia no sostenga, y distinguiendo siempre indicio de prueba.\n\nRedactas el informe COMPLETO de principio a fin. No rellenas una plantilla: la narrativa, el nivel de detalle y la LONGITUD de cada sección los decides tú a partir del MATERIAL de este caso concreto. Un caso con tres hallazgos y un caso con cuarenta no producen informes del mismo tamaño ni con la misma prosa.\n",
 }
 CATALOGO["writer.rules"] = {
-    "en": "NON-NEGOTIABLE RULES\n1. No fact, date, figure, entity, technique, path, account or identifier that is not in the MATERIAL. If the material does not carry a datum, the sentence is built without it or it is recorded as NOT STATED. A gap is never filled with generic text or with general knowledge.\n2. Identifiers are copied as they are and COMPLETE: Txxxx techniques, run_id, SHA-256, evidence and finding identifiers. The writing is validated against the material and ONE single invention rejects the whole report.\n2.bis. What has NO identifier in the material does not receive one from you: it is named by its description. In particular, the report you are writing does not yet exist as a document (it has no identifier and no SHA-256), so do not cite any for it; and do not invent case, session or job references either. When in doubt between citing an identifier and describing the thing, describe.\n3. `code` blocks are RESERVED for audited commands: their text must be exactly an `argv_literal` from `trabajos`, copied character by character. Anything else (an endpoint, a path, an output fragment) goes in prose, not in a `code` block. A `code` that does not match an audited command rejects the whole report.\n4. Every timestamp is written in explicit UTC, as it appears in the material.\n5. A section with no datum IS WRITTEN ANYWAY, saying what is missing and who must provide it. It is never omitted, never left empty and never padded.\n6. The two axes of the ATT&CK correlation are not merged: the technique the analysis PROPOSES and the examiner VERDICT are different things, and a technique proposed with no verdict is not confirmed.\n7. You do not alter any severity, confidence, count or exit code from the material.\n8. Cross references between sections are cited by the number and the name of the section: «section 6.2», «section 9, Conclusions and limitations». The section sign is FORBIDDEN: it appears nowhere in the report, not in the body, not in a table, not in a footer.\n9. Typography of the report: expert prose in plain text. The long dash is NOT used in any case; parentheticals go between commas, between parentheses or after a colon. No emoji and no decorative pictogram is used, not in tables and not in lists either: where another writer would put a tick or a warning symbol, you write the word.\n",
-    "es": "REGLAS INNEGOCIABLES\n1. Ningún hecho, fecha, cifra, entidad, técnica, ruta, cuenta ni identificador que no esté en el MATERIAL. Si el material no trae un dato, la frase se construye sin él o se hace constar que NO CONSTA. Nunca se rellena un hueco con texto genérico ni con conocimiento general.\n2. Los identificadores se copian tal cual y COMPLETOS: técnicas Txxxx, run_id, SHA-256, identificadores de evidencia y de hallazgo. La redacción se valida contra el material y UNA sola invención rechaza el informe entero.\n2.bis. Lo que NO tiene identificador en el material no lo recibe de ti: se nombra por su descripción. En particular, el informe que estás redactando todavía no existe como documento (no tiene identificador ni SHA-256), así que no cites ninguno para él; tampoco inventes referencias de expediente, de sesión ni de trabajo. Ante la duda entre citar un identificador y describir la cosa, describe.\n3. Los bloques `code` están RESERVADOS a los comandos auditados: su texto debe ser exactamente un `argv_literal` de `trabajos`, copiado carácter a carácter. Cualquier otra cosa (un endpoint, una ruta, un fragmento de salida) va en prosa, no en un bloque `code`. Un `code` que no coincida con un comando auditado rechaza el informe entero.\n4. Toda marca temporal se escribe en UTC explícito, como aparece en el material.\n5. Una sección sin dato SE ESCRIBE IGUALMENTE, diciendo qué falta y quién debe aportarlo. Nunca se omite, ni se deja vacía, ni se rellena.\n6. Los dos ejes de la correlación ATT&CK no se funden: la técnica que el análisis PROPONE y el VEREDICTO del perito son cosas distintas, y una técnica propuesta sin dictamen no está confirmada.\n7. No alteras ninguna severidad, confianza, recuento ni código de salida del material.\n8. Las referencias cruzadas entre secciones se citan por el número y el nombre del apartado: «apartado 6.2», «la sección 9, Conclusiones y limitaciones». El signo § está PROHIBIDO: no aparece en ninguna parte del informe, ni en el cuerpo, ni en una tabla, ni en un pie.\n9. Tipografía del informe: prosa pericial en texto plano. NO se usa el guion largo «—» en ningún caso; los incisos van entre comas, entre paréntesis o tras dos puntos. NO se usa ningún emoji ni pictograma decorativo, tampoco en tablas ni en listas: donde otro pondría un símbolo de correcto o de aviso, tú escribes la palabra.\n",
+    "en": "NON-NEGOTIABLE RULES\n1. No fact, date, figure, entity, technique, path, account or identifier that is not in the MATERIAL. If the material does not carry a datum, the sentence is built without it or it is recorded as NOT STATED. A gap is never filled with generic text or with general knowledge.\n2. Identifiers are copied as they are and COMPLETE: Txxxx techniques, run_id, SHA-256, evidence and finding identifiers. The writing is validated against the material and ONE single invention rejects the whole report.\n2.bis. What has NO identifier in the material does not receive one from you: it is named by its description. In particular, the report you are writing does not yet exist as a document (it has no identifier and no SHA-256), so do not cite any for it; and do not invent case, session or job references either. When in doubt between citing an identifier and describing the thing, describe.\n3. `code` blocks are RESERVED for audited commands: their text must be exactly an `argv_literal` from `trabajos`, copied character by character. Anything else (an endpoint, a path, an output fragment) goes in prose, not in a `code` block. A `code` that does not match an audited command rejects the whole report.\n4. Every timestamp is written in explicit UTC, as it appears in the material.\n5. A section with no datum IS WRITTEN ANYWAY, saying what is missing and who must provide it. It is never omitted, never left empty and never padded.\n6. The two axes of the ATT&CK correlation are not merged: the technique the analysis PROPOSES and the examiner VERDICT are different things, and a technique proposed with no verdict is not confirmed.\n7. You do not alter any severity, confidence, count or exit code from the material.\n8. Cross references between sections are cited by the number and the name of the section: «section 6.2», «section 9, Conclusions and limitations». The section sign is FORBIDDEN: it appears nowhere in the report, not in the body, not in a table, not in a footer.\n9.bis. SUPPORT OF WHAT YOU STATE. Every block of section 6 (Findings) and section 9 (Conclusions and limitations) of type `p`, `quote`, `list`, `table` or `finding` that states a fact about the evidence MUST carry `refs` with the finding revision or revisions it rests on, copied from `hallazgos` (`id` and `revision`). A statement about the evidence with no `refs` rejects the whole report. Subheadings, audited commands and field cards do not carry `refs`: they state nothing. And a block that declares a LIMITATION carries `limitacion` with its code instead of `refs`: if the material brings `limitaciones_exigidas`, every one of those codes must appear as the `limitacion` of a block in section 9, written with the code exactly as it is given.\n9. Typography of the report: expert prose in plain text. The long dash is NOT used in any case; parentheticals go between commas, between parentheses or after a colon. No emoji and no decorative pictogram is used, not in tables and not in lists either: where another writer would put a tick or a warning symbol, you write the word.\n",
+    "es": "REGLAS INNEGOCIABLES\n1. Ningún hecho, fecha, cifra, entidad, técnica, ruta, cuenta ni identificador que no esté en el MATERIAL. Si el material no trae un dato, la frase se construye sin él o se hace constar que NO CONSTA. Nunca se rellena un hueco con texto genérico ni con conocimiento general.\n2. Los identificadores se copian tal cual y COMPLETOS: técnicas Txxxx, run_id, SHA-256, identificadores de evidencia y de hallazgo. La redacción se valida contra el material y UNA sola invención rechaza el informe entero.\n2.bis. Lo que NO tiene identificador en el material no lo recibe de ti: se nombra por su descripción. En particular, el informe que estás redactando todavía no existe como documento (no tiene identificador ni SHA-256), así que no cites ninguno para él; tampoco inventes referencias de expediente, de sesión ni de trabajo. Ante la duda entre citar un identificador y describir la cosa, describe.\n3. Los bloques `code` están RESERVADOS a los comandos auditados: su texto debe ser exactamente un `argv_literal` de `trabajos`, copiado carácter a carácter. Cualquier otra cosa (un endpoint, una ruta, un fragmento de salida) va en prosa, no en un bloque `code`. Un `code` que no coincida con un comando auditado rechaza el informe entero.\n4. Toda marca temporal se escribe en UTC explícito, como aparece en el material.\n5. Una sección sin dato SE ESCRIBE IGUALMENTE, diciendo qué falta y quién debe aportarlo. Nunca se omite, ni se deja vacía, ni se rellena.\n6. Los dos ejes de la correlación ATT&CK no se funden: la técnica que el análisis PROPONE y el VEREDICTO del perito son cosas distintas, y una técnica propuesta sin dictamen no está confirmada.\n7. No alteras ninguna severidad, confianza, recuento ni código de salida del material.\n8. Las referencias cruzadas entre secciones se citan por el número y el nombre del apartado: «apartado 6.2», «la sección 9, Conclusiones y limitaciones». El signo § está PROHIBIDO: no aparece en ninguna parte del informe, ni en el cuerpo, ni en una tabla, ni en un pie.\n9.bis. RESPALDO DE LO QUE AFIRMAS. Todo bloque del apartado 6 (Hallazgos) y del apartado 9 (Conclusiones y limitaciones) de tipo `p`, `quote`, `list`, `table` o `finding` que afirme un hecho sobre la evidencia DEBE llevar `refs` con la revisión o revisiones de hallazgo en que se apoya, copiadas de `hallazgos` (`id` y `revision`). Una afirmación sobre la evidencia sin `refs` rechaza el informe entero. Los subencabezados, los comandos auditados y las fichas de campos no llevan `refs`: no afirman nada. Y un bloque que declara una LIMITACIÓN lleva `limitacion` con su código en lugar de `refs`: si el material trae `limitaciones_exigidas`, cada uno de esos códigos tiene que aparecer como `limitacion` de un bloque del apartado 9, escrito con el código exactamente como se te da.\n9. Tipografía del informe: prosa pericial en texto plano. NO se usa el guion largo «—» en ningún caso; los incisos van entre comas, entre paréntesis o tras dos puntos. NO se usa ningún emoji ni pictograma decorativo, tampoco en tablas ni en listas: donde otro pondría un símbolo de correcto o de aviso, tú escribes la palabra.\n",
 }
 CATALOGO["writer.blockTypes"] = {
-    "en": "AVAILABLE BLOCK TYPES (there are no others)\n- {\"t\":\"p\",\"text\":\"…\"}: prose paragraph.\n- {\"t\":\"h3\",\"text\":\"…\"}: subheading inside the section.\n- {\"t\":\"quote\",\"text\":\"…\"}: quotation or context provided by third parties.\n- {\"t\":\"list\",\"items\":[\"…\"],\"ordered\":false}: list.\n- {\"t\":\"code\",\"text\":\"…\"}: ONLY an audited argv, literal.\n- {\"t\":\"kv\",\"pairs\":[{\"k\":\"Field\",\"v\":\"value\"}]}: field card.\n- {\"t\":\"table\",\"headers\":[\"…\"],\"rows\":[[\"…\"]]}: table; every row with as many cells as headers.\n- {\"t\":\"finding\",\"sev\":\"critical|high|medium|low\",\"title\":\"…\",\"text\":\"…\",\"tags\":[\"…\"],\"meta\":\"…\"}: a finding; `meta` is its provenance line.\n",
-    "es": "TIPOS DE BLOQUE DISPONIBLES (no hay otros)\n- {\"t\":\"p\",\"text\":\"…\"}: párrafo de prosa.\n- {\"t\":\"h3\",\"text\":\"…\"}: subencabezado dentro de la sección.\n- {\"t\":\"quote\",\"text\":\"…\"}: cita o contexto aportado por terceros.\n- {\"t\":\"list\",\"items\":[\"…\"],\"ordered\":false}: lista.\n- {\"t\":\"code\",\"text\":\"…\"}: SOLO un argv auditado, literal.\n- {\"t\":\"kv\",\"pairs\":[{\"k\":\"Campo\",\"v\":\"valor\"}]}: ficha de campos.\n- {\"t\":\"table\",\"headers\":[\"…\"],\"rows\":[[\"…\"]]}: tabla; todas las filas con tantas celdas como cabeceras.\n- {\"t\":\"finding\",\"sev\":\"critical|high|medium|low\",\"title\":\"…\",\"text\":\"…\",\"tags\":[\"…\"],\"meta\":\"…\"}: un hallazgo; `meta` es su línea de procedencia.\n",
+    "en": "AVAILABLE BLOCK TYPES (there are no others)\n- {\"t\":\"p\",\"text\":\"…\"}: prose paragraph.\n- {\"t\":\"h3\",\"text\":\"…\"}: subheading inside the section.\n- {\"t\":\"quote\",\"text\":\"…\"}: quotation or context provided by third parties.\n- {\"t\":\"list\",\"items\":[\"…\"],\"ordered\":false}: list.\n- {\"t\":\"code\",\"text\":\"…\"}: ONLY an audited argv, literal.\n- {\"t\":\"kv\",\"pairs\":[{\"k\":\"Field\",\"v\":\"value\"}]}: field card.\n- {\"t\":\"table\",\"headers\":[\"…\"],\"rows\":[[\"…\"]]}: table; every row with as many cells as headers.\n- {\"t\":\"finding\",\"sev\":\"critical|high|medium|low\",\"title\":\"…\",\"text\":\"…\",\"tags\":[\"…\"],\"meta\":\"…\"}: a finding; `meta` is its provenance line.\nTWO KEYS ANY BLOCK MAY CARRY:\n- \"refs\":[{\"finding_id\":\"…\",\"revision\":1}]: the finding revisions this block rests on. Mandatory on any block of sections 6 and 9 that states a fact about the evidence (rule 9.bis).\n- \"limitacion\":\"code\": this block declares a limitation, with the code exactly as the material gives it. A block that carries it states no fact about the evidence and needs no refs.\n",
+    "es": "TIPOS DE BLOQUE DISPONIBLES (no hay otros)\n- {\"t\":\"p\",\"text\":\"…\"}: párrafo de prosa.\n- {\"t\":\"h3\",\"text\":\"…\"}: subencabezado dentro de la sección.\n- {\"t\":\"quote\",\"text\":\"…\"}: cita o contexto aportado por terceros.\n- {\"t\":\"list\",\"items\":[\"…\"],\"ordered\":false}: lista.\n- {\"t\":\"code\",\"text\":\"…\"}: SOLO un argv auditado, literal.\n- {\"t\":\"kv\",\"pairs\":[{\"k\":\"Campo\",\"v\":\"valor\"}]}: ficha de campos.\n- {\"t\":\"table\",\"headers\":[\"…\"],\"rows\":[[\"…\"]]}: tabla; todas las filas con tantas celdas como cabeceras.\n- {\"t\":\"finding\",\"sev\":\"critical|high|medium|low\",\"title\":\"…\",\"text\":\"…\",\"tags\":[\"…\"],\"meta\":\"…\"}: un hallazgo; `meta` es su línea de procedencia.\nDOS CLAVES QUE PUEDE LLEVAR CUALQUIER BLOQUE:\n- \"refs\":[{\"finding_id\":\"…\",\"revision\":1}]: las revisiones de hallazgo en que se apoya el bloque. Obligatoria en todo bloque de los apartados 6 y 9 que afirme un hecho sobre la evidencia (regla 9.bis).\n- \"limitacion\":\"codigo\": este bloque declara una limitación, con el código exactamente como lo da el material. Un bloque que la lleva no afirma un hecho sobre la evidencia y no necesita refs.\n",
 }
 CATALOGO["writer.responseContract"] = {
     "en": "RESPONSE FORMAT (MANDATORY)\nAnswer ONLY with a JSON object, with no text before or after and no markdown fences:\n{{\"resumen\": \"one or two sentences summarising the report\", \"secciones\": [{{\"num\": \"1\", \"titulo\": \"{first_title}\", \"bloques\": [ … ]}}, … ]}}\n`secciones` must carry EXACTLY these, in this order: {sections}. Each `num` and each `titulo` is copied literally from the index above; no section may be missing, extra, repeated or left with no blocks.\n`resumen` does not exceed {max} characters.",
@@ -940,6 +1403,18 @@ CATALOGO["writer.materialHeader"] = {
 }
 
 # --- redactor del informe: las cuatro puertas de custodia ----------------------
+CATALOGO["writer.claimsWithoutSupport"] = {
+    "en": "blocks of sections 6 and 9 state facts about the evidence without `refs`, so their source cannot be opened: {blocks}. Add the finding revision each one rests on, or declare it as a limitation with `limitacion`.",
+    "es": "hay bloques de los apartados 6 y 9 que afirman hechos sobre la evidencia sin `refs`, así que su fuente no se puede abrir: {blocks}. Añade la revisión de hallazgo en que se apoya cada uno, o decláralo como limitación con `limitacion`.",
+}
+CATALOGO["writer.citationsOutsideMaterial"] = {
+    "en": "blocks cite finding revisions that are not in the material: {refs}. Cite only the `id` and `revision` pairs that `hallazgos` carries.",
+    "es": "hay bloques que citan revisiones de hallazgo que no están en el material: {refs}. Cita solo los pares `id` y `revision` que trae `hallazgos`.",
+}
+CATALOGO["writer.missingLimitationCodes"] = {
+    "en": "the material requires limitations that the report does not declare: {codes}. Each one goes in a block of section 9 with `limitacion` set to that exact code.",
+    "es": "el material exige limitaciones que el informe no declara: {codes}. Cada una va en un bloque del apartado 9 con `limitacion` puesto a ese código exacto.",
+}
 CATALOGO["writer.noJson"] = {
     "en": "the executor did not return the JSON object of the writing contract. Response (sample): {sample}",
     "es": "el ejecutor no devolvió el objeto JSON del contrato de redacción. Respuesta (muestra): {sample}",
@@ -1039,6 +1514,10 @@ CATALOGO["writer.repairDelta"] = {
 CATALOGO["writer.repairFull"] = {
     "en": "\n\nNOTICE: a previous attempt to write THIS SAME report was rejected by the custody validation.\nReason for the rejection:\n{reason}\nWrite it again avoiding exactly that fault. Remember that an identifier, a hash or a command that is not in the MATERIAL is not written: the thing is described without it, or it is recorded as not stated.",
     "es": "\n\nAVISO: un intento anterior de redactar ESTE MISMO informe fue rechazado por la validación de custodia.\nMotivo del rechazo:\n{reason}\nRedáctalo de nuevo evitando exactamente ese fallo. Recuerda que un identificador, un hash o un comando que no esté en el MATERIAL no se escribe: se describe la cosa sin él, o se hace constar que no consta.",
+}
+CATALOGO["writer.brokenAuditChain"] = {
+    "en": "the case's audit chain ({log}) does not verify: the record of what was done is broken, so a report written on it could not be approved as final. Fix the chain before finalising the investigation (Agentopsy does not write a report it already knows it cannot approve, RULE 2).",
+    "es": "la cadena de auditoría del caso ({log}) no verifica: el registro de lo que se hizo está roto, así que un informe redactado sobre él no se podría aprobar como final. Resuelve la cadena antes de finalizar la investigación (Agentopsy no redacta un informe que ya sabe que no puede aprobar, RULE 2).",
 }
 CATALOGO["writer.noFindings"] = {
     "en": "the case has no recorded finding: there is no investigation to report on. Analyse the evidence with the agent (findings are recorded with record_finding) before finishing the investigation; Agentopsy does not write a report that nothing supports (RULE 2).",
@@ -1339,6 +1818,22 @@ CATALOGO["pdf.docHash"] = {
 CATALOGO["pdf.toc"] = {
     "en": "Table of contents",
     "es": "Indice de contenidos",
+}
+CATALOGO["pdf.blockSources"] = {
+    "en": "Support: {refs}",
+    "es": "Respaldo: {refs}",
+}
+CATALOGO["pdf.draftBanner"] = {
+    "en": "{label}. This document has NOT been approved as final and is not valid as an expert report.",
+    "es": "{label}. Este documento NO ha sido aprobado como final y no vale como informe pericial.",
+}
+CATALOGO["pdf.draftBlockers"] = {
+    "en": "What is preventing its approval:",
+    "es": "Lo que impide su aprobación:",
+}
+CATALOGO["pdf.approvedBy"] = {
+    "en": "Approved by {who} on {date}.",
+    "es": "Aprobado por {who} el {date}.",
 }
 CATALOGO["pdf.footer"] = {
     "en": "Generated by Agentopsy - {status} - {date}",
@@ -1745,8 +2240,16 @@ CATALOGO["schema.findingObservedAt"] = {
     "es": "Marca temporal del ARTEFACTO que sostiene el hallazgo: cuándo ocurrió el HECHO en el dispositivo investigado, nunca cuándo lo analizas. ISO-8601 con la zona EXPLÍCITA, offset o Z (p. ej. 2026-07-15T13:42:00Z); sin zona se rechaza el hallazgo entero. Rellénalo SIEMPRE que el artefacto tenga marca temporal: es lo que sitúa el hallazgo en la línea de tiempo del incidente, y sin él no entra en ella. Si el artefacto da hora LOCAL (MFT, registro, logs de Windows), conviértela a UTC y di en el summary de qué zona venía. Si no puedes determinar la zona del sistema investigado, déjalo VACÍO: no la inventes ni la aproximes.",
 }
 CATALOGO["schema.findingKind"] = {
-    "en": "`afirmacion` (the default) asserts something about the evidence and REQUIRES run_id. `descarte` documents that a line did NOT contribute (it is exempt from provenance). Use it only for real rulings out, not to dodge the run_id requirement of an assertion.",
-    "es": "`afirmacion` (por defecto) afirma algo sobre la evidencia y EXIGE run_id. `descarte` documenta que una vía NO aportó (queda exento de procedencia). Úsalo solo para descartes reales, no para eludir el requisito de run_id de una afirmación.",
+    "en": "`afirmacion` (the default) asserts something about the evidence and REQUIRES a verified source. `limitacion` documents that something could NOT be examined (a tool that failed, a partial output): it is the ONLY kind that may cite a run with a non-zero exit. `descarte` documents that a line did NOT contribute. The last two are exempt from provenance but MUST declare `alcance_examinado`. Use them for real rulings out and real limitations, not to dodge the source requirement of an assertion.",
+    "es": "`afirmacion` (por defecto) afirma algo sobre la evidencia y EXIGE una fuente verificada. `limitacion` documenta que algo NO se pudo examinar (una herramienta que falló, una salida parcial): es el ÚNICO tipo que puede citar una ejecución con exit distinto de cero. `descarte` documenta que una vía NO aportó. Los dos últimos quedan exentos de procedencia pero DEBEN declarar `alcance_examinado`. Úsalos para descartes y limitaciones reales, no para eludir el requisito de fuente de una afirmación.",
+}
+CATALOGO["schema.findingScope"] = {
+    "en": "What WAS examined, with which tool and with what limit. MANDATORY for `descarte` and `limitacion`: \"it could not be analysed\" and \"it was not found\" are not the same statement, and a ruling out with no scope lets a reader take the first for the second.",
+    "es": "Qué se examinó, con qué herramienta y con qué límite. OBLIGATORIO en `descarte` y en `limitacion`: \"no se pudo analizar\" y \"no se encontró\" no son la misma frase, y un descarte sin alcance permite leer la primera como la segunda.",
+}
+CATALOGO["schema.findingReferences"] = {
+    "en": "The SOURCES of the finding, one per spot you cite. Each names the run (`run_id`), the artifact (`artefacto`: `stdout` / `stderr` / `fichero` plus its `relpath`) and the `localizador` that points at the exact spot: `{tipo:\"lineas\", desde, hasta}` (from 1, BOTH ends inclusive), `{tipo:\"bytes\", desde, hasta}` (from 0, `desde` inclusive and `hasta` EXCLUSIVE) or `{tipo:\"registro\", valor}`. Both ends are checked against the real content: a range whose end is past the end of the artifact is rejected, not trimmed. Optionally `extracto` with the literal text, which the backend CHECKS against the source. Ids and hashes come from the record: do not invent them. A finding may carry several sources: the same fact may rest on the $MFT and on an EVTX, and losing one of them makes the report poorer.",
+    "es": "Las FUENTES del hallazgo, una por cada punto que cites. Cada una nombra la ejecución (`run_id`), el artefacto (`artefacto`: `stdout` / `stderr` / `fichero` con su `relpath`) y el `localizador` que señala el punto exacto: `{tipo:\"lineas\", desde, hasta}` (desde 1, con LOS DOS extremos inclusivos), `{tipo:\"bytes\", desde, hasta}` (desde 0, `desde` inclusivo y `hasta` EXCLUSIVO) o `{tipo:\"registro\", valor}`. Los dos extremos se comprueban contra el contenido real: un rango cuyo final se pase del final del artefacto se rechaza, no se recorta. Opcionalmente `extracto` con el texto literal, que el backend COMPRUEBA contra la fuente. Los identificadores y los hashes salen del registro: no los inventes. Un hallazgo puede llevar varias fuentes: un mismo hecho puede sostenerse en el $MFT y en un EVTX, y perder una empobrece el informe.",
 }
 CATALOGO["schema.findingHints"] = {
     "en": "ATT&CK techniques this finding supports, for example [\"T1547.001\"]. CLOSED ENUM: only ids from the seed (_orchestrator/knowledge/mitre_attack_seed.md). An id outside the seed REJECTS the whole finding, do not invent ids. Map to a sub-technique when the evidence allows it; otherwise to the parent technique. Omit the field if the finding supports no technique.",
@@ -1867,8 +2370,8 @@ CATALOGO["schema.findingObservedAt"] = {
     "es": "Marca temporal del ARTEFACTO que sostiene el hallazgo: cuándo ocurrió el HECHO en el dispositivo investigado, nunca cuándo lo analizas. ISO-8601 con la zona EXPLÍCITA, offset o Z (p. ej. 2026-07-15T13:42:00Z); sin zona se rechaza el hallazgo entero. Rellénalo SIEMPRE que el artefacto tenga marca temporal: es lo que sitúa el hallazgo en la línea de tiempo del incidente, y sin él no entra en ella. Si el artefacto da hora LOCAL (MFT, registro, logs de Windows), conviértela a UTC y di en el summary de qué zona venía. Si no puedes determinar la zona del sistema investigado, déjalo VACÍO: no la inventes ni la aproximes.",
 }
 CATALOGO["schema.findingKind"] = {
-    "en": "`afirmacion` (the default) asserts something about the evidence and REQUIRES run_id. `descarte` documents that a line did NOT contribute (it is exempt from provenance). Use it only for real rulings out, not to dodge the run_id requirement of an assertion.",
-    "es": "`afirmacion` (por defecto) afirma algo sobre la evidencia y EXIGE run_id. `descarte` documenta que una vía NO aportó (queda exento de procedencia). Úsalo solo para descartes reales, no para eludir el requisito de run_id de una afirmación.",
+    "en": "`afirmacion` (the default) asserts something about the evidence and REQUIRES a verified source. `limitacion` documents that something could NOT be examined (a tool that failed, a partial output): it is the ONLY kind that may cite a run with a non-zero exit. `descarte` documents that a line did NOT contribute. The last two are exempt from provenance but MUST declare `alcance_examinado`. Use them for real rulings out and real limitations, not to dodge the source requirement of an assertion.",
+    "es": "`afirmacion` (por defecto) afirma algo sobre la evidencia y EXIGE una fuente verificada. `limitacion` documenta que algo NO se pudo examinar (una herramienta que falló, una salida parcial): es el ÚNICO tipo que puede citar una ejecución con exit distinto de cero. `descarte` documenta que una vía NO aportó. Los dos últimos quedan exentos de procedencia pero DEBEN declarar `alcance_examinado`. Úsalos para descartes y limitaciones reales, no para eludir el requisito de fuente de una afirmación.",
 }
 CATALOGO["schema.findingHints"] = {
     "en": "ATT&CK techniques this finding supports, for example [\"T1547.001\"]. CLOSED ENUM: only ids from the seed (_orchestrator/knowledge/mitre_attack_seed.md). An id outside the seed REJECTS the whole finding, do not invent ids. Map to a sub-technique when the evidence allows it; otherwise to the parent technique. Omit the field if the finding supports no technique.",

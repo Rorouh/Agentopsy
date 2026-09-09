@@ -22,6 +22,7 @@ import pytest
 from agentopsy.i18n import t
 from agentopsy.executors.base import ExecutorAvailability, ExecutorResult, PromptExecutor
 from agentopsy.reports.indice import NUMS, titulos
+from agentopsy.reports.works import render_argv, tokenizar_comando
 from agentopsy.reports.writer import (
     encargo,
     ReportWriteError,
@@ -79,11 +80,51 @@ def _material() -> dict:
     }
 
 
+#: El hallazgo del material, que es lo que las conclusiones tienen que citar.
+FINDING_ID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+REFS = [{"finding_id": FINDING_ID, "revision": 1}]
+
+
+def _bloque_de(n: str) -> dict:
+    """El bloque por defecto de la seccion ``n``, con su respaldo si lo necesita.
+
+    En los apartados 6 y 9 un parrafo afirma sobre la evidencia, asi que la
+    quinta puerta le exige decir en que revision de que hallazgo se apoya. Es lo
+    que permite abrir la fuente desde la conclusion (RA07), y el fixture lo
+    escribe igual que tendra que escribirlo el modelo.
+    """
+    bloque = {"t": "p", "text": f"Contenido redactado de la seccion {n}."}
+    if n in ("6", "9"):
+        bloque["refs"] = [dict(r) for r in REFS]
+    return bloque
+
+
+def _parrafo(n: str, texto: str) -> dict:
+    """Un parrafo de la seccion ``n``, con refs si esa seccion afirma."""
+    bloque = {"t": "p", "text": texto}
+    if n in ("6", "9"):
+        bloque["refs"] = [dict(r) for r in REFS]
+    return bloque
+
+
+def _base(texto=None) -> list[dict]:
+    """Un cuerpo valido de todas las secciones, con el respaldo que cada una pide.
+
+    Los apartados 6 y 9 afirman sobre la evidencia, asi que sus bloques citan la
+    revision de hallazgo que los sostiene. Los demas son contexto y metodologia y
+    no citan nada, que es exactamente lo que la quinta puerta distingue.
+    """
+    hacer = texto or (lambda n: "x.")
+    return [
+        {"num": n, "titulo": titulos()[n], "bloques": [_parrafo(n, hacer(n))]}
+        for n in NUMS
+    ]
+
+
 def _reply(secciones=None, resumen="Informe del caso Murcielago.") -> str:
     if secciones is None:
         secciones = [
-            {"num": n, "titulo": titulos()[n],
-             "bloques": [{"t": "p", "text": f"Contenido redactado de la seccion {n}."}]}
+            {"num": n, "titulo": titulos()[n], "bloques": [_bloque_de(n)]}
             for n in NUMS
         ]
     return json.dumps({"resumen": resumen, "secciones": secciones}, ensure_ascii=False)
@@ -100,11 +141,15 @@ class FakeExecutor(PromptExecutor):
         self._text = text
         self.prompt: str | None = None
         self.context: dict | None = None
+        # Cuántas veces se le ha pedido redactar. Lo mira el gate que comprueba
+        # que un material con la cadena de auditoría rota NO gasta una llamada.
+        self.calls = 0
 
     def is_available(self) -> ExecutorAvailability:
         return ExecutorAvailability(available=True)
 
     def run(self, prompt: str, context: dict | None = None) -> ExecutorResult:
+        self.calls += 1
         self.prompt = prompt
         self.context = context or {}
         return ExecutorResult(
@@ -136,16 +181,13 @@ def _write(text: str, material: dict | None = None, **kw):
 
 
 def test_the_report_is_what_the_model_wrote() -> None:
-    secciones = [
-        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": f"Prosa {n}."}]}
-        for n in NUMS
-    ]
+    secciones = _base(lambda n: f"Prosa {n}.")
     # Una sección larga y otra corta: la longitud la decide el modelo.
     secciones[5]["bloques"] = [
         {"t": "h3", "text": "6.1 Altos (1)"},
         {"t": "finding", "sev": "high", "title": "6.1 Tarea programada",
          "text": "Se crea la tarea updater.", "tags": ["tsk_fls", "T1053.005"],
-         "meta": f"Run: {RUN_ID}"},
+         "meta": f"Run: {RUN_ID}", "refs": [dict(r) for r in REFS]},
         {"t": "kv", "pairs": [{"k": "SHA-256 artefacto", "v": SHA_ART}]},
     ]
     doc, _, _ = _write(_reply(secciones))
@@ -220,10 +262,7 @@ def test_a_missing_section_rejects_the_whole_report() -> None:
 
 
 def test_an_extra_section_rejects_the_whole_report() -> None:
-    secciones = [
-        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
-        for n in NUMS
-    ]
+    secciones = _base()
     secciones.append({"num": "11", "titulo": "Bibliografia",
                       "bloques": [{"t": "p", "text": "x."}]})
     with pytest.raises(ReportWriteError, match="índice canónico"):
@@ -242,20 +281,14 @@ def test_reordering_the_indice_rejects_the_whole_report() -> None:
 
 
 def test_a_renamed_section_title_is_rejected() -> None:
-    secciones = [
-        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
-        for n in NUMS
-    ]
+    secciones = _base()
     secciones[1]["titulo"] = "Sumario para la direccion"
     with pytest.raises(ReportWriteError, match="no se reescriben"):
         _write(_reply(secciones))
 
 
 def test_an_empty_section_is_rejected() -> None:
-    secciones = [
-        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
-        for n in NUMS
-    ]
+    secciones = _base()
     secciones[9]["bloques"] = []
     with pytest.raises(ReportWriteError, match="sin bloques"):
         _write(_reply(secciones))
@@ -265,20 +298,14 @@ def test_an_empty_section_is_rejected() -> None:
 
 
 def test_an_invented_block_type_is_rejected() -> None:
-    secciones = [
-        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
-        for n in NUMS
-    ]
+    secciones = _base()
     secciones[0]["bloques"].append({"t": "figura", "src": "grafico.png"})
     with pytest.raises(ReportWriteError, match="tipo de bloque desconocido"):
         _write(_reply(secciones))
 
 
 def test_a_finding_block_needs_a_valid_severity() -> None:
-    secciones = [
-        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
-        for n in NUMS
-    ]
+    secciones = _base()
     secciones[5]["bloques"] = [
         {"t": "finding", "sev": "gravisima", "title": "6.1 x", "text": "y"}
     ]
@@ -287,10 +314,7 @@ def test_a_finding_block_needs_a_valid_severity() -> None:
 
 
 def test_a_row_wider_than_its_headers_is_rejected() -> None:
-    secciones = [
-        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
-        for n in NUMS
-    ]
+    secciones = _base()
     secciones[3]["bloques"] = [
         {"t": "table", "headers": ["Tecnica", "Veredicto"],
          "rows": [["T1053.005", "Confirmada", "sobra"]]}
@@ -300,10 +324,7 @@ def test_a_row_wider_than_its_headers_is_rejected() -> None:
 
 
 def test_unknown_block_keys_never_reach_the_store() -> None:
-    secciones = [
-        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
-        for n in NUMS
-    ]
+    secciones = _base()
     secciones[0]["bloques"] = [
         {"t": "p", "text": "Prosa.", "estilo": "negrita", "onclick": "alert(1)"}
     ]
@@ -315,40 +336,30 @@ def test_unknown_block_keys_never_reach_the_store() -> None:
 
 
 def test_an_invented_attck_technique_rejects_the_whole_report() -> None:
-    secciones = [
-        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
-        for n in NUMS
-    ]
+    secciones = _base()
     secciones[3]["bloques"] = [{"t": "p", "text": "Se observa T1486 (Data Encrypted)."}]
     with pytest.raises(ReportWriteError, match="T1486"):
         _write(_reply(secciones))
 
 
 def test_an_invented_hash_rejects_the_whole_report() -> None:
-    secciones = [
-        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
-        for n in NUMS
-    ]
+    secciones = _base()
     secciones[7]["bloques"] = [{"t": "p", "text": "Hash del binario: deadbeefcafe1234."}]
     with pytest.raises(ReportWriteError, match="hexadecimal"):
         _write(_reply(secciones))
 
 
 def test_a_hash_prefix_from_the_material_is_accepted() -> None:
-    secciones = [
-        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
-        for n in NUMS
+    secciones = _base()
+    secciones[5]["bloques"] = [
+        {"t": "p", "text": f"Artefacto {SHA_ART[:12]}…", "refs": [dict(r) for r in REFS]}
     ]
-    secciones[5]["bloques"] = [{"t": "p", "text": f"Artefacto {SHA_ART[:12]}…"}]
     doc, _, _ = _write(_reply(secciones))
     assert SHA_ART[:12] in doc["sections"][5]["blocks"][0]["text"]
 
 
 def test_a_foreign_uuid_rejects_the_whole_report() -> None:
-    secciones = [
-        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
-        for n in NUMS
-    ]
+    secciones = _base()
     secciones[5]["bloques"] = [
         {"t": "p", "text": "Hallazgo 99999999-8888-4777-8666-555555555555."}
     ]
@@ -357,10 +368,7 @@ def test_a_foreign_uuid_rejects_the_whole_report() -> None:
 
 
 def test_a_long_decimal_is_not_mistaken_for_a_hash() -> None:
-    secciones = [
-        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
-        for n in NUMS
-    ]
+    secciones = _base()
     secciones[4]["bloques"] = [{"t": "p", "text": "La imagen ocupa 8589934592 bytes."}]
     doc, _, _ = _write(_reply(secciones))
     assert "8589934592" in doc["sections"][4]["blocks"][0]["text"]
@@ -370,10 +378,7 @@ def test_a_long_decimal_is_not_mistaken_for_a_hash() -> None:
 
 
 def test_an_audited_argv_can_be_quoted_verbatim() -> None:
-    secciones = [
-        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
-        for n in NUMS
-    ]
+    secciones = _base()
     secciones[6]["bloques"] = [
         {"t": "kv", "pairs": [{"k": "Herramienta", "v": "tsk_fls 4.12.1"}]},
         {"t": "code", "text": ARGV},
@@ -383,21 +388,21 @@ def test_an_audited_argv_can_be_quoted_verbatim() -> None:
 
 
 def test_a_rewritten_command_rejects_the_whole_report() -> None:
-    secciones = [
-        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
-        for n in NUMS
-    ]
+    secciones = _base()
     # Un flag de más: el informe citaría un comando que NUNCA se ejecutó.
     secciones[6]["bloques"] = [{"t": "code", "text": ARGV + " -p"}]
     with pytest.raises(ReportWriteError, match="comando auditado"):
         _write(_reply(secciones))
 
 
-def test_only_the_whitespace_is_normalised_when_matching_a_command() -> None:
-    secciones = [
-        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
-        for n in NUMS
-    ]
+def test_extra_space_between_unquoted_tokens_does_not_change_the_argv() -> None:
+    """Los espacios de MÁS entre tokens sueltos no cambian el array, así que la
+    cita vale y el bloque queda fijado a la forma canónica.
+
+    La comparación es por TOKENS (no por texto con los espacios colapsados), que
+    es lo que además distingue `grep "a b" f` de `grep a b f`: ver
+    `test_collapsing_the_quotes_of_a_command_is_rejected`."""
+    secciones = _base()
     secciones[6]["bloques"] = [{"t": "code", "text": f"  {ARGV.replace(' ', '   ')}  "}]
     doc, _, _ = _write(_reply(secciones))
     assert doc["sections"][6]["blocks"][0]["text"] == ARGV
@@ -429,14 +434,11 @@ def test_a_json_inside_a_markdown_fence_is_accepted() -> None:
 def test_the_indice_is_the_only_thing_two_reports_share() -> None:
     """Dos casos, dos redacciones distintas: cambia el contenido y la longitud,
     NO el índice."""
-    uno = [
-        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": f"Caso A {n}."}]}
-        for n in NUMS
-    ]
+    uno = _base(lambda n: f"Caso A {n}.")
     otro = [
         {"num": n, "titulo": titulos()[n], "bloques": [
-            {"t": "p", "text": f"Caso B, parrafo primero de {n}."},
-            {"t": "p", "text": f"Caso B, parrafo segundo de {n}."},
+            _parrafo(n, f"Caso B, parrafo primero de {n}."),
+            _parrafo(n, f"Caso B, parrafo segundo de {n}."),
         ]}
         for n in NUMS
     ]
@@ -501,10 +503,7 @@ class ScriptedExecutor(PromptExecutor):
 
 def _malo() -> str:
     """Una redacción con un identificador que no es de este caso."""
-    secciones = [
-        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
-        for n in NUMS
-    ]
+    secciones = _base()
     secciones[0]["bloques"] = [
         {"t": "p", "text": "Informe 99999999-8888-4777-8666-555555555555, revision v0.1."}
     ]
@@ -583,10 +582,7 @@ def test_without_a_session_the_correction_resends_the_whole_encargo() -> None:
 def test_every_violated_referent_is_named_at_once() -> None:
     """Las puertas recogen TODAS sus violaciones: la corrección las arregla de
     una vez en lugar de descubrirlas de una en una."""
-    secciones = [
-        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
-        for n in NUMS
-    ]
+    secciones = _base()
     secciones[5]["bloques"] = [
         {"t": "p", "text": "Se observa T1486 y el hallazgo "
                            "99999999-8888-4777-8666-555555555555."}
@@ -661,18 +657,18 @@ def test_the_indice_itself_carries_no_forbidden_typography() -> None:
 def test_the_published_report_never_carries_a_dash_a_section_sign_or_an_emoji() -> None:
     """Lo que el modelo escriba, el informe publicado no los lleva: la regla se
     pide en el prompt y se GARANTIZA sobre el texto ya validado."""
-    secciones = [
-        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": f"Prosa {n}."}]}
-        for n in NUMS
-    ]
+    secciones = _base(lambda n: f"Prosa {n}.")
+    refs = [dict(r) for r in REFS]
     secciones[5]["bloques"] = [
-        {"t": "p", "text": "El hallazgo —descrito en §6.1— se sostiene ✅."},
+        {"t": "p", "text": "El hallazgo —descrito en §6.1— se sostiene ✅.",
+         "refs": refs},
         {"t": "h3", "text": "6.1 Persistencia — tarea programada"},
-        {"t": "list", "items": ["Uno — con raya", "Dos 🔥"]},
+        {"t": "list", "items": ["Uno — con raya", "Dos 🔥"], "refs": refs},
         {"t": "kv", "pairs": [{"k": "Estado ⚠️", "v": "verificado — sí"}]},
-        {"t": "table", "headers": ["Campo ✓"], "rows": [["valor — otro"]]},
+        {"t": "table", "headers": ["Campo ✓"], "rows": [["valor — otro"]], "refs": refs},
         {"t": "finding", "sev": "high", "title": "6.1 Tarea —updater—",
-         "text": "Se crea la tarea.", "tags": ["a — b"], "meta": f"Run: {RUN_ID}"},
+         "text": "Se crea la tarea.", "tags": ["a — b"], "meta": f"Run: {RUN_ID}",
+         "refs": refs},
     ]
     doc, _, audit = _write(_reply(secciones, resumen="Resumen — con raya y §2."))
 
@@ -697,10 +693,7 @@ def test_the_audited_command_keeps_its_literal_form() -> None:
     material["trabajos"][0]["argv_literal"] = argv_con_raya
     material["trabajos"][0]["argv"] = argv_con_raya.split()
 
-    secciones = [
-        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": f"Prosa {n}."}]}
-        for n in NUMS
-    ]
+    secciones = _base(lambda n: f"Prosa {n}.")
     secciones[6]["bloques"] = [{"t": "code", "text": argv_con_raya}]
     doc, _, audit = _write(_reply(secciones), material=material)
 
@@ -724,13 +717,130 @@ def test_a_clean_report_is_not_rewritten() -> None:
 def test_forbidden_typography_never_costs_the_report() -> None:
     """Una raya NO es una puerta de custodia: el material puede traerla escrita
     por el agente, y copiarla fielmente no puede tirar la redacción entera."""
-    secciones = [
-        {"num": n, "titulo": titulos()[n],
-         "bloques": [{"t": "p", "text": f"Prosa —{n}— con §{n}. ✅"}]}
-        for n in NUMS
-    ]
+    secciones = _base(lambda n: f"Prosa —{n}— con §{n}. ✅")
     doc, executor, _ = _write(_reply(secciones))
 
     # Una sola llamada: no ha habido ronda de corrección.
     assert executor.prompt is not None
     assert "—" not in _texto_del_informe(doc)
+
+# -- F04: la puerta de referentes cubre TODO el documento --------------------
+
+
+def _con_secciones(**over):
+    """Un informe válido; `over` sustituye la sección que se quiera romper."""
+    secciones = _base()
+    for idx, bloques in over.items():
+        secciones[int(idx)]["bloques"] = bloques
+    return secciones
+
+
+def test_an_invented_uuid_in_the_summary_is_rejected() -> None:
+    """El caso reproducido: el resumen no pasaba por la puerta de referentes."""
+    inventado = "deadbeef-1111-4222-8333-444444444444"
+    with pytest.raises(ReportWriteError, match="no pertenece a este caso"):
+        _write(_reply(_con_secciones(), resumen=f"El hallazgo {inventado} lo confirma."))
+
+
+def test_an_invented_hash_in_the_summary_is_rejected() -> None:
+    with pytest.raises(ReportWriteError, match="cadena hexadecimal"):
+        _write(
+            _reply(
+                _con_secciones(),
+                resumen="El artefacto abcdef1234567890 sostiene la conclusion.",
+            )
+        )
+
+
+def test_a_real_referent_in_the_summary_is_accepted() -> None:
+    doc, _, _ = _write(
+        _reply(_con_secciones(), resumen=f"La ejecucion {RUN_ID} sostiene el hallazgo.")
+    )
+    assert RUN_ID in doc["summary"]
+
+
+@pytest.mark.parametrize(
+    "bloque",
+    [
+        {"t": "list", "items": ["identificador aaaaaaaa-9999-4999-8999-999999999999"]},
+        {
+            "t": "table",
+            "headers": ["Elemento", "Identificador"],
+            "rows": [["tarea", "aaaaaaaa-9999-4999-8999-999999999999"]],
+        },
+        {"t": "kv", "pairs": [{"k": "Run", "v": "aaaaaaaa-9999-4999-8999-999999999999"}]},
+        {
+            "t": "finding",
+            "sev": "high",
+            "title": "Persistencia",
+            "text": "x",
+            "meta": "run aaaaaaaa-9999-4999-8999-999999999999",
+        },
+    ],
+    ids=["lista", "tabla", "kv", "meta-de-hallazgo"],
+)
+def test_the_referent_gate_also_covers_lists_tables_and_other_fields(bloque) -> None:
+    """Un identificador inventado no se cuela por ir en una celda o una etiqueta."""
+    with pytest.raises(ReportWriteError, match="no pertenece a este caso"):
+        _write(_reply(_con_secciones(**{"3": [bloque]})))
+
+
+def test_a_referent_that_only_appears_in_the_prose_of_the_material_is_not_allowed() -> None:
+    """El conjunto sale de las ENTIDADES, no de un barrido del texto del material.
+
+    Un identificador escrito dentro del `detalle` de un hallazgo se autorizaba a
+    sí mismo cuando los referentes se sacaban con una regex sobre el volcado
+    entero del material (auditoría 2026-09-07, F04).
+    """
+    colado = "beefbeef-2222-4333-8444-555555555555"
+    material = _material()
+    material["hallazgos"][0]["detalle"] += f" Ver tambien el run {colado}."
+    with pytest.raises(ReportWriteError, match="no pertenece a este caso"):
+        _write(_reply(_con_secciones(**{"3": [{"t": "p", "text": f"El run {colado}."}]})),
+               material=material)
+
+
+def test_a_broken_audit_chain_stops_the_report_before_calling_the_model() -> None:
+    """Si no se va a poder aprobar, no se gastan minutos de modelo en redactarlo."""
+    material = _material()
+    material["integridad"]["hash_chain_verified"] = False
+    executor = FakeExecutor(_reply(_con_secciones()))
+    with pytest.raises(ReportWriteError, match="cadena de auditoría"):
+        write_report("caso-1", executor=executor, audit=FakeAudit(), material=material)
+    # Y no se ha llamado al ejecutor: el rechazo es ANTES.
+    assert executor.calls == 0
+
+
+# -- F04: los comandos conservan sus límites entre argumentos ----------------
+
+
+def test_a_command_with_a_quoted_argument_survives_the_report() -> None:
+    """Una ruta con un espacio se cita entera, no como dos argumentos."""
+    material = _material()
+    argv = ["tsk_fls", "-r", "/evidence/disco con espacio.E01"]
+    material["trabajos"][0]["argv"] = argv
+    material["trabajos"][0]["argv_literal"] = render_argv(argv)
+
+    doc, _, _ = _write(
+        _reply(_con_secciones(**{"6": [{"t": "code", "text": render_argv(argv)}]})),
+        material=material,
+    )
+    publicado = doc["sections"][6]["blocks"][0]["text"]
+    assert publicado == '"tsk_fls" -r "/evidence/disco con espacio.E01"'.replace(
+        '"tsk_fls"', "tsk_fls"
+    )
+    assert tokenizar_comando(publicado) == argv
+
+
+def test_collapsing_the_quotes_of_a_command_is_rejected() -> None:
+    """`grep "a b" f` y `grep a b f` son dos comandos, no uno con otro espaciado."""
+    material = _material()
+    argv = ["grep", "a b", "/evidence/x.txt"]
+    material["trabajos"][0]["argv"] = argv
+    material["trabajos"][0]["argv_literal"] = render_argv(argv)
+
+    with pytest.raises(ReportWriteError, match="comando auditado"):
+        _write(
+            _reply(_con_secciones(**{"6": [{"t": "code", "text": "grep a b /evidence/x.txt"}]})),
+            material=material,
+        )

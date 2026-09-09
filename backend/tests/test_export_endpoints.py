@@ -23,6 +23,7 @@ import pytest
 from fastapi.testclient import TestClient
 from openpyxl import load_workbook
 
+from _procedencia import crear_run, procedencia
 from agentopsy.i18n import t
 from agentopsy.cases.manager import CaseManager
 from agentopsy.export_hoja import MEDIA_TYPE
@@ -135,7 +136,7 @@ def test_the_sheet_carries_the_real_coverage_of_the_case(client, auth, cases) ->
         "title": "Inyección",
         "summary": "malfind: región RWX.",
         "severity": "high",
-        "run_id": _RUN_ID,
+        **procedencia(crear_run(cases, case.id)),
         "mitre_hints": ["T1055"],
     })
     assert coverage.coverage(case.id), "precondición: la cobertura existe"
