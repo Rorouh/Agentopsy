@@ -684,6 +684,8 @@ export const es: Record<MessageKey, string> = {
   "settings.connectName": "Conectar {name}",
   "settings.startOllama": "Levanta el servicio ollama del compose para usarlo.",
   "settings.timeout": "Tiempo máximo",
+  "settings.timeout.hint":
+    "Se aplica a los ejecutores de nube (Claude Code, Codex CLI, Gemini CLI), donde un turno que muere en el límite ya ha pagado el prompt entero. Ollama corre SIN límite: el modelo va en esta máquina, nadie factura la espera y un turno local tarda minutos con toda legitimidad. A cambio, una corrida local que se cuelgue no se corta sola.",
   "settings.saveFailed": "No se pudo guardar: {detail}",
   "settings.foot": "sin API keys · sesiones y ajustes solo en tu máquina",
   "settings.noApi": "Sin conexión con el servicio api",

@@ -209,6 +209,19 @@ class PromptExecutor(ABC):
     #: discover it in the bill (RULE 2: no silent degradation).
     supports_session_resume: bool = False
 
+    #: Whether a run of this executor is BOUNDED by the shared time limit
+    #: (``resolve_timeout``). True for the three cloud CLIs and False for the
+    #: local option, and the difference is not cosmetic: the cap exists because a
+    #: hung CLI burns a paid prefix with no answer (the measured Gemini hang of
+    #: the 2026-07-02 E2E), and because a cloud turn that dies at the limit still
+    #: costs the whole prompt. Neither applies to a model running on the
+    #: operator's own hardware: nobody is billed for the wait, so cutting a slow
+    #: local answer destroys work without protecting anything. Declared per
+    #: executor rather than derived from ``is_local`` so it stays a deliberate
+    #: product decision, and NOT a fallback (RULE 2): the value is declared, the
+    #: run records which regime applied, and no missing configuration is guessed.
+    bounded_by_timeout: bool = True
+
     @abstractmethod
     def is_available(self) -> ExecutorAvailability: ...
 
@@ -301,16 +314,29 @@ def neutral_cwd() -> str:
     return str(cwd)
 
 
-def resolve_timeout(context: dict[str, Any]) -> int:
-    """Timeout in seconds for one executor run.
+def resolve_timeout(context: dict[str, Any], *, bounded: bool = True) -> int | None:
+    """Timeout in seconds for one executor run, or ``None`` for no limit.
 
     Resolution order — every step operator-explicit, then the designed default
     (allowed by RULE 2): ``context['timeout']`` (caller) → AGENTOPSY_EXECUTOR_TIMEOUT
     (env / Settings via ``agentopsy.config``) → ``DEFAULT_TIMEOUT_S``.
 
+    ``bounded=False`` short-circuits that whole ladder and returns ``None``: the
+    executor DECLARED itself unbounded (``bounded_by_timeout``, today only
+    Ollama). It short-circuits rather than sitting at the bottom of the ladder on
+    purpose, because the ladder's upper rungs are not the operator asking for a
+    limit on THIS executor: ``context['timeout']`` is Agentopsy's own budget for
+    a long answer (``REPORT_TIMEOUT_S``) and AGENTOPSY_EXECUTOR_TIMEOUT is the
+    Settings chip, which the UI declares as applying to the cloud executors. Both
+    were calibrated against a paid CLI turn and neither is a statement about a
+    local model.
+
     An UNPARSEABLE value fails loudly instead of silently reverting to the
-    default (RULE 2: a typo in Settings must surface, not vanish).
+    default (RULE 2: a typo in Settings must surface, not vanish). That check
+    still runs for every BOUNDED executor, so a typo cannot hide behind Ollama.
     """
+    if not bounded:
+        return None
     raw = context.get("timeout")
     source = "context['timeout']"
     if raw is None:
@@ -477,7 +503,7 @@ class CliPromptExecutor(PromptExecutor):
             validate_model_id(session_id)
 
         argv = self._build_argv(prompt, model, session_id)
-        timeout = resolve_timeout(ctx)
+        timeout = resolve_timeout(ctx, bounded=self.bounded_by_timeout)
         cwd = neutral_cwd()
         audit = ctx.get("audit")
         case_id = ctx.get("case_id")

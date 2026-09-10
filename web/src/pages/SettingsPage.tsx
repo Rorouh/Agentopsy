@@ -488,6 +488,10 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
                   ))}
                 </div>
               </div>
+              {/* El tope es de los ejecutores de NUBE. Decirlo aquí, y no solo en
+                  el código, es lo que evita que el perito lea el chip como una
+                  promesa que Ollama incumple al tardar diez minutos. */}
+              <div className="field-hint">{t("settings.timeout.hint")}</div>
 
               {configError && (
                 <div className="error-state" role="alert" aria-live="polite">

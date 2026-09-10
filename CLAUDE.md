@@ -507,6 +507,27 @@ and in the audit event. Session transport sends only the delta when
 neutral empty cwd so no host `CLAUDE.md`/`AGENTS.md`/`GEMINI.md` leaks into the
 model's context.
 
+**The time limit is a CLOUD limit.** Each executor DECLARES whether a run of it
+is bounded (`PromptExecutor.bounded_by_timeout`): True for the three cloud CLIs,
+False for Ollama, where `resolve_timeout` returns `None` and the run carries no
+limit at all. The cap exists for reasons that are about paying: a turn that dies
+at the limit has already paid for the whole prompt, and a hung CLI burns a paid
+session without answering. Neither holds for a model on the operator's own
+hardware, where a turn legitimately takes minutes and cutting it destroys the
+tools that already ran. It is NOT a fallback (RULE 2): the value is declared per
+executor rather than inferred from `is_local` at resolution time, nothing is
+guessed from a missing setting, the unparseable-value gate still fails loud for
+every bounded executor, and the Ollama run audits which regime applied
+(`executor_run_start.timeout_s`, `null` for no limit). Being unbounded
+short-circuits the whole ladder, `context['timeout']` included, because neither
+rung is the operator asking for a limit on THIS executor: `REPORT_TIMEOUT_S` is
+Agentopsy's own budget for a long answer and AGENTOPSY_EXECUTOR_TIMEOUT is the
+Settings chip, which the UI now declares as applying to the cloud executors. The
+price, stated in the UI rather than hidden: a local run that truly hangs is no
+longer cut short on its own, and `jobs.cancel` is only consulted BETWEEN
+iterations, so it does not interrupt a call in flight. Pinned by the
+`resolve_timeout` tests in `tests/test_executors.py`.
+
 **Agent loop.** `agentopsy.agent` runs the analysis as a background job, persists
 findings hot, and concedes ONE correction round when a response breaks the
 response contract (a failure to EXECUTE is never retried). Findings validate

@@ -125,6 +125,21 @@ class OllamaExecutor(PromptExecutor):
     name = "Ollama"
     is_local = True
 
+    # Sin límite de tiempo. El tope compartido protege de un turno de nube que
+    # muere en el límite habiendo pagado el prompt entero, y de un CLI colgado
+    # que quema una sesión de pago sin devolver respuesta. Aquí no hay ninguna de
+    # las dos cosas: el modelo corre en la máquina del perito, nadie factura la
+    # espera, y un modelo local sobre CPU emulada tarda minutos en un turno que
+    # una API resuelve en segundos, así que el tope no acotaba un fallo sino que
+    # cortaba trabajo legítimo. Lo que se pierde al cortarlo es real: el turno se
+    # tira entero y con él las herramientas que ya habían corrido.
+    # El precio de esta decisión, dicho aquí porque el código no lo puede
+    # arreglar solo: una petición que se cuelgue de verdad (el servidor de Ollama
+    # trabado) ya no se destraba sola, y `jobs.cancel` solo se consulta ENTRE
+    # iteraciones, así que no interrumpe la llamada en vuelo. La salida es
+    # reiniciar el servicio.
+    bounded_by_timeout = False
+
     @staticmethod
     def _host() -> ResolvedHost | None:
         host = config.get("OLLAMA_HOST")
@@ -216,7 +231,7 @@ class OllamaExecutor(PromptExecutor):
         if temperature is not None:
             payload["options"] = {"temperature": float(temperature)}
 
-        timeout = resolve_timeout(ctx)
+        timeout = resolve_timeout(ctx, bounded=self.bounded_by_timeout)
         audit = ctx.get("audit")
         case_id = ctx.get("case_id")
 
@@ -247,6 +262,10 @@ class OllamaExecutor(PromptExecutor):
                     "prompt": prompt,
                     "prompt_sha256": sha256_text(prompt),
                     "prompt_chars": len(prompt),
+                    # Bajo qué régimen de tiempo corrió, para que el registro no
+                    # dependa de saber qué versión llevaba el código: `null` es
+                    # sin límite (FORENSIC INVARIANT 4, se registra lo que pasó).
+                    "timeout_s": timeout,
                 }
             )
 

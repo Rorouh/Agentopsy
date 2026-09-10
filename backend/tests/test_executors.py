@@ -490,6 +490,109 @@ def test_resolve_timeout_nonpositive_context_fails_loud(clean_config: None) -> N
     assert "context['timeout']" in str(exc.value)
 
 
+# ---- el modelo local corre sin tope ---------------------------------------------
+#
+# El tope compartido protege de un turno de NUBE que muere en el límite habiendo
+# pagado el prompt entero, y de un CLI colgado que quema una sesión de pago. Un
+# modelo que corre en la máquina del perito no tiene ninguna de las dos cosas, así
+# que ahí el tope no acotaba un fallo: cortaba trabajo legítimo, y con el turno se
+# tiraban las herramientas que ya habían corrido.
+
+
+def test_only_the_local_executor_declares_itself_unbounded() -> None:
+    """El régimen se DECLARA por ejecutor, no se deduce de `is_local` en el
+    momento de resolverlo. Este test es el que nota que un ejecutor nuevo (o uno
+    de nube al que alguien le cambie la marca) se sale del reparto."""
+    assert OllamaExecutor.bounded_by_timeout is False
+    for cls in (ClaudeCodeExecutor, CodexExecutor, GeminiExecutor):
+        assert cls.bounded_by_timeout is True, cls.__name__
+    # Y la marca coincide hoy con `is_local`, que es lo que hace legítimo el
+    # reparto: lo local es exactamente lo que nadie factura.
+    for cls in (OllamaExecutor, ClaudeCodeExecutor, CodexExecutor, GeminiExecutor):
+        assert cls.bounded_by_timeout is not cls.is_local, cls.__name__
+
+
+def test_unbounded_means_no_limit_at_all(
+    clean_config: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`None` es «sin límite», y gana a los dos escalones de arriba.
+
+    Ninguno de los dos es el operador pidiendo un tope para ESTE ejecutor: el
+    contexto es el presupuesto de Agentopsy para una respuesta larga
+    (`REPORT_TIMEOUT_S`) y la variable es el chip de Ajustes, que la interfaz
+    enuncia como de los ejecutores de nube. Los dos se calibraron contra un turno
+    de pago."""
+    monkeypatch.setenv("AGENTOPSY_EXECUTOR_TIMEOUT", "45")
+    assert resolve_timeout({}, bounded=False) is None
+    assert resolve_timeout({"timeout": 900}, bounded=False) is None
+
+
+def test_the_cloud_ladder_is_untouched(
+    clean_config: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Lo que se pidió es que cambie el local y NO cambie la nube: el default
+    diseñado, la variable de Ajustes y el contexto siguen mandando igual."""
+    assert resolve_timeout({}, bounded=True) == DEFAULT_TIMEOUT_S
+    monkeypatch.setenv("AGENTOPSY_EXECUTOR_TIMEOUT", "120")
+    assert resolve_timeout({}, bounded=True) == 120
+    assert resolve_timeout({"timeout": 60}, bounded=True) == 60
+
+
+def test_a_corrupt_setting_still_fails_loud_for_the_cloud(
+    clean_config: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Quitar el tope al local NO puede tapar un valor corrupto en Ajustes: la
+    puerta de RULE 2 sigue en pie para todo ejecutor acotado."""
+    monkeypatch.setenv("AGENTOPSY_EXECUTOR_TIMEOUT", "muchos")
+    with pytest.raises(ExecutorError):
+        resolve_timeout({}, bounded=True)
+    # Y para el que no lo está, no hay nada que validar porque no se lee.
+    assert resolve_timeout({}, bounded=False) is None
+
+
+def test_ollama_sends_no_socket_timeout_and_audits_the_regime(
+    clean_config: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """La prueba que de verdad importa: lo que llega al socket es `None`.
+
+    Con `urlopen(timeout=None)` el socket queda en modo bloqueante, que es
+    literalmente «sin límite». Y el audit registra el régimen, para que el
+    registro no dependa de saber qué versión llevaba el código."""
+    monkeypatch.setenv("AGENTOPSY_EXECUTOR_TIMEOUT", "45")
+    monkeypatch.setenv("OLLAMA_HOST", "http://ollama:11434")
+
+    visto: dict[str, object] = {}
+
+    class _Resp:
+        def read(self) -> bytes:
+            return json.dumps({"response": "ok", "done": True}).encode("utf-8")
+
+        def __enter__(self) -> "_Resp":
+            return self
+
+        def __exit__(self, *a: object) -> None:
+            return None
+
+    def fake_urlopen(req: object, timeout: object = None) -> _Resp:
+        visto["timeout"] = timeout
+        return _Resp()
+
+    monkeypatch.setattr("agentopsy.executors.ollama.urllib.request.urlopen", fake_urlopen)
+
+    eventos: list[dict] = []
+
+    class _Audit:
+        def append(self, event: dict) -> None:
+            eventos.append(event)
+
+    OllamaExecutor().run("analiza", {"model": "llama3", "audit": _Audit()})
+
+    assert "timeout" in visto, "urlopen no recibió el argumento timeout"
+    assert visto["timeout"] is None
+    inicio = next(e for e in eventos if e["action"] == "executor_run_start")
+    assert inicio["timeout_s"] is None
+
+
 # ---- HTTP surface: selección de ejecutor obligatoria (RULE 2) -----------------
 
 

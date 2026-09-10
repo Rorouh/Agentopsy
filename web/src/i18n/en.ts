@@ -713,6 +713,8 @@ export const en = {
   "settings.connectName": "Connect {name}",
   "settings.startOllama": "Start the compose ollama service to use it.",
   "settings.timeout": "Time limit",
+  "settings.timeout.hint":
+    "It applies to the cloud executors (Claude Code, Codex CLI, Gemini CLI), where a turn that dies at the limit has already paid for the whole prompt. Ollama runs with NO limit: the model runs on this machine, nobody is billed for the wait, and a local turn legitimately takes minutes. In exchange, a local run that hangs is not cut short on its own.",
   "settings.saveFailed": "Could not save: {detail}",
   "settings.foot": "no API keys · sessions and settings only on your machine",
   "settings.noApi": "No connection with the api service",
