@@ -144,6 +144,13 @@ export const FILE_INPUT_ACCEPT_EXTENSIONS = Array.from(
   ]),
 );
 
+// Nombre con el que se enseña una evidencia: el fichero de la copia inmutable que
+// vive bajo custodia en el caso (la que leen las herramientas), sin la ruta.
+export function evidenceFileName(e: EvidenceHandle): string {
+  const parts = e.original_path.split("/");
+  return parts[parts.length - 1] || e.evidence_id;
+}
+
 // Clasificación de triage (detected_kind) para la tabla de evidencias. El VALOR
 // lo computa el backend después de registrar (es un dato del caso, determinado
 // por contenido); lo que hay aquí es sólo cómo se NOMBRA en cada idioma.

@@ -422,7 +422,14 @@ model's context.
 findings hot, and concedes ONE correction round when a response breaks the
 response contract (a failure to EXECUTE is never retried). Findings validate
 `observed_at` as ISO-8601 with an explicit zone: a mark without an offset is
-rejected rather than assumed UTC.
+rejected rather than assumed UTC. A run covers EVERY evidence of the case on equal
+terms, with no primary one: the request carries the case (an `evidence_id` in it is
+a 422), the examiner narrows the scope in the prompt itself, and with several
+evidences every toolkit call and `consultar_actividad` must name its `evidence_id`
+(closed enum, no default). A finding takes its evidence from the run its `run_id`
+cites (`agentopsy.findings.atribucion`); `agent_finding` audits that real evidence
+and how it was determined, and `agent_run_start` anchors the run to every evidence
+with its baseline hash.
 
 **MITRE ATT&CK.** `agentopsy.mitre` paints the full Enterprise catalog. Agent
 proposal and examiner verdict are separate axes and are never merged; an

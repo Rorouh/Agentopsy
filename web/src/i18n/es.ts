@@ -425,18 +425,21 @@ export const es: Record<MessageKey, string> = {
   "inv.noCaseBody":
     "Abre uno con «crear caso» en el lateral y regístrale evidencia antes de investigar: el agente solo trabaja sobre un handle hash-verificado.",
   "inv.mismatchLead":
-    "Desajuste de perfil: el agente activo no es el adecuado para esta evidencia.",
+    "Desajuste de perfil: el agente activo no es el adecuado para alguna evidencia del caso.",
   "inv.mismatchBodyA": "El caso declara",
-  "inv.mismatchBodyB": "pero la determinación sobre el contenido de la evidencia dice",
+  "inv.mismatchBodyB": "pero la determinación sobre el contenido dice",
   "inv.mismatchBodyC": "El agente del caso",
   "inv.mismatchBodyD":
-    "se negará a invocar herramientas mientras siga el desacuerdo. Resuélvelo en",
+    "se negará a invocar herramientas sobre las evidencias en desacuerdo mientras dure. Resuélvelo en",
   "inv.mismatchPath": "Evidencia → Sistema operativo",
   "inv.mismatchBodyE":
     "al anclar el perfil, Agentopsy re-enruta solo al sub-agente que corresponde. No lo cambia por ti (RULE 2, un desacuerdo lo decide el operador, no el programa).",
   "inv.collapsePanel": "Plegar el panel de contexto",
   "inv.expandPanel": "Desplegar el panel de contexto",
   "inv.evidence": "Evidencia",
+  "inv.evidences": "Evidencias",
+  "inv.scopeNote":
+    "El agente las analiza todas por igual. Para centrarte en una, pídelo en tu mensaje.",
   "inv.verified": "verificada",
   "inv.noneRegistered": "ninguna registrada",
   "inv.noFindings": "Sin hallazgos.",
@@ -879,10 +882,10 @@ export const es: Record<MessageKey, string> = {
   "chat.stopping": "Deteniendo el análisis…",
   "chat.startTitle": "¿Qué le pedimos al agente?",
   "chat.startBody":
-    "Ejecuta el maletín forense sobre la evidencia verificada y deja cada comando en el log de auditoría encadenado.",
+    "Ejecuta el maletín forense sobre todas las evidencias verificadas del caso y deja cada comando en el log de auditoría encadenado. Para centrarte en una evidencia, dilo en el mensaje.",
   "chat.noEvidenceTitle": "Este caso todavía no tiene evidencia",
   "chat.noEvidenceBody":
-    "El agente analiza una imagen forense verificada, así que primero hay que registrarla. Su hash baseline se calcula al hacerlo.",
+    "El agente analiza las evidencias verificadas del caso, así que primero hay que registrar al menos una. Su hash baseline se calcula al hacerlo.",
   "chat.roleExaminer": "Perito",
   "chat.runningTool": "ejecutando {tool}",
   "chat.reasoning": "razonando",

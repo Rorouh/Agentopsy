@@ -452,18 +452,21 @@ export const en = {
   "inv.noCaseBody":
     "Open one with «create case» in the sidebar and register evidence for it before investigating: the agent only works on a hash-verified handle.",
   "inv.mismatchLead":
-    "Profile mismatch: the active agent is not the right one for this evidence.",
+    "Profile mismatch: the active agent is not the right one for some evidence of the case.",
   "inv.mismatchBodyA": "The case declares",
-  "inv.mismatchBodyB": "but the determination over the evidence content says",
+  "inv.mismatchBodyB": "but the determination over the content says",
   "inv.mismatchBodyC": "The case agent",
   "inv.mismatchBodyD":
-    "will refuse to invoke tools while the disagreement stands. Resolve it in",
+    "will refuse to invoke tools over the evidence in disagreement while it lasts. Resolve it in",
   "inv.mismatchPath": "Evidence, Operating system",
   "inv.mismatchBodyE":
     "when you anchor the profile, Agentopsy re-routes to the matching sub-agent on its own. It does not change it for you (RULE 2, a disagreement is decided by the operator, not by the program).",
   "inv.collapsePanel": "Collapse the context panel",
   "inv.expandPanel": "Expand the context panel",
   "inv.evidence": "Evidence",
+  "inv.evidences": "Evidence",
+  "inv.scopeNote":
+    "The agent analyses all of it on equal terms. To focus on one piece, ask for it in your message.",
   "inv.verified": "verified",
   "inv.noneRegistered": "none registered",
   "inv.noFindings": "No findings.",
@@ -905,10 +908,10 @@ export const en = {
   "chat.stopping": "Stopping the analysis…",
   "chat.startTitle": "What do we ask the agent for?",
   "chat.startBody":
-    "It runs the forensic toolkit over the verified evidence and leaves every command in the hash-chained audit log.",
+    "It runs the forensic toolkit over every verified piece of evidence of the case and leaves every command in the hash-chained audit log. To focus on one piece of evidence, say so in the message.",
   "chat.noEvidenceTitle": "This case has no evidence yet",
   "chat.noEvidenceBody":
-    "The agent analyses a verified forensic image, so it has to be registered first. Its baseline hash is computed when you do.",
+    "The agent analyses the verified evidence of the case, so at least one piece has to be registered first. Its baseline hash is computed when you do.",
   "chat.roleExaminer": "Examiner",
   "chat.runningTool": "running {tool}",
   "chat.reasoning": "reasoning",

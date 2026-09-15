@@ -269,7 +269,6 @@ def test_router_chain_threads_verified_context_end_to_end(wired) -> None:
         "/api/agent/query",
         json={
             "case_id": case.id,
-            "evidence_id": handle.evidence_id,
             "prompt": "extrae el hive SOFTWARE y parséalo",
             "executor": "ollama",
         },

@@ -4,7 +4,11 @@ Thin adapter (CLAUDE.md RULE 3): validates the operator's selections and hands
 off to ``ForensicAgent.run`` through the executor the operator chose for the
 request. RULE 2 — nothing is inferred:
 
-- no ``case_id`` / ``evidence_id``  → 422 with the missing selection named,
+- no ``case_id`` → 422 with the missing selection named; a case with no
+  registered evidence → 422 (there is nothing to investigate),
+- an ``evidence_id`` in the request → 422: the scope of an investigation is the
+  WHOLE case (every registered evidence, none primary); focusing on one piece of
+  evidence is something the examiner asks for in the prompt itself,
 - no ``executor`` in the request and no ``DEFAULT_EXECUTOR`` explicitly set by
   the user in Settings → 422 listing the valid executors,
 - executor selected but unusable (binary missing, no session, Ollama
@@ -61,8 +65,12 @@ class QueryRequest(BaseModel):
     # (``resolve_os_profile``) — the client never chooses or sends it (RULE 2:
     # no silent default, no host/context guess). A client that still sends the
     # key is simply ignored (Pydantic drops unknown fields).
-    evidence_id: str | None = None
     case_id: str | None = None
+    # NOT a scope selector any more: the investigation covers EVERY evidence of the
+    # case, with no primary one. The field survives only so that a client still
+    # sending it (a stale SPA tab, a script) gets an actionable 422 instead of a run
+    # whose scope silently differs from what it asked for (RULE 2).
+    evidence_id: str | None = None
     prompt: str
     # Executor selected by the OPERATOR for this request:
     # "claude-code" | "codex" | "gemini" | "ollama". When absent, the only
@@ -96,10 +104,10 @@ def _prepare_run(req: QueryRequest) -> tuple[ForensicAgent, str, list, str | Non
             status_code=422,
             detail=t("api.caseRequired"),
         )
-    if not req.evidence_id:
+    if req.evidence_id is not None:
         raise HTTPException(
             status_code=422,
-            detail=t("api.evidenceRequired"),
+            detail=t("api.evidenceScopeIsCase"),
         )
 
     executor_id = req.executor or config.get("DEFAULT_EXECUTOR")
@@ -127,6 +135,17 @@ def _prepare_run(req: QueryRequest) -> tuple[ForensicAgent, str, list, str | Non
         raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
+    # The scope is every registered evidence of the case. With none there is
+    # nothing to investigate: say so before routing (a case without evidence has
+    # no os_profile either, and "anchor the profile" would be the wrong advice).
+    try:
+        case_evidence = evidence_manager.list(req.case_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=traducir_excepcion(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
+    if not case_evidence:
+        raise HTTPException(status_code=422, detail=t("api.evidenceRequired"))
     try:
         os_profile = resolve_os_profile(case)
     except OsProfileUnresolved as exc:
@@ -177,7 +196,7 @@ def _prepare_run(req: QueryRequest) -> tuple[ForensicAgent, str, list, str | Non
     agent = ForensicAgent(package=pkg, model=model, evidence=evidence_manager, audit=audit)
     prior_messages = build_replay_messages(req.case_id, req.session_id)
     meta = {
-        "evidence_id": req.evidence_id,
+        "evidence_ids": [h.evidence_id for h in case_evidence],
         "case_id": req.case_id,
         "os_profile": os_profile,
         "executor": {"id": executor.id, "name": executor.name, "local": executor.is_local},
@@ -193,7 +212,6 @@ def query(req: QueryRequest) -> dict:
         result = agent.run(
             prompt=prompt,
             case_id=req.case_id,
-            evidence_id=req.evidence_id,
             consent_ref=consent_ref,
             prior_messages=prior_messages,
         )
@@ -226,7 +244,6 @@ def analyze(req: QueryRequest) -> dict:
         result = agent.run(
             prompt=prompt,
             case_id=req.case_id,
-            evidence_id=req.evidence_id,
             consent_ref=consent_ref,
             prior_messages=prior_messages,
             on_event=emit,  # los eventos (tool_call/tool_result/finding) → al job
@@ -298,7 +315,6 @@ async def query_stream(req: QueryRequest) -> StreamingResponse:
             result = agent.run(
                 prompt=prompt,
                 case_id=req.case_id,
-                evidence_id=req.evidence_id,
                 consent_ref=consent_ref,
                 prior_messages=prior_messages,
                 on_event=push,

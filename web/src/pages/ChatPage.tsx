@@ -14,6 +14,7 @@ import type {
 } from "../api/types";
 import { ExecutorLoginModal } from "../components/ExecutorLoginModal";
 import { Icon } from "../ui/Icon";
+import { evidenceFileName } from "../utils/evidence";
 
 // Markdown mínimo del turno del agente. SEC INV 8: se pinta como TEXTO, en
 // todo web/src no hay un solo dangerouslySetInnerHTML, y esta pantalla es la
@@ -255,7 +256,17 @@ function ElapsedSince({ since }: { since: string }) {
 // Bloque «Cadena de ejecución»: lo que el agente EJECUTÓ, con el argv literal.
 // No es la intención declarada por el LLM, es el comando que corrió y quedó en
 // el log de auditoría encadenado (FORENSIC INVARIANT 4).
-function ToolChain({ activity, streaming }: { activity: StreamEvent[]; streaming: boolean }) {
+function ToolChain({
+  activity,
+  streaming,
+  evidenceNames,
+}: {
+  activity: StreamEvent[];
+  streaming: boolean;
+  // id de evidencia → nombre de fichero, para decir sobre QUÉ evidencia corrió
+  // cada herramienta (con varias en el caso, cada llamada nombra la suya).
+  evidenceNames: Record<string, string>;
+}) {
   const { t, tn } = useLang();
   const steps = activity.filter((e) => e.type === "tool_call").length;
   if (activity.length === 0 && !streaming) return null;
@@ -282,9 +293,11 @@ function ToolChain({ activity, streaming }: { activity: StreamEvent[]; streaming
                 .map(([k, v]) => `${k}=${String(v)}`)
                 .join(" ")
             : "";
+          const target = ev.evidence_id ? evidenceNames[ev.evidence_id] ?? ev.evidence_id : null;
           return (
             <div className="toolchain-line toolchain-line--dim" key={i}>
               ▸ {ev.tool_id}
+              {target ? ` · ${target}` : ""}
               {params ? ` ${params.length > 90 ? `${params.slice(0, 89)}…` : params}` : ""}
             </div>
           );
@@ -310,6 +323,10 @@ function ToolChain({ activity, streaming }: { activity: StreamEvent[]; streaming
     </div>
   );
 }
+
+// Referencia estable para el valor por defecto de `evidence` (un `[]` literal en
+// la firma sería un array nuevo en cada render).
+const NO_EVIDENCE: EvidenceHandle[] = [];
 
 // One session id per case is enough for v1, múltiples investigaciones por caso
 // se introducen cuando el flujo lo pida explícitamente.
@@ -347,7 +364,8 @@ const REASONING_CONFIG_KEY: Partial<Record<ExecutorId, string>> = {
 interface ChatPageProps {
   caps: Capabilities | null;
   activeCase?: Case | null;
-  activeEvidence?: EvidenceHandle | null;
+  // TODAS las evidencias del caso: el alcance de la investigación, sin primaria.
+  evidence?: EvidenceHandle[];
   // Se llama al terminar cada query() (bien o mal) para que la página que
   // envuelve (Investigación) refresque hallazgos y herramientas.
   onTurnComplete?: () => void;
@@ -358,7 +376,7 @@ interface ChatPageProps {
 export function ChatPage({
   caps,
   activeCase,
-  activeEvidence,
+  evidence = NO_EVIDENCE,
   onTurnComplete,
   onCapsRefresh,
 }: ChatPageProps) {
@@ -790,9 +808,9 @@ export function ChatPage({
       // desconecte. `drivePoll` sondea.
       const { job_id } = await api.analyze({
         prompt: text,
-        // El backend resuelve el os_profile del caso; esta clave se ignora si se
-        // manda. activeProfile puede ser null (SO aún sin determinar).
-        evidence_id: activeEvidence?.evidence_id ?? "",
+        // Sin `evidence_id`: el alcance es el CASO, todas sus evidencias por
+        // igual. Centrarse en una se pide en el propio mensaje. El backend
+        // resuelve también el os_profile del caso.
         case_id: caseId,
         executor: executor || undefined,
         session_id: CHAT_SESSION_ID,
@@ -838,7 +856,11 @@ export function ChatPage({
   // Sin evidencia el agente no tiene sobre qué correr: enviar sólo puede acabar
   // en un error del backend, así que se corta antes (RULE 2: se dice el motivo,
   // no se intenta a ciegas).
-  const hasEvidence = activeEvidence != null;
+  const hasEvidence = evidence.length > 0;
+  const evidenceNames = useMemo(
+    () => Object.fromEntries(evidence.map((e) => [e.evidence_id, evidenceFileName(e)])),
+    [evidence],
+  );
   const sendDisabled = !input.trim() || busy || !hasEvidence;
   const agentLabel = activeAgent?.id ?? (activeProfile ? `agentopsy-${activeProfile}` : "agentopsy");
 
@@ -940,7 +962,11 @@ export function ChatPage({
                   )}
 
                   {(msg.activity?.length || msg.streaming) && (
-                    <ToolChain activity={msg.activity ?? []} streaming={!!msg.streaming} />
+                    <ToolChain
+                      activity={msg.activity ?? []}
+                      streaming={!!msg.streaming}
+                      evidenceNames={evidenceNames}
+                    />
                   )}
 
                   {msg.content && (

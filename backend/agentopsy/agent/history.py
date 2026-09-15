@@ -139,8 +139,11 @@ def _cap_transcript(
 
 def _tool_runs_ledger(messages: list[ChatMessage]) -> str:
     """Build a markdown summary of tool runs persisted on prior assistant
-    turns. Entries look like ``- T{n} {tool_id} exit={code} run={run_id[:8]}``.
-    Returns ``""`` if no prior turn carries tool_calls.
+    turns. Entries look like ``- T{n} {tool_id} exit={code} run={run_id}
+    evidence={evidence_id}``: with several evidences in the case, the agent needs
+    to know which one each prior run read in order to chain a derived artifact
+    under the right ``evidence_id``. Returns ``""`` if no prior turn carries
+    tool_calls.
     """
     rows: list[str] = []
     turn_no = 0
@@ -156,19 +159,21 @@ def _tool_runs_ledger(messages: list[ChatMessage]) -> str:
             exit_code = call.get("exit_code")
             refused = call.get("refused")
             error = call.get("error")
+            evidence_id = call.get("evidence_id")
+            evidence_tag = f" evidence={evidence_id}" if evidence_id else ""
             if refused:
                 rows.append(
                     f"- T{turn_no} {tool_id} REFUSED ({call.get('reason','?')})"
                 )
             elif error:
                 err_short = (error[:120] + "…") if len(error) > 120 else error
-                rows.append(f"- T{turn_no} {tool_id} ERROR: {err_short}")
+                rows.append(f"- T{turn_no} {tool_id}{evidence_tag} ERROR: {err_short}")
             else:
                 tag = f"exit={exit_code}" if exit_code is not None else "exit=?"
                 # Full run_id, never a prefix: the agent re-uses it as the {run_id, relpath}
                 # ArtifactRef for a downstream tool (fls→mactime), and the ArtifactStore
                 # rejects anything but a full UUID4. A truncated id is not round-trippable.
-                rows.append(f"- T{turn_no} {tool_id} {tag} run={run_id}")
+                rows.append(f"- T{turn_no} {tool_id} {tag} run={run_id}{evidence_tag}")
             if len(rows) >= MAX_LEDGER_ENTRIES:
                 rows.append(f"- (older entries omitted, kept last {MAX_LEDGER_ENTRIES})")
                 break
@@ -203,6 +208,7 @@ def _findings_ledger(case_id: str) -> str:
     rows = [
         f"- `{f.id}` [{f.severity}] «{f.title}»"
         + (f" (tool={f.tool_id})" if f.tool_id else "")
+        + (f" (evidence={f.evidence_id})" if f.evidence_id else "")
         for f in findings
     ]
     return (

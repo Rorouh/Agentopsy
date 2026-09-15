@@ -56,6 +56,14 @@ class _Scripted(ModelBackend):
 
 
 class _FakeEvidence:
+    def __init__(self, evidence_id: str = "e") -> None:
+        # El caso de prueba tiene UNA evidencia. La investigación abarca TODAS las
+        # del caso (`list`), y con una sola esa es el alcance entero.
+        self._evidence_id = evidence_id
+
+    def list(self, case_id: str) -> list[SimpleNamespace]:
+        return [self.get(case_id, self._evidence_id)]
+
     def get(self, case_id: str, evidence_id: str) -> SimpleNamespace:
         return SimpleNamespace(
             evidence_id=evidence_id,
@@ -114,7 +122,7 @@ def test_un_pivote_completo_se_registra_en_la_cadena_de_custodia(wired) -> None:
             ),
         )
     ])
-    result = agent.run("analiza", case_id=case_id, evidence_id="e")
+    result = agent.run("analiza", case_id=case_id)
 
     call = result["tool_calls"][0]
     assert call["tool_id"] == "declarar_pivote"
@@ -133,7 +141,7 @@ def test_el_perito_puede_ver_el_pivote_en_la_actividad(wired) -> None:
     agent, _ = build([
         _pivote(via_cerrada="el disco", motivo="exit 1", via_alternativa="la RAM")
     ])
-    agent.run("x", case_id=case_id, evidence_id="e", on_event=eventos.append)
+    agent.run("x", case_id=case_id, on_event=eventos.append)
     assert any(e.get("type") == "pivot" for e in eventos)
 
 
@@ -152,7 +160,7 @@ def test_el_perito_puede_ver_el_pivote_en_la_actividad(wired) -> None:
 def test_sin_los_tres_campos_se_rechaza(wired, params) -> None:
     build, cases, case_id = wired
     agent, _ = build([_pivote(**params)])
-    result = agent.run("x", case_id=case_id, evidence_id="e")
+    result = agent.run("x", case_id=case_id)
 
     assert "obligatorios" in (result["tool_calls"][0].get("error") or "")
     # Y NO ensucia la cadena de custodia con un descarte sin prueba.
@@ -165,7 +173,7 @@ def test_un_pivote_rechazado_no_tumba_el_run(wired) -> None:
         _pivote(via_cerrada="x", motivo="", via_alternativa=""),
         _pivote(via_cerrada="el disco", motivo="exit 1", via_alternativa="la RAM"),
     ])
-    result = agent.run("x", case_id=case_id, evidence_id="e")
+    result = agent.run("x", case_id=case_id)
     assert result["tool_calls"][0].get("error")
     assert result["tool_calls"][1].get("error") is None
 
@@ -185,7 +193,7 @@ def test_el_pivote_no_ejecuta_ninguna_herramienta(wired, monkeypatch) -> None:
     agent, _ = build([
         _pivote(via_cerrada="el disco", motivo="exit 1", via_alternativa="la RAM")
     ])
-    agent.run("x", case_id=case_id, evidence_id="e")
+    agent.run("x", case_id=case_id)
 
 
 def test_la_tool_se_ofrece_y_exige_los_tres_campos() -> None:

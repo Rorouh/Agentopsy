@@ -113,7 +113,7 @@ def test_session_backend_sends_uncut_transcript(ok_dispatcher) -> None:
     backend = _CaptureBackend("tsk_mmls", 6, session=True)
     agent = ForensicAgent(make_package("unix"), backend, _FakeEvidence())
 
-    agent.run("lista la raíz", case_id="c", evidence_id="e")
+    agent.run("lista la raíz", case_id="c")
 
     last = backend.captured[-1]
     # Con 6 resultados de tool (> keep=4), el backend de sesión NO ve stubs…
@@ -128,7 +128,7 @@ def test_stateless_backend_keeps_the_windowing(ok_dispatcher) -> None:
     backend = _CaptureBackend("tsk_mmls", 6, session=False)
     agent = ForensicAgent(make_package("unix"), backend, _FakeEvidence())
 
-    agent.run("lista la raíz", case_id="c", evidence_id="e")
+    agent.run("lista la raíz", case_id="c")
 
     last = backend.captured[-1]
     assert any(_STUB_MARK in c for c in _contents(last["messages"]))
@@ -143,7 +143,7 @@ def test_over_budget_trim_is_windowed_and_audited(
     backend = _CaptureBackend("tsk_mmls", 6, session=True)
     agent = ForensicAgent(make_package("unix"), backend, _FakeEvidence(), audit=audit)
 
-    agent.run("lista la raíz", case_id="c", evidence_id="e")
+    agent.run("lista la raíz", case_id="c")
 
     last = backend.captured[-1]
     assert any(_STUB_MARK in c for c in _contents(last["messages"]))

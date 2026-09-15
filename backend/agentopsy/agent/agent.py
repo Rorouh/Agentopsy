@@ -63,6 +63,7 @@ from agentopsy.artifacts.store import artifact_store
 from agentopsy.audit import AuditLog
 from agentopsy.evidence import EvidenceManager
 from agentopsy.evidence_context import EvidenceContext
+from agentopsy.findings.atribucion import atribuir_evidencia
 from agentopsy.findings.store import finding_store
 from agentopsy.knowledge import knowledge_store
 from agentopsy.mitre.coverage import coverage_store
@@ -297,12 +298,20 @@ class ForensicAgent:
         self,
         prompt: str,
         case_id: str,
-        evidence_id: str,
         consent_ref: str | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
         on_event: Callable[[dict[str, Any]], None] | None = None,
         should_cancel: Callable[[], bool] | None = None,
     ) -> AgentLoopResult:
+        """Investiga el caso ``case_id`` sobre TODAS sus evidencias registradas.
+
+        No hay evidencia primaria: el alcance es el conjunto de evidencias del
+        caso, todas con el mismo peso. Con varias, cada herramienta nombra la suya
+        (``evidence_id`` de un enum cerrado, sin valor por defecto) y un hallazgo
+        toma la evidencia de la ejecución que lo sostiene. Centrarse en una
+        evidencia es algo que pide el perito en el propio mensaje, no un parámetro
+        de la petición.
+        """
         # Local import to avoid a circular dep that only matters at call time.
         from agentopsy.toolkit.dispatcher import ToolExecutionError, execute as dispatch_tool
 
@@ -320,8 +329,6 @@ class ForensicAgent:
             raise ValueError("prompt is required")
         if not case_id:
             raise ValueError("case_id is required for an LLM-driven run")
-        if not evidence_id:
-            raise ValueError("evidence_id is required for an LLM-driven run")
 
         # Egress posture (FORENSIC_SOUNDNESS §5): a non-local backend means
         # evidence-derived content crosses to a third party. Redact at the single
@@ -333,36 +340,60 @@ class ForensicAgent:
         is_cloud = not self.model.capabilities().is_local
         model_name = getattr(self.model, "model_name", self.model.name)
 
-        handle = self.evidence.get(case_id, evidence_id)
-        evidence_filename = handle.original_path.name
-        detected_os = handle.detected_os
-        detected_kind = handle.detected_kind
-
-        # MULTI-EVIDENCIA: un caso real trae varias evidencias (RAM + disco) y la
-        # investigación las CORRELACIONA — los TTP/credenciales viven en la memoria,
-        # el «cuándo» fino y los borrados en el disco. El agente ve TODAS y puede
-        # apuntar cada herramienta a la que toque con el param `evidence_id`; si lo
-        # omite, se usa la primaria (`evidence_id` del request, el ancla de auditoría).
+        # ALCANCE: TODAS las evidencias del caso, por igual. Un caso real trae varias
+        # (RAM + disco, un documento aportado) y la investigación las CORRELACIONA:
+        # los TTP y las credenciales viven en la memoria, el «cuándo» fino y los
+        # borrados en el disco. No hay evidencia primaria ni una por defecto: con
+        # varias, cada herramienta nombra la suya con `evidence_id` (enum cerrado) y
+        # la llamada que lo omite se rechaza; con una sola, esa ES el alcance entero.
         # Los paths y el EvidenceContext (que ata cada run a su evidencia por hash en
-        # el audit, FORENSIC INVARIANT 4) los sigue inyectando Agentopsy por handle
-        # verificado — el modelo solo elige un id de un enum cerrado, nunca una ruta
-        # (SECURITY INVARIANT 5-6). `.list()` puede no existir en un doble de test
-        # mínimo (solo `.get()`): en ese caso el caso tiene una sola evidencia.
-        try:
-            all_handles = self.evidence.list(case_id)
-        except (AttributeError, KeyError, ValueError, OSError):
-            all_handles = [handle]
+        # el audit, FORENSIC INVARIANT 4) los inyecta Agentopsy por handle verificado:
+        # el modelo solo elige un id de un enum cerrado, nunca una ruta (SECURITY
+        # INVARIANT 5-6). Un caso sin evidencias no tiene nada que investigar y falla
+        # en alto (RULE 2).
+        all_handles = list(self.evidence.list(case_id))
+        if not all_handles:
+            raise ValueError(Mensaje("agent.noEvidence", case=case_id))
         handles_by_id: dict[str, Any] = {h.evidence_id: h for h in all_handles}
-        handles_by_id.setdefault(evidence_id, handle)
+        scope_ids = list(handles_by_id)
+        multi_evidence = len(scope_ids) > 1
         evidence_paths = {eid: str(h.original_path) for eid, h in handles_by_id.items()}
         evidence_contexts = {
             eid: EvidenceContext.from_handle(h) for eid, h in handles_by_id.items()
         }
-        # Etiqueta legible por evidencia para el selector y el prompt: «fichero · kind».
+        # Etiqueta legible por evidencia para el selector: «fichero · kind».
         evidence_choices = [
             (eid, f"{h.original_path.name} · {h.detected_kind}")
             for eid, h in handles_by_id.items()
         ]
+
+        def target_evidence(tool_id: str, declared: Any) -> str:
+            """La evidencia sobre la que corre UNA llamada, o ``ValueError``.
+
+            La declarada, si es del caso; sin declarar, solo cuando el caso tiene
+            una única evidencia (el alcance entero). Con varias, omitirla es un
+            error que se le devuelve al modelo con las evidencias válidas: elegir
+            una aquí sería resucitar la primaria (RULE 2)."""
+            opciones = "; ".join(f"{eid} = {label}" for eid, label in evidence_choices)
+            if declared is None or declared == "":
+                if multi_evidence:
+                    raise ValueError(
+                        Mensaje(
+                            "agentLoop.evidenceRequired",
+                            tool=tool_id,
+                            choices=opciones,
+                        )
+                    )
+                return scope_ids[0]
+            if not isinstance(declared, str) or declared not in handles_by_id:
+                raise ValueError(
+                    Mensaje(
+                        "agentLoop.evidenceNotInCase",
+                        evidence_id=repr(declared),
+                        choices=opciones,
+                    )
+                )
+            return declared
 
         allowed = self.available_tool_ids()
         if not allowed:
@@ -372,10 +403,7 @@ class ForensicAgent:
                 tool_calls=[],
             )
 
-        system_text = self._system_prompt(
-            case_id, evidence_filename, allowed, detected_os, detected_kind,
-            evidence_choices=evidence_choices,
-        )
+        system_text = self._system_prompt(case_id, allowed, all_handles)
 
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": system_text},
@@ -386,7 +414,9 @@ class ForensicAgent:
             "messages": messages,
             "temperature": float(self.package.model.temperature or 0.2),
         }
-        specs = tool_specs(list(allowed), evidence_choices) + internal_tool_specs()
+        specs = tool_specs(list(allowed), evidence_choices) + internal_tool_specs(
+            evidence_choices
+        )
         # RULE 2: don't offer consultar_conocimiento when there is NOTHING it could
         # serve. Ahora tiene dos ámbitos, así que hay algo que servir si el paquete
         # trae docs estáticos, si declara un núcleo de nodos por caso, o si el caso
@@ -409,11 +439,12 @@ class ForensicAgent:
 
         # F3 — anchor the run in the case's hash-chained audit log: which model,
         # which backend, over which evidence. Only metadata/hashes ever land here.
+        # The run is anchored to its WHOLE scope (every evidence of the case with
+        # its baseline hash), never to a single «primary» one.
         self._audit_event(
             "agent_run_start",
             case_id=case_id,
-            evidence_id=evidence_id,
-            evidence_sha256=handle.sha256,
+            evidences=[ctx.audit_fields() for ctx in evidence_contexts.values()],
             backend=self.model.name,
             model_name=model_name,
             consent_ref=consent_ref,
@@ -436,7 +467,9 @@ class ForensicAgent:
         # evidencia y el agente los necesita literales para citar procedencia. Se
         # excluyen de la redacción de egress (ver agentopsy.agent.redaction). Crece
         # con cada run: un `run_id` nuevo entra aquí antes de viajar al modelo.
-        protected_ids: set[str] = {i for i in (case_id, evidence_id) if i}
+        # Los ids de TODAS las evidencias del alcance van aquí: el agente tiene que
+        # poder pasarlos literales en `evidence_id`.
+        protected_ids: set[str] = {i for i in (case_id, *scope_ids) if i}
 
         for iteration in range(max_iter):
             # Parada cooperativa del operador (botón «Parar»). Se comprueba al
@@ -493,7 +526,7 @@ class ForensicAgent:
                 self._audit_event(
                     "context_window_trimmed",
                     case_id=case_id,
-                    evidence_id=evidence_id,
+                    evidence_ids=scope_ids,
                     iteration=iteration + 1,
                     message_count=len(messages),
                     transcript_chars=transcript_chars(messages),
@@ -525,7 +558,7 @@ class ForensicAgent:
                 self._audit_event(
                     "agent_cloud_egress",
                     case_id=case_id,
-                    evidence_id=evidence_id,
+                    evidence_ids=scope_ids,
                     backend=self.model.name,
                     model_name=model_name,
                     consent_ref=consent_ref,
@@ -555,7 +588,7 @@ class ForensicAgent:
                     self._audit_event(
                         "agent_contract_repair",
                         case_id=case_id,
-                        evidence_id=evidence_id,
+                        evidence_ids=scope_ids,
                         backend=self.model.name,
                         model_name=model_name,
                         iteration=iteration + 1,
@@ -580,7 +613,7 @@ class ForensicAgent:
                 self._audit_event(
                     "agent_contract_repair",
                     case_id=case_id,
-                    evidence_id=evidence_id,
+                    evidence_ids=scope_ids,
                     backend=self.model.name,
                     model_name=model_name,
                     iteration=iteration + 1,
@@ -620,7 +653,7 @@ class ForensicAgent:
                 self._audit_event(
                     "executor_cache_regression",
                     case_id=case_id,
-                    evidence_id=evidence_id,
+                    evidence_ids=scope_ids,
                     backend=self.model.name,
                     model_name=model_name,
                     iteration=iteration + 1,
@@ -660,19 +693,36 @@ class ForensicAgent:
                     if call.tool_id == "record_finding":
                         try:
                             params = dict(call.params)
-                            # Inject evidence_id automatically if the model didn't.
-                            if not params.get("evidence_id"):
-                                params["evidence_id"] = evidence_id
+                            # La evidencia del hallazgo es la de la EJECUCIÓN que lo
+                            # sostiene (manifiesto del run_id), nunca una primaria ni
+                            # la que el modelo diga contra el registro. Sin run_id,
+                            # la declarada; sin ninguna, la única del caso o ninguna
+                            # (hallazgo del caso entero). Ver findings.atribucion.
+                            atribucion = atribuir_evidencia(
+                                case_id,
+                                run_id=params.get("run_id"),
+                                declarada=params.get("evidence_id"),
+                                evidencias_del_caso=scope_ids,
+                                store=artifact_store,
+                            )
+                            params["evidence_id"] = atribucion.evidence_id
                             finding = finding_store.append(case_id, params)
-                            body = {"finding_id": finding.id, "stored": True}
+                            body = {
+                                "finding_id": finding.id,
+                                "evidence_id": finding.evidence_id,
+                                "stored": True,
+                            }
                             protected_ids.add(finding.id)
                             tools_since_finding = 0  # cerró el bucle: registró
                             # F3 — record the finding's provenance in the audit chain
-                            # (only the id; the finding body lives in findings.jsonl).
+                            # (the id, the evidence it belongs to and HOW that was
+                            # determined; the finding body lives in findings.jsonl).
                             self._audit_event(
                                 "agent_finding",
                                 case_id=case_id,
-                                evidence_id=evidence_id,
+                                evidence_id=finding.evidence_id,
+                                evidence_source=atribucion.origen,
+                                run_id=finding.run_id,
                                 finding_id=finding.id,
                             )
                             emit({
@@ -680,6 +730,7 @@ class ForensicAgent:
                                 "iteration": iteration + 1,
                                 "title": finding.title,
                                 "severity": finding.severity,
+                                "evidence_id": finding.evidence_id,
                             })
                         except (KeyError, ValueError) as exc:
                             body = {"error": f"record_finding rejected: {exc}"}
@@ -687,6 +738,7 @@ class ForensicAgent:
                         tool_calls_log.append({
                             "tool_id": "record_finding",
                             "finding_id": body.get("finding_id"),
+                            "evidence_id": body.get("evidence_id"),
                             "error": body.get("error"),
                         })
                         continue
@@ -738,7 +790,7 @@ class ForensicAgent:
                             self._audit_event(
                                 "agent_pivot",
                                 case_id=case_id,
-                                evidence_id=evidence_id,
+                                evidence_ids=scope_ids,
                                 via_cerrada=via[:200],
                                 motivo=motivo[:1000],
                                 via_alternativa=alt[:1000],
@@ -837,7 +889,7 @@ class ForensicAgent:
                             self._audit_event(
                                 "knowledge_written",
                                 case_id=case_id,
-                                evidence_id=evidence_id,
+                                evidence_ids=scope_ids,
                                 doc_id=block.doc_id,
                                 section=block.section,
                                 content_sha256=block.sha256,
@@ -936,14 +988,20 @@ class ForensicAgent:
                         continue
 
                     if call.tool_id == "consultar_actividad":
-                        # Read-only projection over the evidence's persisted super-timeline —
-                        # answers date-range / category / path queries WITHOUT re-running fls
-                        # (the mapa vivo). In-process side-channel like record_finding.
+                        # Read-only projection over the persisted super-timeline of ONE
+                        # evidence, the one the model names (closed enum; required when
+                        # the case has several) — answers date-range / category / path
+                        # queries WITHOUT re-running fls (the mapa vivo). In-process
+                        # side-channel like record_finding.
+                        target_eid: str | None = None
                         try:
                             params = dict(call.params)
+                            target_eid = target_evidence(
+                                "consultar_actividad", params.get("evidence_id")
+                            )
                             body = query_filesystem_timeline(
                                 case_id,
-                                evidence_id,
+                                target_eid,
                                 date_from=params.get("date_from"),
                                 date_to=params.get("date_to"),
                                 category=params.get("category"),
@@ -957,6 +1015,7 @@ class ForensicAgent:
                         )
                         tool_calls_log.append({
                             "tool_id": "consultar_actividad",
+                            "evidence_id": target_eid,
                             "matched": body.get("matched"),
                             "status": body.get("status"),
                             "error": body.get("error"),
@@ -965,6 +1024,7 @@ class ForensicAgent:
                             "type": "tool_result",
                             "iteration": iteration + 1,
                             "tool_id": "consultar_actividad",
+                            "evidence_id": target_eid,
                             "status": "ok" if not body.get("error") else "error",
                             "summary": _consulta_summary(body),
                         })
@@ -1016,19 +1076,20 @@ class ForensicAgent:
                         })
                         continue
 
+                    target_eid = None
                     try:
-                        # MULTI-EVIDENCIA: el modelo puede haber elegido a qué
-                        # evidencia apunta esta herramienta (enum cerrado). Se saca
-                        # de los params (NO va al argv), se valida contra las
-                        # evidencias del caso y se resuelven SU path y SU contexto de
-                        # auditoría; si no la especificó, la primaria.
+                        # MULTI-EVIDENCIA: el modelo dice a qué evidencia apunta esta
+                        # herramienta (enum cerrado). Se saca de los params (NO va al
+                        # argv), se valida contra las evidencias del caso y se
+                        # resuelven SU path y SU contexto de auditoría. Con varias
+                        # evidencias es obligatoria: no hay primaria a la que caer.
                         raw_params = dict(call.params)
-                        target_eid = raw_params.pop("evidence_id", None) or evidence_id
-                        if target_eid not in handles_by_id:
-                            raise ToolExecutionError(
-                                f"evidence_id {target_eid!r} no es una evidencia de este "
-                                f"caso. Elige una de: {list(handles_by_id)}."
+                        try:
+                            target_eid = target_evidence(
+                                call.tool_id, raw_params.pop("evidence_id", None)
                             )
+                        except ValueError as exc:
+                            raise ToolExecutionError(*exc.args) from exc
                         target_path = evidence_paths[target_eid]
                         target_context = evidence_contexts[target_eid]
                         params = self._inject_runtime_paths(
@@ -1054,12 +1115,13 @@ class ForensicAgent:
                             self._tool_result_msg(call, {"error": f"ToolExecutionError: {exc}"})
                         )
                         tool_calls_log.append(
-                            {"tool_id": call.tool_id, "error": str(exc)}
+                            {"tool_id": call.tool_id, "evidence_id": target_eid, "error": str(exc)}
                         )
                         emit({
                             "type": "tool_result",
                             "iteration": iteration + 1,
                             "tool_id": call.tool_id,
+                            "evidence_id": target_eid,
                             "status": "error",
                             "summary": str(exc)[:200],
                         })
@@ -1070,12 +1132,13 @@ class ForensicAgent:
                             self._tool_result_msg(call, {"error": f"{type(exc).__name__}: {exc}"})
                         )
                         tool_calls_log.append(
-                            {"tool_id": call.tool_id, "error": str(exc)}
+                            {"tool_id": call.tool_id, "evidence_id": target_eid, "error": str(exc)}
                         )
                         emit({
                             "type": "tool_result",
                             "iteration": iteration + 1,
                             "tool_id": call.tool_id,
+                            "evidence_id": target_eid,
                             "status": "error",
                             "summary": f"{type(exc).__name__}: {exc}"[:200],
                         })
@@ -1095,6 +1158,7 @@ class ForensicAgent:
                         "type": "tool_result",
                         "iteration": iteration + 1,
                         "tool_id": call.tool_id,
+                        "evidence_id": target_eid,
                         "status": "ok" if exit_code == 0 else "nonzero",
                         "exit_code": exit_code,
                         "run_id": result.get("run_id"),
@@ -1111,6 +1175,7 @@ class ForensicAgent:
                     tool_calls_log.append(
                         {
                             "tool_id": call.tool_id,
+                            "evidence_id": target_eid,
                             "run_id": result.get("run_id"),
                             "exit_code": exit_code,
                         }
@@ -1194,12 +1259,15 @@ class ForensicAgent:
     def _system_prompt(
         self,
         case_id: str,
-        evidence_filename: str,
         allowed: tuple[str, ...],
-        detected_os: str,
-        detected_kind: str,
-        evidence_choices: list[tuple[str, str]] | None = None,
+        evidences: list[Any],
     ) -> str:
+        """El system prompt de una corrida sobre ``evidences``: TODAS las del caso.
+
+        Las evidencias se enumeran por igual (id, fichero, triage), sin ninguna
+        primaria. Con varias viaja además la regla de alcance: la petición del
+        perito se aplica a todas salvo que pida expresamente centrarse en alguna.
+        """
         # Bug 008 — only the playbook branch that matches the evidence kind travels
         # in the system prompt (re-sent every stateless iteration). RULE 2: for an
         # `unknown` kind both branches stay; nothing is hidden silently.
@@ -1210,17 +1278,32 @@ class ForensicAgent:
         ]
         identity_block = "\n\n".join(p.strip() for p in pkg_parts if p and p.strip())
 
-        # Build a profile-mismatch warning ONLY when the triage fingerprint
-        # disagrees with the case's os_profile. The agent's system prompt
-        # already carries a hard rule (guard rail) that tells it to stop and
+        # Build a profile-mismatch warning ONLY for the evidence whose triage
+        # fingerprint disagrees with the case's os_profile. The agent's system
+        # prompt already carries a hard rule (guard rail) that tells it to stop and
         # request reassignment in this case — this block makes the mismatch
-        # impossible to miss.
+        # impossible to miss. Every evidence is checked, not only one: with several,
+        # the block names the ones that disagree and the rest are analysed normally.
+        multi = len(evidences) > 1
+        desajustadas = [
+            h for h in evidences if h.detected_os not in ("unknown", self.os_profile)
+        ]
         mismatch_block = ""
-        if detected_os not in ("unknown", self.os_profile):
+        if desajustadas and not multi:
             mismatch_block = t(
                 "agentCtx.mismatchBlock",
                 profile=self.os_profile,
-                detected=detected_os,
+                detected=desajustadas[0].detected_os,
+            )
+        elif desajustadas:
+            mismatch_block = t(
+                "agentCtx.mismatchMulti",
+                profile=self.os_profile,
+                evidences=", ".join(
+                    f"`{h.evidence_id}` (`{h.original_path.name}`, "
+                    f"detected_os `{h.detected_os}`)"
+                    for h in desajustadas
+                ),
             )
 
         # Route the model to the right playbook section based on detected_kind.
@@ -1269,51 +1352,49 @@ class ForensicAgent:
         # un `run_id` a los pocos turnos.
         case_graph = self._case_graph_block(case_id)
 
-        # El triage dice QUÉ es la evidencia; ya NO dice qué hacer con ella. Antes
+        # El triage dice QUÉ es cada evidencia; ya NO dice qué hacer con ella. Antes
         # aquí se le ordenaba «salta a la sección A/B del playbook», y el agente
         # obedecía: para responder «¿se accedió a este documento?» arrancaba
         # inventariando el disco entero. La ruta la marca ahora el objetivo; esto
         # solo evita que gaste llamadas en herramientas incompatibles con el soporte.
-        # Con VARIAS evidencias, este bloque (que habla SOLO de la primaria) se
-        # calla: diría «volatility no aplica» si la primaria es disco, contradiciendo
-        # que el caso SÍ tiene una memoria. La guía correcta la da multi_evidence_block.
-        multi = bool(evidence_choices and len(evidence_choices) > 1)
+        # Con VARIAS evidencias este bloque (que habla de UN soporte) se calla:
+        # diría «volatility no aplica» ante un disco en un caso que SÍ tiene una
+        # memoria. La guía correcta la da la regla de alcance (`multiEvidence`).
         kind_routing = ""
-        if not multi and detected_kind == "memory":
-            kind_routing = t("agentCtx.kindMemory")
-        elif not multi and detected_kind == "document":
-            kind_routing = t("agentCtx.kindDocument")
-        elif not multi and detected_kind in ("disk", "container_disk"):
-            contenedor = (
-                " Va dentro de un contenedor (VMDK/VDI/QCOW/VHD/E01); las "
-                "herramientas TSK lo abren correctamente."
-                if detected_kind == "container_disk"
-                else ""
-            )
-            kind_routing = t(
-                "agentCtx.kindDisk", kind=detected_kind, container=contenedor
-            )
+        if not multi:
+            detected_kind = evidences[0].detected_kind
+            if detected_kind == "memory":
+                kind_routing = t("agentCtx.kindMemory")
+            elif detected_kind == "document":
+                kind_routing = t("agentCtx.kindDocument")
+            elif detected_kind in ("disk", "container_disk"):
+                contenedor = (
+                    " Va dentro de un contenedor (VMDK/VDI/QCOW/VHD/E01); las "
+                    "herramientas TSK lo abren correctamente."
+                    if detected_kind == "container_disk"
+                    else ""
+                )
+                kind_routing = t(
+                    "agentCtx.kindDisk", kind=detected_kind, container=contenedor
+                )
 
-        # MULTI-EVIDENCIA: si el caso trae varias evidencias, el agente tiene que
-        # saber que las TIENE TODAS y correlacionarlas — es lo que separa un análisis
-        # de verdad de uno encajonado en un solo soporte. La memoria responde
-        # procesos/red/credenciales/TTP; el disco, el «cuándo» fino, borrados y
-        # contenido. Con una sola evidencia esta sección desaparece.
-        multi_evidence_block = ""
-        if evidence_choices and len(evidence_choices) > 1:
-            filas = "\n".join(f"- `{eid}`, {label}" for eid, label in evidence_choices)
-            multi_evidence_block = t("agentCtx.multiEvidence") + f"{filas}\n"
+        # LAS EVIDENCIAS DEL CASO, todas por igual: id (lo que el agente pasa en
+        # `evidence_id`), fichero y triage. Ninguna va marcada como primaria y el
+        # orden no es una prioridad. Con varias viaja además la regla de ALCANCE:
+        # la petición se aplica a todas salvo que el perito pida centrarse en alguna.
+        evidence_block = t("agentCtx.evidenceHeader", count=len(evidences)) + "".join(
+            f"- `{h.evidence_id}`: `{h.original_path.name}`, "
+            f"detected_kind `{h.detected_kind}`, detected_os `{h.detected_os}`\n"
+            for h in evidences
+        )
+        scope_block = t("agentCtx.multiEvidence") if multi else ""
 
         return (
             f"{identity_block}\n\n"
-            + t(
-                "agentCtx.caseHeader",
-                case=case_id,
-                profile=self.os_profile,
-                evidence=evidence_filename,
-            )
-            + f"{multi_evidence_block}\n"
-            + t("agentCtx.triageHeader", os=detected_os, kind=detected_kind)
+            + t("agentCtx.caseHeader", case=case_id, profile=self.os_profile)
+            + "\n"
+            + evidence_block
+            + f"{scope_block}"
             + f"{kind_routing}"
             + f"{mismatch_block}\n"
             + t("agentCtx.toolkitHeader")

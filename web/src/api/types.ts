@@ -119,11 +119,20 @@ export interface ExecutorLoginStatus {
 // persistir el turno igual que el endpoint bloqueante.
 export type StreamEvent =
   | { type: "reasoning"; iteration: number; text: string }
-  | { type: "tool_call"; iteration: number; tool_id: string; params?: Record<string, unknown> }
+  | {
+      type: "tool_call";
+      iteration: number;
+      tool_id: string;
+      // Evidencia del caso sobre la que corre la herramienta. Con varias
+      // evidencias no hay ninguna por defecto: cada llamada nombra la suya.
+      evidence_id?: string | null;
+      params?: Record<string, unknown>;
+    }
   | {
       type: "tool_result";
       iteration: number;
       tool_id: string;
+      evidence_id?: string | null;
       status: "ok" | "nonzero" | "error" | "refused" | "blocked";
       exit_code?: number | null;
       run_id?: string;
@@ -131,14 +140,22 @@ export type StreamEvent =
       argv?: string[] | null;
       summary?: string;
     }
-  | { type: "finding"; iteration: number; title: string; severity: string }
+  | {
+      type: "finding";
+      iteration: number;
+      title: string;
+      severity: string;
+      // La evidencia de la ejecución que sostiene el hallazgo; null si es del caso.
+      evidence_id?: string | null;
+    }
   | { type: "final"; iteration: number; text: string; exhausted?: boolean }
   | {
       type: "done";
       reply: string;
       iterations?: number;
       tool_calls?: unknown[];
-      evidence_id: string;
+      // El alcance de la corrida: TODAS las evidencias del caso, sin primaria.
+      evidence_ids: string[];
       case_id: string;
       os_profile: string;
       executor: { id: ExecutorId; name: string; local: boolean };
@@ -643,10 +660,12 @@ export interface EvidenceSource {
   size: number;
 }
 
+// Sin `evidence_id`: la investigación abarca TODAS las evidencias del caso, sin
+// evidencia primaria (el api responde 422 si se manda). Centrarse en una evidencia
+// se pide en el propio `prompt`.
 export interface QueryRequest {
   prompt: string;
   os_profile?: string;
-  evidence_id?: string;
   case_id?: string;
   // Ejecutor elegido por el OPERADOR para esta petición. Si se omite, el
   // backend solo acepta DEFAULT_EXECUTOR fijado explícitamente en Settings;

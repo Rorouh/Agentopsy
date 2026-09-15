@@ -495,7 +495,7 @@ def test_resolve_timeout_nonpositive_context_fails_loud(clean_config: None) -> N
 
 def _query(client: TestClient, payload: dict) -> object:
     token = client.app.state.token
-    base = {"prompt": "analiza", "os_profile": "unix", "case_id": "c1", "evidence_id": "e1"}
+    base = {"prompt": "analiza", "os_profile": "unix", "case_id": "c1"}
     return client.post(
         "/api/agent/query",
         headers={"X-Agentopsy-Token": token},
@@ -911,7 +911,7 @@ def test_stream_endpoint_requires_executor_like_query(
     r = client.post(
         "/api/agent/query/stream",
         headers={"X-Agentopsy-Token": token},
-        json={"prompt": "analiza", "os_profile": "unix", "case_id": "c1", "evidence_id": "e1"},
+        json={"prompt": "analiza", "os_profile": "unix", "case_id": "c1"},
     )
     assert r.status_code == 422
     assert "executor" in r.json()["detail"]

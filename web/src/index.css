@@ -1645,6 +1645,25 @@ select option:disabled { color: var(--ink-5); }
 }
 /* El único dato que autoriza a empezar: se lee de un vistazo. */
 .inv-evidence-ok { color: var(--ok); }
+/* TODAS las evidencias del caso, una por fila y sin ninguna destacada: son el
+   alcance de la investigación por igual. Con muchas, la lista scrollea por dentro
+   para no empujar Hallazgos y Herramientas fuera del raíl. */
+.inv-evidence-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 30vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.inv-evidence-scope {
+  font-size: var(--fs-1);
+  line-height: 1.5;
+  color: var(--ink-4);
+  margin-top: 10px;
+}
 
 .inv-block {
   /* Encogen a prorrata de su contenido: el bloque más largo (hallazgos) cede

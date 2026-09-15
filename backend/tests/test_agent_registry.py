@@ -209,7 +209,7 @@ def test_query_without_case_is_actionable_422(client: TestClient) -> None:
     r = client.post(
         "/api/agent/query",
         headers={"X-Agentopsy-Token": token},
-        json={"prompt": "hola", "os_profile": "unix", "evidence_id": ""},
+        json={"prompt": "hola", "os_profile": "unix"},
     )
     assert r.status_code == 422
     assert "case_id" in r.json()["detail"]

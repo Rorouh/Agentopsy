@@ -59,6 +59,14 @@ def _marca(clave: str) -> str:
 
 
 class _FakeEvidence:
+    def __init__(self, evidence_id: str = "e") -> None:
+        # El caso de prueba tiene UNA evidencia. La investigación abarca TODAS las
+        # del caso (`list`), y con una sola esa es el alcance entero.
+        self._evidence_id = evidence_id
+
+    def list(self, case_id: str) -> list[SimpleNamespace]:
+        return [self.get(case_id, self._evidence_id)]
+
     def get(self, case_id: str, evidence_id: str) -> SimpleNamespace:
         return SimpleNamespace(
             evidence_id=evidence_id,
@@ -161,7 +169,7 @@ def test_one_violation_gets_a_correction_and_the_run_continues() -> None:
     modelo = _Scripted([_violacion(), FinalAnswer(text="ya lo tengo")])
     agent = ForensicAgent(make_package("unix"), modelo, _FakeEvidence())
 
-    result = agent.run("analiza", case_id="c", evidence_id="e")
+    result = agent.run("analiza", case_id="c")
 
     assert result["reply"] == "ya lo tengo"
     # Al modelo se le devolvió el motivo EXACTO, no un «formato incorrecto» seco.
@@ -175,7 +183,7 @@ def test_two_consecutive_violations_abort_the_run() -> None:
     modelo = _Scripted([_violacion(), _violacion(), FinalAnswer(text="tarde")])
     agent = ForensicAgent(make_package("unix"), modelo, _FakeEvidence())
 
-    result = agent.run("analiza", case_id="c", evidence_id="e")
+    result = agent.run("analiza", case_id="c")
 
     assert "tarde" not in result["reply"]
     # El aviso al perito sale en el idioma en curso, así que se fija por la
@@ -225,7 +233,7 @@ def test_the_allowance_is_consecutive_not_per_run(
     )
     agent = ForensicAgent(make_package("unix"), modelo, _FakeEvidence())
 
-    result = agent.run("analiza", case_id="c", evidence_id="e")
+    result = agent.run("analiza", case_id="c")
 
     assert result["reply"] == "cerrado"
     # Dos correcciones a lo largo de la corrida, ninguna seguida de otra.
@@ -238,7 +246,7 @@ def test_an_execution_failure_is_not_retried() -> None:
     modelo = _Scripted([RuntimeError("executor timeout"), FinalAnswer(text="nunca")])
     agent = ForensicAgent(make_package("unix"), modelo, _FakeEvidence())
 
-    result = agent.run("analiza", case_id="c", evidence_id="e")
+    result = agent.run("analiza", case_id="c")
 
     assert "nunca" not in result["reply"]
     assert "RuntimeError" in result["reply"]

@@ -244,6 +244,14 @@ class _Scripted(ModelBackend):
 
 
 class _FakeEvidence:
+    def __init__(self, evidence_id: str = "e") -> None:
+        # El caso de prueba tiene UNA evidencia. La investigación abarca TODAS las
+        # del caso (`list`), y con una sola esa es el alcance entero.
+        self._evidence_id = evidence_id
+
+    def list(self, case_id: str) -> list[SimpleNamespace]:
+        return [self.get(case_id, self._evidence_id)]
+
     def get(self, case_id: str, evidence_id: str) -> SimpleNamespace:
         return SimpleNamespace(
             evidence_id=evidence_id,
@@ -269,7 +277,7 @@ def test_el_agente_lee_su_salida_y_le_vuelve_marcada_no_confiable(
         )
     ])
     agent = ForensicAgent(pkg, model, _FakeEvidence())
-    result = agent.run("lee", case_id=case_id, evidence_id="e")
+    result = agent.run("lee", case_id=case_id)
 
     call = result["tool_calls"][0]
     assert call["tool_id"] == "leer_artefacto"
@@ -296,7 +304,7 @@ def test_un_run_id_inventado_no_tumba_el_run(store_run, monkeypatch) -> None:
         )
     ])
     result = ForensicAgent(pkg, model, _FakeEvidence()).run(
-        "lee", case_id=case_id, evidence_id="e"
+        "lee", case_id=case_id
     )
     assert "run_id" in (result["tool_calls"][0]["error"] or "")
 

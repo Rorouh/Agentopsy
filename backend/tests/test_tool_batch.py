@@ -117,6 +117,14 @@ class _OneBatchThenFinal(ModelBackend):
 
 
 class _FakeEvidence:
+    def __init__(self, evidence_id: str = "e") -> None:
+        # El caso de prueba tiene UNA evidencia. La investigación abarca TODAS las
+        # del caso (`list`), y con una sola esa es el alcance entero.
+        self._evidence_id = evidence_id
+
+    def list(self, case_id: str) -> list[SimpleNamespace]:
+        return [self.get(case_id, self._evidence_id)]
+
     def get(self, case_id: str, evidence_id: str) -> SimpleNamespace:
         return SimpleNamespace(
             evidence_id=evidence_id,
@@ -153,7 +161,7 @@ def test_tres_herramientas_en_un_solo_turno_del_modelo(monkeypatch) -> None:
     )
     agent = ForensicAgent(pkg, model, _FakeEvidence())
 
-    result = agent.run("barre", case_id="c", evidence_id="e")
+    result = agent.run("barre", case_id="c")
 
     # Las tres se ejecutaron, EN ORDEN…
     assert ejecutadas == ["tsk_mmls", "file_info", "strings_head"]
@@ -188,7 +196,7 @@ def test_un_fallo_en_medio_no_aborta_el_resto_del_lote(monkeypatch) -> None:
         [_call("tsk_mmls"), _call("file_info"), _call("strings_head")]
     )
     result = ForensicAgent(pkg, model, _FakeEvidence()).run(
-        "barre", case_id="c", evidence_id="e"
+        "barre", case_id="c"
     )
 
     assert ejecutadas == ["tsk_mmls", "file_info", "strings_head"]
@@ -214,7 +222,7 @@ def test_una_tool_fuera_de_la_allowlist_dentro_del_lote_se_rechaza_sin_parar(
     # `regripper` es del paquete windows: fuera de la allowlist unix.
     model = _OneBatchThenFinal([_call("tsk_mmls"), _call("regripper"), _call("jq")])
     result = ForensicAgent(pkg, model, _FakeEvidence()).run(
-        "barre", case_id="c", evidence_id="e"
+        "barre", case_id="c"
     )
 
     assert "regripper" not in ejecutadas  # nunca llegó al dispatcher

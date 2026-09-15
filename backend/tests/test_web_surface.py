@@ -37,6 +37,7 @@ from fastapi.testclient import TestClient
 
 from agentopsy.cases.manager import CaseManager
 from agentopsy.executors import ClaudeCodeExecutor, ExecutorAvailability, OllamaExecutor
+from agentopsy.i18n import t
 from agentopsy.server import create_app
 
 PORT = 51007
@@ -55,7 +56,11 @@ def isolated_cases(tmp_path, monkeypatch):
     # El singleton evidence_manager guarda su propia referencia al CaseManager
     # real; para que register/verify operen sobre el árbol de casos aislado hay
     # que darle uno atado a la misma raíz.
-    monkeypatch.setattr(cases_router, "evidence_manager", EvidenceManager(cases))
+    evidence = EvidenceManager(cases)
+    monkeypatch.setattr(cases_router, "evidence_manager", evidence)
+    # La investigación abarca TODAS las evidencias del caso: el router del agente
+    # las lee del mismo árbol aislado.
+    monkeypatch.setattr(agent_router, "evidence_manager", evidence)
     return cases
 
 
@@ -396,30 +401,86 @@ def _query(client: TestClient, auth: dict, case_id: str, executor: str) -> objec
             "prompt": "analiza",
             "os_profile": "unix",
             "case_id": case_id,
-            "evidence_id": "e1",  # inválido a propósito: la puerta de consent va ANTES
             "executor": executor,
         },
     )
 
 
 def test_query_unresolved_os_profile_is_409(
-    client: TestClient, auth: dict, isolated_cases: CaseManager, monkeypatch: pytest.MonkeyPatch
+    client: TestClient,
+    auth: dict,
+    isolated_cases: CaseManager,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
-    # A case whose os_profile triage could not determine (here: no evidence yet)
-    # must NOT route silently — /api/agent/query answers 409 with an actionable
-    # "anchor the profile" message (RULE 2 enmendada). A local executor is used
-    # so the consent gate is not what stops the request.
+    # A case whose os_profile triage could not determine (here: its only evidence
+    # is a supplied file, which never fixes the profile) must NOT route silently:
+    # /api/agent/query answers 409 with an actionable "anchor the profile" message
+    # (RULE 2 enmendada). A local executor is used so the consent gate is not what
+    # stops the request.
+    from agentopsy.evidence import EvidenceManager
+
     monkeypatch.setattr(
         OllamaExecutor, "is_available", lambda self: ExecutorAvailability(available=True)
     )
-    case = isolated_cases.create(name="Ambiguo", examiner="alice")  # no anchor, no evidence
+    case = isolated_cases.create(name="Ambiguo", examiner="alice")  # no anchor
+    nota = tmp_path / "nota.txt"
+    nota.write_text("texto sin marcadores de sistema\n", encoding="utf-8")
+    EvidenceManager(isolated_cases).register(case.id, str(nota))
     r = client.post(
         "/api/agent/query",
         headers=auth,
-        json={"prompt": "analiza", "case_id": case.id, "evidence_id": "e1", "executor": "ollama"},
+        json={"prompt": "analiza", "case_id": case.id, "executor": "ollama"},
     )
     assert r.status_code == 409
     assert "os-profile" in r.json()["detail"]
+
+
+def test_query_of_a_case_without_evidence_is_422(
+    client: TestClient, auth: dict, isolated_cases: CaseManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The scope of an investigation is every evidence of the case: with none there
+    # is nothing to investigate, and the answer says so (not "anchor the profile").
+    monkeypatch.setattr(
+        OllamaExecutor, "is_available", lambda self: ExecutorAvailability(available=True)
+    )
+    case = isolated_cases.create(name="Vacío", examiner="alice")
+    r = client.post(
+        "/api/agent/query",
+        headers=auth,
+        json={"prompt": "analiza", "case_id": case.id, "executor": "ollama"},
+    )
+    assert r.status_code == 422
+    assert r.json()["detail"] == t("api.evidenceRequired", "en")
+
+
+@pytest.mark.parametrize("endpoint", ["/api/agent/query", "/api/agent/analyze"])
+def test_query_rejects_an_evidence_id_because_the_scope_is_the_case(
+    client: TestClient,
+    auth: dict,
+    isolated_cases: CaseManager,
+    monkeypatch: pytest.MonkeyPatch,
+    endpoint: str,
+) -> None:
+    # There is no primary evidence any more: a client that still sends one (a
+    # stale SPA tab, a script) gets an actionable 422 instead of a run whose scope
+    # silently differs from the one it asked for (RULE 2).
+    monkeypatch.setattr(
+        OllamaExecutor, "is_available", lambda self: ExecutorAvailability(available=True)
+    )
+    case = isolated_cases.create(name="Dos evidencias", examiner="alice")
+    r = client.post(
+        endpoint,
+        headers=auth,
+        json={
+            "prompt": "analiza",
+            "case_id": case.id,
+            "evidence_id": "11111111-1111-4111-8111-111111111111",
+            "executor": "ollama",
+        },
+    )
+    assert r.status_code == 422
+    assert r.json()["detail"] == t("api.evidenceScopeIsCase", "en")
 
 
 def test_anchor_os_profile_endpoint_sets_and_persists(
