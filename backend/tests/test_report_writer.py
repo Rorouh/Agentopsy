@@ -11,17 +11,23 @@ Los gates que importan (``agentopsy.reports.writer``):
   «sin hallazgos no hay informe».
 - La llamada queda auditada (``report_written``) y el prompt lleva el índice y
   el material, nunca prosa prefabricada.
+- El anexo C (las figuras del caso) NO lo escribe el modelo: Agentopsy lo compone
+  y lo añade detrás de lo redactado, y un bloque ``figure`` en la respuesta del
+  modelo se rechaza como cualquier tipo inventado.
 """
 
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import pytest
 
 from agentopsy.i18n import t
 from agentopsy.executors.base import ExecutorAvailability, ExecutorResult, PromptExecutor
-from agentopsy.reports.indice import NUMS, titulos
+from agentopsy.reports.figuras import AnexoDeFiguras, componer_anexo
+from agentopsy.reports.indice import NUM_ANEXO_FIGURAS, NUMS, NUMS_DEL_INFORME, titulos
+from agentopsy.timeline.hallazgos import assemble_findings_timeline
 from agentopsy.reports.writer import (
     encargo,
     ReportWriteError,
@@ -122,9 +128,32 @@ class FakeAudit:
         return event
 
 
+def _anexo() -> AnexoDeFiguras:
+    """El anexo C del caso del material, compuesto por el código REAL sin tocar
+    disco: la línea de tiempo con su único hallazgo y ningún grafo extraído."""
+    hallazgo = SimpleNamespace(
+        id="aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+        title="Tarea programada de persistencia",
+        severity="high",
+        observed_at="2026-03-14T08:12:44Z",
+        evidence_id=None,
+        run_id=RUN_ID,
+        mitre_hints=["T1053.005"],
+    )
+    return componer_anexo(
+        case_id="caso-1",
+        case_name="Murcielago",
+        compuesta_en="2026-07-01T09:00:00Z",
+        cronologia=assemble_findings_timeline([hallazgo], {}),
+        grafos=[],
+        finding_ids=[hallazgo.id],
+    )
+
+
 def _write(text: str, material: dict | None = None, **kw):
     executor = FakeExecutor(text)
     audit = FakeAudit()
+    kw.setdefault("figuras", _anexo())
     doc = write_report(
         "caso-1", executor=executor, audit=audit,
         material=material if material is not None else _material(), **kw,
@@ -155,7 +184,7 @@ def test_the_report_is_what_the_model_wrote() -> None:
     # del informe: se compara con la entrada del catálogo.
     assert doc["title"] == t("report.docTitle", None, case="Murcielago")
     assert doc["author"] == "Daniel Ramos"
-    assert [s["num"] for s in doc["sections"]] == list(NUMS)
+    assert [s["num"] for s in doc["sections"]] == list(NUMS_DEL_INFORME)
     assert doc["sections"][5]["blocks"][1]["t"] == "finding"
     assert doc["sections"][0]["blocks"][0]["text"] == "Prosa 1."
 
@@ -194,7 +223,10 @@ def test_the_pass_is_audited() -> None:
     written = [e for e in audit.events if e["action"] == "report_written"]
     assert len(written) == 1
     assert written[0]["executor"] == "claude-code"
-    assert written[0]["sections"] == list(NUMS)
+    assert written[0]["sections"] == list(NUMS_DEL_INFORME)
+    # Qué figuras lleva el informe, con el SHA-256 de cada dibujo.
+    assert [f["kind"] for f in written[0]["figures"]] == ["incident_timeline"]
+    assert len(written[0]["figures"][0]["sha256"]) == 64
 
 
 # ── puerta: sin hallazgos no hay informe ──────────────────────────────────────
@@ -423,7 +455,7 @@ def test_a_reply_without_summary_is_rejected() -> None:
 
 def test_a_json_inside_a_markdown_fence_is_accepted() -> None:
     doc, _, _ = _write("```json\n" + _reply() + "\n```")
-    assert [s["num"] for s in doc["sections"]] == list(NUMS)
+    assert [s["num"] for s in doc["sections"]] == list(NUMS_DEL_INFORME)
 
 
 def test_the_indice_is_the_only_thing_two_reports_share() -> None:
@@ -514,7 +546,7 @@ def _malo() -> str:
 def _run(executor: ScriptedExecutor):
     audit = FakeAudit()
     doc = write_report(
-        "caso-1", executor=executor, audit=audit, material=_material()
+        "caso-1", executor=executor, audit=audit, material=_material(), figuras=_anexo()
     )
     return doc, audit
 
@@ -536,7 +568,7 @@ def test_a_rejected_report_is_returned_to_the_model_to_correct_it() -> None:
     cabeza = t("writer.repairDelta", None, reason="\x00").split("\x00")[0]
     cola = t("writer.repairFull", None, reason="\x00").split("\x00")[0]
     assert cabeza in executor.prompts[1] or cola in executor.prompts[1]
-    assert [s["num"] for s in doc["sections"]] == list(NUMS)
+    assert [s["num"] for s in doc["sections"]] == list(NUMS_DEL_INFORME)
 
     reparaciones = [e for e in audit.events if e["action"] == "report_repair"]
     assert len(reparaciones) == 1 and reparaciones[0]["attempt"] == 1
@@ -734,3 +766,104 @@ def test_forbidden_typography_never_costs_the_report() -> None:
     # Una sola llamada: no ha habido ronda de corrección.
     assert executor.prompt is not None
     assert "—" not in _texto_del_informe(doc)
+
+
+# ── anexo C: las figuras del caso ─────────────────────────────────────────────
+
+
+def test_the_figures_annex_closes_the_report_after_what_the_model_wrote() -> None:
+    doc, _, _ = _write(_reply())
+
+    anexo = doc["sections"][-1]
+    assert anexo["num"] == NUM_ANEXO_FIGURAS
+    assert anexo["title"] == titulos()[NUM_ANEXO_FIGURAS]
+    assert [b["t"] for b in anexo["blocks"] if b["t"] == "figure"] == ["figure"]
+    # Lo redactado sigue siendo exactamente lo del modelo, en su orden.
+    assert [s["num"] for s in doc["sections"][:-1]] == list(NUMS)
+
+
+def test_the_model_never_returns_annex_c() -> None:
+    """El índice que lee el modelo incluye el anexo C, pero el contrato de
+    respuesta no: si lo devuelve, sobra una sección y no hay informe."""
+    secciones = [
+        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
+        for n in NUMS_DEL_INFORME
+    ]
+    with pytest.raises(ReportWriteError, match="índice canónico"):
+        _write(_reply(secciones))
+
+
+def test_the_prompt_tells_the_model_that_annex_c_is_not_its_to_write() -> None:
+    _, executor, _ = _write(_reply())
+    prompt = executor.prompt or ""
+    assert f"C. {titulos()['C']}" in prompt
+    assert t("indice.C.contrato") in prompt
+    contrato = t(
+        "writer.responseContract", None,
+        first_title=titulos()["1"], sections=", ".join(NUMS), max=600,
+    )
+    assert contrato in prompt
+
+
+def test_a_figure_block_written_by_the_model_is_rejected() -> None:
+    """Las figuras se DIBUJAN con los datos del caso; un modelo no mete un SVG
+    en el informe, ni siquiera uno inofensivo."""
+    secciones = [
+        {"num": n, "titulo": titulos()[n], "bloques": [{"t": "p", "text": "x."}]}
+        for n in NUMS
+    ]
+    secciones[2]["bloques"] = [{
+        "t": "figure", "kind": "incident_timeline", "title": "Linea",
+        "svg": '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1" '
+               'viewBox="0 0 1 1"></svg>',
+    }]
+    with pytest.raises(ReportWriteError):
+        _write(_reply(secciones))
+
+
+def test_an_annex_out_of_its_place_in_the_index_publishes_nothing() -> None:
+    anexo = _anexo()
+    fuera_de_sitio = AnexoDeFiguras(
+        seccion={**anexo.seccion, "num": "D"}, estilo_normalizado=0
+    )
+    executor = FakeExecutor(_reply())
+    audit = FakeAudit()
+    with pytest.raises(ReportWriteError, match="anexo de figuras"):
+        write_report(
+            "caso-1", executor=executor, audit=audit,
+            material=_material(), figuras=fuera_de_sitio,
+        )
+    # Falla ANTES de gastar la llamada al modelo.
+    assert executor.prompt is None
+    assert not [e for e in audit.events if e["action"] == "report_written"]
+
+
+def test_the_figures_are_composed_with_the_material_before_the_model_runs() -> None:
+    """Texto y figuras describen el MISMO estado del caso: el anexo se pide al
+    reunir el material, no después de los minutos que tarda la redacción."""
+    orden: list[str] = []
+
+    class Ejecutor(FakeExecutor):
+        def run(self, prompt, context=None):
+            orden.append("modelo")
+            return super().run(prompt, context)
+
+    def figuras_fn(case_id: str) -> AnexoDeFiguras:
+        orden.append(f"figuras:{case_id}")
+        return _anexo()
+
+    write_report(
+        "caso-1", executor=Ejecutor(_reply()), audit=FakeAudit(),
+        material=_material(), figuras_fn=figuras_fn,
+    )
+    assert orden == ["figuras:caso-1", "modelo"]
+
+
+def test_titles_rewritten_by_the_typography_in_the_figures_are_audited() -> None:
+    anexo = _anexo()
+    con_rayas = AnexoDeFiguras(seccion=anexo.seccion, estilo_normalizado=2)
+    doc, _, audit = _write(_reply(), figuras=con_rayas)
+    escrito = next(e for e in audit.events if e["action"] == "report_written")
+    assert escrito["style_normalized"] == 2
+    # «chars» mide lo que redactó el modelo: el SVG no es prosa.
+    assert escrito["chars"] == len(json.dumps(doc["sections"][:-1], ensure_ascii=False))

@@ -40,9 +40,9 @@ from agentopsy.executors import (
 from agentopsy.evidence import evidence_manager  # FUNCIÓN «VISTAS»
 from agentopsy.export_hoja import export_basename, iso_utc_ahora
 from agentopsy.findings import finding_store
-from agentopsy.graph import inventario, vistas  # FUNCIÓN «INVENTARIO» y FUNCIÓN «VISTAS»
-from agentopsy.graph.fusion import merge_case_graph
-from agentopsy.graph.layout import layout_caso, layout_hallazgo
+from agentopsy.graph import vistas  # FUNCIÓN «VISTAS»
+from agentopsy.graph.figura import figura_del_caso
+from agentopsy.graph.layout import layout_hallazgo
 from agentopsy.graph.lote import extraer_lote
 from agentopsy.graph.store import graph_store
 from agentopsy.mitre.coverage import CoverageStore  # FUNCIÓN «VISTAS»
@@ -169,24 +169,13 @@ def case_graph(case_id: str, vista: str | None = None) -> dict[str, Any]:
     )
     # ── fin FUNCIÓN «VISTAS» ───────────────────────────────────────────────────
 
-    fundido = merge_case_graph([
-        {"finding_id": g.finding_id, "nodos": g.nodos, "relaciones": g.relaciones}
-        for g in grafos
-    ])
+    # Fundir, separar la red del inventario y colocar es la MISMA composición
+    # que congela el anexo C del informe pericial, así que vive en
+    # `agentopsy.graph.figura` y no aquí: el grafo que el perito mira y el que
+    # firma no pueden divergir. FUNCIÓN «INVENTARIO»: ver allí cómo retirarla.
+    figura = figura_del_caso(case_id, grafos)
     titulos = {f.id: f.title for f in findings}
     exported_at = iso_utc_ahora()
-
-    # ── FUNCIÓN «INVENTARIO» ───────────────────────────────────────────────────
-    # La figura dibuja la RED, y las entidades que no participan en ninguna
-    # relación bajan a una banda declarada al pie. No se descarta ninguna: se
-    # deja de afirmar con la geometría una relación que nadie afirmó. Para
-    # retirarla: sustituir estas tres líneas por
-    #     figura = layout_caso(case_id, fundido["nodos"], fundido["relaciones"])
-    # y borrar `agentopsy/graph/inventario.py` y la clave `inventario` de abajo.
-    conectados, sueltos = inventario.partir(fundido["nodos"], fundido["relaciones"])
-    figura = layout_caso(case_id, conectados, fundido["relaciones"])
-    figura = inventario.componer(figura, sueltos)
-    # ── fin FUNCIÓN «INVENTARIO» ───────────────────────────────────────────────
 
     return {
         "case_id": case_id,
@@ -197,9 +186,9 @@ def case_graph(case_id: str, vista: str | None = None) -> dict[str, Any]:
             case.name, EXPORT_KIND_CASO, exported_at=exported_at
         ),
         "nodos": figura["nodos"],
-        "relaciones": fundido["relaciones"],
+        "relaciones": figura["relaciones"],
         "hallazgos": [
-            {"id": fid, "title": titulos.get(fid, "")} for fid in fundido["hallazgos"]
+            {"id": fid, "title": titulos.get(fid, "")} for fid in figura["hallazgos"]
         ],
         "lienzo": figura["lienzo"],
         "notas_layout": figura["notas"],

@@ -40,6 +40,7 @@ from agentopsy.executors import (
 from agentopsy.findings.store import finding_store
 from agentopsy.reports import document_store
 from agentopsy.reports.pdf import render_pdf
+from agentopsy.reports.svg import SvgNoAdmitido
 from agentopsy.reports.writer import write_report
 from agentopsy.security import require_token
 
@@ -281,12 +282,20 @@ def delete_document(case_id: str, doc_id: str) -> dict[str, Any]:
     dependencies=[Depends(require_token)],
 )
 def document_pdf(case_id: str, doc_id: str) -> Response:
-    """Genera el PDF real del documento (fpdf2). La web lo descarga con el token."""
+    """Genera el PDF real del documento (fpdf2). La web lo descarga con el token.
+
+    Una figura del anexo C que no pase la lista blanca de ``reports.svg`` (un
+    documento retocado en disco) es un 422 con el motivo: no se imprime."""
     try:
         doc = document_store.get(case_id, doc_id)
     except (KeyError, ValueError) as exc:
         raise _svc_error(exc) from exc
-    pdf_bytes = render_pdf(doc)
+    # Solo el rechazo de la lista blanca es un 422: cualquier otro fallo al
+    # imprimir es un defecto y se ve como tal, no como «documento no encontrado».
+    try:
+        pdf_bytes = render_pdf(doc)
+    except SvgNoAdmitido as exc:
+        raise HTTPException(status_code=422, detail=traducir_excepcion(exc)) from exc
     filename = f"{doc.id}.pdf"
     return Response(
         content=pdf_bytes,

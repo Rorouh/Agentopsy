@@ -492,9 +492,10 @@ export interface MitreTactic {
 
 // ── Documentos / informes del caso ────────────────────────────────────────
 // Espejo de agentopsy.reports. Un bloque del cuerpo del informe: párrafo,
-// sub-encabezado, cita, lista, código, pares clave-valor, tabla o hallazgo.
+// sub-encabezado, cita, lista, código, pares clave-valor, tabla, hallazgo o
+// figura.
 export interface DocumentBlock {
-  t: "p" | "h3" | "quote" | "list" | "code" | "kv" | "table" | "finding";
+  t: "p" | "h3" | "quote" | "list" | "code" | "kv" | "table" | "finding" | "figure";
   text?: string;
   ordered?: boolean;
   items?: string[];
@@ -509,6 +510,11 @@ export interface DocumentBlock {
   // PDF ya la imprimía; la web también debe mostrarla, es lo que permite a un
   // perito contrario reejecutar.
   meta?: string;
+  // Sólo para figure (anexo C, lo compone Agentopsy, nunca el modelo): qué
+  // figura es y su SVG, congelado en el documento al redactarlo. `title` es su
+  // texto alternativo. El almacén solo admite un SVG que pasa su lista blanca.
+  kind?: "incident_timeline" | "case_graph";
+  svg?: string;
 }
 
 export interface DocumentSection {

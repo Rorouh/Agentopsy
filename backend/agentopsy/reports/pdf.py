@@ -5,10 +5,16 @@ cabecera/pie por página). fpdf2 es pure-python (sin libs de sistema).
 
 Usa las fuentes core (latin-1): la tipografía unicode del contenido (— … · → ✓)
 se normaliza antes de escribir; los acentos españoles sí están en latin-1.
+
+Las FIGURAS del anexo C (bloques ``figure``) se imprimen como VECTOR: el SVG que
+se congeló en el documento al redactarlo pasa otra vez la lista blanca de
+``reports.svg`` y fpdf2 lo dibuja con las mismas fuentes base, así que el texto
+de la figura sigue siendo texto en el PDF y se amplía sin pixelarse.
 """
 
 from __future__ import annotations
 
+from io import BytesIO
 from typing import Any
 
 from fpdf import FPDF
@@ -16,19 +22,39 @@ from fpdf.fonts import FontFace
 
 from agentopsy.i18n import t
 from agentopsy.reports.store import Document
+from agentopsy.reports.svg import (
+    PAPEL,
+    SEVERIDAD_PAPEL,
+    rgb,
+    svg_para_imprimir,
+    validar_svg,
+)
 
-_INK = (20, 23, 29)       # #14171d
-_BODY = (43, 48, 57)      # #2b3039
-_MUTED = (91, 98, 109)    # #5b626d
-_FAINT = (144, 150, 160)  # #9096a0
-_RULE = (227, 230, 234)   # #e3e6ea
-_SURFACE = (247, 248, 250)  # #f7f8fa
-_ACCENT = (163, 39, 31)   # #a3271f (rojo pericial)
+# La paleta de papel es UNA (``reports.svg.PAPEL``): las figuras del anexo C la
+# usan también, así que el texto del informe y sus figuras no pueden divergir.
+_INK = rgb(PAPEL["tinta"])         # #14171d
+_BODY = rgb(PAPEL["cuerpo"])       # #2b3039
+_MUTED = rgb(PAPEL["apagado"])     # #5b626d
+_FAINT = rgb(PAPEL["tenue"])       # #9096a0
+_RULE = rgb(PAPEL["filete"])       # #e3e6ea
+_SURFACE = rgb(PAPEL["superficie"])  # #f7f8fa
+_ACCENT = rgb(PAPEL["acento"])     # #a3271f (rojo pericial)
 
-_SEV_COLOR = {
-    "critical": (163, 39, 31), "high": (163, 39, 31),
-    "medium": (138, 90, 12), "low": (90, 100, 112),
-}
+_SEV_COLOR = {sev: rgb(color) for sev, color in SEVERIDAD_PAPEL.items()}
+
+#: La hoja: A4 vertical con estos márgenes. Son públicos porque la línea de
+#: tiempo del anexo C se PAGINA para esta hoja (``reports.figura_cronologia``):
+#: una figura que no cabe en una página se imprimiría diminuta.
+ANCHO_HOJA_MM = 210.0
+ALTO_HOJA_MM = 297.0
+MARGEN_LATERAL_MM = 18.0
+MARGEN_SUPERIOR_MM = 17.0
+MARGEN_INFERIOR_MM = 16.0
+ANCHO_UTIL_MM = ANCHO_HOJA_MM - 2 * MARGEN_LATERAL_MM
+ALTO_UTIL_MM = ALTO_HOJA_MM - MARGEN_SUPERIOR_MM - MARGEN_INFERIOR_MM
+
+#: Aire encima y debajo de una figura.
+AIRE_FIGURA_MM = 3.0
 _SEV_LABEL = {"critical": "Critico", "high": "Alto", "medium": "Medio", "low": "Bajo"}
 
 _PUNCT = {
@@ -109,8 +135,8 @@ class _Report(FPDF):
 
 def render_pdf(doc: Document) -> bytes:
     pdf = _Report(orientation="P", unit="mm", format="A4")
-    pdf.set_margins(left=18, top=17, right=18)
-    pdf.set_auto_page_break(auto=True, margin=16)
+    pdf.set_margins(left=MARGEN_LATERAL_MM, top=MARGEN_SUPERIOR_MM, right=MARGEN_LATERAL_MM)
+    pdf.set_auto_page_break(auto=True, margin=MARGEN_INFERIOR_MM)
     pdf.header_right = _s(f"Confidencial - {doc.case_id}")
     pdf.footer_left = _s(doc.type)
     pdf.footer_author = _s(f"Perito: {doc.author}")
@@ -262,11 +288,12 @@ def _h2(pdf: _Report, title: str, num: str) -> None:
 
 def _section(pdf: _Report, sec: dict[str, Any]) -> None:
     _h2(pdf, sec.get("title", ""), num=sec.get("num", ""))
-    for b in sec.get("blocks", []):
-        _block(pdf, b)
+    bloques = sec.get("blocks", [])
+    for i, b in enumerate(bloques):
+        _block(pdf, b, bloques[i + 1] if i + 1 < len(bloques) else None)
 
 
-def _block(pdf: _Report, b: dict[str, Any]) -> None:
+def _block(pdf: _Report, b: dict[str, Any], siguiente: dict[str, Any] | None = None) -> None:
     t = b.get("t")
     if t == "p":
         pdf.set_font("Helvetica", "", 10.5)
@@ -277,7 +304,17 @@ def _block(pdf: _Report, b: dict[str, Any]) -> None:
         pdf.set_font("Helvetica", "B", 12)
         pdf.set_text_color(*_INK)
         texto = _s(b.get("text", ""))
-        _reservar(pdf, 2 + _alto_de(pdf, 0, 6, texto) + _ALTO_CUERPO_MINIMO)
+        # Un rótulo que abre una figura se lleva la figura entera (al tamaño
+        # mínimo al que se puede imprimir), no un par de líneas: si no, el
+        # rótulo se queda al pie y la figura salta a la hoja siguiente.
+        cuerpo = (
+            _alto_minimo_de_figura(pdf, siguiente)
+            if siguiente is not None and siguiente.get("t") == "figure"
+            else _ALTO_CUERPO_MINIMO
+        )
+        # Lo que ocupa el rótulo es su aire de arriba, su texto y su aire de
+        # abajo: con un milímetro de menos, la figura aún saltaría sola.
+        _reservar(pdf, 2 + _alto_de(pdf, 0, 6, texto) + 1 + cuerpo)
         pdf.ln(2)
         pdf.multi_cell(0, 6, texto, new_x="LMARGIN", new_y="NEXT")
         pdf.ln(1)
@@ -310,6 +347,8 @@ def _block(pdf: _Report, b: dict[str, Any]) -> None:
         _table(pdf, b.get("headers", []) or [], b.get("rows", []) or [])
     elif t == "finding":
         _finding(pdf, b)
+    elif t == "figure":
+        _figure(pdf, b)
 
 
 def _kv(pdf: _Report, pairs: list[dict[str, Any]]) -> None:
@@ -376,6 +415,69 @@ def _finding(pdf: _Report, b: dict[str, Any]) -> None:
         pdf.multi_cell(0, 4.6, _s("  ".join(f"[{tag}]" for tag in tags)),
                        new_x="LMARGIN", new_y="NEXT")
     pdf.ln(3)
+
+
+# ── figura ───────────────────────────────────────────────────────────────────
+
+
+#: Hasta cuánto se puede reducir una figura para que quepa en lo que queda de la
+#: hoja en vez de saltar a la siguiente. Por debajo, el texto del dibujo deja de
+#: leerse y compensa más la hoja nueva.
+ESCALA_MINIMA_FIGURA = 0.8
+
+
+def _alto_a_pagina_completa(pdf: _Report, ancho_px: float, alto_px: float) -> float:
+    """El alto de la figura a todo el ancho útil, sin pasar de una hoja."""
+    return min(pdf.epw * alto_px / ancho_px, pdf.eph - 2 * AIRE_FIGURA_MM)
+
+
+def _alto_minimo_de_figura(pdf: _Report, b: dict[str, Any]) -> float:
+    """Lo MENOS que ocupa una figura en la hoja, aire incluido."""
+    ancho_px, alto_px = validar_svg(b.get("svg"))
+    return (
+        _alto_a_pagina_completa(pdf, ancho_px, alto_px) * ESCALA_MINIMA_FIGURA
+        + 2 * AIRE_FIGURA_MM
+    )
+
+
+def _figure(pdf: _Report, b: dict[str, Any]) -> None:
+    """Una figura del anexo C, a todo el ancho útil y entera en una hoja.
+
+    Pasa OTRA VEZ la lista blanca antes de llegar a fpdf2, aunque el almacén ya
+    la pasó al crear el documento: lo que se imprime es lo que hay en disco en
+    este momento, y fpdf2 resolvería un ``<image href>`` leyendo un fichero o
+    una URL (ver ``reports.svg``).
+
+    El texto se translitera a latin-1 igual que el resto del informe, porque las
+    fuentes base no tienen más, y se hace sobre el árbol y no sobre la cadena
+    (``svg.svg_para_imprimir``): «←» sale «<-», y ese «<» sin escapar rompería el
+    XML.
+
+    Si la figura es más alta que una hoja, se reduce hasta caber en una:
+    partirla entre dos hojas la dejaría ilegible, y por eso la línea de tiempo
+    ya llega troceada en partes que caben. Si cabe en lo que queda de la hoja
+    reduciéndola poco (``ESCALA_MINIMA_FIGURA``), se reduce ahí y no deja media
+    hoja en blanco; si no, empieza en la siguiente.
+    """
+    fuente, ancho_px, alto_px = svg_para_imprimir(b.get("svg"), _s)
+    alto = _alto_a_pagina_completa(pdf, ancho_px, alto_px)
+    queda = pdf.h - pdf.b_margin - pdf.get_y() - 2 * AIRE_FIGURA_MM
+    if alto > queda and pdf.get_y() > pdf.t_margin:
+        if queda >= alto * ESCALA_MINIMA_FIGURA:
+            alto = queda
+        else:
+            pdf.add_page()
+    ancho = alto * ancho_px / alto_px
+    pdf.ln(AIRE_FIGURA_MM)
+    y = pdf.get_y()
+    pdf.image(
+        BytesIO(fuente.encode("utf-8")),
+        x=pdf.l_margin + (pdf.epw - ancho) / 2,
+        y=y,
+        w=ancho,
+        h=alto,
+    )
+    pdf.set_y(y + alto + AIRE_FIGURA_MM)
 
 
 # ── firma ────────────────────────────────────────────────────────────────────

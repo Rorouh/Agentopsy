@@ -2091,6 +2091,12 @@ select option:disabled { color: var(--ink-5); }
 }
 .report-kv-k { color: var(--ink-2); }
 .report-kv-v { font-family: var(--font-mono); font-size: var(--fs-2); text-align: right; color: var(--ink); }
+/* Figura del anexo C (línea de tiempo del incidente, grafo del caso). El fondo es
+   BLANCO LITERAL y no un token a propósito: es la figura del informe impreso, y
+   no sigue el tema claro u oscuro de la interfaz. El SVG ya trae su fondo; este
+   cubre el instante en que la imagen aún no ha pintado. */
+.report-figure { margin: 0; background: #ffffff; border: 1px solid var(--hair); }
+.report-figure-img { display: block; width: 100%; height: auto; }
 .report-finding { border-left: 2px solid var(--line); padding-left: 16px; }
 .report-finding.is-hot { border-left-color: var(--accent); }
 .report-finding-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }

@@ -267,7 +267,8 @@ It applies to three layers, and each enforces it differently:
    rejects a report: typography is not a fact of the case. It never touches a `code`
    block (the audited argv, character by character — FORENSIC INVARIANT 4), leaves a
    compliant text byte-identical, and audits how much it rewrote
-   (`report_written.style_normalized`).
+   (`report_written.style_normalized`). The rule itself lives in `reports/estilo.py`,
+   shared with the annex C figures, whose event titles are text the agent wrote.
 2. **Backend strings** — any literal that can reach the UI, the model or the report.
    Docstrings and comments are development documentation, not product output, and stay
    out of scope.
@@ -276,7 +277,7 @@ It applies to three layers, and each enforces it differently:
 Enforced by `backend/tests/test_estilo_tipografia.py`. Exempt, because there the dash is
 DATA and substituting it would break the code that looks for it: the PDF transliteration
 key (`reports/pdf._PUNCT`), the ATT&CK-seed tactic regex (`mitre/catalog.py`) and
-`writer._RAYA_RE`. A literal may also NAME the character in order to forbid it.
+`reports/estilo._RAYA_RE`. A literal may also NAME the character in order to forbid it.
 
 Typography is not cosmetics here: a report is read by a court-adjacent reader, and the
 model imitates whatever text it is shown — which is why `agent.md` and the index
@@ -438,17 +439,18 @@ require a rationale and land in the audit log.
 
 **Timeline.** Four layers, the entry one being the chronology of the INCIDENT
 (`agentopsy.timeline.hallazgos`), whose axis is `Finding.observed_at` and only
-that. What cannot be placed travels counted and declared, in the view and inside
-the exported PNG.
+that. What cannot be placed travels counted and declared, in the view, inside
+the exported PNG and inside the report figure.
 
 **Graphs.** `agentopsy.graph` extracts entity/relation graphs from a finding's
 prose with closed referents (every entity must appear literally in the title or
 summary), a closed response contract and delimited hostile text. Geometry is
 computed server-side and is deterministic, so a figure adjoined to a report gives
 the same image today and in a year. `fusion` merges the per-finding graphs into
-the case graph; exploration (zoom, pan, focus) lives in the client as a CSS
-transform of the container, so what is serialised to PNG is always the canonical
-geometry.
+the case graph, and `graph.figura` composes its figure (merge, network versus
+loose entities, layout) once for both the Graphs view and the report annex;
+exploration (zoom, pan, focus) lives in the client as a CSS transform of the
+container, so what is serialised to PNG is always the canonical geometry.
 
 **Report.** The pericial report is WRITTEN end to end by the operator-selected
 executor in one call, never filled into a template: the only thing two reports
@@ -456,8 +458,18 @@ share is the index (`agentopsy.reports.indice`). `agentopsy.reports.material`
 gathers everything the case persisted, and `writer.write_report` crosses four
 custody gates before persisting anything (index exact, block model, closed
 referents, literal audited commands), with ONE correction round. A rejection
-publishes nothing and says why. Documents carry SHA-256 content integrity, are
-born drafts, gain pericial validity when signed, and render to a real PDF.
+publishes nothing and says why. The one index entry the model does NOT write is
+annex C, the case figures: `reports.figuras` draws the incident timeline and the
+case relation graph from the recorded data (composed together with the material,
+appended after the gates, audited with each drawing's SHA-256) as SVG `figure`
+blocks frozen into the document, so a signed report keeps the figures it was
+signed with. They are always on white paper (`reports.svg.PAPEL`, the PDF's own
+palette), whatever the UI theme; the timeline is split into whole events that fit
+an A4 page; and a `figure` block only passes a whitelist of the drawing
+vocabulary Agentopsy emits (`reports.svg.validar_svg`, checked by the store and
+again by the PDF, which prints an SVG rewritten from the validated tree, since
+fpdf2 would resolve an `<image href>` from disk or the network). Documents carry SHA-256 content integrity, are born drafts, gain
+pericial validity when signed, and render to a real PDF, figures as vectors.
 
 **Surfaces.** `GET …/pulse` returns an opaque signature per case stream, so the
 SPA refreshes what changed without polling the data itself. The two exports

@@ -397,7 +397,7 @@ export const es: Record<MessageKey, string> = {
     "El grafo responde a qué se conecta con qué: el modelo que elijas lee el texto de cada hallazgo y propone qué cuentas, ficheros, equipos, dominios e IP intervienen, y el grafo del caso los funde por entidad para enseñar lo que ata unos hallazgos con otros. Es una propuesta del modelo, no un hecho verificado, y así se etiqueta; la figura se exporta como PNG para adjuntarla al informe.",
   "guide.step7.title": "Finalizar la investigación y firmar el informe",
   "guide.step7.desc":
-    "Pulsa «Finalizar investigación» y el modelo seleccionado redactará el informe pericial completo desde los hallazgos y las evidencias del caso. Verifica su integridad y fírmalo como versión final.",
+    "Pulsa «Finalizar investigación» y el modelo seleccionado redactará el informe pericial completo desde los hallazgos y las evidencias del caso. Agentopsy le añade el anexo C con la línea de tiempo del incidente y el grafo de relaciones del caso, siempre sobre fondo blanco: extrae antes los grafos que quieras ver en él. Verifica su integridad y fírmalo como versión final.",
   "guide.loginSection": "Iniciar sesión en un ejecutor",
   "guide.loginProseA": "Agentopsy no usa API keys.",
   "guide.loginProseB":

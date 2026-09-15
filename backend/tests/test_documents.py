@@ -11,13 +11,16 @@ from __future__ import annotations
 import json
 import re
 import zlib
+from dataclasses import asdict
 
 import pytest
 
 from agentopsy.audit.log import AuditLog
 from agentopsy.cases import CaseManager
+from agentopsy.reports import pdf as pdf_mod
 from agentopsy.reports.pdf import render_pdf
-from agentopsy.reports.store import DocumentStore
+from agentopsy.reports.store import Document, DocumentStore
+from agentopsy.reports.svg import PAPEL, SVG_NS, Figura
 
 
 @pytest.fixture
@@ -263,3 +266,142 @@ def test_a_section_heading_is_never_the_last_thing_on_its_page(tmp_case) -> None
             assert len(despues) > 120, (
                 f"el rotulo del apartado {n} se queda casi solo al pie de la pagina {numero}"
             )
+
+
+
+# ── figuras (anexo C) ─────────────────────────────────────────────────────────
+#
+# El bloque `figure` lleva un SVG que la web pinta como imagen y el PDF imprime
+# como vector. Un documento también se crea por `POST …/documents` con el cuerpo
+# que se quiera, así que el almacén solo admite el vocabulario que Agentopsy
+# dibuja, y el PDF lo vuelve a comprobar antes de imprimir.
+
+_SVG_HOSTIL = (
+    f'<svg xmlns="{SVG_NS}" width="10" height="10" viewBox="0 0 10 10">'
+    '<image href="file:///etc/passwd" width="10" height="10"/></svg>'
+)
+
+
+def _svg_de_prueba(alto: float = 320.0) -> str:
+    figura = Figura(840, alto)
+    figura.texto(32, 40, "FIGURA-DE-PRUEBA", tamano=15, color=PAPEL["tinta"], negrita=True)
+    figura.linea(32, 60, 808, 60, stroke=PAPEL["filete"], grosor=1)
+    figura.circulo(252, 100, 5, fill=PAPEL["acento"])
+    figura.poligono([(10, 10), (20, 10), (15, 20)], fill="#6b4bab")
+    figura.rect(100, 100, 50, 20, stroke=PAPEL["filete"], grosor=0.8, trazo="3 3")
+    figura.texto(420, alto - 20, "pie · con acento", tamano=12, color=PAPEL["apagado"],
+                 mono=True, ancla="middle", espaciado=0.6)
+    return figura.svg()
+
+
+def _figura(**cambios) -> dict:
+    bloque = {
+        "t": "figure", "kind": "incident_timeline",
+        "title": "Línea de tiempo del incidente", "svg": _svg_de_prueba(),
+    }
+    bloque.update(cambios)
+    return bloque
+
+
+def _anexo(*bloques) -> list[dict]:
+    return [{"num": "C", "title": "Anexo: Figuras del caso", "blocks": list(bloques)}]
+
+
+def test_a_figure_is_stored_under_the_content_hash(tmp_case) -> None:
+    cases, case_id = tmp_case
+    store = DocumentStore(cases)
+    doc = store.create(case_id, _payload(sections=_anexo(_figura())))
+    assert store.verify(case_id, doc.id)["ok"] is True
+
+    # Retocar el dibujo en disco rompe la integridad: la figura es contenido.
+    path = cases.case_dir(case_id) / "documents" / f"{doc.id}.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    bloque = data["sections"][0]["blocks"][0]
+    bloque["svg"] = bloque["svg"].replace("FIGURA-DE-PRUEBA", "OTRA-FIGURA")
+    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    assert store.verify(case_id, doc.id)["ok"] is False
+
+
+@pytest.mark.parametrize(
+    ("cambio", "motivo"),
+    [
+        ({"kind": "grafico_de_tarta"}, "kind"),
+        ({"title": "   "}, "title"),
+        ({"leyenda": "sobra"}, "unknown keys"),
+        ({"svg": _SVG_HOSTIL}, "not allowed"),
+        ({"svg": None}, "non-empty string"),
+    ],
+)
+def test_a_figure_block_outside_its_contract_is_rejected(tmp_case, cambio, motivo) -> None:
+    cases, case_id = tmp_case
+    with pytest.raises(ValueError, match=motivo):
+        DocumentStore(cases).create(case_id, _payload(sections=_anexo(_figura(**cambio))))
+
+
+def test_the_pdf_prints_the_figure_as_vector_with_real_text(tmp_case) -> None:
+    cases, case_id = tmp_case
+    doc = DocumentStore(cases).create(case_id, _payload(sections=_anexo(_figura())))
+    hojas = _texto_por_pagina(render_pdf(doc))
+    assert any("FIGURA-DE-PRUEBA" in hoja for hoja in hojas)
+
+
+def test_the_pdf_checks_the_figure_again_before_printing_it(tmp_case) -> None:
+    """Lo que se imprime es lo que hay en disco AHORA, no lo que el almacén
+    aceptó al crear: un SVG hostil no llega a fpdf2, que leería el fichero."""
+    cases, case_id = tmp_case
+    doc = DocumentStore(cases).create(case_id, _payload(sections=_anexo(_figura())))
+    manipulado = Document(**{**asdict(doc), "sections": _anexo(_figura(svg=_SVG_HOSTIL))})
+    with pytest.raises(ValueError, match="not allowed"):
+        render_pdf(manipulado)
+
+
+def test_a_heading_that_opens_a_figure_travels_with_it(tmp_case) -> None:
+    """El rótulo de una figura no se queda al pie de una hoja con la figura en
+    la siguiente: se reserva la figura entera, no un par de líneas."""
+    cases, case_id = tmp_case
+    store = DocumentStore(cases)
+    for relleno in range(4, 40, 3):
+        doc = store.create(case_id, _payload(sections=_anexo(
+            {"t": "p", "text": "Relleno de cuerpo. " * relleno * 10},
+            {"t": "h3", "text": "C.1 ROTULO-DE-FIGURA"},
+            _figura(svg=_svg_de_prueba(alto=1100.0)),
+        )))
+        for hoja in _texto_por_pagina(render_pdf(doc)):
+            if "ROTULO-DE-FIGURA" in hoja:
+                assert "FIGURA-DE-PRUEBA" in hoja, f"relleno {relleno}"
+
+
+def test_a_figure_counts_about_a_page_in_the_estimate(tmp_case) -> None:
+    cases, case_id = tmp_case
+    store = DocumentStore(cases)
+    sin = store.create(case_id, _payload(sections=_anexo({"t": "p", "text": "x"})))
+    con = store.create(case_id, _payload(
+        sections=_anexo({"t": "p", "text": "x"}, _figura(), _figura()),
+    ))
+    assert con.page_count == sin.page_count + 2
+
+
+def test_a_figure_heading_is_not_orphaned_even_by_a_millimetre() -> None:
+    """Barrido fino alrededor del punto en el que el rótulo y la figura dejan de
+    caber juntos: en ningún arranque el rótulo se queda en una hoja y la figura
+    en la siguiente. La reserva del rótulo contaba un milímetro de menos (su aire
+    de abajo), y justo en ese milímetro la figura saltaba sola."""
+    figura = _figura(svg=_svg_de_prueba(alto=600.0))
+    rotulo = {"t": "h3", "text": "C.1 ROTULO-DE-FIGURA"}
+    huerfanos = []
+    for decimas in range(1600, 1720, 2):
+        pdf = pdf_mod._Report(orientation="P", unit="mm", format="A4")
+        pdf.set_margins(
+            left=pdf_mod.MARGEN_LATERAL_MM,
+            top=pdf_mod.MARGEN_SUPERIOR_MM,
+            right=pdf_mod.MARGEN_LATERAL_MM,
+        )
+        pdf.set_auto_page_break(auto=True, margin=pdf_mod.MARGEN_INFERIOR_MM)
+        pdf.add_page()
+        pdf.set_y(decimas / 10)
+        pdf_mod._block(pdf, rotulo, figura)
+        hoja_del_rotulo = pdf.page
+        pdf_mod._block(pdf, figura, None)
+        if pdf.page != hoja_del_rotulo:
+            huerfanos.append(decimas / 10)
+    assert not huerfanos, f"rotulo huerfano arrancando en y = {huerfanos}"

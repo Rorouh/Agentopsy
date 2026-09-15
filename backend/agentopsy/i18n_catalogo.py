@@ -886,6 +886,10 @@ CATALOGO["indice.B.title"] = {
     "en": "Annex: Integrity verification",
     "es": "Anexo: Verificación de integridad",
 }
+CATALOGO["indice.C.title"] = {
+    "en": "Annex: Case figures",
+    "es": "Anexo: Figuras del caso",
+}
 
 # --- índice del informe pericial: contrato de cada apartado --------------------
 CATALOGO["indice.1.contrato"] = {
@@ -936,6 +940,139 @@ CATALOGO["indice.B.contrato"] = {
     "en": "How a third party checks that nothing has been altered: the SHA-256 of the document content and that it is recomputed with `POST …/documents/{id}/verify`; the state of the hash chain of the case audit log (`integridad.hash_chain_verified`); and the baseline of each piece of evidence with the result of its verification (`evidencias[].verificacion`). Copy the hashes from the material as they are, complete. If the material carries `integridad.coste_reportado`, add a line with the cost each executor REPORTED and how many of its runs carry it, saying that it is the provider figure and not a computation by Agentopsy; do not add it up across executors and do not convert tokens into money. If it does not come, do not mention cost.",
     "es": "Cómo un tercero comprueba que nada se ha alterado: el SHA-256 del contenido del documento y que se recomputa con `POST …/documents/{id}/verify`; el estado de la cadena hash del log de auditoría del caso (`integridad.hash_chain_verified`); y el baseline de cada evidencia con el resultado de su verificación (`evidencias[].verificacion`). Copia los hashes del material tal cual, completos. Si el material trae `integridad.coste_reportado`, añade una línea con el coste que REPORTÓ cada ejecutor y cuántas de sus corridas lo traen, diciendo que es la cifra del proveedor y no un cálculo de Agentopsy; no lo sumes con otros ejecutores ni conviertas tokens en dinero. Si no viene, no menciones el coste.",
 }
+
+CATALOGO["indice.C.contrato"] = {
+    "en": "You do NOT write this annex and it does NOT go in `secciones`: Agentopsy composes it when the report is registered, with the figures of the case (the incident timeline and the case relation graph) drawn from the recorded findings and graphs; when the case lacks the data for one of them, the annex itself says so. You may refer to it from the body (for example, from section 3 or section 6) by citing it as «annex C, Case figures», but do not describe what the figures show: they are not part of the material.",
+    "es": "Este anexo NO lo redactas tú y NO va en `secciones`: Agentopsy lo compone al registrar el informe con las figuras del caso (la línea de tiempo del incidente y el grafo de relaciones del caso), dibujadas a partir de los hallazgos y los grafos registrados; si al caso le falta el dato de alguna, el propio anexo lo dice. Puedes remitir a él desde el cuerpo (por ejemplo, desde la sección 3 o la 6) citándolo como «anexo C, Figuras del caso», pero no describas lo que muestran las figuras: no forman parte del material.",
+}
+
+# --- figuras del informe pericial (anexo C) ------------------------------------
+CATALOGO["figure.annex.intro"] = {
+    "en": "Figures that Agentopsy composes from the findings and graphs recorded in the case when this report was written, with the same deterministic geometry as the Timeline and Graphs views: the same data produces the same figure. The model does not write them, and they are part of the content whose SHA-256 is verified.",
+    "es": "Figuras que Agentopsy compone con los hallazgos y los grafos registrados en el caso al redactar este informe, con la misma geometría determinista que las vistas Timeline y Grafos: los mismos datos producen la misma figura. No las redacta el modelo y forman parte del contenido cuyo SHA-256 se verifica.",
+}
+CATALOGO["figure.annex.timelineHeading"] = {
+    "en": "C.1 Incident timeline",
+    "es": "C.1 Línea de tiempo del incidente",
+}
+CATALOGO["figure.annex.graphHeading"] = {
+    "en": "C.2 Case relation graph",
+    "es": "C.2 Grafo de relaciones del caso",
+}
+CATALOGO["figure.rail.title"] = {
+    "en": "Incident timeline",
+    "es": "Línea de tiempo del incidente",
+}
+CATALOGO["figure.rail.titlePart"] = {
+    "en": "Incident timeline ({part} of {parts})",
+    "es": "Línea de tiempo del incidente ({part} de {parts})",
+}
+CATALOGO["figure.rail.case"] = {
+    "en": "Case: {name}",
+    "es": "Caso: {name}",
+}
+CATALOGO["figure.rail.composed"] = {
+    "en": "Added to the report: {date} · events on the axis: {shown} of {total} case findings",
+    "es": "Incorporada al informe: {date} · eventos en el eje: {shown} de {total} hallazgos del caso",
+}
+CATALOGO["figure.rail.outside"] = {
+    "en": "Outside the axis",
+    "es": "Fuera del eje",
+}
+CATALOGO["figure.rail.noObservedAt"] = {
+    "en": "With no artifact timestamp: {count} (they are not placed on the axis: dating them with the time of the analysis would falsify the incident)",
+    "es": "Sin marca temporal del artefacto: {count} (no se sitúan en el eje: fecharlos con la hora del análisis falsearía el incidente)",
+}
+CATALOGO["figure.rail.unparseable"] = {
+    "en": "With a mark unreadable as a date with a time zone: {count}",
+    "es": "Con una marca ilegible como fecha con zona: {count}",
+}
+CATALOGO["figure.rail.listTrimmed"] = {
+    "en": " (list trimmed)",
+    "es": " (lista recortada)",
+}
+CATALOGO["figure.rail.allPlaced"] = {
+    "en": "Every finding of the case ({count}) is placed on the axis.",
+    "es": "Todos los hallazgos del caso ({count}) se sitúan en el eje.",
+}
+CATALOGO["figure.graph.title"] = {
+    "en": "Case relation graph",
+    "es": "Grafo de relaciones del caso",
+}
+CATALOGO["figure.graph.subtitle"] = {
+    "en": "Entities: {nodes} · connections: {edges} · findings with a graph: {findings}",
+    "es": "Activos: {nodes} · conexiones: {edges} · hallazgos con grafo: {findings}",
+}
+CATALOGO["figure.graph.counts"] = {
+    "en": "nodes: {nodes} · edges: {edges}",
+    "es": "nodos: {nodes} · aristas: {edges}",
+}
+CATALOGO["figure.graph.legendNodes"] = {
+    "en": "NODES",
+    "es": "NODOS",
+}
+CATALOGO["figure.graph.legendEdges"] = {
+    "en": "RELATIONS",
+    "es": "RELACIONES",
+}
+CATALOGO["figure.graph.provenance"] = {
+    "en": "Case: {case} · Added to the report: {date} · nodes: {nodes}, edges: {edges}",
+    "es": "Caso: {case} · Incorporado al informe: {date} · nodos: {nodes}, aristas: {edges}",
+}
+CATALOGO["figure.graph.inventoryBand"] = {
+    "en": "Entities named by the findings with no relation asserted between them: {count}",
+    "es": "Entidades que los hallazgos nombran sin afirmar ninguna relación entre ellas: {count}",
+}
+CATALOGO["figure.graph.na"] = {
+    "en": "n/a",
+    "es": "n/d",
+}
+CATALOGO["figure.graph.none"] = {
+    "en": "The case has no extracted relation graph, so there is no graph figure to add. Graphs are extracted from the Graphs view, finding by finding, and a report written afterwards includes them.",
+    "es": "El caso no tiene grafos de relaciones extraídos, así que no hay figura del grafo que incorporar. Los grafos se extraen desde la vista Grafos, hallazgo a hallazgo, y el informe que se redacte después los incluye.",
+}
+CATALOGO["figure.graph.empty"] = {
+    "en": "None of the extracted graphs of the case ({count}) names an entity, so there is no graph figure to add.",
+    "es": "Ninguno de los grafos extraídos del caso ({count}) nombra una entidad, así que no hay figura del grafo que incorporar.",
+}
+CATALOGO["figure.graph.abbr.ip"] = {"en": "IP", "es": "IP"}
+CATALOGO["figure.graph.abbr.domain"] = {"en": "DOM", "es": "DOM"}
+CATALOGO["figure.graph.abbr.hostname"] = {"en": "HST", "es": "EQ"}
+CATALOGO["figure.graph.abbr.user"] = {"en": "USR", "es": "USR"}
+CATALOGO["figure.graph.abbr.file"] = {"en": "FIL", "es": "FIC"}
+CATALOGO["figure.graph.pending"] = {
+    "en": "Findings of the case with no extracted graph: {pending} of {total}. Their entities do not appear in this figure.",
+    "es": "Hallazgos del caso sin grafo extraído: {pending} de {total}. Sus entidades no figuran en esta figura.",
+}
+
+# --- grafos: cómo se leen los tipos de nodo y de relación ----------------------
+CATALOGO["graphNode.ip"] = {"en": "IP address", "es": "Dirección IP"}
+CATALOGO["graphNode.domain"] = {"en": "Domain", "es": "Dominio"}
+CATALOGO["graphNode.hostname"] = {"en": "Host", "es": "Equipo"}
+CATALOGO["graphNode.user"] = {"en": "User", "es": "Usuario"}
+CATALOGO["graphNode.file"] = {"en": "File", "es": "Fichero"}
+CATALOGO["graphEdge.connection"] = {"en": "Connection", "es": "Conexión"}
+CATALOGO["graphEdge.process_spawn"] = {"en": "Process creation", "es": "Creación de proceso"}
+CATALOGO["graphEdge.network_connection"] = {
+    "en": "Network connection",
+    "es": "Conexión de red",
+}
+CATALOGO["graphEdge.lateral_move"] = {"en": "Lateral movement", "es": "Movimiento lateral"}
+CATALOGO["graphEdge.malware"] = {"en": "Malicious code", "es": "Código malicioso"}
+CATALOGO["graphEdge.c2"] = {"en": "Command and control", "es": "Mando y control"}
+CATALOGO["graphEdge.exfiltration"] = {"en": "Exfiltration", "es": "Exfiltración"}
+CATALOGO["graphEdge.beacon"] = {"en": "Beacon", "es": "Baliza"}
+CATALOGO["graphEdge.persistence"] = {"en": "Persistence", "es": "Persistencia"}
+CATALOGO["graphEdge.priv_esc"] = {
+    "en": "Privilege escalation",
+    "es": "Escalada de privilegios",
+}
+CATALOGO["graphEdge.rce"] = {
+    "en": "Remote code execution",
+    "es": "Ejecución remota de código",
+}
+CATALOGO["graphEdge.logon"] = {"en": "Logon", "es": "Inicio de sesión"}
+CATALOGO["graphEdge.file_transfer"] = {"en": "File transfer", "es": "Transferencia de ficheros"}
 
 # --- redactor del informe: el encargo y las reglas -----------------------------
 CATALOGO["writer.encargo"] = {

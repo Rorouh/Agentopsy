@@ -424,7 +424,7 @@ export const en = {
     "The graph answers what connects to what: the model you choose reads the text of each finding and proposes which accounts, files, hosts, domains and IPs take part, and the case graph merges them by entity to show what ties some findings to others. It is a proposal by the model, not a verified fact, and it is labelled as such; the figure is exported as a PNG to attach to the report.",
   "guide.step7.title": "Finish the investigation and sign the report",
   "guide.step7.desc":
-    "Press «Finish investigation» and the selected model will write the complete expert report from the case findings and evidence. Verify its integrity and sign it as the final version.",
+    "Press «Finish investigation» and the selected model will write the complete expert report from the case findings and evidence. Agentopsy adds annex C with the incident timeline and the case relation graph, always on a white background: extract beforehand the graphs you want to see in it. Verify its integrity and sign it as the final version.",
   "guide.loginSection": "Sign in to an executor",
   "guide.loginProseA": "Agentopsy does not use API keys.",
   "guide.loginProseB":
