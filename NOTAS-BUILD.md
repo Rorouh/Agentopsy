@@ -1543,3 +1543,72 @@ grep -ahoi -e 'WIN-L0ZZQ76PMUF' -e 'sqlmap' -e 'phpshell' "$ARTEFACTOS"/*/stdout
    que exige Ollama >= 0.9; el del compose es 0.31.1 y lo ignora).
 3. **Camino A frente a camino B de memoria**: sigue sin medirse, y ahora sí tiene
    sentido, porque el agente por fin usa `buscar` de verdad.
+
+## Tercera tanda: el 3B acierta sin leer (2026-09-13)
+
+Corrida de humo sobre la rama `local-fit-llm` @ `0c1206a`, pregunta abierta
+(`"hola, revisa la evidencia"`), `LOCALFIT_MODEL=agentopsy-q25-3b`,
+`LOCALFIT_REPARTO=revisor`. Traza `01a09bcb-60da-7890-8937-906a277821b8`.
+
+**El techo de la segunda tanda se cruzó, y hacia el lado malo.** Allí el 3B veía
+`sqlmap` en la salida y no lo registraba: omisión. Aquí registra `[low] "Usuario
+Administrador detectado en memoria"`, afirmando haber encontrado `Administrator` y
+`WIN-`, cuando lo que tenía delante eran 25 líneas del sector de arranque del
+volcado. El texto no sale de la nada: es literalmente el ejemplo few-shot de
+`revisor.py:41`. Con el objetivo vacío de contenido, el modelo no planifica,
+**devuelve el ejemplo**.
+
+**Y el giro, que es lo que hace el fallo invisible: la conclusión es CORRECTA.**
+En los 89 MB del artefacto `Administrator` sale 462 veces y `WIN-` 740, pero la
+primera aparición está en la línea 14.795 (`WIN-` en la 29.203,
+`COMPUTERNAME=WIN-L0ZZQ76PMUF`). El modelo dejó de mirar 14.770 líneas antes.
+**Acertó sin leer**, y desde la UI no se distingue de haberlo leído.
+
+| qué | cifra |
+|---|---|
+| reloj de pared de la traza | 1374 s |
+| suspensión del portátil dentro del turno | 18m08s |
+| turno real | ~286 s (4,8 min) |
+| llamadas al modelo | 7 |
+| generación | 9,7 tok/s |
+| prompt eval | 28-31 tok/s |
+| órdenes planificadas / ejecutadas | 2 / 1 |
+| hallazgos registrados / leídos por el agente | 1 / 0 |
+
+### Por qué no se ve desde la cronología
+
+Porque lo que se ve ahí es la **capa 1, la cronología de la INVESTIGACIÓN**: las
+ejecuciones del audit log, que son reales y correctas. El `strings` se ejecutó,
+exit 0, 89 MB, encadenado por hash. El problema vive un paso después, en la lectura
+que el modelo hace de esa salida. Y en la **capa 0, la del INCIDENTE**, el hallazgo
+tampoco aparece: salió con `observed_at: null`, así que no entra en la línea que un
+tercero lee primero.
+
+Dos avisos que valen para toda la serie:
+
+1. **Las duraciones de LangSmith son reloj de pared.** Si el portátil se suspende a
+   mitad de turno, la cifra queda inflada. Se descubrió cruzando la traza con
+   `journalctl -g 'PM: suspend'` y con el `print_timing` de llama.cpp; desde el 15 de
+   septiembre **ya no hace falta hacerlo a mano**: el turno mide en proceso cuánto
+   durmió la máquina (`relojes.py`) y lo publica en las métricas, en el audit log y en
+   los metadatos del propio span. Las mediciones commiteadas del 8 de septiembre están
+   limpias.
+2. **`docker compose up --build` está roto** en `toolkit-windows` por el SHA de
+   `EvtxECmd.zip`: el problema 3 de este documento, ya materializado.
+
+El inventario completo, con referencias a fichero y línea, está en
+**`CHECKLIST-local-fit-llm.md`**: cadena de custodia (1), órdenes inejecutables (2),
+consecuencias (3), contaminación de las mediciones (4) e infraestructura (5). Las
+secciones 1, 2, 3 y 4 se cerraron entre el 14 y el 15 de septiembre. Queda el 5.1, el
+pin de `EvtxECmd.zip`, que es una decisión y no código.
+
+Dos correcciones a lo que se escribió aquí el primer día, porque las dos eran
+diagnósticos que la traza y la evidencia desmienten:
+
+- **No hubo ningún parámetro que el código se tragara.** El modelo emitió
+  `{"accion": "strings_head", "args": {"min_len": 4, "radix": "x"}}`, sin `consulta`:
+  ignoró esa mitad de la orden. Y los avisos que debían salvarlo (`_hechos()`,
+  `_calificar()`) sí dispararon y ofrecían `buscar`. Eligió registrar.
+- **El sector NTFS no delata una evidencia mal clasificada.** Está en el offset
+  `0x7C00` exacto, con firma `55AA`, y los primeros 4096 bytes a cero: es el VBR
+  residente en memoria física baja, justo donde la BIOS lo deja. El triaje acertó.

@@ -88,7 +88,7 @@ Lo que convierte «recibirlo todo» en «pedir lo que hace falta»:
 | `leer_artefacto(id, desde, n)` | leer **un trozo** de una salida, no la salida entera |
 | `buscar(consulta)` | localizar dónde está algo, sin traérselo todo |
 | `ver_catalogo(filtro)` | qué herramientas existen para un tipo de evidencia |
-| `registrar_hallazgo(...)` | dejar constancia de una conclusión |
+| `registrar_hallazgo(..., cita)` | dejar constancia de una conclusión, con la línea LEÍDA que la sostiene |
 | `ver_hallazgos()` | qué lleva concluido |
 
 Ninguna carga el caso completo en el contexto. Todas devuelven **recortes

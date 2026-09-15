@@ -13,8 +13,9 @@ Diseño: [`../DISENO-local-fit-llm.md`](../DISENO-local-fit-llm.md).
 Dos agentes sobre el mismo modelo local, un paso por llamada:
 
 - **Investigador**: identifica la evidencia, ejecuta herramientas, lee sus
-  salidas a trozos y registra hallazgos con su justificación y el `run_id` que
-  los sostiene. Escribe y mantiene su propia lista de tareas.
+  salidas a trozos y registra hallazgos con su justificación, el `run_id` que
+  los sostiene y la **línea literal** de esa salida que los sostiene (ver *La
+  cita*, más abajo). Escribe y mantiene su propia lista de tareas.
 - **Revisor**: lee lo reunido (tareas, hallazgos, artefactos, informe) y o
   aprueba y redacta la respuesta al perito, o devuelve órdenes cortas del tipo
   «revisa X con la herramienta Y», que vuelven al investigador como objetivo.
@@ -31,6 +32,8 @@ artefacto sin haberlo pedido. El sistema comprueba que cabe en la ventana
 |---|---|
 | `runner.py` | el bucle: un turno del perito, investigador → revisor → órdenes → respuesta |
 | `investigador.py` · `revisor.py` | los dos agentes: prompt de cada paso y lectura de su JSON |
+| `ordenes.py` | qué orden del revisor es ejecutable, validada contra las firmas que ve el modelo |
+| `relojes.py` | el trabajo real del turno y lo que la máquina durmió en medio, por separado |
 | `agentes/*.md` | la identidad de cada agente (corta: la pericia va en el modelo) |
 | `herramientas/forenses.py` | las seis herramientas portadas: argv desde parámetros tipados |
 | `herramientas/contexto.py` | ver/escribir tareas, listar/leer artefactos, buscar, catálogo, hallazgos |
@@ -150,6 +153,56 @@ sobre la pregunta y el revisor solo interviene al final. El revisor puede correr
 en otro modelo (`LOCALFIT_MODEL_REVISOR`), por ejemplo un 7B planificando y un
 3B ejecutando.
 
+### Una orden tiene que poder ejecutarse
+
+Una orden es prosa, y hasta el 2026-09-13 lo único que se comprobaba era que el
+nombre de la herramienta existiera. `ordenes.motivo_inejecutable` descarta además
+dos formas que el investigador no puede cumplir, las dos medidas en la misma
+corrida (traza `01a09bcb`), que entre ellas consumieron el turno sin responder:
+
+- **Un parámetro que la herramienta nombrada no tiene**: «usa la herramienta
+  `strings_head` con consulta: 'Administrator'|'WIN-'». `consulta` es de `buscar`;
+  `strings_head` no filtra. La regla, enunciada: **un parámetro nombrado en la orden
+  tiene que pertenecer a alguna herramienta nombrada en esa misma orden**. Así la
+  forma correcta del patrón de dos pasos sigue siendo válida, porque ahí `consulta`
+  va con `buscar`, que está nombrada.
+- **Una herramienta de contabilidad como orden**: «usa la herramienta `ver_tareas`».
+  `buscar`, `leer_artefacto` y `listar_artefactos` sí valen: operan sobre las salidas.
+
+La orden inválida se descarta y se audita (`reviewer_order_discarded`); **no se
+reescribe** en lo que el revisor quizá quiso decir, que sería inventar un plan que
+nadie escribió (RULE 2). Para que el plan no encoja por esto, el formato del plan
+enuncia el patrón: si hay que localizar algo dentro del resultado de una
+herramienta, son DOS órdenes.
+
+La tabla de parámetros se deriva de las MISMAS firmas que se le ponen delante al
+modelo, así que una firma que cambie arrastra la validación y no hay una segunda
+lista que mantener a mano.
+
+### La fecha del hallazgo, y por qué no se exige
+
+`observado_en` es la marca del ARTEFACTO: cuándo ocurrió el hecho en el equipo
+investigado, no cuándo lo registró el agente. Sin ella el hallazgo **no entra en la
+cronología del incidente** (`backend/agentopsy/timeline/hallazgos.py`), que es la
+línea que un tercero lee primero; el backend los cuenta y los declara, nunca los
+tira en silencio, y la SPA los pinta como «sin fecha».
+
+No se exige, y es deliberado: un valor de registro o una cadena en memoria no tienen
+hora, y pedirla siempre sería pedir que se invente una. Lo que sí se hace es decir la
+consecuencia en la firma, y **avisar solo cuando el material que el agente tiene
+delante lleva fecha** (`_FECHA_RE` en `investigador.py`). Esa expresión pide año, mes,
+día Y hora a propósito: un `20150902` suelto no cuenta, porque en este mismo caso vive
+dentro de `sqlmap/1.0-dev-nongit-20150902` y no es la hora de nada.
+
+### Una orden abandonada no figura como cumplida
+
+El investigador puede cerrar una orden con `informar` diciendo que no se puede
+cumplir. Si la cierra **sin haber ejecutado nada**, la tarea se marca `descartada`,
+no `hecha`, se audita (`reviewer_order_abandoned`) y el informe que lee el revisor
+dice «NO EJECUTADA» con lo que el investigador alegó. Antes se marcaba `hecha` igual
+que una orden cumplida: el 2026-09-13 el revisor aprobó un turno creyendo que se
+habían ejecutado dos órdenes cuando solo se ejecutó una.
+
 El turno está expresado como grafo de LangGraph (`grafo.py`): planificar →
 investigar → revisar → (fin | investigar). Los nodos son métodos de
 `runner.Corrida`.
@@ -172,10 +225,62 @@ quita del camino lo que no puede resolver. Medido y corregido:
   Una consulta sin letras ni dígitos se rechaza antes de gastar el paso.
 - **La determinación pericial se le pone delante.** El crudo se sella siempre al
   terminar la herramienta; en cuanto hay una salida sin calificar, la instrucción
-  final le pide decidir: registrar hallazgo citando el `run_id`, o marcarlo como
-  `descarte`. El revisor nunca decide qué es un hallazgo.
+  final le pide decidir: registrar hallazgo citando el `run_id` **y la línea que
+  lo sostiene**, o marcarlo como `descarte`. El revisor nunca decide qué es un
+  hallazgo.
+
+### La cita: un hallazgo se sostiene en una línea LEÍDA
+
+Un hallazgo afirmativo no se registra sin `cita`: el texto literal de la salida
+que lo sostiene. Se comprueban dos cosas, las dos deterministas:
+
+1. **Que la cita esté en el artefacto sellado** del `run_id` que dice sostenerlo
+   (`hallazgos.py`, en streaming: un `stdout.txt` puede pesar decenas de MB).
+2. **Que el agente la haya leído** en este turno, es decir que aparezca en algo
+   que se le puso delante (`estado.py`, registro de lecturas; la comprobación en
+   `herramientas/contexto.py`, que es quien tiene el estado).
+
+Por qué las dos. La regla anterior exigía `run_id` y comprobaba que ese run
+existiera, lo cual impide citar una ejecución inventada pero no impide concluir
+sobre una ejecución que no se ha leído. El 2026-09-13 un 3B registró «Usuario
+Administrador detectado en memoria» citando un `strings_head` legítimo del que
+solo había visto 25 líneas de 3.168.635, todas del sector de arranque. La
+afirmación era **cierta** (la cadena estaba en la línea 14.795), pero el modelo
+no la había leído: la copió del ejemplo de su propio prompt y acertó por
+coincidencia. Un acierto sin lectura no se puede defender ante un tercero, y el
+mismo mecanismo con otro ejemplo produce un hallazgo falso idéntico por fuera.
+
+Un `descarte` queda exento: deja constancia de que una vía no aportó y no hay
+línea que señalar. La cita viaja con el hallazgo hasta la vista de Hallazgos y
+el informe, para que se compruebe de un vistazo.
+
+**Lo que esto no garantiza**, y conviene tenerlo escrito: que la inferencia a
+partir de la línea citada sea correcta. Eso es criterio, y el criterio es del
+modelo. Lo que cambia es que una inferencia equivocada queda a la vista, porque
+la línea que la sostiene viaja pegada al hallazgo.
 - **La puerta de «esta orden no se puede cumplir» se abre en el segundo paso**, no
   en el primero: ofrecida antes, el modelo la tomaba sin intentar nada.
+
+## Medir un turno sin que la suspensión mienta
+
+`segundos_total` mide con `time.monotonic()`, que en Linux **no avanza mientras la
+máquina está suspendida**: es trabajo real. La traza de LangSmith no: fecha el span con
+reloj de pared, que sí cuenta el sueño. El 2026-09-13 eso hizo que un turno de ~286 s
+figurara como **1374 s**, con una llamada al modelo aparentemente de 1107 s que en
+realidad duró 20,42 s según el `print_timing` de llama.cpp.
+
+`relojes.Cronometro` lo convierte en un dato del turno en lugar de una comprobación que
+alguien tiene que acordarse de hacer: `CLOCK_BOOTTIME` menos `CLOCK_MONOTONIC` es
+exactamente el tiempo dormido. Va a tres sitios:
+
+- `metricas["segundos_suspendido"]`, y de ahí al `agent_turn_finish` del audit log.
+- Los metadatos del span raíz de LangSmith (`segundos_reales` y `segundos_suspendido`),
+  para poder corregir la duración sin salir de la traza.
+- La tabla de `medir.py`, que avisa cuando la corrida cruzó una suspensión.
+
+Fuera de Linux no hay `CLOCK_BOOTTIME` y el valor es `None`, no `0`: no saber cuánto ha
+dormido la máquina no es lo mismo que saber que no ha dormido (RULE 2). `medir.py`
+también lo dice en ese caso.
 
 ## Observabilidad (LangSmith)
 
