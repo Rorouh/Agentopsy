@@ -28,10 +28,13 @@ from agentopsy.cases.manager import CaseManager
 from agentopsy.evidence import EvidenceManager
 from agentopsy.executors.base import ExecutorAvailability, ExecutorResult, PromptExecutor
 from agentopsy.findings.store import FindingStore
+from agentopsy.graph.store import GraphStore
 from agentopsy.mitre.coverage import CoverageStore
+from agentopsy.reports.figuras import figuras_del_caso
 from agentopsy.reports.indice import NUMS, titulos
 from agentopsy.reports.material import build_material
 from agentopsy.reports.store import DocumentStore
+from agentopsy.reports.svg import validar_svg
 from agentopsy.server import create_app
 from agentopsy.toolkit.usage import tool_usage
 
@@ -119,6 +122,16 @@ def entorno(tmp_path, monkeypatch):
 
     monkeypatch.setattr(writer_mod, "build_material", _material)
 
+    # Igual con las figuras del anexo C: el cargador REAL, sobre los almacenes de
+    # este tmp_path.
+    def _figuras(case_id):
+        return figuras_del_caso(
+            case_id, cases=cases, findings=findings, graphs=GraphStore(cases),
+            coverage=CoverageStore(cases, findings),
+        )
+
+    monkeypatch.setattr(writer_mod, "figuras_del_caso", _figuras)
+
     case = cases.create(
         name="Murcielago", examiner="Daniel Ramos", os_profile="windows",
         notes="Determinar si hubo exfiltracion.",
@@ -150,6 +163,8 @@ def _con_hallazgo(entorno) -> None:
         "summary": "Se crea la tarea `updater`.",
         "severity": "high", "run_id": str(uuid.uuid4()),
         "artifact_sha256": "a" * 64, "tool_id": "tsk_fls",
+        # Con marca del artefacto, para que el anexo C lleve su línea de tiempo.
+        "observed_at": "2026-03-14T08:12:44Z",
     })
 
 
@@ -281,8 +296,18 @@ def test_finalizing_writes_the_report_in_the_background(
     assert doc["type"] == "pericial"
     assert doc["author"] == "Daniel Ramos"
     assert [s["num"] for s in doc["sections"]] == [
-        "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "A", "B",
+        "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "A", "B", "C",
     ]
+    # El anexo C lo compone Agentopsy con los datos del caso, y su figura sale
+    # del almacén intacta: el SVG pasa la lista blanca y va bajo el SHA-256.
+    figuras = [b for b in doc["sections"][-1]["blocks"] if b["t"] == "figure"]
+    assert [f["kind"] for f in figuras] == ["incident_timeline"]
+    validar_svg(figuras[0]["svg"])
+    assert "Tarea programada de persistencia" in figuras[0]["svg"]
+    verify = client.post(
+        f"/api/cases/{case_id}/documents/{doc_id}/verify", headers=auth
+    ).json()
+    assert verify["ok"] is True
     # Y el PDF del informe redactado sale bien formado.
     pdf = client.get(f"/api/cases/{case_id}/documents/{doc_id}/pdf", headers=auth)
     assert pdf.status_code == 200
@@ -342,3 +367,32 @@ def test_a_job_from_another_case_is_not_readable_here(
         f"/api/cases/{otro.id}/documents/jobs/{job['job_id']}", headers=auth
     )
     assert r.status_code == 404
+
+
+def test_a_tampered_figure_is_not_printed_and_says_why(
+    client, auth, entorno, monkeypatch
+) -> None:
+    """Un documento retocado en disco con un SVG fuera de la lista blanca no
+    llega a fpdf2: el PDF responde 422 con el motivo, no un 500 ni un fichero."""
+    _con_hallazgo(entorno)
+    _use(entorno, _Executor(), monkeypatch)
+    case_id = entorno["case"].id
+    job = client.post(
+        f"/api/cases/{case_id}/documents/finalize",
+        json={"executor": "claude-code"}, headers=auth,
+    ).json()
+    snap = _wait(client, auth, case_id, job["job_id"])
+    assert snap["status"] == "done", snap.get("error")
+    doc_id = snap["result"]["doc_id"]
+
+    path = entorno["cases"].case_dir(case_id) / "documents" / f"{doc_id}.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    figura = next(b for b in data["sections"][-1]["blocks"] if b["t"] == "figure")
+    figura["svg"] = figura["svg"].replace(
+        "</svg>", '<image href="file:///etc/passwd" width="1" height="1"/></svg>'
+    )
+    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+    r = client.get(f"/api/cases/{case_id}/documents/{doc_id}/pdf", headers=auth)
+    assert r.status_code == 422
+    assert "image" in r.json()["detail"]

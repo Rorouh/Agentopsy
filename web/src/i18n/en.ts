@@ -425,7 +425,7 @@ export const en = {
     "The graph answers what connects to what: the model you choose reads the text of each finding and proposes which accounts, files, hosts, domains and IPs take part, and the case graph merges them by entity to show what ties some findings to others. It is a proposal by the model, not a verified fact, and it is labelled as such; the figure is exported as a PNG to attach to the report.",
   "guide.step7.title": "Finish the investigation and sign the report",
   "guide.step7.desc":
-    "Press «Finish investigation» and the selected model will write the complete expert report from the case findings and evidence. Verify its integrity and sign it as the final version.",
+    "Press «Finish investigation» and the selected model will write the complete expert report from the case findings and evidence. Agentopsy adds annex C with the incident timeline and the case relation graph, always on a white background: extract beforehand the graphs you want to see in it. Verify its integrity and sign it as the final version.",
   "guide.loginSection": "Sign in to an executor",
   "guide.loginProseA": "Agentopsy does not use API keys.",
   "guide.loginProseB":
@@ -453,18 +453,21 @@ export const en = {
   "inv.noCaseBody":
     "Open one with «create case» in the sidebar and register evidence for it before investigating: the agent only works on a hash-verified handle.",
   "inv.mismatchLead":
-    "Profile mismatch: the active agent is not the right one for this evidence.",
+    "Profile mismatch: the active agent is not the right one for some evidence of the case.",
   "inv.mismatchBodyA": "The case declares",
-  "inv.mismatchBodyB": "but the determination over the evidence content says",
+  "inv.mismatchBodyB": "but the determination over the content says",
   "inv.mismatchBodyC": "The case agent",
   "inv.mismatchBodyD":
-    "will refuse to invoke tools while the disagreement stands. Resolve it in",
+    "will refuse to invoke tools over the evidence in disagreement while it lasts. Resolve it in",
   "inv.mismatchPath": "Evidence, Operating system",
   "inv.mismatchBodyE":
     "when you anchor the profile, Agentopsy re-routes to the matching sub-agent on its own. It does not change it for you (RULE 2, a disagreement is decided by the operator, not by the program).",
   "inv.collapsePanel": "Collapse the context panel",
   "inv.expandPanel": "Expand the context panel",
   "inv.evidence": "Evidence",
+  "inv.evidences": "Evidence",
+  "inv.scopeNote":
+    "The agent analyses all of it on equal terms. To focus on one piece, ask for it in your message.",
   "inv.verified": "verified",
   "inv.noneRegistered": "none registered",
   "inv.noFindings": "No findings.",
@@ -638,12 +641,18 @@ export const en = {
     ") is not accepted by {model}: the turn would fail. Pick one of the ones above.",
   "settings.modelByCli": "The model is managed by this provider's CLI.",
   "settings.saveHost": "Save host",
+  "settings.ollamaHostHint":
+    "Write http://localhost:11434 to use the Ollama running on your own machine, or http://ollama:11434 for the one the compose starts. If it cannot be reached, start it listening on every interface: OLLAMA_HOST=0.0.0.0 ollama serve.",
+  "settings.ollamaHostFromEnv":
+    "Right now the deployment sets it. What you save here wins over that variable.",
   "settings.isDefaultEngine": "is the default engine",
   "settings.useAsDefault": "use as default",
   "settings.renewSession": "Renew the {name} session",
   "settings.connectName": "Connect {name}",
   "settings.startOllama": "Start the compose ollama service to use it.",
   "settings.timeout": "Time limit",
+  "settings.timeoutScope":
+    "Applies to the cloud executors. Ollama runs on your machine and has no limit: a prompt, a graph or an expert report wait for the local model to finish.",
   "settings.saveFailed": "Could not save: {detail}",
   "settings.foot": "no API keys · sessions and settings only on your machine",
   "settings.noApi": "No connection with the api service",
@@ -911,10 +920,10 @@ export const en = {
   "chat.stopping": "Stopping the analysis…",
   "chat.startTitle": "What do we ask the agent for?",
   "chat.startBody":
-    "It runs the forensic toolkit over the verified evidence and leaves every command in the hash-chained audit log.",
+    "It runs the forensic toolkit over every verified piece of evidence of the case and leaves every command in the hash-chained audit log. To focus on one piece of evidence, say so in the message.",
   "chat.noEvidenceTitle": "This case has no evidence yet",
   "chat.noEvidenceBody":
-    "The agent analyses a verified forensic image, so it has to be registered first. Its baseline hash is computed when you do.",
+    "The agent analyses the verified evidence of the case, so at least one piece has to be registered first. Its baseline hash is computed when you do.",
   "chat.roleExaminer": "Examiner",
   "chat.runningTool": "running {tool}",
   "chat.reasoning": "reasoning",

@@ -398,7 +398,7 @@ export const es: Record<MessageKey, string> = {
     "El grafo responde a qué se conecta con qué: el modelo que elijas lee el texto de cada hallazgo y propone qué cuentas, ficheros, equipos, dominios e IP intervienen, y el grafo del caso los funde por entidad para enseñar lo que ata unos hallazgos con otros. Es una propuesta del modelo, no un hecho verificado, y así se etiqueta; la figura se exporta como PNG para adjuntarla al informe.",
   "guide.step7.title": "Finalizar la investigación y firmar el informe",
   "guide.step7.desc":
-    "Pulsa «Finalizar investigación» y el modelo seleccionado redactará el informe pericial completo desde los hallazgos y las evidencias del caso. Verifica su integridad y fírmalo como versión final.",
+    "Pulsa «Finalizar investigación» y el modelo seleccionado redactará el informe pericial completo desde los hallazgos y las evidencias del caso. Agentopsy le añade el anexo C con la línea de tiempo del incidente y el grafo de relaciones del caso, siempre sobre fondo blanco: extrae antes los grafos que quieras ver en él. Verifica su integridad y fírmalo como versión final.",
   "guide.loginSection": "Iniciar sesión en un ejecutor",
   "guide.loginProseA": "Agentopsy no usa API keys.",
   "guide.loginProseB":
@@ -426,18 +426,21 @@ export const es: Record<MessageKey, string> = {
   "inv.noCaseBody":
     "Abre uno con «crear caso» en el lateral y regístrale evidencia antes de investigar: el agente solo trabaja sobre un handle hash-verificado.",
   "inv.mismatchLead":
-    "Desajuste de perfil: el agente activo no es el adecuado para esta evidencia.",
+    "Desajuste de perfil: el agente activo no es el adecuado para alguna evidencia del caso.",
   "inv.mismatchBodyA": "El caso declara",
-  "inv.mismatchBodyB": "pero la determinación sobre el contenido de la evidencia dice",
+  "inv.mismatchBodyB": "pero la determinación sobre el contenido dice",
   "inv.mismatchBodyC": "El agente del caso",
   "inv.mismatchBodyD":
-    "se negará a invocar herramientas mientras siga el desacuerdo. Resuélvelo en",
+    "se negará a invocar herramientas sobre las evidencias en desacuerdo mientras dure. Resuélvelo en",
   "inv.mismatchPath": "Evidencia → Sistema operativo",
   "inv.mismatchBodyE":
     "al anclar el perfil, Agentopsy re-enruta solo al sub-agente que corresponde. No lo cambia por ti (RULE 2, un desacuerdo lo decide el operador, no el programa).",
   "inv.collapsePanel": "Plegar el panel de contexto",
   "inv.expandPanel": "Desplegar el panel de contexto",
   "inv.evidence": "Evidencia",
+  "inv.evidences": "Evidencias",
+  "inv.scopeNote":
+    "El agente las analiza todas por igual. Para centrarte en una, pídelo en tu mensaje.",
   "inv.verified": "verificada",
   "inv.noneRegistered": "ninguna registrada",
   "inv.noFindings": "Sin hallazgos.",
@@ -609,12 +612,18 @@ export const es: Record<MessageKey, string> = {
     ") no lo admite {model}: el turno fallaría. Elige uno de los de arriba.",
   "settings.modelByCli": "El modelo lo gestiona el CLI de este proveedor.",
   "settings.saveHost": "Guardar host",
+  "settings.ollamaHostHint":
+    "Escribe http://localhost:11434 para usar el Ollama que corre en tu equipo, o http://ollama:11434 para el que levanta el compose. Si no lo alcanza, arráncalo escuchando en todas las interfaces: OLLAMA_HOST=0.0.0.0 ollama serve.",
+  "settings.ollamaHostFromEnv":
+    "Ahora mismo lo fija el despliegue. Lo que guardes aquí manda sobre esa variable.",
   "settings.isDefaultEngine": "es el motor por defecto",
   "settings.useAsDefault": "usar por defecto",
   "settings.renewSession": "Renovar sesión de {name}",
   "settings.connectName": "Conectar {name}",
   "settings.startOllama": "Levanta el servicio ollama del compose para usarlo.",
   "settings.timeout": "Tiempo máximo",
+  "settings.timeoutScope":
+    "Se aplica a los ejecutores en nube. Ollama corre en tu máquina y no lleva límite: un prompt, un grafo o un informe pericial esperan a que el modelo local termine.",
   "settings.saveFailed": "No se pudo guardar: {detail}",
   "settings.foot": "sin API keys · sesiones y ajustes solo en tu máquina",
   "settings.noApi": "Sin conexión con el servicio api",
@@ -885,10 +894,10 @@ export const es: Record<MessageKey, string> = {
   "chat.stopping": "Deteniendo el análisis…",
   "chat.startTitle": "¿Qué le pedimos al agente?",
   "chat.startBody":
-    "Ejecuta el maletín forense sobre la evidencia verificada y deja cada comando en el log de auditoría encadenado.",
+    "Ejecuta el maletín forense sobre todas las evidencias verificadas del caso y deja cada comando en el log de auditoría encadenado. Para centrarte en una evidencia, dilo en el mensaje.",
   "chat.noEvidenceTitle": "Este caso todavía no tiene evidencia",
   "chat.noEvidenceBody":
-    "El agente analiza una imagen forense verificada, así que primero hay que registrarla. Su hash baseline se calcula al hacerlo.",
+    "El agente analiza las evidencias verificadas del caso, así que primero hay que registrar al menos una. Su hash baseline se calcula al hacerlo.",
   "chat.roleExaminer": "Perito",
   "chat.runningTool": "ejecutando {tool}",
   "chat.reasoning": "razonando",

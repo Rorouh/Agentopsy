@@ -11,8 +11,14 @@ logging in inside the container). Editable keys:
 
 - ``DEFAULT_EXECUTOR`` — optional. Setting it is an EXPLICIT act of the user in
   Settings (that is operator agency); code inventing it would violate RULE 2.
-- ``OLLAMA_HOST`` — http(s) URL of the Ollama service (the compose injects
-  ``http://ollama:11434`` via environment; this key covers standalone runs).
+- ``OLLAMA_HOST`` — http(s) URL of the Ollama the operator wants to use. The
+  compose injects ``http://ollama:11434`` (its own bundled service) as the
+  deployment BASELINE and this key overrides it (``agentopsy.config``: saved
+  value first, environment second), which is what lets the examiner point
+  Agentopsy at the Ollama running on their own machine by writing
+  ``http://localhost:11434`` here. Inside the container that loopback is
+  resolved to the host machine, visibly, by
+  ``agentopsy.executors.ollama.resolve_host``.
 - ``OLLAMA_MODEL`` — model name for the ``ollama`` executor (e.g. llama3.1:8b).
 - ``CLAUDE_CODE_MODEL`` / ``CODEX_MODEL`` / ``GEMINI_MODEL`` — model the operator
   chose for each cloud CLI, passed as ``--model``. Optional: unset (empty) means
@@ -23,8 +29,11 @@ logging in inside the container). Editable keys:
   CLI has configured. Validated for FORM always, and against the catalog the CLI
   itself cached when that catalog is readable — never against a list written
   here (RULE 2).
-- ``AGENTOPSY_EXECUTOR_TIMEOUT`` — seconds one executor run may take before it
-  is aborted (and audited) as a timeout; see ``agentopsy.executors.base``.
+- ``AGENTOPSY_EXECUTOR_TIMEOUT`` — seconds one run of a CLOUD executor (Claude
+  Code, Codex CLI, Gemini CLI) may take before it is aborted (and audited) as a
+  timeout. Ollama, the 100 % local option, declares itself unbounded and ignores
+  this key entirely; see ``PromptExecutor.timeout_for`` in
+  ``agentopsy.executors.base``.
 """
 
 from __future__ import annotations
@@ -84,14 +93,20 @@ class SetConfigRequest(BaseModel):
 @router.get("/api/config", dependencies=[Depends(require_token)])
 def get_config() -> dict[str, Any]:
     """Return the status of each editable key. None of them is a secret, so the
-    value is shown verbatim."""
+    value is shown verbatim.
+
+    ``source`` says WHICH layer the value came from, ``"config"`` (saved from
+    Settings) or ``"env"`` (the deployment, e.g. the compose). Without it a key
+    the compose sets looks identical to one the operator chose, and the two
+    behave differently when the operator edits it.
+    """
     out: dict[str, dict[str, Any]] = {}
     for key in _EDITABLE_KEYS:
         raw = config.get(key)
         if raw is None or raw == "":
-            out[key] = {"set": False, "preview": None}
+            out[key] = {"set": False, "preview": None, "source": None}
         else:
-            out[key] = {"set": True, "preview": str(raw)}
+            out[key] = {"set": True, "preview": str(raw), "source": config.source(key)}
     return {"keys": out, "config_file": str(CONFIG_FILE)}
 
 
@@ -183,7 +198,7 @@ def set_config(req: SetConfigRequest) -> dict[str, Any]:
     # calls see it without restarting the api service.
     config._data[key] = value  # noqa: SLF001 — module-private mutator for live update
 
-    return {"key": key, "set": True, "preview": value}
+    return {"key": key, "set": True, "preview": value, "source": "config"}
 
 
 def _unset_key(key: str) -> dict[str, Any]:
@@ -205,7 +220,9 @@ def _unset_key(key: str) -> dict[str, Any]:
     tmp.replace(CONFIG_FILE)
 
     config._data.pop(key, None)  # noqa: SLF001 — module-private mutator for live update
-    return {"key": key, "set": False, "preview": None}
+    # Clearing the saved value uncovers the deployment's baseline again (if the
+    # environment holds one), so the source is recomputed rather than assumed.
+    return {"key": key, "set": False, "preview": None, "source": config.source(key)}
 
 
 @router.get("/api/config/executors", dependencies=[Depends(require_token)])

@@ -440,6 +440,9 @@ def test_agent_threads_context_built_from_handle(monkeypatch, tmp_path):
             return FinalAnswer(text="done")
 
     class _FakeEvidence:
+        def list(self, case_id):
+            return [self.get(case_id, "e-abc")]
+
         def get(self, case_id, evidence_id):
             return SimpleNamespace(
                 evidence_id=evidence_id,
@@ -451,7 +454,7 @@ def test_agent_threads_context_built_from_handle(monkeypatch, tmp_path):
 
     pkg = make_package("unix")
     agent = ForensicAgent(pkg, _OneCall(), _FakeEvidence())
-    agent.run("lista la raíz", case_id="c", evidence_id="e-abc")
+    agent.run("lista la raíz", case_id="c")
 
     ctx = captured["ctx"]
     assert isinstance(ctx, EvidenceContext)

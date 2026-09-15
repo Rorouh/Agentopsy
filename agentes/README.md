@@ -29,8 +29,14 @@ El `api` lee el fichero del idioma de la petición (de `AGENTOPSY_AGENTS_DIR`) y
 su system prompt. La carga es perezosa y cacheada POR IDIOMA: el perito puede cambiarlo
 sin reiniciar nada. En cada corrida, Agentopsy añade el contexto del caso:
 
-- La **evidencia anclada** (verificada por hash, montada solo lectura a nivel de bloque).
-- El **triage** (`detected_os`, `detected_kind`) — determinado por el contenido, no por
+- **Todas las evidencias del caso**, por igual y sin evidencia primaria (cada una
+  verificada por hash y en solo lectura a nivel de bloque). Lo que pide el perito se
+  aplica a todas salvo que su mensaje pida centrarse en alguna. Con varias, cada
+  herramienta y `consultar_actividad` nombran su evidencia (`evidence_id`, enum
+  cerrado, sin valor por defecto), y un hallazgo toma la evidencia de la ejecución
+  que cita en `run_id` (`agentopsy.findings.atribucion`), que es la que queda en el
+  audit.
+- El **triage** de cada evidencia (`detected_os`, `detected_kind`) — determinado por el contenido, no por
   el host. `detected_kind` marca el SOPORTE y con él qué herramientas aplican:
   `disk` / `container_disk` (TSK), `memory` (Volatility3) y `document`, que es un
   fichero aportado (un PDF, una foto, un correo, un log, un artefacto suelto, una

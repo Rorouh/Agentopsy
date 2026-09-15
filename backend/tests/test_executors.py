@@ -10,7 +10,10 @@ Covers:
 - `run()` aborts FAST with the actionable reason when the auth check fails —
   it never launches the prompt (no more hanging until the run timeout).
 - Timeout: `resolve_timeout` honours context > AGENTOPSY_EXECUTOR_TIMEOUT >
-  designed default, and fails loud on unparseable values (RULE 2).
+  designed default, and fails loud on unparseable values (RULE 2). WHETHER a
+  limit applies at all is the executor's declared `enforces_timeout`: the three
+  cloud CLIs are bounded, Ollama (100 % local) runs unbounded and the audit
+  records the bound of every run in `timeout_s`.
 - HTTP surface: `/api/agent/query` demands an operator-selected executor —
   4xx actionable, never a default; selected-but-unusable executor → 503 with
   the missing dependency named.
@@ -490,12 +493,112 @@ def test_resolve_timeout_nonpositive_context_fails_loud(clean_config: None) -> N
     assert "context['timeout']" in str(exc.value)
 
 
+# ---- el ejecutor local corre SIN cota de reloj ---------------------------------
+
+
+def test_cloud_executors_declare_a_bound(clean_config: None) -> None:
+    """Los tres CLI en nube sí llevan cota: el turno sale de la máquina, lo
+    factura un proveedor y un CLI colgado no puede retener el análisis."""
+    for cls in (ClaudeCodeExecutor, CodexExecutor, GeminiExecutor):
+        assert cls.enforces_timeout is True
+        assert cls().timeout_for({}) == DEFAULT_TIMEOUT_S
+
+
+def test_ollama_runs_unbounded_whatever_the_operator_configured(
+    clean_config: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ollama es 100 % local: ni el default de diseño, ni el valor de Settings,
+    ni el presupuesto que pasa el llamante (el de la redacción del informe) le
+    ponen cronómetro."""
+    ollama = OllamaExecutor()
+    assert OllamaExecutor.enforces_timeout is False
+    assert ollama.timeout_for({}) is None
+    assert ollama.timeout_for({"timeout": 900}) is None
+    monkeypatch.setenv("AGENTOPSY_EXECUTOR_TIMEOUT", "60")
+    assert ollama.timeout_for({}) is None
+    # Un valor corrupto tampoco puede tumbar una corrida que no gobierna, pero
+    # sigue fallando alto donde sí actúa (RULE 2).
+    monkeypatch.setenv("AGENTOPSY_EXECUTOR_TIMEOUT", "muchos")
+    assert ollama.timeout_for({}) is None
+    with pytest.raises(ExecutorError):
+        ClaudeCodeExecutor().timeout_for({})
+
+
+class _RespuestaFalsa:
+    def __init__(self, cuerpo: str) -> None:
+        self._cuerpo = cuerpo.encode("utf-8")
+
+    def read(self) -> bytes:
+        return self._cuerpo
+
+    def __enter__(self) -> "_RespuestaFalsa":
+        return self
+
+    def __exit__(self, *_exc: object) -> bool:
+        return False
+
+
+def test_ollama_run_no_pasa_timeout_y_lo_audita(
+    clean_config: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """La petición HTTP sale SIN timeout (urllib bloquea hasta que el modelo
+    local termine) y el audit lo deja escrito: `timeout_s` null."""
+    monkeypatch.setattr(config, "_data", {"OLLAMA_HOST": "http://ollama:11434"})
+    visto: dict = {}
+
+    def _urlopen(req, timeout="sin-pasar"):  # noqa: ANN001, ANN202
+        visto["timeout"] = timeout
+        return _RespuestaFalsa(json.dumps({"response": "ok"}))
+
+    monkeypatch.setattr("agentopsy.executors.ollama.urllib.request.urlopen", _urlopen)
+    audit = _ListAudit()
+
+    # El presupuesto del informe viaja en el contexto y aun así NO se aplica.
+    res = OllamaExecutor().run(
+        "redacta",
+        {"model": "qwen2.5:32b", "audit": audit, "case_id": "c1", "timeout": 900},
+    )
+
+    assert res.text == "ok"
+    assert visto["timeout"] is None
+    start = next(e for e in audit if e["action"] == "executor_run_start")
+    assert start["timeout_s"] is None
+
+
+def test_cli_run_audita_la_cota_con_la_que_se_lanzo(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """El mismo campo, con el número, en los ejecutores acotados: un tercero lee
+    del audit bajo qué cota corrió cada turno sin deducirla del ejecutor."""
+    monkeypatch.setattr(executors_base, "CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(
+        ClaudeCodeExecutor,
+        "is_available",
+        lambda self: ExecutorAvailability(available=True),
+    )
+    envelope = json.dumps({"result": "ok", "session_id": "s1", "num_turns": 1})
+    visto: dict = {}
+
+    def fake_run(argv, **kwargs):  # noqa: ANN001, ANN003
+        visto["timeout"] = kwargs.get("timeout")
+        return subprocess.CompletedProcess(argv, 0, stdout=envelope, stderr="")
+
+    monkeypatch.setattr(executors_base.subprocess, "run", fake_run)
+    audit = _ListAudit()
+
+    ClaudeCodeExecutor().run("analiza", {"audit": audit, "case_id": "c1", "timeout": 42})
+
+    assert visto["timeout"] == 42
+    start = next(e for e in audit if e["action"] == "executor_run_start")
+    assert start["timeout_s"] == 42
+
+
 # ---- HTTP surface: selección de ejecutor obligatoria (RULE 2) -----------------
 
 
 def _query(client: TestClient, payload: dict) -> object:
     token = client.app.state.token
-    base = {"prompt": "analiza", "os_profile": "unix", "case_id": "c1", "evidence_id": "e1"}
+    base = {"prompt": "analiza", "os_profile": "unix", "case_id": "c1"}
     return client.post(
         "/api/agent/query",
         headers={"X-Agentopsy-Token": token},
@@ -840,7 +943,7 @@ def _set_config(client: TestClient, key: str, value: str) -> object:
 def test_cloud_model_key_set_and_unset(client: TestClient, clean_config: None) -> None:
     r = _set_config(client, "CLAUDE_CODE_MODEL", "opus")
     assert r.status_code == 200 and r.json() == {
-        "key": "CLAUDE_CODE_MODEL", "set": True, "preview": "opus",
+        "key": "CLAUDE_CODE_MODEL", "set": True, "preview": "opus", "source": "config",
     }
     assert config.get("CLAUDE_CODE_MODEL") == "opus"
     # Empty clears it back to the CLI default (RULE 2), not a 422.
@@ -911,7 +1014,7 @@ def test_stream_endpoint_requires_executor_like_query(
     r = client.post(
         "/api/agent/query/stream",
         headers={"X-Agentopsy-Token": token},
-        json={"prompt": "analiza", "os_profile": "unix", "case_id": "c1", "evidence_id": "e1"},
+        json={"prompt": "analiza", "os_profile": "unix", "case_id": "c1"},
     )
     assert r.status_code == 422
     assert "executor" in r.json()["detail"]

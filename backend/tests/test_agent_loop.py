@@ -74,6 +74,14 @@ class _AlwaysSameTool(ModelBackend):
 
 
 class _FakeEvidence:
+    def __init__(self, evidence_id: str = "e") -> None:
+        # El caso de prueba tiene UNA evidencia. La investigación abarca TODAS las
+        # del caso (`list`), y con una sola esa es el alcance entero.
+        self._evidence_id = evidence_id
+
+    def list(self, case_id: str) -> list[SimpleNamespace]:
+        return [self.get(case_id, self._evidence_id)]
+
     def get(self, case_id: str, evidence_id: str) -> SimpleNamespace:
         return SimpleNamespace(
             evidence_id=evidence_id,
@@ -109,7 +117,7 @@ def test_agent_rejects_model_chosen_evidence_path_before_dispatch(
         _FakeEvidence(),
     )
 
-    result = agent.run("analiza", case_id="c", evidence_id="e")
+    result = agent.run("analiza", case_id="c")
 
     assert calls["n"] == 0
     assert any(
@@ -143,7 +151,7 @@ def test_failing_tool_blocked_after_max_attempts(monkeypatch: pytest.MonkeyPatch
     # `tsk_mmls` está en la allowlist del paquete unix y es una tool real del catálogo.
     agent = ForensicAgent(pkg, _AlwaysSameTool("tsk_mmls"), _FakeEvidence())
 
-    result = agent.run("lista la raíz", case_id="c", evidence_id="e")
+    result = agent.run("lista la raíz", case_id="c")
 
     # El dispatcher se ejecutó EXACTAMENTE max_attempts veces (3), no una por iteración.
     assert calls["n"] == 3
@@ -182,7 +190,7 @@ def test_successful_tool_is_not_capped(monkeypatch: pytest.MonkeyPatch) -> None:
 
     pkg = make_package("unix")
     agent = ForensicAgent(pkg, _AlwaysSameTool("tsk_fls"), _FakeEvidence())
-    result = agent.run("lista la raíz", case_id="c", evidence_id="e")
+    result = agent.run("lista la raíz", case_id="c")
 
     # Nunca se bloquea; corre una vez por iteración hasta agotar max_iter.
     assert calls["n"] == result["iterations"]
@@ -221,7 +229,7 @@ def test_records_nudge_injected_after_tools_without_finding(
 
     pkg = make_package("unix")
     agent = ForensicAgent(pkg, _Capturing("tsk_fls"), _FakeEvidence())
-    agent.run("lista la raíz", case_id="c", evidence_id="e")
+    agent.run("lista la raíz", case_id="c")
 
     assert seen, "tras 3 herramientas sin registrar hallazgo debe inyectarse el recordatorio"
 
@@ -260,7 +268,7 @@ def test_budget_nudges_demand_a_final_before_exhaustion(
     agent = ForensicAgent(
         make_package("unix", max_iterations=4), backend, _FakeEvidence()
     )
-    agent.run("lista la raíz", case_id="c", evidence_id="e")
+    agent.run("lista la raíz", case_id="c")
 
     assert len(backend.states) == 4
     # Las dos primeras iteraciones trabajan sin presión de presupuesto…
@@ -296,6 +304,6 @@ def test_budget_nudge_skips_single_iteration_runs(
     agent = ForensicAgent(
         make_package("unix", max_iterations=1), _Capturing("tsk_mmls"), _FakeEvidence()
     )
-    agent.run("lista la raíz", case_id="c", evidence_id="e")
+    agent.run("lista la raíz", case_id="c")
 
     assert not any(_marca("agentLoop.budgetTwoLeft") in c for c in seen)

@@ -37,6 +37,14 @@ Lo que NO cambia es la regla dura: si la corrección tampoco pasa, no se publica
 nada. Corregir no es un fallback (RULE 2): no se sustituye el informe por otra
 cosa ni se publica a medias; es el mismo modelo arreglando su propio texto.
 
+Lo que el modelo NO escribe es el anexo C, las figuras del caso (la línea de
+tiempo del incidente y el grafo de relaciones): Agentopsy lo compone con los
+datos registrados (``agentopsy.reports.figuras``) A LA VEZ que reúne el material,
+para que texto y figuras describan el mismo estado del caso, y lo añade al
+informe después de las puertas. Las figuras se dibujan, no se redactan: un
+bloque ``figure`` en la respuesta del modelo es un tipo desconocido para la
+puerta 2 y rechaza la redacción como cualquier otro.
+
 Después de las cuatro puertas, y solo sobre el texto que ya pasó la custodia, se
 aplica la NORMALIZACIÓN DE ESTILO (``_normalizar_estilo``): el informe pericial
 no lleva el signo «§», ni el guion largo «—», ni emojis. Es una regla de
@@ -68,16 +76,32 @@ from typing import Any
 
 from agentopsy.i18n import Mensaje, t
 from agentopsy.executors.base import PromptExecutor
-from agentopsy.reports.indice import NUMS, contrato_del_indice, titulos
+from agentopsy.reports.estilo import sanear_estilo
+from agentopsy.reports.figuras import AnexoDeFiguras, figuras_del_caso
+from agentopsy.reports.indice import (
+    NUM_ANEXO_FIGURAS,
+    NUMS,
+    NUMS_DEL_INFORME,
+    contrato_del_indice,
+    titulos,
+)
 from agentopsy.reports.material import build_material
+from agentopsy.reports.svg import SvgNoAdmitido, validar_svg
 from agentopsy.reports.works import audited_argvs
 
-#: Presupuesto de tiempo de la redacción. Un informe pericial completo es la
-#: respuesta más larga que Agentopsy le pide a un modelo, así que no cabe en el
-#: `DEFAULT_TIMEOUT_S` (300 s) calibrado para un turno del agente. Viaja como
-#: ``context['timeout']``, el primer escalón de ``resolve_timeout``, así que el
-#: operador aún puede subirlo con AGENTOPSY_EXECUTOR_TIMEOUT si su modelo es más
-#: lento… pero no bajarlo por accidente para esta llamada.
+#: Presupuesto de tiempo de la redacción EN LOS EJECUTORES QUE LLEVAN COTA. Un
+#: informe pericial completo es la respuesta más larga que Agentopsy le pide a un
+#: modelo, así que no cabe en el `DEFAULT_TIMEOUT_S` (300 s) calibrado para un
+#: turno del agente. Viaja como ``context['timeout']``, el primer escalón de
+#: ``resolve_timeout``, así que el operador aún puede subirlo con
+#: AGENTOPSY_EXECUTOR_TIMEOUT si su modelo es más lento… pero no bajarlo por
+#: accidente para esta llamada.
+#:
+#: Con Ollama no se aplica NINGÚN presupuesto: el ejecutor local declara
+#: ``enforces_timeout = False`` y ``timeout_for`` descarta este valor antes de
+#: leerlo (ver ``agentopsy.executors.base``). Redactar el informe entero con un
+#: modelo grande en la GPU del perito pasa de sobra de estos 900 s, y cortarlo
+#: tiraba el borrador completo sin ahorrar nada.
 REPORT_TIMEOUT_S = 900
 
 #: Rondas de CORRECCIÓN que se le conceden al modelo cuando una puerta de
@@ -117,45 +141,6 @@ _UUID_RE = re.compile(
 #: (un tamaño en bytes, un contador) no se confunde con un hash y no dispara un
 #: falso rechazo. Un hash real siempre trae letras.
 _HEX_RE = re.compile(r"\b(?=[0-9a-f]*[a-f])[0-9a-f]{8,64}\b")
-
-#: ESTILO del informe pericial (regla de producto, 2026-07-30). Tres signos que
-#: un informe de Agentopsy no lleva NUNCA:
-#:
-#: - «§»: la referencia cruzada se escribe «apartado 6.2», no «§6.2».
-#: - el guion largo «—» y sus variantes: los incisos van entre comas o
-#:   paréntesis, que es como se puntúa un documento pericial.
-#: - emojis y pictogramas: donde otro pondría un símbolo de correcto o de
-#:   aviso, el informe escribe la palabra.
-#:
-#: El prompt lo PIDE (reglas 8 y 9) y ``_normalizar_estilo`` lo GARANTIZA sobre
-#: el texto ya validado. No es una quinta puerta de custodia y no rechaza nada:
-#: la tipografía no es un hecho del caso, y el propio material puede traer una
-#: raya escrita por el agente en el título de un hallazgo. Copiarla fielmente no
-#: puede costar el informe entero.
-_RAYA_RE = re.compile(r"\s*[—―⸺⸻]\s*")
-#: Las palabras que pueden preceder al signo, EN LOS DOS IDIOMAS: el informe se
-#: redacta en el del selector, y un normalizador que solo conoce el castellano
-#: dejaría «section §6.2» intacto en un informe inglés, que es exactamente lo
-#: que RULE 7 prohíbe.
-_SECCION_TRAS_NOMBRE_RE = re.compile(
-    r"(?i)\b("
-    r"secciones|secci[oó]n|apartados|apartado|anexos|anexo|punto"
-    r"|sections|section|annexes|annex|items|item|clauses|clause"
-    r")\s*§\s*"
-)
-_SECCION_ANTE_NUMERO_RE = re.compile(r"§\s*(?=[0-9AB])")
-#: Escrito con escapes a propósito: un carácter invisible (el selector de
-#: variación, el ZWJ) no se ve en el código y se pierde en un copiado.
-_EMOJI_RE = re.compile(
-    "["
-    "\U0001f000-\U0001faff"  # emoticonos, pictogramas, símbolos, banderas
-    "\u2600-\u27bf"  # símbolos misceláneos y dingbats (check, aspa, aviso)
-    "\u2b00-\u2bff"  # formas geométricas y flechas de uso emoji
-    "\ufe0f"  # selector de variación 16 (lo que colorea un símbolo)
-    "\u20e3"  # keycap combinante
-    "\u200d"  # zero-width joiner
-    "]"
-)
 
 
 class ReportWriteError(ValueError):
@@ -565,55 +550,9 @@ def _validar_comandos(sections: list[dict[str, Any]], argvs: set[str]) -> None:
 
 
 # ── estilo: la tipografía del producto ────────────────────────────────────────
-
-
-def _sin_raya(text: str) -> str:
-    """El texto sin guiones largos, con el signo que le toca en cada sitio.
-
-    El inciso con rayas del español equivale al inciso con comas, así que
-    «el informe —que aún no existe— no tiene id» sale «el informe, que aún no
-    existe, no tiene id». Pegada a un signo de puntuación o al principio de la
-    frase, la raya simplemente desaparece: ahí no separaba nada."""
-
-    def _reemplazo(m: re.Match[str]) -> str:
-        antes = text[: m.start()].rstrip()
-        despues = text[m.end() :].lstrip()
-        if not antes:
-            return ""
-        if not despues or despues[0] in ",.;:!?)]»":
-            return ""
-        if antes[-1] in "([«¿¡":
-            return ""
-        if antes[-1] in ",.;:!?":
-            return " "
-        return ", "
-
-    return _RAYA_RE.sub(_reemplazo, text)
-
-
-def _sanear_estilo(text: str) -> str:
-    """Un texto del informe con la tipografía del producto: sin «§», sin guion
-    largo y sin emojis.
-
-    Un texto que ya cumple se devuelve IDÉNTICO, byte a byte: la limpieza de
-    espacios sobrantes solo actúa donde ha habido sustitución, para no reescribir
-    la prosa de un modelo que hizo las cosas bien."""
-    if not text:
-        return text
-    out = _EMOJI_RE.sub("", text)
-    # «sección §6» ya dice «sección»: solo sobra el signo. «§6.2» suelto se
-    # nombra entero, que es como se cita un apartado en un peritaje.
-    out = _SECCION_TRAS_NOMBRE_RE.sub(r"\1 ", out)
-    out = _SECCION_ANTE_NUMERO_RE.sub("apartado ", out)
-    out = out.replace("§", "")
-    out = _sin_raya(out)
-    if out == text:
-        return text
-    # Quitar un signo deja hueco: «se sostiene ✅.» no puede acabar en «se
-    # sostiene .». Solo se limpia donde ha habido sustitución.
-    out = re.sub(r"[ \t]{2,}", " ", out)
-    out = re.sub(r"[ \t]+([,.;:!?)\]»])", r"\1", out)
-    return out.strip()
+#
+# La regla vive en ``agentopsy.reports.estilo``, que comparten la redacción del
+# modelo (aquí) y las figuras que compone Agentopsy (``reports.figuras``).
 
 
 def _normalizar_estilo(sections: list[dict[str, Any]]) -> int:
@@ -630,7 +569,7 @@ def _normalizar_estilo(sections: list[dict[str, Any]]) -> int:
     def _campo(valor: Any) -> str:
         nonlocal cambios
         original = str(valor)
-        saneado = _sanear_estilo(original)
+        saneado = sanear_estilo(original)
         if saneado != original:
             cambios += 1
         return saneado
@@ -684,6 +623,37 @@ def _prompt_de_correccion(motivo: str, prompt_original: str | None) -> str:
     )
 
 
+def _validar_anexo(anexo: AnexoDeFiguras) -> None:
+    """El anexo que compone Agentopsy ocupa SU sitio del índice, con su título.
+    Es código propio y no una respuesta del modelo, pero un anexo con otro número
+    rompería el índice de todos los informes sin que ninguna puerta lo viera."""
+    seccion = anexo.seccion
+    if seccion.get("num") != NUM_ANEXO_FIGURAS:
+        raise ReportWriteError(
+            f"el anexo de figuras llega con el número {seccion.get('num')!r}, "
+            f"el índice le da el {NUM_ANEXO_FIGURAS!r}"
+        )
+    if seccion.get("title") != titulos()[NUM_ANEXO_FIGURAS]:
+        raise ReportWriteError(
+            f"el anexo de figuras llega titulado {seccion.get('title')!r}, "
+            f"el índice lo titula {titulos()[NUM_ANEXO_FIGURAS]!r}"
+        )
+    if not seccion.get("blocks"):
+        raise ReportWriteError("el anexo de figuras llega sin bloques")
+    # La lista blanca que el almacén aplicará al persistir, comprobada AHORA:
+    # una figura que no la pase no puede costar la llamada al modelo ni dejar
+    # en la auditoría un informe redactado que nunca llega a guardarse.
+    for bloque in seccion["blocks"]:
+        if bloque.get("t") != "figure":
+            continue
+        try:
+            validar_svg(bloque.get("svg"))
+        except SvgNoAdmitido as exc:
+            raise ReportWriteError(
+                f"una figura del anexo no pasa la lista blanca del SVG: {exc}"
+            ) from exc
+
+
 def _version(perito: dict[str, Any] | None, revisiones: list[dict[str, Any]]) -> str:
     """La versión de esta revisión. La del operador manda; en su ausencia se
     DERIVA de las revisiones que el caso ya tiene registradas (``v0.1`` la
@@ -706,13 +676,17 @@ def write_report(
     reasoning_effort: str | None = None,
     material: dict[str, Any] | None = None,
     material_fn: Callable[..., dict[str, Any]] | None = None,
+    figuras: AnexoDeFiguras | None = None,
+    figuras_fn: Callable[[str], AnexoDeFiguras] | None = None,
     on_progress: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """Redacta el informe pericial del caso y devuelve el ``dict`` que
     ``DocumentStore.create`` valida y persiste.
 
     ``material`` permite inyectar el material ya construido (tests); en
-    producción lo reúne ``agentopsy.reports.material.build_material``. Un caso sin
+    producción lo reúne ``agentopsy.reports.material.build_material``. Igual con
+    ``figuras``: el anexo C lo compone ``agentopsy.reports.figuras.figuras_del_caso``
+    justo después del material, y se añade tras las puertas. Un caso sin
     un solo hallazgo NO produce informe: ``ReportWriteError``: Agentopsy no
     redacta un peritaje que ninguna evidencia sostiene (RULE 2). Cualquier
     incumplimiento del contrato o de las cuatro puertas de custodia levanta
@@ -738,13 +712,18 @@ def write_report(
             Mensaje("writer.noFindings")
         )
 
+    # El anexo C, compuesto con el MISMO estado del caso que el material.
+    anexo = figuras if figuras is not None else (figuras_fn or figuras_del_caso)(case_id)
+    _validar_anexo(anexo)
+
     prompt = build_prompt(mat)
     _emit("redactando", executor=executor.id, prompt_chars=len(prompt))
 
     context: dict[str, Any] = {
         "audit": audit,
         "case_id": case_id,
-        # Un informe completo es la respuesta más larga que Agentopsy pide.
+        # Un informe completo es la respuesta más larga que Agentopsy pide. Lo lee
+        # el ejecutor que declara cota; el local corre sin ella y lo ignora.
         "timeout": REPORT_TIMEOUT_S,
     }
     if model:
@@ -806,10 +785,13 @@ def write_report(
     # Tipografía del producto, sobre texto que YA pasó la custodia. No es una
     # puerta: no rechaza nada, garantiza la regla 9 del encargo.
     normalizados = _normalizar_estilo(sections)
-    resumen_saneado = _sanear_estilo(resumen)
+    resumen_saneado = sanear_estilo(resumen)
     if resumen_saneado != resumen:
         resumen = resumen_saneado
         normalizados += 1
+
+    chars_redactados = len(_texto_de_secciones(sections))
+    sections.append(anexo.seccion)
 
     revisiones = mat.get("revisiones") or []
     version = _version(perito, revisiones)
@@ -822,17 +804,21 @@ def write_report(
             "case_id": case_id,
             "executor": executor.id,
             "model": model,
-            "sections": list(NUMS),
+            "sections": list(NUMS_DEL_INFORME),
             "blocks": {s["num"]: len(s["blocks"]) for s in sections},
-            "chars": len(_texto_de_secciones(sections)),
+            # Lo que REDACTÓ el modelo; el SVG de las figuras no es prosa.
+            "chars": chars_redactados,
+            # Las figuras del anexo C, con el SHA-256 de cada dibujo.
+            "figures": anexo.resumen_auditable(),
             "prompt_chars": len(prompt),
             "version": version,
             # En qué intento pasó la custodia: 1 = a la primera. Un informe
             # corregido queda trazado como tal, no se disfraza de limpio.
             "attempts": intentos,
             # Cuántos campos ha reescrito la tipografía del producto (signo de
-            # sección, guion largo, emoji). 0 = el modelo cumplió la regla 9.
-            "style_normalized": normalizados,
+            # sección, guion largo, emoji), en la redacción y en los títulos que
+            # las figuras toman de los hallazgos. 0 = nadie se saltó la regla 9.
+            "style_normalized": normalizados + anexo.estilo_normalizado,
         })
     _emit("listo", version=version)
 

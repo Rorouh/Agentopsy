@@ -159,6 +159,14 @@ class _Capturador(ModelBackend):
 
 
 class _FakeEvidence:
+    def __init__(self, evidence_id: str = "e") -> None:
+        # El caso de prueba tiene UNA evidencia. La investigación abarca TODAS las
+        # del caso (`list`), y con una sola esa es el alcance entero.
+        self._evidence_id = evidence_id
+
+    def list(self, case_id: str) -> list[SimpleNamespace]:
+        return [self.get(case_id, self._evidence_id)]
+
     def get(self, case_id: str, evidence_id: str) -> SimpleNamespace:
         return SimpleNamespace(
             evidence_id=evidence_id,
@@ -191,7 +199,7 @@ def test_el_agente_cloud_VE_el_run_id_real_de_la_herramienta(monkeypatch) -> Non
         ToolCall(tool_id="tsk_mmls", params={}, call_id="x"),
     ])
     agent = ForensicAgent(pkg, model, _FakeEvidence())
-    agent.run("analiza", case_id="c", evidence_id="e")
+    agent.run("analiza", case_id="c")
 
     # La segunda vez que habla el modelo ya lleva el resultado de la herramienta.
     assert len(model.visto) >= 2
@@ -207,8 +215,8 @@ def test_el_case_id_y_el_evidence_id_tambien_sobreviven(monkeypatch) -> None:
     ev_id = "9bc48a90-0a8d-441e-bd1a-146d9170636a"
     pkg = make_package("windows", redaction_patterns=(GUID_PATTERN,))
     model = _Capturador([])
-    ForensicAgent(pkg, model, _FakeEvidence()).run(
-        "hola", case_id=case_id, evidence_id=ev_id
+    ForensicAgent(pkg, model, _FakeEvidence(ev_id)).run(
+        "hola", case_id=case_id
     )
     system = "\n".join(
         str(m.get("content") or "")
@@ -216,6 +224,8 @@ def test_el_case_id_y_el_evidence_id_tambien_sobreviven(monkeypatch) -> None:
         if m.get("role") == "system"
     )
     assert case_id in system
+    # El agente tiene que poder pasar el id literal en `evidence_id`.
+    assert ev_id in system
 
 
 @pytest.mark.parametrize("es_local", [True, False])
@@ -240,7 +250,7 @@ def test_un_backend_local_nunca_redacta(monkeypatch, es_local) -> None:
     monkeypatch.setattr("agentopsy.toolkit.dispatcher.execute", fake_execute)
     pkg = make_package("windows", redaction_patterns=(GUID_PATTERN,))
     model = _M([ToolCall(tool_id="tsk_mmls", params={}, call_id="x")])
-    ForensicAgent(pkg, model, _FakeEvidence()).run("x", case_id="c", evidence_id="e")
+    ForensicAgent(pkg, model, _FakeEvidence()).run("x", case_id="c")
 
     ultimo = "\n".join(
         str(m.get("content") or "") for m in model.visto[-1] if m.get("role") == "tool"

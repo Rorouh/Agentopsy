@@ -1,24 +1,47 @@
-"""Ollama executor — HTTP to the compose ``ollama`` service. The 100% local option.
+"""Ollama executor — HTTP to the Ollama the operator pointed Agentopsy at. The 100% local option.
 
 No credentials and no subprocess: one POST to ``{OLLAMA_HOST}/api/generate``
-(``stream: false``; the answer comes back in the ``response`` field). In the
-compose, ``OLLAMA_HOST`` is ``http://ollama:11434`` (internal network, no
-published port); standalone runs set it explicitly — there is NO built-in
-default host (RULE 2).
+(``stream: false``; the answer comes back in the ``response`` field). There is NO
+built-in default host (RULE 2): the value comes from Settings, or from the
+environment the deployment set. The compose sets ``http://ollama:11434`` (its own
+bundled service, internal network, no published port) as the baseline; whatever
+the operator saves in Settings wins over it (see ``agentopsy.config``).
+
+**The Ollama running on the operator's own machine.** A big model is usually
+already served by the host (``ollama run qwen2.5:32b``), on the host's GPU, with
+the models the examiner has downloaded. To use it the operator writes the URL as
+they know it, ``http://localhost:11434``. Inside the api container that URL means
+the CONTAINER, where nothing listens, so it is resolved to the name by which the
+host machine is reachable from the container. That name is not invented here: the
+DEPLOYMENT declares it in ``AGENTOPSY_HOST_GATEWAY`` (the compose sets
+``host.docker.internal`` and adds the matching ``extra_hosts`` entry). Unset, as in
+a standalone ``python -m agentopsy.server``, there is no container boundary and no
+rewrite happens. The rewrite is never silent: it is what the availability reason
+names, what the audit event records as the literal request, and what Settings
+shows next to the field.
 
 The model name is resolved by the CALLER (router): operator-set ``OLLAMA_MODEL``
 from Settings wins, else the agent package's declared ``model.name``. This
 executor demands it in ``context['model']`` and never invents one.
+
+**No time limit.** ``enforces_timeout`` is False, so a prompt, a graph extraction
+or a full pericial report run against Ollama wait for the local model to finish
+(see ``PromptExecutor.timeout_for``). The configurable limit governs the three
+cloud CLIs, whose turns leave the machine and are billed.
 
 Uses stdlib ``urllib`` so the base install works without extra dependencies.
 """
 
 from __future__ import annotations
 
+import ipaddress
 import json
+import os
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
+from dataclasses import dataclass
 from typing import Any
 
 from agentopsy.i18n import Mensaje, t
@@ -30,11 +53,75 @@ from agentopsy.executors.base import (
     PromptExecutor,
     Usage,
     _as_int,
-    resolve_timeout,
     sha256_text,
 )
 
 _PROBE_TIMEOUT_S = 3
+
+#: Environment key through which the DEPLOYMENT declares the name that resolves,
+#: from inside the api container, to the machine running Docker. The compose sets
+#: it to ``host.docker.internal`` together with the ``extra_hosts`` entry that
+#: makes that name resolve on Linux too. Absent or empty means "no container
+#: boundary": loopback is left exactly as the operator wrote it.
+HOST_GATEWAY_ENV = "AGENTOPSY_HOST_GATEWAY"
+
+
+@dataclass(frozen=True)
+class ResolvedHost:
+    """What the operator configured, and what urllib is actually asked to contact."""
+
+    configured: str
+    effective: str
+
+    @property
+    def rewritten(self) -> bool:
+        return self.configured != self.effective
+
+    @property
+    def display(self) -> str:
+        """Both URLs when the rewrite applied, so an error never names a host the
+        operator did not write, nor hides the one actually contacted."""
+        if self.rewritten:
+            return f"{self.configured} ({self.effective})"
+        return self.effective
+
+
+def _is_loopback(hostname: str | None) -> bool:
+    if not hostname:
+        return False
+    if hostname.lower() == "localhost":
+        return True
+    try:
+        # urlsplit().hostname already strips the brackets of an IPv6 literal.
+        return ipaddress.ip_address(hostname).is_loopback
+    except ValueError:
+        return False
+
+
+def resolve_host(raw: str) -> ResolvedHost:
+    """Point a loopback URL at the host machine when running inside a container.
+
+    Only the HOSTNAME changes, and only when it is loopback and the deployment
+    declared a gateway name: scheme, port and path are the operator's.
+    """
+    base = raw.strip().rstrip("/")
+    gateway = (os.environ.get(HOST_GATEWAY_ENV) or "").strip()
+    if not gateway:
+        return ResolvedHost(base, base)
+    parts = urllib.parse.urlsplit(base)
+    if not _is_loopback(parts.hostname):
+        return ResolvedHost(base, base)
+    userinfo = ""
+    if parts.username:
+        userinfo = parts.username
+        if parts.password:
+            userinfo = f"{userinfo}:{parts.password}"
+        userinfo = f"{userinfo}@"
+    port = f":{parts.port}" if parts.port is not None else ""
+    effective = urllib.parse.urlunsplit(
+        (parts.scheme, f"{userinfo}{gateway}{port}", parts.path, parts.query, parts.fragment)
+    )
+    return ResolvedHost(base, effective.rstrip("/"))
 
 
 class OllamaExecutor(PromptExecutor):
@@ -42,12 +129,44 @@ class OllamaExecutor(PromptExecutor):
     name = "Ollama"
     is_local = True
 
+    #: Sin límite de reloj. El resto de ejecutores lo llevan porque su turno sale
+    #: de la máquina, lo factura un proveedor y un CLI colgado no puede retener el
+    #: análisis. Aquí no se cumple ninguna de las tres: el modelo corre en la
+    #: máquina del perito, no se factura por segundo y nadie más está esperando.
+    #: Lo único que conseguía el límite era matar trabajo real: un modelo local
+    #: grande tarda minutos por turno y bastante más en redactar un informe
+    #: pericial entero, así que el corte llegaba SIEMPRE antes que la respuesta y
+    #: se perdía el borrador completo. El operador sigue mandando: el prompt se
+    #: corta cerrando la corrida, no con un cronómetro que Agentopsy eligió por
+    #: él (RULE 2). Ver ``PromptExecutor.timeout_for``.
+    enforces_timeout = False
+
     @staticmethod
-    def _host() -> str | None:
+    def _host() -> ResolvedHost | None:
         host = config.get("OLLAMA_HOST")
         if isinstance(host, str) and host.strip():
-            return host.strip().rstrip("/")
+            return resolve_host(host)
         return None
+
+    @staticmethod
+    def _unreachable(host: ResolvedHost, error: object) -> tuple[str, dict[str, object]]:
+        """Catalog key + params for "Ollama did not answer", naming BOTH URLs when
+        the loopback rewrite applied.
+
+        When it did, the likely cause is not that Ollama is down but that it only
+        listens on the host's own loopback, where a container cannot reach it, so
+        the message names that fix instead of leaving the operator with a bare
+        "does not answer". Returned unrendered because the two callers want
+        different renderings: the availability probe speaks the request's
+        language, the run error is a ``Mensaje`` (canonical text plus code).
+        """
+        if host.rewritten:
+            return "ollama.noAnswerHostMachine", {
+                "configured": host.configured,
+                "effective": host.effective,
+                "error": error,
+            }
+        return "ollama.noAnswer", {"host": host.effective, "error": error}
 
     def is_available(self) -> ExecutorAvailability:
         host = self._host()
@@ -57,14 +176,12 @@ class OllamaExecutor(PromptExecutor):
                 reason=t("ollama.hostUnset"),
             )
         try:
-            req = urllib.request.Request(f"{host}/api/version", method="GET")
+            req = urllib.request.Request(f"{host.effective}/api/version", method="GET")
             with urllib.request.urlopen(req, timeout=_PROBE_TIMEOUT_S):
                 pass
         except (urllib.error.URLError, OSError, ValueError) as exc:
-            return ExecutorAvailability(
-                available=False,
-                reason=t("ollama.noAnswer", host=host, error=exc),
-            )
+            clave, params = self._unreachable(host, exc)
+            return ExecutorAvailability(available=False, reason=t(clave, **params))
         return ExecutorAvailability(available=True)
 
     def list_models(self) -> list[str]:
@@ -77,12 +194,12 @@ class OllamaExecutor(PromptExecutor):
         if host is None:
             raise ExecutorError(Mensaje("ollama.hostUnsetForList"))
         try:
-            req = urllib.request.Request(f"{host}/api/tags", method="GET")
+            req = urllib.request.Request(f"{host.effective}/api/tags", method="GET")
             with urllib.request.urlopen(req, timeout=_PROBE_TIMEOUT_S) as resp:
                 body = resp.read().decode("utf-8")
         except (urllib.error.URLError, OSError, ValueError) as exc:
             raise ExecutorError(
-                Mensaje("ollama.listFailed", host=host, error=exc)
+                Mensaje("ollama.listFailed", host=host.display, error=exc)
             ) from exc
         try:
             data = json.loads(body)
@@ -109,13 +226,17 @@ class OllamaExecutor(PromptExecutor):
                 "no elige un modelo por ti (RULE 2)."
             )
 
-        url = f"{host}/api/generate"
+        url = f"{host.effective}/api/generate"
         payload: dict[str, Any] = {"model": model, "prompt": prompt, "stream": False}
         temperature = ctx.get("temperature")
         if temperature is not None:
             payload["options"] = {"temperature": float(temperature)}
 
-        timeout = resolve_timeout(ctx)
+        # Siempre ``None`` (``enforces_timeout = False``): ``urlopen`` espera a que
+        # el modelo local termine, tarde lo que tarde. Un ``context['timeout']``
+        # del llamante (el presupuesto de redacción del informe, p. ej.) no se
+        # aplica aquí, y así queda dicho en el audit.
+        timeout = self.timeout_for(ctx)
         audit = ctx.get("audit")
         case_id = ctx.get("case_id")
 
@@ -129,10 +250,28 @@ class OllamaExecutor(PromptExecutor):
                     "executor": self.id,
                     "local": True,
                     "case_id": case_id,
-                    "http": {"url": url, "model": model},
+                    # `url` is the LITERAL request that leaves the process, which
+                    # is the rewritten one when the operator wrote loopback and
+                    # the deployment declared a host gateway; `configured_host`
+                    # keeps what they actually typed, so the audit shows both
+                    # halves of the resolution (FORENSIC INVARIANT 4).
+                    "http": {
+                        "url": url,
+                        "model": model,
+                        **(
+                            {"configured_host": host.configured}
+                            if host.rewritten
+                            else {}
+                        ),
+                    },
                     "prompt": prompt,
                     "prompt_sha256": sha256_text(prompt),
                     "prompt_chars": len(prompt),
+                    # Null: el ejecutor local corre sin cota de reloj. Es el mismo
+                    # campo que escriben los CLI con su límite en segundos, para
+                    # que un tercero lea del audit bajo qué cota se lanzó cada
+                    # turno sin tener que deducirla del ejecutor.
+                    "timeout_s": timeout,
                 }
             )
 
@@ -154,7 +293,8 @@ class OllamaExecutor(PromptExecutor):
             ) from exc
         except (urllib.error.URLError, OSError) as exc:
             self._audit_finish(audit, case_id, started, error=str(exc))
-            raise ExecutorError(f"no se pudo contactar con Ollama en {url}: {exc}") from exc
+            clave, params = self._unreachable(host, exc)
+            raise ExecutorError(Mensaje(clave, **params)) from exc
 
         duration_ms = int((time.monotonic() - started) * 1000)
         try:

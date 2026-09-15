@@ -19,6 +19,15 @@ análisis, conclusiones, recomendaciones), con la línea de tiempo y las TTPs po
 delante de la descripción del incidente porque es lo que un lector técnico
 escanea primero.
 
+Un apartado del índice NO lo redacta el modelo: el anexo C, las figuras del caso
+(la línea de tiempo del incidente y el grafo de relaciones), que Agentopsy
+compone con los datos registrados (``agentopsy.reports.figuras``) y añade al
+informe después de las puertas de custodia. Está en el índice porque todo
+informe lo lleva, en el mismo sitio y con el mismo número; su ``contrato`` le
+dice al modelo que no lo escriba y que puede remitir a él. Por eso hay dos
+tuplas de números: ``NUMS``, lo que el modelo debe devolver (la puerta 1 del
+redactor), y ``NUMS_DEL_INFORME``, lo que el documento lleva.
+
 ESTILO (regla de producto, ver ``agentopsy.reports.writer``): ni en los títulos
 ni en los contratos aparece el signo de sección, el guion largo ni un emoji. Este
 texto es lo que el modelo lee e imita, así que es el primer sitio donde la regla
@@ -47,6 +56,8 @@ class SeccionIndice:
     num: str
     title_key: str
     contrato_key: str
+    #: ``True`` si lo redacta el modelo; ``False`` si lo compone Agentopsy.
+    redacta_el_modelo: bool
 
     def title(self, lang: str | None = None) -> str:
         """El título del apartado en ``lang`` (por defecto, el de la petición)."""
@@ -57,7 +68,10 @@ class SeccionIndice:
         return t(self.contrato_key, lang)
 
 
-#: El índice canónico. Diez secciones numeradas + dos anexos, en este orden.
+#: El ANEXO que compone Agentopsy: las figuras del caso.
+NUM_ANEXO_FIGURAS = "C"
+
+#: El índice canónico. Diez secciones numeradas + tres anexos, en este orden.
 #: Cambiar esta tupla cambia el índice de TODOS los informes: es la decisión de
 #: producto, no del modelo ni del caso.
 INDICE: tuple[SeccionIndice, ...] = tuple(
@@ -65,13 +79,17 @@ INDICE: tuple[SeccionIndice, ...] = tuple(
         num=num,
         title_key=f"indice.{num}.title",
         contrato_key=f"indice.{num}.contrato",
+        redacta_el_modelo=num != NUM_ANEXO_FIGURAS,
     )
-    for num in ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "A", "B")
+    for num in ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "A", "B", "C")
 )
 
-#: Los ``num`` del índice, en orden: el contrato estructural que el validador
-#: del redactor exige a la respuesta del modelo.
-NUMS: tuple[str, ...] = tuple(s.num for s in INDICE)
+#: Los ``num`` que REDACTA el modelo, en orden: el contrato estructural que la
+#: puerta 1 del redactor exige a su respuesta. El anexo C no está: no lo escribe.
+NUMS: tuple[str, ...] = tuple(s.num for s in INDICE if s.redacta_el_modelo)
+
+#: Los ``num`` que lleva el DOCUMENTO, en orden: lo redactado más lo compuesto.
+NUMS_DEL_INFORME: tuple[str, ...] = tuple(s.num for s in INDICE)
 
 def titulos(lang: str | None = None) -> dict[str, str]:
     """``num`` al título canónico DEL IDIOMA del informe.
@@ -97,4 +115,12 @@ def contrato_del_indice(lang: str | None = None) -> str:
     )
 
 
-__all__ = ["INDICE", "NUMS", "SeccionIndice", "contrato_del_indice", "titulos"]
+__all__ = [
+    "INDICE",
+    "NUMS",
+    "NUMS_DEL_INFORME",
+    "NUM_ANEXO_FIGURAS",
+    "SeccionIndice",
+    "contrato_del_indice",
+    "titulos",
+]

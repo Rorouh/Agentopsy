@@ -29,8 +29,12 @@ CATALOGO["api.caseRequired"] = {
     "es": "case_id is required: selecciona un caso antes de consultar al agente (Agentopsy no asume 'el único caso', RULE 2).",
 }
 CATALOGO["api.evidenceRequired"] = {
-    "en": "evidence_id is required: select a piece of evidence registered in the case (Agentopsy does not assume 'the last one registered', RULE 2).",
-    "es": "evidence_id is required: selecciona una evidencia registrada en el caso (Agentopsy no asume 'la última registrada', RULE 2).",
+    "en": "the case has no registered evidence: register at least one on the Evidence page before querying the agent. The investigation covers every piece of evidence of the case.",
+    "es": "el caso no tiene evidencias registradas: registra al menos una en la página Evidencia antes de consultar al agente. La investigación abarca todas las evidencias del caso.",
+}
+CATALOGO["api.evidenceScopeIsCase"] = {
+    "en": "evidence_id is no longer accepted: the investigation covers ALL the evidence of the case, with no primary evidence. To focus on one piece of evidence, ask for it in the message to the agent. If you see this notice in the interface, reload the page.",
+    "es": "evidence_id ya no se admite: la investigación abarca TODAS las evidencias del caso, sin evidencia primaria. Para centrarte en una evidencia, pídelo en el propio mensaje al agente. Si ves este aviso en la interfaz, recarga la página.",
 }
 CATALOGO["api.executorRequired"] = {
     "en": "executor is required: select an executor ({ids}) in the request, or set DEFAULT_EXECUTOR explicitly in Settings. Agentopsy does not choose one for you (RULE 2).",
@@ -355,12 +359,16 @@ CATALOGO["gemini.reportedError"] = {
 
 # --- ejecutores: Ollama --------------------------------------------------------
 CATALOGO["ollama.hostUnset"] = {
-    "en": "OLLAMA_HOST is not configured. In the compose it is set by the api service (http://ollama:11434); in a standalone run, define it in Settings or as an environment variable. Agentopsy does not assume a default host (RULE 2).",
-    "es": "OLLAMA_HOST no está configurado. En el compose lo fija el servicio api (http://ollama:11434); en ejecución standalone defínelo en Settings o como variable de entorno. Agentopsy no asume un host por defecto (RULE 2).",
+    "en": "OLLAMA_HOST is not configured. Set it in Settings: http://ollama:11434 for the Ollama the compose starts, or http://localhost:11434 for the one running on your own machine. Agentopsy does not assume a default host (RULE 2).",
+    "es": "OLLAMA_HOST no está configurado. Fíjalo en Ajustes: http://ollama:11434 para el Ollama que levanta el compose, o http://localhost:11434 para el que corre en tu propio equipo. Agentopsy no asume un host por defecto (RULE 2).",
 }
 CATALOGO["ollama.noAnswer"] = {
     "en": "Ollama does not answer at {host} ({error}). Check that the service is up (`docker compose ps ollama`) or fix OLLAMA_HOST.",
     "es": "Ollama no responde en {host} ({error}). Comprueba que el servicio está levantado (`docker compose ps ollama`) o corrige OLLAMA_HOST.",
+}
+CATALOGO["ollama.noAnswerHostMachine"] = {
+    "en": "Ollama does not answer at {configured}, which from the api container is contacted at {effective} ({error}). Check that Ollama is running on your machine (`ollama list`) and that it listens on every interface, not only on loopback: start it with OLLAMA_HOST=0.0.0.0 ollama serve, or turn on «Expose Ollama to the network» in the Ollama app. Bound to loopback alone, no container can reach it.",
+    "es": "Ollama no responde en {configured}, que desde el contenedor api se contacta en {effective} ({error}). Comprueba que Ollama está corriendo en tu equipo (`ollama list`) y que escucha en todas las interfaces, no solo en loopback: arráncalo con OLLAMA_HOST=0.0.0.0 ollama serve, o activa «Exponer Ollama en la red» en la app de Ollama. Si solo escucha en loopback, ningún contenedor puede alcanzarlo.",
 }
 CATALOGO["ollama.hostUnsetForList"] = {
     "en": "OLLAMA_HOST is not configured, models cannot be listed (RULE 2: no silent defaults).",
@@ -618,6 +626,26 @@ CATALOGO["findings.needProvenance"] = {
     "en": "an affirmative finding requires provenance: pass `run_id` with the ArtifactRun that supports it, or mark `finding_kind=\"descarte\"` if you are documenting a ruled-out line (RULE 2, with no provenance an assertion about the evidence is not recorded).",
     "es": "finding afirmativo requiere procedencia: pasa `run_id` con el ArtifactRun que lo sostiene, o marca `finding_kind=\"descarte\"` si documentas una vía descartada (RULE 2, sin procedencia no se registra una afirmación sobre la evidencia).",
 }
+CATALOGO["findings.runNotInCase"] = {
+    "en": "run_id {run_id} does not match any run of this case ({detail}): cite the exact `run_id` of the run that supports the finding, as the tool returned it to you.",
+    "es": "el run_id {run_id} no corresponde a ninguna ejecución de este caso ({detail}): cita el `run_id` exacto de la ejecución que sostiene el hallazgo, tal como te lo devolvió la herramienta.",
+}
+CATALOGO["findings.runWithoutEvidence"] = {
+    "en": "run {run_id} does not record which evidence it ran over (a manifest older than per-run provenance): the finding cannot be attributed to a piece of evidence without inventing it. Run the tool again and cite the new run.",
+    "es": "la ejecución {run_id} no registra sobre qué evidencia corrió (manifiesto anterior a la procedencia por ejecución): no se puede atribuir el hallazgo a una evidencia sin inventarla. Vuelve a ejecutar la herramienta y cita la nueva ejecución.",
+}
+CATALOGO["findings.evidenceMismatch"] = {
+    "en": "the finding declares evidence {declared}, but run {run_id} ran over evidence {actual}: the evidence of a finding is the one of the run that supports it. Omit `evidence_id` or cite the right run.",
+    "es": "el hallazgo declara la evidencia {declared}, pero la ejecución {run_id} corrió sobre la evidencia {actual}: la evidencia de un hallazgo es la de la ejecución que lo sostiene. Omite `evidence_id` o cita la ejecución correcta.",
+}
+CATALOGO["findings.runEvidenceNotInCase"] = {
+    "en": "run {run_id} ran over evidence {evidence_id}, which is not among the evidence registered in this case: the finding is not attributed to evidence outside the case.",
+    "es": "la ejecución {run_id} corrió sobre la evidencia {evidence_id}, que no está entre las evidencias registradas en este caso: no se atribuye el hallazgo a una evidencia ajena al caso.",
+}
+CATALOGO["findings.evidenceNotInCase"] = {
+    "en": "evidence_id {evidence_id} is not a piece of evidence of this case. The evidence of the case is: {valid}.",
+    "es": "evidence_id {evidence_id} no es una evidencia de este caso. Las evidencias del caso son: {valid}.",
+}
 
 # --- perfil de SO del caso -----------------------------------------------------
 CATALOGO["case.osConflict"] = {
@@ -707,6 +735,10 @@ CATALOGO["agent.badMaxAttempts"] = {
 CATALOGO["agent.noValidTools"] = {
     "en": "The agent `{id}` has no valid tools for its profile in the catalog (`catalog.py`). Check that the catalog declares tools for this os_profile.",
     "es": "El agente `{id}` no tiene tools válidos para su perfil en el catálogo (`catalog.py`). Revisa que el catálogo declare herramientas para este os_profile.",
+}
+CATALOGO["agent.noEvidence"] = {
+    "en": "case {case} has no registered evidence: register at least one before investigating (Agentopsy does not analyse without a hash-verified handle).",
+    "es": "el caso {case} no tiene evidencias registradas: registra al menos una antes de investigar (Agentopsy no analiza sin un handle verificado por hash).",
 }
 CATALOGO["agent.stoppedByOperator"] = {
     "en": "Analysis stopped by the operator. The findings and artifacts recorded up to here are kept.",
@@ -854,6 +886,10 @@ CATALOGO["indice.B.title"] = {
     "en": "Annex: Integrity verification",
     "es": "Anexo: Verificación de integridad",
 }
+CATALOGO["indice.C.title"] = {
+    "en": "Annex: Case figures",
+    "es": "Anexo: Figuras del caso",
+}
 
 # --- índice del informe pericial: contrato de cada apartado --------------------
 CATALOGO["indice.1.contrato"] = {
@@ -904,6 +940,139 @@ CATALOGO["indice.B.contrato"] = {
     "en": "How a third party checks that nothing has been altered: the SHA-256 of the document content and that it is recomputed with `POST …/documents/{id}/verify`; the state of the hash chain of the case audit log (`integridad.hash_chain_verified`); and the baseline of each piece of evidence with the result of its verification (`evidencias[].verificacion`). Copy the hashes from the material as they are, complete. If the material carries `integridad.coste_reportado`, add a line with the cost each executor REPORTED and how many of its runs carry it, saying that it is the provider figure and not a computation by Agentopsy; do not add it up across executors and do not convert tokens into money. If it does not come, do not mention cost.",
     "es": "Cómo un tercero comprueba que nada se ha alterado: el SHA-256 del contenido del documento y que se recomputa con `POST …/documents/{id}/verify`; el estado de la cadena hash del log de auditoría del caso (`integridad.hash_chain_verified`); y el baseline de cada evidencia con el resultado de su verificación (`evidencias[].verificacion`). Copia los hashes del material tal cual, completos. Si el material trae `integridad.coste_reportado`, añade una línea con el coste que REPORTÓ cada ejecutor y cuántas de sus corridas lo traen, diciendo que es la cifra del proveedor y no un cálculo de Agentopsy; no lo sumes con otros ejecutores ni conviertas tokens en dinero. Si no viene, no menciones el coste.",
 }
+
+CATALOGO["indice.C.contrato"] = {
+    "en": "You do NOT write this annex and it does NOT go in `secciones`: Agentopsy composes it when the report is registered, with the figures of the case (the incident timeline and the case relation graph) drawn from the recorded findings and graphs; when the case lacks the data for one of them, the annex itself says so. You may refer to it from the body (for example, from section 3 or section 6) by citing it as «annex C, Case figures», but do not describe what the figures show: they are not part of the material.",
+    "es": "Este anexo NO lo redactas tú y NO va en `secciones`: Agentopsy lo compone al registrar el informe con las figuras del caso (la línea de tiempo del incidente y el grafo de relaciones del caso), dibujadas a partir de los hallazgos y los grafos registrados; si al caso le falta el dato de alguna, el propio anexo lo dice. Puedes remitir a él desde el cuerpo (por ejemplo, desde la sección 3 o la 6) citándolo como «anexo C, Figuras del caso», pero no describas lo que muestran las figuras: no forman parte del material.",
+}
+
+# --- figuras del informe pericial (anexo C) ------------------------------------
+CATALOGO["figure.annex.intro"] = {
+    "en": "Figures that Agentopsy composes from the findings and graphs recorded in the case when this report was written, with the same deterministic geometry as the Timeline and Graphs views: the same data produces the same figure. The model does not write them, and they are part of the content whose SHA-256 is verified.",
+    "es": "Figuras que Agentopsy compone con los hallazgos y los grafos registrados en el caso al redactar este informe, con la misma geometría determinista que las vistas Timeline y Grafos: los mismos datos producen la misma figura. No las redacta el modelo y forman parte del contenido cuyo SHA-256 se verifica.",
+}
+CATALOGO["figure.annex.timelineHeading"] = {
+    "en": "C.1 Incident timeline",
+    "es": "C.1 Línea de tiempo del incidente",
+}
+CATALOGO["figure.annex.graphHeading"] = {
+    "en": "C.2 Case relation graph",
+    "es": "C.2 Grafo de relaciones del caso",
+}
+CATALOGO["figure.rail.title"] = {
+    "en": "Incident timeline",
+    "es": "Línea de tiempo del incidente",
+}
+CATALOGO["figure.rail.titlePart"] = {
+    "en": "Incident timeline ({part} of {parts})",
+    "es": "Línea de tiempo del incidente ({part} de {parts})",
+}
+CATALOGO["figure.rail.case"] = {
+    "en": "Case: {name}",
+    "es": "Caso: {name}",
+}
+CATALOGO["figure.rail.composed"] = {
+    "en": "Added to the report: {date} · events on the axis: {shown} of {total} case findings",
+    "es": "Incorporada al informe: {date} · eventos en el eje: {shown} de {total} hallazgos del caso",
+}
+CATALOGO["figure.rail.outside"] = {
+    "en": "Outside the axis",
+    "es": "Fuera del eje",
+}
+CATALOGO["figure.rail.noObservedAt"] = {
+    "en": "With no artifact timestamp: {count} (they are not placed on the axis: dating them with the time of the analysis would falsify the incident)",
+    "es": "Sin marca temporal del artefacto: {count} (no se sitúan en el eje: fecharlos con la hora del análisis falsearía el incidente)",
+}
+CATALOGO["figure.rail.unparseable"] = {
+    "en": "With a mark unreadable as a date with a time zone: {count}",
+    "es": "Con una marca ilegible como fecha con zona: {count}",
+}
+CATALOGO["figure.rail.listTrimmed"] = {
+    "en": " (list trimmed)",
+    "es": " (lista recortada)",
+}
+CATALOGO["figure.rail.allPlaced"] = {
+    "en": "Every finding of the case ({count}) is placed on the axis.",
+    "es": "Todos los hallazgos del caso ({count}) se sitúan en el eje.",
+}
+CATALOGO["figure.graph.title"] = {
+    "en": "Case relation graph",
+    "es": "Grafo de relaciones del caso",
+}
+CATALOGO["figure.graph.subtitle"] = {
+    "en": "Entities: {nodes} · connections: {edges} · findings with a graph: {findings}",
+    "es": "Activos: {nodes} · conexiones: {edges} · hallazgos con grafo: {findings}",
+}
+CATALOGO["figure.graph.counts"] = {
+    "en": "nodes: {nodes} · edges: {edges}",
+    "es": "nodos: {nodes} · aristas: {edges}",
+}
+CATALOGO["figure.graph.legendNodes"] = {
+    "en": "NODES",
+    "es": "NODOS",
+}
+CATALOGO["figure.graph.legendEdges"] = {
+    "en": "RELATIONS",
+    "es": "RELACIONES",
+}
+CATALOGO["figure.graph.provenance"] = {
+    "en": "Case: {case} · Added to the report: {date} · nodes: {nodes}, edges: {edges}",
+    "es": "Caso: {case} · Incorporado al informe: {date} · nodos: {nodes}, aristas: {edges}",
+}
+CATALOGO["figure.graph.inventoryBand"] = {
+    "en": "Entities named by the findings with no relation asserted between them: {count}",
+    "es": "Entidades que los hallazgos nombran sin afirmar ninguna relación entre ellas: {count}",
+}
+CATALOGO["figure.graph.na"] = {
+    "en": "n/a",
+    "es": "n/d",
+}
+CATALOGO["figure.graph.none"] = {
+    "en": "The case has no extracted relation graph, so there is no graph figure to add. Graphs are extracted from the Graphs view, finding by finding, and a report written afterwards includes them.",
+    "es": "El caso no tiene grafos de relaciones extraídos, así que no hay figura del grafo que incorporar. Los grafos se extraen desde la vista Grafos, hallazgo a hallazgo, y el informe que se redacte después los incluye.",
+}
+CATALOGO["figure.graph.empty"] = {
+    "en": "None of the extracted graphs of the case ({count}) names an entity, so there is no graph figure to add.",
+    "es": "Ninguno de los grafos extraídos del caso ({count}) nombra una entidad, así que no hay figura del grafo que incorporar.",
+}
+CATALOGO["figure.graph.abbr.ip"] = {"en": "IP", "es": "IP"}
+CATALOGO["figure.graph.abbr.domain"] = {"en": "DOM", "es": "DOM"}
+CATALOGO["figure.graph.abbr.hostname"] = {"en": "HST", "es": "EQ"}
+CATALOGO["figure.graph.abbr.user"] = {"en": "USR", "es": "USR"}
+CATALOGO["figure.graph.abbr.file"] = {"en": "FIL", "es": "FIC"}
+CATALOGO["figure.graph.pending"] = {
+    "en": "Findings of the case with no extracted graph: {pending} of {total}. Their entities do not appear in this figure.",
+    "es": "Hallazgos del caso sin grafo extraído: {pending} de {total}. Sus entidades no figuran en esta figura.",
+}
+
+# --- grafos: cómo se leen los tipos de nodo y de relación ----------------------
+CATALOGO["graphNode.ip"] = {"en": "IP address", "es": "Dirección IP"}
+CATALOGO["graphNode.domain"] = {"en": "Domain", "es": "Dominio"}
+CATALOGO["graphNode.hostname"] = {"en": "Host", "es": "Equipo"}
+CATALOGO["graphNode.user"] = {"en": "User", "es": "Usuario"}
+CATALOGO["graphNode.file"] = {"en": "File", "es": "Fichero"}
+CATALOGO["graphEdge.connection"] = {"en": "Connection", "es": "Conexión"}
+CATALOGO["graphEdge.process_spawn"] = {"en": "Process creation", "es": "Creación de proceso"}
+CATALOGO["graphEdge.network_connection"] = {
+    "en": "Network connection",
+    "es": "Conexión de red",
+}
+CATALOGO["graphEdge.lateral_move"] = {"en": "Lateral movement", "es": "Movimiento lateral"}
+CATALOGO["graphEdge.malware"] = {"en": "Malicious code", "es": "Código malicioso"}
+CATALOGO["graphEdge.c2"] = {"en": "Command and control", "es": "Mando y control"}
+CATALOGO["graphEdge.exfiltration"] = {"en": "Exfiltration", "es": "Exfiltración"}
+CATALOGO["graphEdge.beacon"] = {"en": "Beacon", "es": "Baliza"}
+CATALOGO["graphEdge.persistence"] = {"en": "Persistence", "es": "Persistencia"}
+CATALOGO["graphEdge.priv_esc"] = {
+    "en": "Privilege escalation",
+    "es": "Escalada de privilegios",
+}
+CATALOGO["graphEdge.rce"] = {
+    "en": "Remote code execution",
+    "es": "Ejecución remota de código",
+}
+CATALOGO["graphEdge.logon"] = {"en": "Logon", "es": "Inicio de sesión"}
+CATALOGO["graphEdge.file_transfer"] = {"en": "File transfer", "es": "Transferencia de ficheros"}
 
 # --- redactor del informe: el encargo y las reglas -----------------------------
 CATALOGO["writer.encargo"] = {
@@ -1438,6 +1607,14 @@ CATALOGO["agentLoop.notInAllowlist"] = {
     "en": "The tool `{tool}` is not in the allowlist of the package `{package}`. Choose one of: {allowed}",
     "es": "El tool `{tool}` no está en la allowlist del paquete `{package}`. Elige uno de: {allowed}",
 }
+CATALOGO["agentLoop.evidenceRequired"] = {
+    "en": "`{tool}` needs `evidence_id`: the case has several pieces of evidence and none is used by default. Choose one of: {choices}.",
+    "es": "`{tool}` necesita `evidence_id`: el caso tiene varias evidencias y ninguna se usa por defecto. Elige una de: {choices}.",
+}
+CATALOGO["agentLoop.evidenceNotInCase"] = {
+    "en": "evidence_id {evidence_id} is not a piece of evidence of this case. Choose one of: {choices}.",
+    "es": "evidence_id {evidence_id} no es una evidencia de este caso. Elige una de: {choices}.",
+}
 CATALOGO["agentLoop.refusedSummary"] = {
     "en": "not in the agent allowlist",
     "es": "no está en la allowlist del agente",
@@ -1485,8 +1662,8 @@ CATALOGO["agentCtx.kindDisk"] = {
     "es": "\n## Soporte de la evidencia, IMAGEN DE DISCO\nEl triage la clasificó como `kind={kind}`.{container} Los plugins de memoria de `volatility3` NO aplican: no contiene un volcado de memoria física. Los artefactos de tu objetivo viven en el sistema de ficheros, localízalos con `tsk_fls` y extráelos con `tsk_icat` antes de procesarlos.\n",
 }
 CATALOGO["agentCtx.multiEvidence"] = {
-    "en": "\n## Evidence of the case, YOU HAVE SEVERAL, use them ALL\nThis case has more than one piece of evidence and the analysis CORRELATES them. Do not stay on one: the **memory** (`kind=memory`) answers processes, network, credentials and TTPs with `volatility3` (including dumping the registry hives from RAM); the **disk** (`kind=disk`/`container_disk`) answers the fine «when», the deletions and the content with `tsk_*`/`regripper`/`mftecmd`; a **supplied file** (`kind=document`: a document, an image, a mail, a log, a sample) is read IN ITSELF with `file_info` first and then `strings_head`/`bulk_extractor`/`yara`, and its value is in CONTRASTING it with the support where it should appear. To POINT a tool at a specific piece of evidence, pass `evidence_id` in the tool call (closed enum); if you omit it, the primary one is used. Go to the artifact that answers the question and choose the evidence where that artifact lives, do not walk a whole support out of inertia.\n",
-    "es": "\n## Evidencias del caso, TIENES VARIAS, úsalas TODAS\nEste caso tiene más de una evidencia y el análisis las CORRELACIONA. No te quedes en una sola: la **memoria** (`kind=memory`) responde procesos, red, credenciales y TTP con `volatility3` (incl. volcar los hives del registro desde la RAM); el **disco** (`kind=disk`/`container_disk`) responde el «cuándo» fino, los borrados y el contenido con `tsk_*`/`regripper`/`mftecmd`; un **fichero aportado** (`kind=document`: un documento, una imagen, un correo, un log, una muestra) se lee EN SÍ MISMO con `file_info` primero y después `strings_head`/`bulk_extractor`/`yara`, y su valor está en CONTRASTARLO con el soporte donde debería aparecer. Para APUNTAR una herramienta a una evidencia concreta, pasa `evidence_id` en la tool call (enum cerrado); si lo omites, se usa la primaria. Ve al artefacto que responde la pregunta y elige la evidencia donde vive ese artefacto , no recorras un soporte entero por inercia.\n",
+    "en": "\n## Scope: ALL the evidence, on equal terms\nThis case has several pieces of evidence and none of them is primary: you examine all of them with the same weight and the analysis CORRELATES them. The examiner's request applies to ALL of them, unless the message itself explicitly asks to focus on one or on some (by file name, by id or by type, «only the memory»): then you limit yourself to those and do not run tools over the others. If that request does not identify pieces of evidence of the list without ambiguity (for example «the disk» when there are two disks), do not choose for the examiner: say so, list the registered evidence and do not run tools.\nRole of each support: the **memory** (`kind=memory`) answers processes, network, credentials and TTPs with `volatility3` (including dumping the registry hives from RAM); the **disk** (`kind=disk`/`container_disk`) answers the fine «when», the deletions and the content with `tsk_*`/`regripper`/`mftecmd`; a **supplied file** (`kind=document`: a document, an image, a mail, a log, a sample) is read IN ITSELF with `file_info` first and then `strings_head`/`bulk_extractor`/`yara`, and its value is in CONTRASTING it with the support where it should appear. Go to the artifact that answers the question and choose the evidence where that artifact lives; do not walk a whole support out of inertia.\nEvery toolkit tool and `consultar_actividad` REQUIRE `evidence_id` (closed enum): there is no default evidence and a call without it is rejected. Agentopsy sets the evidence of a finding from the `run_id` that supports it; only a finding without `run_id` declares `evidence_id`, and if it does not, it stays as a finding of the whole case.\nWhen you close, state for EACH piece of evidence in scope what you examined in it, or why the question does not apply to that evidence.\n",
+    "es": "\n## Alcance: TODAS las evidencias, por igual\nEste caso tiene varias evidencias y ninguna es primaria: las examinas todas con el mismo peso y el análisis las CORRELACIONA. La petición del perito se aplica a TODAS, salvo que el propio mensaje pida expresamente centrarse en una o en algunas (por su nombre de fichero, por su id o por su tipo, «solo la memoria»): entonces te limitas a esas y no ejecutas herramientas sobre las demás. Si esa petición no identifica sin ambigüedad evidencias de la lista (por ejemplo, «el disco» cuando hay dos discos), no elijas por el perito: díselo, enumera las evidencias registradas y no ejecutes herramientas.\nPapel de cada soporte: la **memoria** (`kind=memory`) responde procesos, red, credenciales y TTP con `volatility3` (incl. volcar los hives del registro desde la RAM); el **disco** (`kind=disk`/`container_disk`) responde el «cuándo» fino, los borrados y el contenido con `tsk_*`/`regripper`/`mftecmd`; un **fichero aportado** (`kind=document`: un documento, una imagen, un correo, un log, una muestra) se lee EN SÍ MISMO con `file_info` primero y después `strings_head`/`bulk_extractor`/`yara`, y su valor está en CONTRASTARLO con el soporte donde debería aparecer. Ve al artefacto que responde la pregunta y elige la evidencia donde vive ese artefacto; no recorras un soporte entero por inercia.\nCada herramienta del maletín y `consultar_actividad` EXIGEN `evidence_id` (enum cerrado): no hay evidencia por defecto y una llamada sin él se rechaza. La evidencia de un hallazgo la pone Agentopsy a partir del `run_id` que lo sostiene; solo un hallazgo sin `run_id` declara `evidence_id`, y si no lo declara queda como hallazgo del caso entero.\nAl cerrar, di para CADA evidencia del alcance qué examinaste en ella, o por qué la pregunta no aplica a esa evidencia.\n",
 }
 CATALOGO["agentCtx.mismatch"] = {
     "en": "\nApply the profile guard rail rule: **do not run tools**. Answer the user in natural language asking them to **ANCHOR the case profile to `{detected}`** (in the UI, or via `POST /api/cases/{{case_id}}/os-profile` with `os_profile={detected}`). On anchoring it, Agentopsy **re-routes automatically** to the matching sub-agent (`agentopsy-{detected}`).\n",
@@ -1499,30 +1676,34 @@ CATALOGO["agentCtx.mismatchHead"] = {
 
 # --- contexto del agente: cabecera del caso y bloque de conducta ---------------
 CATALOGO["agentCtx.caseHeader"] = {
-    "en": "## Active case\n- Case: `{case}`\n- Operating system profile: `{profile}`\n- Primary evidence: `{evidence}`, Agentopsy injects its absolute path in every tool call; NEVER include an absolute path yourself.\n",
-    "es": "## Caso activo\n- Caso: `{case}`\n- Perfil del sistema operativo: `{profile}`\n- Evidencia primaria: `{evidence}`, Agentopsy te inyecta su path absoluto en cada tool call; NUNCA incluyas un path absoluto tú.\n",
+    "en": "## Active case\n- Case: `{case}`\n- Operating system profile: `{profile}`\n",
+    "es": "## Caso activo\n- Caso: `{case}`\n- Perfil del sistema operativo: `{profile}`\n",
 }
-CATALOGO["agentCtx.triageHeader"] = {
-    "en": "## Evidence context (Agentopsy triage)\n- detected_os: `{os}`\n- detected_kind: `{kind}`\nThe values are computed by `agentopsy.triage.fingerprint_evidence` with a deterministic scan of headers plus byte-string markers over the read-only handle. `unknown` means there is no clear signal; a single diagnostic probe is allowed to confirm.\n",
-    "es": "## Contexto de evidencia (triage de Agentopsy)\n- detected_os: `{os}`\n- detected_kind: `{kind}`\nLos valores los computa `agentopsy.triage.fingerprint_evidence` con un escaneo determinista de cabeceras + marcadores byte-string sobre el handle read-only. `unknown` significa que no hay señal clara; está permitido un único probe diagnóstico para confirmar.\n",
+CATALOGO["agentCtx.evidenceHeader"] = {
+    "en": "## Evidence of the case ({count})\nAgentopsy injects the absolute path of each piece of evidence in every tool call; NEVER include an absolute path yourself. `detected_os` and `detected_kind` are computed by the Agentopsy triage (`agentopsy.triage.fingerprint_evidence`) with a deterministic scan of headers and byte-string markers over the read-only handle; `unknown` means there is no clear signal, and a single diagnostic probe is allowed to confirm. The order of the list is not a priority.\n",
+    "es": "## Evidencias del caso ({count})\nAgentopsy te inyecta el path absoluto de cada evidencia en cada tool call; NUNCA incluyas un path absoluto tú. `detected_os` y `detected_kind` los calcula el triage de Agentopsy (`agentopsy.triage.fingerprint_evidence`) con un escaneo determinista de cabeceras y marcadores byte-string sobre el handle de solo lectura; `unknown` significa que no hay señal clara, y está permitido un único probe diagnóstico para confirmar. El orden de la lista no es una prioridad.\n",
 }
 CATALOGO["agentCtx.toolkitHeader"] = {
     "en": "## Available toolkit\nAlways choose the tools by their id. Agentopsy validates every call against your allowlist and resolves the real path of the evidence automatically. The outputs (CSV, body files) go to a directory the dispatcher also injects for you, do not set it yourself.\n\nAllowlist (tool ids): ",
     "es": "## Toolkit disponible\nElige siempre las herramientas por su id. Agentopsy valida cada llamada contra tu allowlist y resuelve el path real de la evidencia automáticamente. Los outputs (CSV, body files) van a un directorio que también te inyecta el dispatcher, no lo pongas tú.\n\nAllowlist (tool ids): ",
 }
 CATALOGO["agentCtx.timelineTool"] = {
-    "en": "## Query the timeline instead of re-scanning\nYou have `consultar_actividad(date_from?, date_to?, category?, path_contains?, limit?)`: it queries the ALREADY generated super-timeline of the evidence and filters its MACB events by date, category or path WITHOUT re-running tsk_fls. Use it for «what happened between X and Y?», «was there anything on <date>?» or «web artifacts» (`category=web`). If it returns `status=no_timeline`, generate the super-timeline first (`tsk_fls -m`). Do NOT repeat `tsk_fls`/`tsk_mactime` for a query this tool already answers over what is built.\n",
-    "es": "## Consulta la timeline en vez de re-escanear\nTienes `consultar_actividad(date_from?, date_to?, category?, path_contains?, limit?)`: consulta la super-timeline YA generada de la evidencia y filtra sus eventos MACB por fecha/categoría/ruta SIN re-ejecutar tsk_fls. Úsala para «¿qué pasó entre X e Y?», «¿hubo algo el <fecha>?» o «artefactos web» (`category=web`). Si devuelve `status=no_timeline`, genera antes la super-timeline (`tsk_fls -m`). NO repitas `tsk_fls`/`tsk_mactime` para una consulta que esta tool ya resuelve sobre lo construido.\n",
+    "en": "## Query the timeline instead of re-scanning\nYou have `consultar_actividad(evidence_id?, date_from?, date_to?, category?, path_contains?, limit?)`: it queries the ALREADY generated super-timeline of ONE piece of evidence and filters its MACB events by date, category or path WITHOUT re-running tsk_fls. With several pieces of evidence in the case, `evidence_id` is required and names the disk whose timeline you query. Use it for «what happened between X and Y?», «was there anything on <date>?» or «web artifacts» (`category=web`). If it returns `status=no_timeline`, generate the super-timeline first (`tsk_fls -m`). Do NOT repeat `tsk_fls`/`tsk_mactime` for a query this tool already answers over what is built.\n",
+    "es": "## Consulta la timeline en vez de re-escanear\nTienes `consultar_actividad(evidence_id?, date_from?, date_to?, category?, path_contains?, limit?)`: consulta la super-timeline YA generada de UNA evidencia y filtra sus eventos MACB por fecha/categoría/ruta SIN re-ejecutar tsk_fls. Con varias evidencias en el caso, `evidence_id` es obligatorio y nombra el disco cuya timeline consultas. Úsala para «¿qué pasó entre X e Y?», «¿hubo algo el <fecha>?» o «artefactos web» (`category=web`). Si devuelve `status=no_timeline`, genera antes la super-timeline (`tsk_fls -m`). NO repitas `tsk_fls`/`tsk_mactime` para una consulta que esta tool ya resuelve sobre lo construido.\n",
 }
 CATALOGO["agentCtx.conduct"] = {
-    "en": "## Default posture: AGENTIC, NOT CONVERSATIONAL\nThe case and the evidence are ALREADY anchored to the request, do not ask \"is this the evidence?\" and do not ask for confirmation. If the prompt is generic (\"analyse the file\"), start **immediately** with tool calls following your playbook. Do not greet and then wait; greet AND invoke tools in the same answer if you want, but NEVER sit waiting for a clarification the system already gave you.\n\n## The internal tools are invoked like any other\n`record_finding`, `annotate_mitre`, `anotar_conocimiento`, `consultar_conocimiento`, `leer_artefacto`, `consultar_actividad` and `declarar_pivote` are served by Agentopsy in process, not by the toolkit, but they travel in the SAME envelope as the rest: their name goes in `tool_id` inside a `tool_call` (or a `tool_batch`), NEVER in `action`. When below it is written `record_finding(title, summary, ...)` that names its PARAMETERS, not a way of calling it: what you emit is `{\"action\": \"tool_call\", \"tool_id\": \"record_finding\", \"params\": {\"title\": ..., \"summary\": ...}}`. A `{\"action\": \"record_finding\", ...}` cannot be interpreted and executes nothing.\n\n## Record findings AS YOU GO, strict rule\nYou have an internal tool `record_finding(title, summary, severity, tool_id?, run_id?, mitre_hints?, observed_at?)`. **After EACH tool whose result gives you a conclusion (even a partial one or a ruling out), call `record_finding` IMMEDIATELY, BEFORE invoking the next tool.** Do NOT accumulate findings for the end: a real analysis is long and can be cut short (timeout, disconnection), everything you have not recorded is lost, and the `ArtifactRun` entries are left orphaned with no conclusion. Practical rule: **for each ArtifactRun with useful output, at least one `record_finding`** (or a ruling-out finding that explains why that line does not contribute). Pass `run_id` with the id of the ArtifactRun that supports it and `tool_id` with the tool. They are persisted at once and the UI and the Timeline paint them.\n`observed_at` is WHEN IT HAPPENED ON THE DEVICE under investigation, and it is what places the finding on the incident timeline (the one a third party reads first, and section 3 of the report): a finding WITHOUT `observed_at` does not enter it. Four rules: (1) fill it ALWAYS when the artifact carries a timestamp, which the $MFT, the registry, the EVTX, a Prefetch or a recycle bin $I do; (2) it is the time of the FACT, NEVER that of your analysis, which Agentopsy already sets; (3) if the artifact gives LOCAL time, convert it to UTC declaring where you get the zone of the system under investigation from (you determine it from the SYSTEM hive), and if you can NOT determine it leave the field EMPTY, because a declared gap is correct and a badly converted date is a false assertion with the look of a verified datum; (4) do not invent it and do not approximate it. Format ISO-8601 with the zone EXPLICIT, an offset or Z (`2021-03-23T19:24:35Z`): with no zone the whole finding is rejected. When you convert, SAY SO in the `summary` (\"the artifact marks 11:24:35 local time of the system, PST/UTC-8\"): a conversion a third party cannot redo is not verifiable.\n`mitre_hints` is the list of ATT&CK techniques the finding supports (for example `[\"T1055\"]`). CLOSED ENUM: only ids from the orchestrator seed; an invented id rejects the whole finding. Omit it if the finding supports no technique; but if it DOES support one, always attach it in the same `record_finding`, it is what fills the MITRE board.\n\n## MITRE correlation, persist it, do not narrate it\nThe MITRE board is fed by the `mitre_hints` of the findings, NOT by the text of your answer. When you correlate findings to techniques (typically: the examiner asks *\"give me the MITRE correlation\"*), for each relevant finding call `annotate_mitre(finding_id, mitre_hints, note?)` with the `finding_id` that `record_finding` returned and the COMPLETE list of techniques it supports. Do it BEFORE composing the answer. If you limit yourself to writing the table in prose, the board stays empty. It also serves to complete the hints of findings you recorded without them.\n\n## NEVER suggest the next step, EXECUTE it\nIf after the initial steps you see indicators of a \"Windows memdump\", do NOT finish with \"I suggest running volatility3 windows.info\". EXECUTE it in the same turn as another tool call. Keep invoking tools until the playbook or the iterations are exhausted, and only then compose the final answer. The final answer is for *summarising* what you already did, NEVER for proposing what you would do.\n\n## When a tool fails (exit_code other than 0)\n1. Do NOT return the final answer with a generic \"there was an error\".\n2. Cite the literal content of the `stderr_sample` the dispatcher returned to you, that is what the tool actually printed.\n3. A failure is NOT an invitation to try tools blindly until one \"works\", that masks the real problem. If the failure reveals that **you do not know the TYPE of evidence** (for example `tsk_mmls` answers \"Cannot determine partition type\", which suggests it may not be a disk image), you are entitled to ONE SINGLE BOUNDED diagnostic probe to determine the type, for example a `volatility3 windows.info` / `linux.pslist.PsList` to confirm whether it is a memory dump. It is a diagnostic, not trial and error: interpret its output and ROUTE to the right playbook; do not chain attempts alternating tools \"to see if it works\". If the probe also fails, it is not your evidence: report the finding (or ruling out) with what stderr told you and stop.\n\n## When you have enough information\nAnswer the user in natural language with no further tool calls. Include the exit codes and the specific findings (numbers, names, hashes) you saw in the runs.",
-    "es": "## Postura por defecto: AGÉNTICA, NO CONVERSACIONAL\nEl caso y la evidencia YA están anclados al request, no preguntes \"¿es esta la evidencia?\" ni pidas confirmación. Si el prompt es genérico (\"analiza el archivo\"), arranca **inmediatamente** con tool calls siguiendo tu playbook. No saludes y luego esperes, saluda E invoca tools en la misma respuesta si quieres, pero NUNCA te quedes esperando una clarificación que el sistema ya te dio.\n\n## Las tools internas se invocan como cualquier otra\n`record_finding`, `annotate_mitre`, `anotar_conocimiento`, `consultar_conocimiento`, `leer_artefacto`, `consultar_actividad` y `declarar_pivote` las atiende Agentopsy en proceso, no el maletín, pero viajan en el MISMO envoltorio que el resto: su nombre va en `tool_id` dentro de un `tool_call` (o de un `tool_batch`), NUNCA en `action`. Cuando abajo se escribe `record_finding(title, summary, ...)` eso nombra sus PARÁMETROS, no una forma de llamarla: lo que emites es `{\"action\": \"tool_call\", \"tool_id\": \"record_finding\", \"params\": {\"title\": ..., \"summary\": ...}}`. Un `{\"action\": \"record_finding\", ...}` no se puede interpretar y no ejecuta nada.\n\n## Registra hallazgos EN CALIENTE, regla estricta\nTienes una tool interna `record_finding(title, summary, severity, tool_id?, run_id?, mitre_hints?, observed_at?)`. **Después de CADA herramienta cuyo resultado te dé una conclusión (aunque sea parcial o un descarte), llama a `record_finding` INMEDIATAMENTE, ANTES de invocar la siguiente herramienta.** NO acumules hallazgos para el final: un análisis real es largo y puede cortarse (timeout, desconexión), todo lo que no hayas registrado se pierde, y los `ArtifactRun` quedan huérfanos sin conclusión. Regla práctica: **por cada ArtifactRun con salida útil, al menos un `record_finding`** (o un hallazgo de descarte que explique por qué esa vía no aporta). Pasa `run_id` con el id del ArtifactRun que lo sostiene y `tool_id` con la herramienta. Se persisten al instante y la UI/Timeline los pinta.\n`observed_at` es CUÁNDO PASÓ EN EL DISPOSITIVO investigado, y es lo que sitúa el hallazgo en la línea de tiempo del incidente (la que lee primero un tercero, y el apartado 3 del informe): un hallazgo SIN `observed_at` no entra en ella. Cuatro reglas: (1) rellénalo SIEMPRE que el artefacto traiga marca temporal, que la traen el $MFT, el registro, los EVTX, un Prefetch o un $I de papelera; (2) es la hora del HECHO, NUNCA la de tu análisis, que ya la pone Agentopsy; (3) si el artefacto da hora LOCAL, conviértela a UTC declarando de dónde sacas la zona del sistema investigado (la determinas tú del hive SYSTEM), y si NO puedes determinarla deja el campo VACÍO, porque un hueco declarado es correcto y una fecha mal convertida es una afirmación falsa con aspecto de dato verificado; (4) no la inventes ni la aproximes. Formato ISO-8601 con la zona EXPLÍCITA, offset o Z (`2021-03-23T19:24:35Z`): sin zona se rechaza el hallazgo entero. Cuando conviertas, DILO en el `summary` (\"el artefacto marca 11:24:35 hora local del sistema, PST/UTC-8\"): una conversión que un tercero no puede rehacer no es verificable.\n`mitre_hints` es la lista de técnicas ATT&CK que el hallazgo sostiene (p. ej. `[\"T1055\"]`). ENUM CERRADA: sólo ids de la semilla del orquestador; un id inventado rechaza el hallazgo entero. Omítelo si el hallazgo no sostiene ninguna técnica; pero si SÍ la sostiene, adjúntalo SIEMPRE en el mismo `record_finding`, es lo que llena el tablero MITRE.\n\n## Correlación MITRE, persístela, no la narres\nEl tablero MITRE se alimenta de los `mitre_hints` de los hallazgos, NO del texto de tu respuesta. Cuando correlaciones hallazgos a técnicas (típico: el perito pide *\"dame la correlación MITRE\"*), por cada hallazgo relevante llama a `annotate_mitre(finding_id, mitre_hints, note?)` con el `finding_id` que te devolvió `record_finding` y la lista COMPLETA de técnicas que sostiene. Hazlo ANTES de componer la respuesta. Si te limitas a escribir la tabla en prosa, el tablero se queda vacío. También sirve para completar hints de hallazgos que registraste sin ellos.\n\n## NUNCA sugieras el siguiente paso, EJECÚTALO\nSi tras los pasos 0 ves indicadores de \"memdump Windows\", NO termines con \"sugiero correr volatility3 windows.info\". EJECÚTALO en el mismo turno como otro tool call. Sigue invocando tools hasta agotar el playbook o las iteraciones, solo entonces compones la respuesta final. La respuesta final es para *resumir* lo que ya hiciste, NUNCA para proponer lo que harías.\n\n## Cuando un tool falle (exit_code != 0)\n1. NO devuelvas la respuesta final con un \"hubo un error\" genérico.\n2. Cita el contenido literal de `stderr_sample` que te devolvió el dispatcher, eso es lo que la herramienta de verdad imprimió.\n3. Un fallo NO es una invitación a probar herramientas a ciegas hasta que una \"funcione\", eso enmascara el problema real. Si el fallo revela que **desconoces el TIPO de evidencia** (p. ej. `tsk_mmls` responde \"Cannot determine partition type\", que sugiere que quizá no es una imagen de disco), tienes derecho a UN ÚNICO probe diagnóstico ACOTADO para determinar el tipo, por ejemplo un `volatility3 windows.info` / `linux.pslist.PsList` para confirmar si es un volcado de memoria. Es un diagnóstico, no un ensayo-error: interpreta su salida y ENRUTA al playbook correcto; no encadenes intentos alternando herramientas \"a ver si cuela\". Si el probe también falla, no es tu evidencia: reporta el hallazgo (o descarte) con lo que stderr te dijo y para.\n\n## Cuando tengas suficiente información\nContesta al usuario en lenguaje natural sin más tool calls. Incluye los exit codes y los hallazgos concretos (números, nombres, hashes) que viste en los runs.",
+    "en": "## Default posture: AGENTIC, NOT CONVERSATIONAL\nThe case and its evidence are ALREADY anchored to the request, do not ask \"is this the evidence?\" and do not ask for confirmation. If the prompt is generic (\"analyse the file\"), start **immediately** with tool calls following your playbook. Do not greet and then wait; greet AND invoke tools in the same answer if you want, but NEVER sit waiting for a clarification the system already gave you.\n\n## The internal tools are invoked like any other\n`record_finding`, `annotate_mitre`, `anotar_conocimiento`, `consultar_conocimiento`, `leer_artefacto`, `consultar_actividad` and `declarar_pivote` are served by Agentopsy in process, not by the toolkit, but they travel in the SAME envelope as the rest: their name goes in `tool_id` inside a `tool_call` (or a `tool_batch`), NEVER in `action`. When below it is written `record_finding(title, summary, ...)` that names its PARAMETERS, not a way of calling it: what you emit is `{\"action\": \"tool_call\", \"tool_id\": \"record_finding\", \"params\": {\"title\": ..., \"summary\": ...}}`. A `{\"action\": \"record_finding\", ...}` cannot be interpreted and executes nothing.\n\n## Record findings AS YOU GO, strict rule\nYou have an internal tool `record_finding(title, summary, severity, tool_id?, run_id?, evidence_id?, mitre_hints?, observed_at?)`. **After EACH tool whose result gives you a conclusion (even a partial one or a ruling out), call `record_finding` IMMEDIATELY, BEFORE invoking the next tool.** Do NOT accumulate findings for the end: a real analysis is long and can be cut short (timeout, disconnection), everything you have not recorded is lost, and the `ArtifactRun` entries are left orphaned with no conclusion. Practical rule: **for each ArtifactRun with useful output, at least one `record_finding`** (or a ruling-out finding that explains why that line does not contribute). Pass `run_id` with the id of the ArtifactRun that supports it and `tool_id` with the tool; Agentopsy takes the evidence of the finding from that run. They are persisted at once and the UI and the Timeline paint them.\n`observed_at` is WHEN IT HAPPENED ON THE DEVICE under investigation, and it is what places the finding on the incident timeline (the one a third party reads first, and section 3 of the report): a finding WITHOUT `observed_at` does not enter it. Four rules: (1) fill it ALWAYS when the artifact carries a timestamp, which the $MFT, the registry, the EVTX, a Prefetch or a recycle bin $I do; (2) it is the time of the FACT, NEVER that of your analysis, which Agentopsy already sets; (3) if the artifact gives LOCAL time, convert it to UTC declaring where you get the zone of the system under investigation from (you determine it from the SYSTEM hive), and if you can NOT determine it leave the field EMPTY, because a declared gap is correct and a badly converted date is a false assertion with the look of a verified datum; (4) do not invent it and do not approximate it. Format ISO-8601 with the zone EXPLICIT, an offset or Z (`2021-03-23T19:24:35Z`): with no zone the whole finding is rejected. When you convert, SAY SO in the `summary` (\"the artifact marks 11:24:35 local time of the system, PST/UTC-8\"): a conversion a third party cannot redo is not verifiable.\n`mitre_hints` is the list of ATT&CK techniques the finding supports (for example `[\"T1055\"]`). CLOSED ENUM: only ids from the orchestrator seed; an invented id rejects the whole finding. Omit it if the finding supports no technique; but if it DOES support one, always attach it in the same `record_finding`, it is what fills the MITRE board.\n\n## MITRE correlation, persist it, do not narrate it\nThe MITRE board is fed by the `mitre_hints` of the findings, NOT by the text of your answer. When you correlate findings to techniques (typically: the examiner asks *\"give me the MITRE correlation\"*), for each relevant finding call `annotate_mitre(finding_id, mitre_hints, note?)` with the `finding_id` that `record_finding` returned and the COMPLETE list of techniques it supports. Do it BEFORE composing the answer. If you limit yourself to writing the table in prose, the board stays empty. It also serves to complete the hints of findings you recorded without them.\n\n## NEVER suggest the next step, EXECUTE it\nIf after the initial steps you see indicators of a \"Windows memdump\", do NOT finish with \"I suggest running volatility3 windows.info\". EXECUTE it in the same turn as another tool call. Keep invoking tools until the playbook or the iterations are exhausted, and only then compose the final answer. The final answer is for *summarising* what you already did, NEVER for proposing what you would do.\n\n## When a tool fails (exit_code other than 0)\n1. Do NOT return the final answer with a generic \"there was an error\".\n2. Cite the literal content of the `stderr_sample` the dispatcher returned to you, that is what the tool actually printed.\n3. A failure is NOT an invitation to try tools blindly until one \"works\", that masks the real problem. If the failure reveals that **you do not know the TYPE of evidence** (for example `tsk_mmls` answers \"Cannot determine partition type\", which suggests it may not be a disk image), you are entitled to ONE SINGLE BOUNDED diagnostic probe to determine the type, for example a `volatility3 windows.info` / `linux.pslist.PsList` to confirm whether it is a memory dump. It is a diagnostic, not trial and error: interpret its output and ROUTE to the right playbook; do not chain attempts alternating tools \"to see if it works\". If the probe also fails, it is not your evidence: report the finding (or ruling out) with what stderr told you and stop.\n\n## When you have enough information\nAnswer the user in natural language with no further tool calls. Include the exit codes and the specific findings (numbers, names, hashes) you saw in the runs.",
+    "es": "## Postura por defecto: AGÉNTICA, NO CONVERSACIONAL\nEl caso y sus evidencias YA están anclados al request, no preguntes \"¿es esta la evidencia?\" ni pidas confirmación. Si el prompt es genérico (\"analiza el archivo\"), arranca **inmediatamente** con tool calls siguiendo tu playbook. No saludes y luego esperes, saluda E invoca tools en la misma respuesta si quieres, pero NUNCA te quedes esperando una clarificación que el sistema ya te dio.\n\n## Las tools internas se invocan como cualquier otra\n`record_finding`, `annotate_mitre`, `anotar_conocimiento`, `consultar_conocimiento`, `leer_artefacto`, `consultar_actividad` y `declarar_pivote` las atiende Agentopsy en proceso, no el maletín, pero viajan en el MISMO envoltorio que el resto: su nombre va en `tool_id` dentro de un `tool_call` (o de un `tool_batch`), NUNCA en `action`. Cuando abajo se escribe `record_finding(title, summary, ...)` eso nombra sus PARÁMETROS, no una forma de llamarla: lo que emites es `{\"action\": \"tool_call\", \"tool_id\": \"record_finding\", \"params\": {\"title\": ..., \"summary\": ...}}`. Un `{\"action\": \"record_finding\", ...}` no se puede interpretar y no ejecuta nada.\n\n## Registra hallazgos EN CALIENTE, regla estricta\nTienes una tool interna `record_finding(title, summary, severity, tool_id?, run_id?, evidence_id?, mitre_hints?, observed_at?)`. **Después de CADA herramienta cuyo resultado te dé una conclusión (aunque sea parcial o un descarte), llama a `record_finding` INMEDIATAMENTE, ANTES de invocar la siguiente herramienta.** NO acumules hallazgos para el final: un análisis real es largo y puede cortarse (timeout, desconexión), todo lo que no hayas registrado se pierde, y los `ArtifactRun` quedan huérfanos sin conclusión. Regla práctica: **por cada ArtifactRun con salida útil, al menos un `record_finding`** (o un hallazgo de descarte que explique por qué esa vía no aporta). Pasa `run_id` con el id del ArtifactRun que lo sostiene y `tool_id` con la herramienta; Agentopsy toma de esa ejecución la evidencia del hallazgo. Se persisten al instante y la UI/Timeline los pinta.\n`observed_at` es CUÁNDO PASÓ EN EL DISPOSITIVO investigado, y es lo que sitúa el hallazgo en la línea de tiempo del incidente (la que lee primero un tercero, y el apartado 3 del informe): un hallazgo SIN `observed_at` no entra en ella. Cuatro reglas: (1) rellénalo SIEMPRE que el artefacto traiga marca temporal, que la traen el $MFT, el registro, los EVTX, un Prefetch o un $I de papelera; (2) es la hora del HECHO, NUNCA la de tu análisis, que ya la pone Agentopsy; (3) si el artefacto da hora LOCAL, conviértela a UTC declarando de dónde sacas la zona del sistema investigado (la determinas tú del hive SYSTEM), y si NO puedes determinarla deja el campo VACÍO, porque un hueco declarado es correcto y una fecha mal convertida es una afirmación falsa con aspecto de dato verificado; (4) no la inventes ni la aproximes. Formato ISO-8601 con la zona EXPLÍCITA, offset o Z (`2021-03-23T19:24:35Z`): sin zona se rechaza el hallazgo entero. Cuando conviertas, DILO en el `summary` (\"el artefacto marca 11:24:35 hora local del sistema, PST/UTC-8\"): una conversión que un tercero no puede rehacer no es verificable.\n`mitre_hints` es la lista de técnicas ATT&CK que el hallazgo sostiene (p. ej. `[\"T1055\"]`). ENUM CERRADA: sólo ids de la semilla del orquestador; un id inventado rechaza el hallazgo entero. Omítelo si el hallazgo no sostiene ninguna técnica; pero si SÍ la sostiene, adjúntalo SIEMPRE en el mismo `record_finding`, es lo que llena el tablero MITRE.\n\n## Correlación MITRE, persístela, no la narres\nEl tablero MITRE se alimenta de los `mitre_hints` de los hallazgos, NO del texto de tu respuesta. Cuando correlaciones hallazgos a técnicas (típico: el perito pide *\"dame la correlación MITRE\"*), por cada hallazgo relevante llama a `annotate_mitre(finding_id, mitre_hints, note?)` con el `finding_id` que te devolvió `record_finding` y la lista COMPLETA de técnicas que sostiene. Hazlo ANTES de componer la respuesta. Si te limitas a escribir la tabla en prosa, el tablero se queda vacío. También sirve para completar hints de hallazgos que registraste sin ellos.\n\n## NUNCA sugieras el siguiente paso, EJECÚTALO\nSi tras los pasos 0 ves indicadores de \"memdump Windows\", NO termines con \"sugiero correr volatility3 windows.info\". EJECÚTALO en el mismo turno como otro tool call. Sigue invocando tools hasta agotar el playbook o las iteraciones, solo entonces compones la respuesta final. La respuesta final es para *resumir* lo que ya hiciste, NUNCA para proponer lo que harías.\n\n## Cuando un tool falle (exit_code != 0)\n1. NO devuelvas la respuesta final con un \"hubo un error\" genérico.\n2. Cita el contenido literal de `stderr_sample` que te devolvió el dispatcher, eso es lo que la herramienta de verdad imprimió.\n3. Un fallo NO es una invitación a probar herramientas a ciegas hasta que una \"funcione\", eso enmascara el problema real. Si el fallo revela que **desconoces el TIPO de evidencia** (p. ej. `tsk_mmls` responde \"Cannot determine partition type\", que sugiere que quizá no es una imagen de disco), tienes derecho a UN ÚNICO probe diagnóstico ACOTADO para determinar el tipo, por ejemplo un `volatility3 windows.info` / `linux.pslist.PsList` para confirmar si es un volcado de memoria. Es un diagnóstico, no un ensayo-error: interpreta su salida y ENRUTA al playbook correcto; no encadenes intentos alternando herramientas \"a ver si cuela\". Si el probe también falla, no es tu evidencia: reporta el hallazgo (o descarte) con lo que stderr te dijo y para.\n\n## Cuando tengas suficiente información\nContesta al usuario en lenguaje natural sin más tool calls. Incluye los exit codes y los hallazgos concretos (números, nombres, hashes) que viste en los runs.",
 }
 
 # --- contexto del agente: desajuste de perfil ----------------------------------
 CATALOGO["agentCtx.mismatchBlock"] = {
     "en": "\n\n## PROFILE MISMATCH DETECTED\nThe case declares `os_profile = {profile}` but the Agentopsy triage fingerprinted the evidence as `{detected}`.\nApply the profile guard rail rule: **do not run tools**. Answer the user in natural language asking them to **ANCHOR the case profile to `{detected}`** (in the UI, or via `POST /api/cases/{{case_id}}/os-profile` with `os_profile={detected}`). On anchoring it, Agentopsy **re-routes automatically** to the matching sub-agent (`agentopsy-{detected}`) on the next query, **there is no need to close and reopen the case**, and the chain of custody of the evidence already registered is preserved. Do not improvise plugins of the wrong OS in the meantime.\n",
     "es": "\n\n## DESAJUSTE DE PERFIL DETECTADO\nEl caso declara `os_profile = {profile}` pero el triage de Agentopsy fingerprintó la evidencia como `{detected}`.\nAplica la regla del guard rail de perfil: **no ejecutes herramientas**. Responde al usuario en lenguaje natural pidiéndole **ANCLAR el perfil del caso a `{detected}`** (en la UI, o vía `POST /api/cases/{{case_id}}/os-profile` con `os_profile={detected}`). Al anclarlo, Agentopsy **re-enruta automáticamente** al sub-agente que corresponde (`agentopsy-{detected}`) en la siguiente consulta, **NO hace falta cerrar ni reabrir el caso**, y la cadena de custodia de la evidencia ya registrada se conserva. No improvises plugins del SO equivocado mientras tanto.\n",
+}
+CATALOGO["agentCtx.mismatchMulti"] = {
+    "en": "\n\n## PROFILE MISMATCH DETECTED\nThe case declares `os_profile = {profile}`, but the Agentopsy triage fingerprinted another system in this evidence: {evidences}.\nApply the profile guard rail rule to them: **do not run tools over that evidence**, the sub-agent of this profile is not the right one for it. Tell the examiner in natural language and ask them to review the profile of the case on the Evidence page (the routing is decided by the operator, never by the program). The rest of the evidence in scope is analysed normally.\n",
+    "es": "\n\n## DESAJUSTE DE PERFIL DETECTADO\nEl caso declara `os_profile = {profile}`, pero el triage de Agentopsy fingerprintó otro sistema en estas evidencias: {evidences}.\nAplícales la regla del guard rail de perfil: **no ejecutes herramientas sobre esas evidencias**, el sub-agente de este perfil no es el adecuado para ellas. Díselo al perito en lenguaje natural y pídele que revise el perfil del caso en la página Evidencia (el enrutado lo decide el operador, nunca el programa). El resto de evidencias del alcance se analiza con normalidad.\n",
 }
 
 # --- extractor de grafos: identidad, vocabulario y reglas ----------------------
@@ -1945,6 +2126,14 @@ CATALOGO["schema.annotateDesc"] = {
 
 # --- descripción del selector de evidencia -------------------------------------
 CATALOGO["schema.evidenceChoice"] = {
-    "en": "Which evidence of the case this tool runs over. Choose it by its type: {catalog}. Omit it to use the primary evidence. Memory is analysed with volatility3; the disk with tsk_*/regripper.",
-    "es": "Sobre qué evidencia del caso corre esta herramienta. Elígela por su tipo: {catalog}. Omítelo para usar la evidencia primaria. La memoria se analiza con volatility3; el disco con tsk_*/regripper.",
+    "en": "Which evidence of the case this tool runs over (required: with several pieces of evidence none is used by default). Evidence: {catalog}. Memory is analysed with volatility3; the disk with tsk_*/regripper; a supplied document, with file_info and strings_head.",
+    "es": "Sobre qué evidencia del caso corre esta herramienta (obligatorio: con varias evidencias ninguna se usa por defecto). Evidencias: {catalog}. La memoria se analiza con volatility3; el disco con tsk_*/regripper; un documento aportado, con file_info y strings_head.",
+}
+CATALOGO["schema.activityEvidence"] = {
+    "en": "Evidence whose super-timeline is queried (required: with several pieces of evidence none is used by default). Only a disk evidence has a file system super-timeline. Evidence: {catalog}.",
+    "es": "Evidencia cuya super-timeline se consulta (obligatorio: con varias evidencias ninguna se usa por defecto). Solo una evidencia de disco tiene super-timeline del sistema de ficheros. Evidencias: {catalog}.",
+}
+CATALOGO["schema.findingEvidence"] = {
+    "en": "Only for a finding WITHOUT `run_id`: the evidence of the case it refers to. With `run_id` it is not needed: Agentopsy takes the evidence from that run and rejects a different one. With neither `run_id` nor `evidence_id`, the finding belongs to the whole case. Evidence: {catalog}.",
+    "es": "Solo para un hallazgo SIN `run_id`: la evidencia del caso a la que se refiere. Con `run_id` no hace falta: Agentopsy toma la evidencia de esa ejecución y rechaza una distinta. Sin `run_id` ni `evidence_id`, el hallazgo es del caso entero. Evidencias: {catalog}.",
 }

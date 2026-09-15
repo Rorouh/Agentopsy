@@ -1,12 +1,17 @@
 """Documentos / informes del caso.
 
-Cuatro piezas. El **almacén** de documentos con su integridad SHA-256
+Cinco piezas. El **almacén** de documentos con su integridad SHA-256
 (``store``); el **índice canónico** del informe pericial (``indice``), que es lo
 ÚNICO que dos informes tienen en común; el **material** que el caso ha
-persistido (``material`` + ``works``), sin una sola frase redactada; y el
+persistido (``material`` + ``works``), sin una sola frase redactada; el
 **redactor** (``writer``), que entrega ese material al ejecutor seleccionado por
 el operador para que escriba el informe de principio a fin y valida lo que
-devuelve antes de que llegue al almacén.
+devuelve antes de que llegue al almacén; y las **figuras** del anexo C
+(``figuras``, con ``figura_cronologia``, ``figura_grafo`` y ``svg``), la línea
+de tiempo del incidente y el grafo de relaciones del caso, que no redacta el
+modelo: Agentopsy las dibuja con los datos registrados, siempre sobre papel
+blanco, y quedan congeladas dentro del contenido que el SHA-256 protege. La
+tipografía del informe (``estilo``) la comparten el redactor y las figuras.
 
 **La plantilla determinista se retiró el 2026-07-30** (``generator`` /
 ``narrative`` / ``humanize``, y con ellos el borrador automático al cerrar un

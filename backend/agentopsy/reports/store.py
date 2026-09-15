@@ -22,6 +22,7 @@ from typing import Any
 
 from agentopsy.audit.log import AuditLog
 from agentopsy.cases import CaseManager, case_manager
+from agentopsy.reports.svg import validar_svg
 
 _UUID4_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
@@ -29,9 +30,17 @@ _UUID4_RE = re.compile(
 
 STATUSES = frozenset({"draft", "final"})
 # Bloques del cuerpo de un informe pericial: párrafo, sub-encabezado, cita,
-# lista, bloque de código/comando, pares clave-valor, tabla y hallazgo.
-_BLOCK_TYPES = frozenset({"p", "h3", "quote", "list", "code", "kv", "table", "finding"})
+# lista, bloque de código/comando, pares clave-valor, tabla, hallazgo y figura.
+# La figura (``figure``) solo la compone Agentopsy (anexo C, ``reports.figuras``):
+# el redactor no la admite en la respuesta del modelo.
+_BLOCK_TYPES = frozenset(
+    {"p", "h3", "quote", "list", "code", "kv", "table", "finding", "figure"}
+)
 _SEVERITIES = frozenset({"critical", "high", "medium", "low"})
+#: Las figuras que existen. Cerrado: una figura nueva se declara aquí.
+FIGURE_KINDS = frozenset({"incident_timeline", "case_graph"})
+#: Lo que cuenta una figura en la estimación de páginas: del orden de una hoja.
+_CHARS_POR_FIGURA = 3000
 
 
 def _utc_now_iso() -> str:
@@ -51,7 +60,8 @@ class Document:
     author: str
     summary: str
     #: Secciones estructuradas: cada una ``{num, title, blocks:[…]}`` con bloques
-    #: ``p`` / ``code`` / ``kv`` / ``table`` / ``finding`` (mismo modelo que la UI).
+    #: ``p`` / ``code`` / ``kv`` / ``table`` / ``finding`` / ``figure`` (mismo
+    #: modelo que la UI).
     sections: list[dict[str, Any]]
     #: SHA-256 del contenido canónico, fijado al crear. La integridad se verifica
     #: recomputándolo y comparando.
@@ -93,12 +103,32 @@ def _estimate_pages(summary: str, sections: list[dict[str, Any]]) -> int:
     for sec in sections:
         chars += len(sec.get("title", ""))
         for b in sec.get("blocks", []):
+            if b.get("t") == "figure":
+                # El SVG no es texto que se lea: la figura ocupa su hoja.
+                chars += _CHARS_POR_FIGURA
+                continue
             chars += len(b.get("text", "") or "")
             for kv in b.get("pairs", []) or []:
                 chars += len(str(kv.get("k", ""))) + len(str(kv.get("v", "")))
             for row in b.get("rows", []) or []:
                 chars += sum(len(str(c)) for c in row)
     return max(1, -(-chars // 3000))  # ceil
+
+
+def _validate_figure(b: dict[str, Any]) -> None:
+    """Un bloque ``figure``: qué figura es, su título y un SVG que pasa la lista
+    blanca de ``reports.svg``. El SVG se renderiza en la web como imagen y en el
+    PDF como vector, y en los dos sitios tiene que ser inofensivo aunque el
+    documento llegue por ``POST …/documents`` con el cuerpo que se quiera."""
+    if b.get("kind") not in FIGURE_KINDS:
+        raise ValueError(f"figure block needs kind in {sorted(FIGURE_KINDS)}")
+    title = b.get("title")
+    if not isinstance(title, str) or not title.strip():
+        raise ValueError("figure block needs a non-empty title")
+    validar_svg(b.get("svg"))
+    extra = set(b) - {"t", "kind", "title", "svg"}
+    if extra:
+        raise ValueError(f"figure block carries unknown keys {sorted(extra)}")
 
 
 def _validate_sections(raw: Any) -> list[dict[str, Any]]:
@@ -127,6 +157,8 @@ def _validate_sections(raw: Any) -> list[dict[str, Any]]:
                 raise ValueError(f"finding block needs sev in {sorted(_SEVERITIES)}")
             if t == "list" and not isinstance(b.get("items"), list):
                 raise ValueError("list block needs an 'items' list")
+            if t == "figure":
+                _validate_figure(b)
             blocks.append(b)
         out.append({"num": str(sec.get("num", "")), "title": title, "blocks": blocks})
     return out

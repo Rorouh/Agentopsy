@@ -209,8 +209,37 @@ class PromptExecutor(ABC):
     #: discover it in the bill (RULE 2: no silent degradation).
     supports_session_resume: bool = False
 
+    #: Whether ONE run of this executor is bounded by a wall-clock limit.
+    #: Declared per executor, never inferred from the context (RULE 2).
+    #:
+    #: True for the three cloud CLIs: the turn leaves the machine, the vendor
+    #: bills it, and a hung CLI must not hold the analysis forever (the
+    #: 2026-07-02 E2E watched Gemini hang the whole 600 s of the old default).
+    #: False for Ollama, the 100 % local option: nothing leaves the machine,
+    #: nothing is billed per second, and the examiner's own model on the
+    #: examiner's own hardware legitimately takes far longer than a limit
+    #: calibrated against a cloud CLI. A 32B model writing a full pericial
+    #: report is minutes of GPU, not seconds; killing it at 300 s threw away the
+    #: entire draft and bought nothing back. See ``timeout_for``.
+    enforces_timeout: bool = True
+
     @abstractmethod
     def is_available(self) -> ExecutorAvailability: ...
+
+    def timeout_for(self, context: dict[str, Any]) -> int | None:
+        """Seconds one run may take, or ``None`` when this executor is unbounded.
+
+        The single place the two axes meet. WHETHER a limit applies is the
+        executor's, declared in ``enforces_timeout``; HOW LONG it is, when one
+        does, is the operator's (``resolve_timeout``: caller → Settings/env →
+        designed default). An unbounded executor never reads the configured
+        value, so a corrupt AGENTOPSY_EXECUTOR_TIMEOUT cannot abort a run it
+        does not govern; it still fails loud the moment a bounded executor is
+        selected, which is where it actually acts (RULE 2).
+        """
+        if not self.enforces_timeout:
+            return None
+        return resolve_timeout(context)
 
     def _extract_usage(self, raw: str) -> Usage | None:
         """Best-effort token/cost accounting from the executor's own envelope.
@@ -231,7 +260,9 @@ class PromptExecutor(ABC):
           literal argv (or the HTTP request for Ollama).
         - ``case_id``: case the audit entries belong to.
         - ``timeout``: seconds (else AGENTOPSY_EXECUTOR_TIMEOUT, else
-          ``DEFAULT_TIMEOUT_S`` — see ``resolve_timeout``).
+          ``DEFAULT_TIMEOUT_S`` — see ``resolve_timeout``). Read only by an
+          executor that declares ``enforces_timeout``; Ollama runs unbounded
+          and ignores it (see ``timeout_for``).
         - ``model`` / ``temperature``: Ollama only (see ``OllamaExecutor``).
         """
 
@@ -302,7 +333,7 @@ def neutral_cwd() -> str:
 
 
 def resolve_timeout(context: dict[str, Any]) -> int:
-    """Timeout in seconds for one executor run.
+    """How LONG a bounded run may take, in seconds.
 
     Resolution order — every step operator-explicit, then the designed default
     (allowed by RULE 2): ``context['timeout']`` (caller) → AGENTOPSY_EXECUTOR_TIMEOUT
@@ -310,6 +341,10 @@ def resolve_timeout(context: dict[str, Any]) -> int:
 
     An UNPARSEABLE value fails loudly instead of silently reverting to the
     default (RULE 2: a typo in Settings must surface, not vanish).
+
+    It does NOT decide whether a limit applies at all: that is the executor's
+    declared ``enforces_timeout``, and ``PromptExecutor.timeout_for`` is the
+    entry point every run goes through.
     """
     raw = context.get("timeout")
     source = "context['timeout']"
@@ -477,7 +512,10 @@ class CliPromptExecutor(PromptExecutor):
             validate_model_id(session_id)
 
         argv = self._build_argv(prompt, model, session_id)
-        timeout = resolve_timeout(ctx)
+        # ``None`` = unbounded, which ``subprocess.run`` reads as "no limit".
+        # The three CLIs declare a bound; the branch keeps the contract honest
+        # for any executor that ever declares otherwise.
+        timeout = self.timeout_for(ctx)
         cwd = neutral_cwd()
         audit = ctx.get("audit")
         case_id = ctx.get("case_id")
@@ -499,6 +537,11 @@ class CliPromptExecutor(PromptExecutor):
                 # into the model's context (agentes/agent.md is the ONE
                 # behavioural file). Audited so the isolation is verifiable.
                 "cwd": cwd,
+                # The wall-clock bound this run was launched under, or null when
+                # the executor runs unbounded. A turn that ended at a limit and a
+                # turn that could never end at one are different facts about the
+                # run, and the audit is where a third party reads them.
+                "timeout_s": timeout,
                 # Whether this turn continued a session (prompt = delta) or opened
                 # one (prompt = full context). Without it the audited argv alone
                 # could not tell a short prompt that is a delta from a short prompt

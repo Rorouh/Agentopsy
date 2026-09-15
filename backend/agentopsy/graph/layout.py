@@ -158,8 +158,11 @@ def _desfase(semilla: str) -> float:
     return (int(h, 16) % 3600) / 3600 * 2 * math.pi
 
 
-def _etiqueta(valor: str) -> str:
-    """Lo que el cliente pinta debajo del nodo, recortado igual que allí."""
+def etiqueta_de_nodo(valor: str) -> str:
+    """Lo que se pinta debajo del nodo, recortado igual en el cliente y en la
+    figura del informe (``reports.figura_grafo``): la reserva de sitio de este
+    módulo se calcula sobre ESTE texto, así que quien lo pinte tiene que pintar
+    exactamente este."""
     return valor if len(valor) <= MAX_CHARS_ETIQUETA else f"{valor[:MAX_CHARS_ETIQUETA - 1]}…"
 
 
@@ -169,7 +172,7 @@ def ancho_caja(nodo: dict[str, Any]) -> float:
     Es pública porque la reserva de sitio de un nodo tiene que ser LA MISMA en
     todo lo que coloque nodos, y desde 2026-09-04 la banda de entidades sueltas
     (``agentopsy.graph.inventario``) también coloca."""
-    etiqueta = _etiqueta(str(nodo.get("valor", "")))
+    etiqueta = etiqueta_de_nodo(str(nodo.get("valor", "")))
     return max(2 * RADIO_NODO, len(etiqueta) * ANCHO_CARACTER) + _AIRE_X
 
 
@@ -495,6 +498,7 @@ __all__ = [
     "MAX_CHARS_ETIQUETA",
     "RADIO_NODO",
     "ancho_caja",
+    "etiqueta_de_nodo",
     "layout_caso",
     "layout_hallazgo",
 ]

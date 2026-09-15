@@ -38,7 +38,9 @@ api    (backend/, FastAPI)        agentopsy/ = ALL the logic. routers/ are thin 
    │                                           in the agentopsy-cli-auth volume — seeded once
    │                                           from the host creds (ro staging) or created by
    │                                           in-container login (own subscription, NO API keys)
-   │     ollama                                HTTP to the compose ollama service (100% local)
+   │     ollama                                HTTP to the Ollama the operator chose (100% local):
+   │                                           the compose service by default, or the one on the
+   │                                           operator's own machine (Settings beats the env)
    ▼
 toolkit-windows / toolkit-unix    the forensic toolkits ("maletines") — images built by the
                                   compose; evidence mounted read-only
@@ -273,7 +275,8 @@ It applies to three layers, and each enforces it differently:
    rejects a report: typography is not a fact of the case. It never touches a `code`
    block (the audited argv, character by character — FORENSIC INVARIANT 4), leaves a
    compliant text byte-identical, and audits how much it rewrote
-   (`report_written.style_normalized`).
+   (`report_written.style_normalized`). The rule itself lives in `reports/estilo.py`,
+   shared with the annex C figures, whose event titles are text the agent wrote.
 2. **Backend strings** — any literal that can reach the UI, the model or the report.
    Docstrings and comments are development documentation, not product output, and stay
    out of scope.
@@ -282,7 +285,7 @@ It applies to three layers, and each enforces it differently:
 Enforced by `backend/tests/test_estilo_tipografia.py`. Exempt, because there the dash is
 DATA and substituting it would break the code that looks for it: the PDF transliteration
 key (`reports/pdf._PUNCT`), the ATT&CK-seed tactic regex (`mitre/catalog.py`) and
-`writer._RAYA_RE`. A literal may also NAME the character in order to forbid it.
+`reports/estilo._RAYA_RE`. A literal may also NAME the character in order to forbid it.
 
 Typography is not cosmetics here: a report is read by a court-adjacent reader, and the
 model imitates whatever text it is shown — which is why `agent.md` and the index
@@ -413,7 +416,20 @@ tool against the maletín it lives in and degrades with an actionable reason.
 Code, Codex CLI, Gemini CLI, Ollama) plus the `ExecutorBackend` adapter into the
 agent loop. The operator selects one explicitly; there is no default. Sessions
 live in the `agentopsy-cli-auth` volume and can be created or renewed from the UI
-without leaving the app. Session transport sends only the delta when
+without leaving the app. WHICH Ollama is an operator choice too: `agentopsy.config`
+reads `config.json` BEFORE the environment, so the `OLLAMA_HOST` saved in Settings
+beats the compose baseline, and `executors.ollama.resolve_host` turns a loopback
+URL into the host machine when the deployment declared `AGENTOPSY_HOST_GATEWAY`
+(the compose sets `host.docker.internal` plus the matching `extra_hosts`). Unset,
+nothing is rewritten; when it applies, both URLs travel in the availability reason
+and in the audit event. The RUN TIME LIMIT is declared per executor
+(`PromptExecutor.enforces_timeout`), never inferred: the three cloud CLIs are
+bounded by the operator's `AGENTOPSY_EXECUTOR_TIMEOUT` (Settings offers 60/120/300 s
+over a 300 s designed default), because their turn leaves the machine and a hung
+CLI must not hold the analysis; **Ollama runs unbounded**, so a prompt, a graph
+extraction or the whole pericial report wait for the local model to finish. Every
+run records the bound it was launched under (`executor_run_start.timeout_s`, null
+when there is none). Session transport sends only the delta when
 `session_guard` can ACCOUNT for the session, and the CLI subprocesses run in a
 neutral empty cwd so no host `CLAUDE.md`/`AGENTS.md`/`GEMINI.md` leaks into the
 model's context.
@@ -422,7 +438,14 @@ model's context.
 findings hot, and concedes ONE correction round when a response breaks the
 response contract (a failure to EXECUTE is never retried). Findings validate
 `observed_at` as ISO-8601 with an explicit zone: a mark without an offset is
-rejected rather than assumed UTC.
+rejected rather than assumed UTC. A run covers EVERY evidence of the case on equal
+terms, with no primary one: the request carries the case (an `evidence_id` in it is
+a 422), the examiner narrows the scope in the prompt itself, and with several
+evidences every toolkit call and `consultar_actividad` must name its `evidence_id`
+(closed enum, no default). A finding takes its evidence from the run its `run_id`
+cites (`agentopsy.findings.atribucion`); `agent_finding` audits that real evidence
+and how it was determined, and `agent_run_start` anchors the run to every evidence
+with its baseline hash.
 
 **MITRE ATT&CK.** `agentopsy.mitre` paints the full Enterprise catalog. Agent
 proposal and examiner verdict are separate axes and are never merged; an
@@ -431,17 +454,18 @@ require a rationale and land in the audit log.
 
 **Timeline.** Four layers, the entry one being the chronology of the INCIDENT
 (`agentopsy.timeline.hallazgos`), whose axis is `Finding.observed_at` and only
-that. What cannot be placed travels counted and declared, in the view and inside
-the exported PNG.
+that. What cannot be placed travels counted and declared, in the view, inside
+the exported PNG and inside the report figure.
 
 **Graphs.** `agentopsy.graph` extracts entity/relation graphs from a finding's
 prose with closed referents (every entity must appear literally in the title or
 summary), a closed response contract and delimited hostile text. Geometry is
 computed server-side and is deterministic, so a figure adjoined to a report gives
 the same image today and in a year. `fusion` merges the per-finding graphs into
-the case graph; exploration (zoom, pan, focus) lives in the client as a CSS
-transform of the container, so what is serialised to PNG is always the canonical
-geometry.
+the case graph, and `graph.figura` composes its figure (merge, network versus
+loose entities, layout) once for both the Graphs view and the report annex;
+exploration (zoom, pan, focus) lives in the client as a CSS transform of the
+container, so what is serialised to PNG is always the canonical geometry.
 
 **Report.** The pericial report is WRITTEN end to end by the operator-selected
 executor in one call, never filled into a template: the only thing two reports
@@ -449,8 +473,18 @@ share is the index (`agentopsy.reports.indice`). `agentopsy.reports.material`
 gathers everything the case persisted, and `writer.write_report` crosses four
 custody gates before persisting anything (index exact, block model, closed
 referents, literal audited commands), with ONE correction round. A rejection
-publishes nothing and says why. Documents carry SHA-256 content integrity, are
-born drafts, gain pericial validity when signed, and render to a real PDF.
+publishes nothing and says why. The one index entry the model does NOT write is
+annex C, the case figures: `reports.figuras` draws the incident timeline and the
+case relation graph from the recorded data (composed together with the material,
+appended after the gates, audited with each drawing's SHA-256) as SVG `figure`
+blocks frozen into the document, so a signed report keeps the figures it was
+signed with. They are always on white paper (`reports.svg.PAPEL`, the PDF's own
+palette), whatever the UI theme; the timeline is split into whole events that fit
+an A4 page; and a `figure` block only passes a whitelist of the drawing
+vocabulary Agentopsy emits (`reports.svg.validar_svg`, checked by the store and
+again by the PDF, which prints an SVG rewritten from the validated tree, since
+fpdf2 would resolve an `<image href>` from disk or the network). Documents carry SHA-256 content integrity, are born drafts, gain
+pericial validity when signed, and render to a real PDF, figures as vectors.
 
 **Surfaces.** `GET …/pulse` returns an opaque signature per case stream, so the
 SPA refreshes what changed without polling the data itself. The two exports

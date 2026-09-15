@@ -1053,9 +1053,33 @@ _INTERNAL_DESCRIPTIONS: dict[str, str] = {
 }
 
 
-def internal_tool_specs() -> list[dict[str, Any]]:
+#: Herramientas INTERNAS que reciben el selector de evidencia cuando el caso tiene
+#: varias: si es obligatorio y la clave del catálogo que lo describe al modelo.
+_INTERNAL_EVIDENCE_SELECTOR: dict[str, tuple[bool, str]] = {
+    # Consulta la super-timeline de UNA evidencia: sin decir cuál no hay a quién
+    # preguntar, y escoger una por el modelo sería la primaria de antes.
+    "consultar_actividad": (True, "schema.activityEvidence"),
+    # Un hallazgo con `run_id` toma la evidencia de ESA ejecución (la del registro
+    # manda); el selector solo sirve a un hallazgo sin `run_id`, así que no puede
+    # ser obligatorio.
+    "record_finding": (False, "schema.findingEvidence"),
+}
+
+
+def internal_tool_specs(
+    evidence_choices: list[tuple[str, str]] | None = None,
+) -> list[dict[str, Any]]:
     specs: list[dict[str, Any]] = []
     for tid, schema in _INTERNAL_TOOL_SCHEMAS.items():
+        selector = _INTERNAL_EVIDENCE_SELECTOR.get(tid)
+        if selector is not None and evidence_choices:
+            required, description_key = selector
+            schema = _with_evidence_selector(
+                schema,
+                evidence_choices,
+                required=required,
+                description_key=description_key,
+            )
         specs.append({
             "type": "function",
             "function": {
@@ -1068,13 +1092,21 @@ def internal_tool_specs() -> list[dict[str, Any]]:
 
 
 def _with_evidence_selector(
-    schema: dict[str, Any], evidence_choices: list[tuple[str, str]]
+    schema: dict[str, Any],
+    evidence_choices: list[tuple[str, str]],
+    *,
+    required: bool = True,
+    description_key: str = "schema.evidenceChoice",
 ) -> dict[str, Any]:
-    """Inyecta un ``evidence_id`` OPCIONAL en el schema cuando el caso tiene MÁS DE
-    UNA evidencia, para que el agente pueda apuntar cada herramienta a la evidencia
-    adecuada (memoria → volatility3; disco → tsk_*). Con una sola evidencia no se
-    añade nada (Agentopsy inyecta esa por defecto). Devuelve una COPIA — nunca muta
-    el schema del módulo."""
+    """Inyecta ``evidence_id`` (enum cerrado con las evidencias del caso) cuando el
+    caso tiene MÁS DE UNA, para que el agente diga sobre cuál corre cada herramienta
+    (memoria: volatility3; disco: tsk_*).
+
+    Es OBLIGATORIO salvo que se pida lo contrario: con varias evidencias ninguna es
+    primaria ni se usa por defecto (RULE 2), y el bucle rechaza la llamada que lo
+    omite. Con una sola evidencia no se añade nada: esa evidencia es el alcance
+    entero del caso y Agentopsy la inyecta. Devuelve una COPIA, nunca muta el schema
+    del módulo."""
     if len(evidence_choices) <= 1:
         return schema
     catalogo = "; ".join(f"{eid} = {label}" for eid, label in evidence_choices)
@@ -1082,9 +1114,13 @@ def _with_evidence_selector(
     props["evidence_id"] = {
         "type": "string",
         "enum": [eid for eid, _ in evidence_choices],
-        "description": t("schema.evidenceChoice", catalog=catalogo),
+        "description": t(description_key, catalog=catalogo),
     }
-    return {**schema, "properties": props}
+    out = {**schema, "properties": props}
+    if required:
+        previos = [r for r in schema.get("required", []) if r != "evidence_id"]
+        out["required"] = [*previos, "evidence_id"]
+    return out
 
 
 def tool_spec(

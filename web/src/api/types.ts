@@ -139,11 +139,20 @@ export interface ExecutorLoginStatus {
 // persistir el turno igual que el endpoint bloqueante.
 export type StreamEvent =
   | { type: "reasoning"; iteration: number; text: string }
-  | { type: "tool_call"; iteration: number; tool_id: string; params?: Record<string, unknown> }
+  | {
+      type: "tool_call";
+      iteration: number;
+      tool_id: string;
+      // Evidencia del caso sobre la que corre la herramienta. Con varias
+      // evidencias no hay ninguna por defecto: cada llamada nombra la suya.
+      evidence_id?: string | null;
+      params?: Record<string, unknown>;
+    }
   | {
       type: "tool_result";
       iteration: number;
       tool_id: string;
+      evidence_id?: string | null;
       status: "ok" | "nonzero" | "error" | "refused" | "blocked";
       exit_code?: number | null;
       run_id?: string;
@@ -151,7 +160,14 @@ export type StreamEvent =
       argv?: string[] | null;
       summary?: string;
     }
-  | { type: "finding"; iteration: number; title: string; severity: string }
+  | {
+      type: "finding";
+      iteration: number;
+      title: string;
+      severity: string;
+      // La evidencia de la ejecución que sostiene el hallazgo; null si es del caso.
+      evidence_id?: string | null;
+    }
   | { type: "final"; iteration: number; text: string; exhausted?: boolean }
   // Propios del motor local-fit-llm (dos agentes): la lista de tareas que el
   // investigador escribe y mantiene (RA-6), el veredicto del revisor y sus
@@ -165,7 +181,8 @@ export type StreamEvent =
       reply: string;
       iterations?: number;
       tool_calls?: unknown[];
-      evidence_id: string;
+      // El alcance de la corrida: TODAS las evidencias del caso, sin primaria.
+      evidence_ids: string[];
       case_id: string;
       os_profile: string;
       executor: { id: ExecutorId; name: string; local: boolean };
@@ -508,9 +525,10 @@ export interface MitreTactic {
 
 // ── Documentos / informes del caso ────────────────────────────────────────
 // Espejo de agentopsy.reports. Un bloque del cuerpo del informe: párrafo,
-// sub-encabezado, cita, lista, código, pares clave-valor, tabla o hallazgo.
+// sub-encabezado, cita, lista, código, pares clave-valor, tabla, hallazgo o
+// figura.
 export interface DocumentBlock {
-  t: "p" | "h3" | "quote" | "list" | "code" | "kv" | "table" | "finding";
+  t: "p" | "h3" | "quote" | "list" | "code" | "kv" | "table" | "finding" | "figure";
   text?: string;
   ordered?: boolean;
   items?: string[];
@@ -525,6 +543,11 @@ export interface DocumentBlock {
   // PDF ya la imprimía; la web también debe mostrarla, es lo que permite a un
   // perito contrario reejecutar.
   meta?: string;
+  // Sólo para figure (anexo C, lo compone Agentopsy, nunca el modelo): qué
+  // figura es y su SVG, congelado en el documento al redactarlo. `title` es su
+  // texto alternativo. El almacén solo admite un SVG que pasa su lista blanca.
+  kind?: "incident_timeline" | "case_graph";
+  svg?: string;
 }
 
 export interface DocumentSection {
@@ -655,6 +678,11 @@ export interface ToolUsage {
 export interface ConfigKeyStatus {
   set: boolean;
   preview: string | null;
+  // De qué capa sale el valor: "config" lo guardó el operador en Ajustes,
+  // "env" lo fija el despliegue (el compose). Lo guardado GANA sobre el entorno
+  // (backend/agentopsy/config.py), y sin este dato las dos cosas se pintan
+  // igual aunque no se comporten igual al editarlas.
+  source: "config" | "env" | null;
 }
 
 export interface ConfigSnapshot {
@@ -671,10 +699,12 @@ export interface EvidenceSource {
   size: number;
 }
 
+// Sin `evidence_id`: la investigación abarca TODAS las evidencias del caso, sin
+// evidencia primaria (el api responde 422 si se manda). Centrarse en una evidencia
+// se pide en el propio `prompt`.
 export interface QueryRequest {
   prompt: string;
   os_profile?: string;
-  evidence_id?: string;
   case_id?: string;
   // Ejecutor elegido por el OPERADOR para esta petición. Si se omite, el
   // backend solo acepta DEFAULT_EXECUTOR fijado explícitamente en Settings;

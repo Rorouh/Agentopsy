@@ -1645,6 +1645,25 @@ select option:disabled { color: var(--ink-5); }
 }
 /* El único dato que autoriza a empezar: se lee de un vistazo. */
 .inv-evidence-ok { color: var(--ok); }
+/* TODAS las evidencias del caso, una por fila y sin ninguna destacada: son el
+   alcance de la investigación por igual. Con muchas, la lista scrollea por dentro
+   para no empujar Hallazgos y Herramientas fuera del raíl. */
+.inv-evidence-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 30vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.inv-evidence-scope {
+  font-size: var(--fs-1);
+  line-height: 1.5;
+  color: var(--ink-4);
+  margin-top: 10px;
+}
 
 .inv-block {
   /* Encogen a prorrata de su contenido: el bloque más largo (hallazgos) cede
@@ -2072,6 +2091,12 @@ select option:disabled { color: var(--ink-5); }
 }
 .report-kv-k { color: var(--ink-2); }
 .report-kv-v { font-family: var(--font-mono); font-size: var(--fs-2); text-align: right; color: var(--ink); }
+/* Figura del anexo C (línea de tiempo del incidente, grafo del caso). El fondo es
+   BLANCO LITERAL y no un token a propósito: es la figura del informe impreso, y
+   no sigue el tema claro u oscuro de la interfaz. El SVG ya trae su fondo; este
+   cubre el instante en que la imagen aún no ha pintado. */
+.report-figure { margin: 0; background: #ffffff; border: 1px solid var(--hair); }
+.report-figure-img { display: block; width: 100%; height: auto; }
 .report-finding { border-left: 2px solid var(--line); padding-left: 16px; }
 .report-finding.is-hot { border-left-color: var(--accent); }
 .report-finding-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
@@ -2156,6 +2181,10 @@ select option:disabled { color: var(--ink-5); }
 .settings-lede { font-size: var(--fs-3); line-height: 1.6; color: var(--ink-2); max-width: 46em; }
 .settings-inline { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
 .settings-inline-label { min-width: 148px; }
+/* Un ajuste con nota al pie: la fila conserva su alineación y la nota cuelga
+   debajo, sin el hueco de 36px que .settings-stack pone entre bloques. */
+.settings-field { display: flex; flex-direction: column; gap: 8px; }
+.settings-field .engine-note { max-width: 46em; }
 .settings-foot { font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-4); }
 
 /* Un motor por fila: disponibilidad, ámbito, por-defecto y modelo en la misma

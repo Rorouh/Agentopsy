@@ -85,6 +85,14 @@ def _call(tool_id: str, **params: Any) -> ToolCall:
 
 
 class _FakeEvidence:
+    def __init__(self, evidence_id: str = "e") -> None:
+        # El caso de prueba tiene UNA evidencia. La investigación abarca TODAS las
+        # del caso (`list`), y con una sola esa es el alcance entero.
+        self._evidence_id = evidence_id
+
+    def list(self, case_id: str) -> list[SimpleNamespace]:
+        return [self.get(case_id, self._evidence_id)]
+
     def get(self, case_id: str, evidence_id: str) -> SimpleNamespace:
         return SimpleNamespace(
             evidence_id=evidence_id,
@@ -128,7 +136,7 @@ def test_anotar_persiste_y_devuelve_ok(wired) -> None:
         )
     ])
 
-    result = agent.run("anota", case_id=case_id, evidence_id="e")
+    result = agent.run("anota", case_id=case_id)
 
     logged = [c for c in result["tool_calls"] if c["tool_id"] == "anotar_conocimiento"]
     assert logged and logged[0].get("error") is None
@@ -147,7 +155,7 @@ def test_anotar_queda_en_el_audit_sin_el_contenido(wired) -> None:
             content="SECRETO-QUE-NO-DEBE-ESTAR-EN-EL-AUDIT",
         )
     ])
-    agent.run("anota", case_id=case_id, evidence_id="e")
+    agent.run("anota", case_id=case_id)
 
     audit_path = cases.case_dir(case_id) / "audit.jsonl"
     entries = [
@@ -177,7 +185,7 @@ def test_doc_id_invalido_no_tumba_el_run_y_vuelve_como_error(wired) -> None:
         _call("anotar_conocimiento", doc_id="recuperado", section="s", content="c"),
     ])
 
-    result = agent.run("anota", case_id=case_id, evidence_id="e")
+    result = agent.run("anota", case_id=case_id)
 
     calls = [c for c in result["tool_calls"] if c["tool_id"] == "anotar_conocimiento"]
     assert "doc_id" in (calls[0].get("error") or "")
@@ -191,7 +199,7 @@ def test_contenido_gigante_se_rechaza_con_error_accionable(wired) -> None:
     agent, _ = build([
         _call("anotar_conocimiento", doc_id="n", section="s", content="x" * 99_999)
     ])
-    result = agent.run("anota", case_id=case_id, evidence_id="e")
+    result = agent.run("anota", case_id=case_id)
     err = result["tool_calls"][0].get("error") or ""
     assert "tope" in err and "run_id" in err
 
@@ -210,7 +218,7 @@ def test_un_nodo_del_caso_vuelve_marcado_no_confiable(wired) -> None:
     store.append(case_id, "leads", "key-exe", "Ejecutable sospechoso en el Desktop")
 
     agent, model = build([_call("consultar_conocimiento", doc_id="leads")])
-    agent.run("consulta", case_id=case_id, evidence_id="e")
+    agent.run("consulta", case_id=case_id)
 
     # El ÚLTIMO estado que vio el modelo lleva el resultado de la tool.
     served = _tool_messages(model.seen_messages[-1])
@@ -225,7 +233,7 @@ def test_un_doc_estatico_del_paquete_sigue_siendo_de_confianza(wired) -> None:
     agent, model = build([
         _call("consultar_conocimiento", doc_id="artefactos-windows")
     ])
-    agent.run("consulta", case_id=case_id, evidence_id="e")
+    agent.run("consulta", case_id=case_id)
 
     served = _tool_messages(model.seen_messages[-1])
     assert served, "el doc del paquete debería haberse servido"
@@ -240,7 +248,7 @@ def test_el_nodo_del_caso_gana_al_doc_del_paquete_con_el_mismo_id(wired) -> None
     store.append(case_id, "artefactos-windows", "mi-nota", "LO-MIO-DEL-CASO")
 
     agent, model = build([_call("consultar_conocimiento", doc_id="artefactos-windows")])
-    agent.run("consulta", case_id=case_id, evidence_id="e")
+    agent.run("consulta", case_id=case_id)
 
     served = _tool_messages(model.seen_messages[-1])
     assert "LO-MIO-DEL-CASO" in served
@@ -252,7 +260,7 @@ def test_id_desconocido_nombra_los_dos_ambitos(wired) -> None:
     store.append(case_id, "cronologia", "s", "c")
 
     agent, _ = build([_call("consultar_conocimiento", doc_id="no-existe")])
-    result = agent.run("consulta", case_id=case_id, evidence_id="e")
+    result = agent.run("consulta", case_id=case_id)
 
     err = result["tool_calls"][0].get("error") or ""
     # El paquete ya no trae docs estáticos (contrato de archivo único): la
@@ -291,13 +299,13 @@ def test_anotar_se_ofrece_siempre_consultar_cuando_hay_algo(wired) -> None:
 
     # Caso vacío: solo anotar.
     agent, model = build([])
-    agent.run("hola", case_id=case_id, evidence_id="e")
+    agent.run("hola", case_id=case_id)
     assert "anotar_conocimiento" in model.offered_tools
     assert "consultar_conocimiento" not in model.offered_tools
 
     # Tras escribir un nodo, consultar aparece.
     store.append(case_id, "cronologia", "s", "c")
     agent2, model2 = build([])
-    agent2.run("hola", case_id=case_id, evidence_id="e")
+    agent2.run("hola", case_id=case_id)
     assert "anotar_conocimiento" in model2.offered_tools
     assert "consultar_conocimiento" in model2.offered_tools

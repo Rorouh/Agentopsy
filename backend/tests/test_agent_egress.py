@@ -25,6 +25,7 @@ from agentopsy.agent.package import (
     RedactionPattern,
 )
 from agentopsy.agent.redaction import apply_redaction, redact_messages
+from agentopsy.artifacts.store import ArtifactStore
 from agentopsy.audit.log import AuditLog
 from agentopsy.cases.manager import CaseManager
 from agentopsy.evidence import EvidenceManager
@@ -170,7 +171,6 @@ class TestRedaction:
         agent.run(
             prompt="analiza el archivo",
             case_id=anchored["case"].id,
-            evidence_id=anchored["handle"].evidence_id,
         )
 
         # Last payload = the conversation AFTER the tool result was appended.
@@ -199,7 +199,6 @@ class TestRedaction:
         agent.run(
             prompt="analiza el archivo",
             case_id=anchored["case"].id,
-            evidence_id=anchored["handle"].evidence_id,
         )
 
         sent = json.dumps(backend.seen_messages[-1])
@@ -219,13 +218,26 @@ class TestAudit:
             "agentopsy.agent.agent.finding_store", FindingStore(cases)
         )
 
+        # The finding cites a REAL run of the case: its evidence is read from that
+        # run's manifest (findings.atribucion), never assumed.
+        store = ArtifactStore(cases)
+        monkeypatch.setattr("agentopsy.agent.agent.artifact_store", store)
+        run_id, _out = store.start_run(
+            anchored["case"].id,
+            "file_info",
+            ["file", "e.raw"],
+            evidence_id=anchored["handle"].evidence_id,
+            evidence_baseline_sha256=anchored["handle"].sha256,
+            tool_version="5.45",
+        )
+
         audit = AuditLog(cases.case_dir(anchored["case"].id) / "audit.jsonl")
         finding_call = ToolCall(
             tool_id="record_finding",
             params={
                 "title": "Hallazgo", "summary": "algo relevante", "severity": "low",
                 # Hallazgo afirmativo: el store exige procedencia (run_id) — RULE 2.
-                "run_id": "11111111-1111-4111-8111-111111111111",
+                "run_id": run_id,
             },
             call_id="c1",
         )
@@ -239,7 +251,6 @@ class TestAudit:
         agent.run(
             prompt="analiza",
             case_id=anchored["case"].id,
-            evidence_id=anchored["handle"].evidence_id,
         )
 
         events = [
@@ -264,6 +275,19 @@ class TestAudit:
 
         finding_ev = next(e for e in events if e.get("event") == "agent_finding")
         assert finding_ev["finding_id"]
+        # The audit records the REAL evidence of the finding and how it was known.
+        assert finding_ev["evidence_id"] == anchored["handle"].evidence_id
+        assert finding_ev["evidence_source"] == "run"
+        assert finding_ev["run_id"] == run_id
+
+        # The run start is anchored to the whole scope of the case.
+        start = next(e for e in events if e.get("event") == "agent_run_start")
+        assert start["evidences"] == [
+            {
+                "evidence_id": anchored["handle"].evidence_id,
+                "baseline_sha256": anchored["handle"].sha256,
+            }
+        ]
 
     def test_local_run_audits_start_without_egress(self, anchored):
         cases = anchored["cases"]
@@ -278,7 +302,6 @@ class TestAudit:
         agent.run(
             prompt="analiza",
             case_id=anchored["case"].id,
-            evidence_id=anchored["handle"].evidence_id,
         )
         kinds = [
             json.loads(line).get("event")

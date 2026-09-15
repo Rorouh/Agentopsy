@@ -384,32 +384,45 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
                                 </div>
                               )}
 
-                              {/* El host de Ollama sigue siendo configurable: en el
-                                  compose llega por entorno, pero una ejecución
-                                  standalone lo necesita. */}
+                              {/* El host de Ollama es donde el perito elige QUÉ
+                                  Ollama usa: el que levanta el compose o el que
+                                  ya tiene corriendo en su equipo (con sus
+                                  modelos y su GPU). El compose fija una línea
+                                  base por entorno y lo guardado aquí gana sobre
+                                  ella (backend/agentopsy/config.py); por eso la
+                                  nota avisa cuando el valor a la vista todavía
+                                  es el del despliegue. */}
                               {id === "ollama" && (
-                                <div className="engine-custom">
-                                  <label className="visually-hidden" htmlFor="ollama-host">
-                                    Ollama host
-                                  </label>
-                                  <input
-                                    id="ollama-host"
-                                    className="field-input field-input--sm"
-                                    value={ollamaHostDraft}
-                                    onChange={(e) => setOllamaHostDraft(e.target.value)}
-                                    placeholder="http://ollama:11434"
-                                  />
-                                  <button
-                                    type="button"
-                                    className="link-action"
-                                    disabled={
-                                      savingKey === "OLLAMA_HOST" || !ollamaHostDraft.trim()
-                                    }
-                                    onClick={() => void saveKey("OLLAMA_HOST", ollamaHostDraft)}
-                                  >
-                                    {t("settings.saveHost")}
-                                  </button>
-                                </div>
+                                <>
+                                  <div className="engine-custom">
+                                    <label className="visually-hidden" htmlFor="ollama-host">
+                                      Ollama host
+                                    </label>
+                                    <input
+                                      id="ollama-host"
+                                      className="field-input field-input--sm"
+                                      value={ollamaHostDraft}
+                                      onChange={(e) => setOllamaHostDraft(e.target.value)}
+                                      placeholder="http://localhost:11434"
+                                    />
+                                    <button
+                                      type="button"
+                                      className="link-action"
+                                      disabled={
+                                        savingKey === "OLLAMA_HOST" || !ollamaHostDraft.trim()
+                                      }
+                                      onClick={() => void saveKey("OLLAMA_HOST", ollamaHostDraft)}
+                                    >
+                                      {t("settings.saveHost")}
+                                    </button>
+                                  </div>
+                                  <div className="engine-note">
+                                    {t("settings.ollamaHostHint")}
+                                    {config?.keys.OLLAMA_HOST?.source === "env" && (
+                                      <> {t("settings.ollamaHostFromEnv")}</>
+                                    )}
+                                  </div>
+                                </>
                               )}
 
                               {status.available ? (
@@ -460,21 +473,30 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
                 )}
               </div>
 
-              <div className="settings-inline">
-                <div className="eyebrow settings-inline-label">{t("settings.timeout")}</div>
-                <div className="engine-models">
-                  {TIMEOUT_OPTIONS.map((v) => (
-                    <button
-                      key={v}
-                      type="button"
-                      className={`chip-option${timeoutValue === v ? " is-on" : ""}`}
-                      disabled={savingKey === "AGENTOPSY_EXECUTOR_TIMEOUT"}
-                      onClick={() => void saveKey("AGENTOPSY_EXECUTOR_TIMEOUT", String(v))}
-                    >
-                      {v} s
-                    </button>
-                  ))}
+              {/* El límite acota a los ejecutores en nube, cuyo turno sale de la
+                  máquina y lo factura un proveedor. Ollama corre en la máquina
+                  del perito y no lleva cota: el modelo local tarda lo que tarde
+                  (ver PromptExecutor.timeout_for en el backend). La nota lo dice
+                  aquí mismo para que nadie deduzca del selector que también le
+                  aplica. */}
+              <div className="settings-field">
+                <div className="settings-inline">
+                  <div className="eyebrow settings-inline-label">{t("settings.timeout")}</div>
+                  <div className="engine-models">
+                    {TIMEOUT_OPTIONS.map((v) => (
+                      <button
+                        key={v}
+                        type="button"
+                        className={`chip-option${timeoutValue === v ? " is-on" : ""}`}
+                        disabled={savingKey === "AGENTOPSY_EXECUTOR_TIMEOUT"}
+                        onClick={() => void saveKey("AGENTOPSY_EXECUTOR_TIMEOUT", String(v))}
+                      >
+                        {v} s
+                      </button>
+                    ))}
+                  </div>
                 </div>
+                <div className="engine-note">{t("settings.timeoutScope")}</div>
               </div>
 
               {configError && (

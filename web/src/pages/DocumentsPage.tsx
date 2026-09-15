@@ -750,7 +750,11 @@ const SEV_KEY: Record<string, MessageKey> = {
   low: "tl.sev.low",
 };
 
-// Bloques del documento. SEC INV 8: todo se pinta como TEXTO.
+// Bloques del documento. SEC INV 8: todo se pinta como TEXTO. La única
+// excepción es la figura del anexo C, y no es HTML: su SVG va como IMAGEN
+// (`<img>` con URI `data:`, que la CSP ya admite en `img-src`). Un SVG dentro de
+// un `<img>` no ejecuta scripts ni carga nada externo, y además el almacén solo
+// acepta el vocabulario que Agentopsy dibuja (`agentopsy.reports.svg`).
 function Block({ b }: { b: DocumentBlock }) {
   const { t } = useLang();
   switch (b.t) {
@@ -835,6 +839,16 @@ function Block({ b }: { b: DocumentBlock }) {
           {b.text && <p className="report-finding-text">{b.text}</p>}
           {b.meta && <div className="report-finding-meta">{b.meta}</div>}
         </div>
+      );
+    case "figure":
+      return (
+        <figure className="report-figure">
+          <img
+            className="report-figure-img"
+            src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(b.svg ?? "")}`}
+            alt={b.title ?? ""}
+          />
+        </figure>
       );
     default:
       return null;

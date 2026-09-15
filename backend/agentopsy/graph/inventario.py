@@ -1,8 +1,9 @@
 """FUNCIÓN «INVENTARIO»: la red de relaciones, separada de las entidades sueltas.
 
 Está en prueba (2026-09-04). Para RETIRARLA basta con borrar este fichero, quitar
-su bloque de ``routers/graphs.py`` (marcado ``FUNCIÓN «INVENTARIO»``) y el suyo
-del cliente. Nada más depende de ella.
+su uso de ``graph/figura.py`` (la composición que comparten la vista Grafos y el
+anexo C del informe pericial) y el suyo del cliente y de ``reports/figura_grafo.py``.
+Nada más depende de ella.
 
 Por qué existe, medido sobre el caso real LoneWolf, 20 hallazgos con grafo:
 
