@@ -23,6 +23,7 @@ from pathlib import Path
 from casos import casos
 from configuracion import Ajustes
 from hallazgos import Hallazgos
+from relojes import Cronometro
 from runner import Corrida
 
 
@@ -42,7 +43,7 @@ def medir(case_id: str, evidence_id: str, prompt: str, modelo: str, memoria: str
     cfg = Ajustes(entorno)
     sesion = f"medida-{indice}-{int(time.time())}"
     antes = len(Hallazgos(casos.dir_caso(case_id), case_id).listar())
-    inicio = time.monotonic()
+    reloj = Cronometro.arrancar()
     error = None
     try:
         corrida = Corrida(case_id=case_id, evidence_id=evidence_id, sesion=sesion, prompt=prompt, cfg=cfg,
@@ -53,7 +54,7 @@ def medir(case_id: str, evidence_id: str, prompt: str, modelo: str, memoria: str
         error = r.get("error")
     except Exception as exc:  # noqa: BLE001 — la medición sigue con la siguiente configuración
         metricas, respuesta, error = {}, "", f"{type(exc).__name__}: {exc}"
-    segundos = round(time.monotonic() - inicio, 1)
+    segundos = round(reloj.transcurrido(), 1)
     despues = len(Hallazgos(casos.dir_caso(case_id), case_id).listar())
     return {
         "modelo": modelo, "memoria": memoria, "sesion": sesion, "segundos": segundos,
@@ -84,6 +85,17 @@ def main() -> None:
     for f in filas:
         print(f"| {f['modelo']} | {f['memoria']} | {f['segundos']} | {f.get('pasos', '')} | {f.get('llamadas_modelo', '')} | "
               f"{f.get('prompt_tokens', '')} | {f.get('herramientas', '')} | {f['hallazgos_nuevos']} | {f['error'] or ''} |")
+    # `segundos` mide en monotónico, así que ya excluye lo que la máquina durmiera. Se
+    # dice igualmente: la traza de LangSmith de esa misma corrida SÍ está inflada, y
+    # quien compare las dos cifras tiene que saber por qué no cuadran (ver relojes.py).
+    for f in filas:
+        dormido = f.get("segundos_suspendido")
+        if dormido:
+            print(f"\nAVISO {f['modelo']}: la máquina estuvo suspendida {dormido} s durante la corrida. "
+                  f"Los {f['segundos']} s de la tabla NO lo incluyen; la traza de LangSmith SÍ.")
+        elif dormido is None:
+            print(f"\nAVISO {f['modelo']}: este sistema no sabe decir cuánto durmió la máquina "
+                  "(no hay CLOCK_BOOTTIME); no se puede descartar una suspensión.")
     print(f"\nguardado en {fichero}")
 
 

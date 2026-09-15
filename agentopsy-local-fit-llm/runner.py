@@ -19,7 +19,6 @@ y `orden`, que son propios de este motor.
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
 from typing import Any, Callable
 
@@ -31,6 +30,7 @@ from custodia.ingesta import Evidencia, Ingesta, ingesta
 from custodia.registro import Registro, sha256_texto
 from estado import Estado
 from hallazgos import Hallazgos
+from relojes import Cronometro
 from herramientas.contexto import Contexto
 from herramientas.ejecutor import Ejecutor
 from herramientas.forenses import PORTADAS
@@ -282,7 +282,7 @@ class Corrida:
     def ejecutar(self) -> dict[str, Any]:
         """Un turno: el grafo de `grafo.py` sobre los nodos de arriba, con persistencia
         y auditoría alrededor. Con LANGSMITH_TRACING=true todo el turno queda trazado."""
-        inicio = time.monotonic()
+        reloj = Cronometro.arrancar()
         if self.persistir_chat:
             self.chats.anadir(self.sesion, "user", self.prompt)
         self.memoria.indexar_texto("perito", self.prompt)
@@ -300,7 +300,7 @@ class Corrida:
         respuesta = ""
         error: str | None = None
         try:
-            final = self._correr_grafo(langsmith_extra=trazas.metadatos(
+            final = self._correr_grafo(reloj, langsmith_extra=trazas.metadatos(
                 case_id=self.case_id, session_id=self.sesion, evidence_id=self.evidencia.evidence_id,
                 model=self.cfg.get("LOCALFIT_MODEL"), memory=self.memoria.nombre, reparto=self.cfg.reparto,
             ))
@@ -309,8 +309,13 @@ class Corrida:
         except ModeloError as exc:
             error = str(exc)
             respuesta = f"El motor local no pudo completar el turno: {exc}"
-        segundos = round(time.monotonic() - inicio, 1)
+        segundos = round(reloj.transcurrido(), 1)
         self.metricas["segundos_total"] = segundos
+        # Cuánto se durmió la máquina DENTRO de este turno. `segundos_total` ya lo excluye
+        # (mide en monotónico), pero la traza de LangSmith no: mide reloj de pared, y sin
+        # este dato un turno de 5 minutos con el portátil suspendido a mitad aparece como
+        # uno de 23. Ver relojes.py.
+        self.metricas["segundos_suspendido"] = reloj.suspendido()
         if self.persistir_chat:
             self.chats.anadir(self.sesion, "assistant", respuesta, tool_calls=self.tool_calls, actividad=self.actividad)
         self.registro.anotar({
@@ -334,9 +339,17 @@ class Corrida:
         }
 
     @trazas.trazable(name="turno local-fit-llm", run_type="chain")
-    def _correr_grafo(self) -> dict[str, Any]:
-        return grafo.construir(self).invoke({"ronda": 1, "ordenes": [], "terminado": False},
-                                            config={"recursion_limit": 40})
+    def _correr_grafo(self, reloj: Cronometro) -> dict[str, Any]:
+        try:
+            return grafo.construir(self).invoke({"ronda": 1, "ordenes": [], "terminado": False},
+                                                config={"recursion_limit": 40})
+        finally:
+            # LangSmith fecha el span con reloj de PARED, así que una suspensión del
+            # portátil a mitad de turno infla la duración y nada en la traza lo dice: el
+            # 2026-09-13 un turno de ~286 s figuró como 1374 s. Estos dos números viajan
+            # con el span para que la corrección se pueda hacer sin salir de la traza.
+            trazas.anotar_run(segundos_reales=round(reloj.transcurrido(), 1),
+                              segundos_suspendido=reloj.suspendido())
 
 def resumen_agente(cfg: Ajustes, perfil: str) -> dict[str, Any]:
     """Lo que la web pinta como «agente» (misma forma que AgentSummary del api)."""
