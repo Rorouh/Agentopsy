@@ -33,6 +33,10 @@ from modelo import Modelo, ModeloError, PromptDemasiadoLargo, Respuesta
 import trazas
 
 RUTA_IDENTIDAD = Path(__file__).parent / "agentes" / "investigador.md"
+#: Una fecha INEQUÍVOCA: año-mes-día y hora. A propósito no reconoce un `20150902`
+#: suelto, que en este mismo caso aparece dentro de `sqlmap/1.0-dev-nongit-20150902` y
+#: no es la hora de nada: pedir una marca temporal por eso sería pedir que se invente.
+_FECHA_RE = re.compile(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}")
 TOPE_ULTIMO_RESULTADO = 1200
 TOPE_INFORME = 1500
 HERRAMIENTAS_UNA_VEZ = {"file_info", "hashdeep"}
@@ -161,8 +165,15 @@ class Investigador:
             if f["exit_code"] != 0 or ((f["stdout_lines"] or 0) < 30 and not f["output_files"]):
                 continue
             corto = f["run_id"][:8]
-            if not any(corto in l or f["run_id"] in l for l in leidos):
-                pendientes.append(f"{f['tool_id']} (run {corto})")
+            if not any(corto in linea or f["run_id"] in linea for linea in leidos):
+                # El TAMAÑO va aquí, no solo en el resumen de la herramienta: el resumen
+                # vive en ÚLTIMO RESULTADO y lo pisa el paso siguiente, mientras que esto
+                # persiste. Medido el 2026-09-13: el modelo concluyó sobre un strings de
+                # 3.168.635 líneas del que tenía 25 delante, y para cuando decidió, el
+                # dato de cuántas líneas había ya no estaba en su contexto.
+                lineas = f["stdout_lines"] or 0
+                pendientes.append(f"{f['tool_id']} (run {corto}, {lineas} líneas)" if lineas
+                                  else f"{f['tool_id']} (run {corto})")
         if not pendientes:
             return ""
         return "Salidas ya disponibles para explotar con buscar o leer_artefacto: " + ", ".join(pendientes[-4:]) + ". "
@@ -192,9 +203,20 @@ class Investigador:
         # se callaba justo cuando el agente acababa de encontrar el usuario y el equipo.
         # Tras registrar, el último paso deja de ser material y el aviso desaparece solo.
         origen = ("la salida del run" if ultimo["accion"] in PORTADAS else "lo que acabas de leer del run")
-        return (f"{origen.capitalize()} {ultimo['run_id'][:8]} ya está sellado en la cadena de custodia. Decide TÚ "
-                "si sostiene algo del caso: si sí, regístralo AHORA con registrar_hallazgo citando run_id "
-                f"'{ultimo['run_id'][:8]}'; si no aporta, regístralo con tipo 'descarte' o sigue por otra vía. ")
+        # El aviso pide la CITA, no solo el run_id. Pedir «regístralo AHORA» a secas, con una
+        # salida de la que solo se ha visto la cabecera, es invitar a concluir sin leer: es
+        # justo lo que se midió el 2026-09-13. Registrar exige una línea leída (custodia/cita.py).
+        # El aviso de la fecha sale SOLO si el material que tiene delante la lleva: un valor
+        # de registro no tiene hora, y pedirla siempre invitaría a inventársela. La
+        # consecuencia de omitirla es real y por eso se le dice: sin `observed_at` el
+        # hallazgo no entra en la cronología del INCIDENTE (timeline/hallazgos.py), la
+        # línea que un tercero lee primero.
+        fecha = (" Si la línea que cites lleva fecha, ponla en observado_en con su zona."
+                 if _FECHA_RE.search(ultimo.get("texto") or "") else "")
+        return (f"{origen.capitalize()} {ultimo['run_id'][:8]} ya está sellado en la cadena de custodia.{fecha} "
+                "Decide TÚ si sostiene algo del caso: si sí, regístralo con registrar_hallazgo citando run_id "
+                f"'{ultimo['run_id'][:8]}' y en 'cita' la línea leída que lo sostiene; si no aporta, regístralo "
+                "con tipo 'descarte' o sigue por otra vía. ")
 
     def _salida_orden(self, n: int) -> str:
         """La puerta de salida («no se puede cumplir») se abre a partir del SEGUNDO paso.

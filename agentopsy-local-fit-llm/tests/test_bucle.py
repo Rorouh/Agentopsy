@@ -165,3 +165,31 @@ def test_interpretar_tolera_variantes():
     assert interpretar({"accion": {"nombre": "xxd_head", "bytes": 32}})[1:] == ("xxd_head", {"bytes": 32})
     assert interpretar({"respuesta": "listo"})[1:] == ("informar", {"texto": "listo"})
     assert interpretar({"pensamiento": "?"})[1] == "(sin accion)"
+
+
+def test_el_aviso_de_fecha_solo_sale_si_el_material_la_lleva(entorno):
+    """3.1: pedir `observado_en` siempre invitaría a inventarlo. El aviso es condicional,
+    y a propósito no reconoce un `20150902` suelto: en este caso vive dentro de
+    `sqlmap/1.0-dev-nongit-20150902`, que no es la hora de nada."""
+    from investigador import _FECHA_RE
+
+    assert _FECHA_RE.search("2015-09-02T12:00:00Z  inicio de sesion")
+    assert _FECHA_RE.search("2015-09-02 12:00:00 evento")
+    assert not _FECHA_RE.search("  52c834 sqlmap/1.0-dev-nongit-20150902")
+    assert not _FECHA_RE.search("  52c834 FilterAdministratorTokenT")
+
+
+def test_el_tamano_de_lo_no_explotado_va_delante_del_modelo(entorno):
+    """3.3: el resumen de la herramienta dice cuántas líneas hay, pero vive en ÚLTIMO
+    RESULTADO y lo pisa el paso siguiente. El recuento tiene que persistir donde el
+    modelo decide."""
+    guion = [{"veredicto": "aprobar", "respuesta": "ok"}]
+    corrida, _ = _corrida(entorno, guion)
+    # Una salida grande y sin explotar, que es el caso que importa: la evidencia de los
+    # tests da un `strings` de pocas líneas y el aviso (con razón) no saldría.
+    corrida.investigador.contexto.almacen.indice = lambda: [
+        {"run_id": "c272f65a-c961-4c62-8ae5-fa339c590c83", "tool_id": "strings_head",
+         "exit_code": 0, "stdout_lines": 3168635, "output_files": 0}]
+    hechos = corrida.investigador._hechos()
+    assert "strings_head" in hechos and "3168635 líneas" in hechos
+    assert "buscar o leer_artefacto" in hechos
