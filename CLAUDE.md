@@ -441,7 +441,15 @@ every valid envelope, and a failure to EXECUTE is never retried). The parser is
 never relaxed: the correction names the exact defect back to the model, and a
 reply with no JSON object at all is told to wrap that text in `final` rather
 than to "continue", because in the measured run it was the finished final answer
-written as prose. Findings validate
+written as prose. **A notice is not the model's turn.** The loop's result
+declares `notice` (true for everything Agentopsy writes in the assistant's place:
+no valid tools, stopped, contract broken, executor failure, budget exhausted;
+false only for the model's own `final`), the SPA persists it on the chat message
+(`ChatMessage.notice`), and `agent.history` replays only un-flagged assistant
+turns, keeping the tool-run ledger of flagged ones. Without that, the
+contract-broken notice, which quotes the malformed envelope, was replayed as the
+model's prior turn and copied byte for byte from the first iteration of the next
+runs. Findings validate
 `observed_at` as ISO-8601 with an explicit zone: a mark without an offset is
 rejected rather than assumed UTC. A run covers EVERY evidence of the case on equal
 terms, with no primary one: the request carries the case (an `evidence_id` in it is

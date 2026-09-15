@@ -37,6 +37,15 @@ class ChatMessage:
     # reasoning) para poder RE-PINTAR el bloque colapsable "✓ N pasos" al recargar
     # el chat, como en Claude Code. Sólo presentación; NO se re-inyecta al modelo.
     activity: list[dict] | None = None
+    # True cuando el `content` de un turno `assistant` NO lo escribió el modelo
+    # sino Agentopsy, en su lugar, para el perito: corrida abortada por el
+    # contrato, ejecutor caído, parada por el operador, job fallido. Se pinta
+    # igual en el chat, pero `agent.history` no lo reinyecta al modelo: un aviso
+    # que citaba un envoltorio mal formado se convirtió, replicado como turno del
+    # asistente, en el ejemplo que el modelo copió byte a byte tres corridas
+    # seguidas (2026-09-15). Ausente en las sesiones anteriores a este campo, que
+    # se leen como antes (False).
+    notice: bool = False
 
 
 class ChatStore:
@@ -73,6 +82,8 @@ class ChatStore:
             raise ValueError("ChatMessage.tool_calls must be a list[dict] or None")
         if message.activity is not None and not isinstance(message.activity, list):
             raise ValueError("ChatMessage.activity must be a list[dict] or None")
+        if not isinstance(message.notice, bool):
+            raise ValueError("ChatMessage.notice must be a bool")
 
     # ---------- public API ----------
 
@@ -133,6 +144,9 @@ class ChatStore:
                     ts=obj["ts"],
                     tool_calls=obj.get("tool_calls"),
                     activity=obj.get("activity"),
+                    # Only a literal true marks a notice: a session written
+                    # before the field existed carries no key and reads False.
+                    notice=obj.get("notice") is True,
                 )
             )
         return messages

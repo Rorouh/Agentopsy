@@ -170,3 +170,31 @@ def test_activity_defaults_to_none_and_reads_back(store, case, session_id) -> No
     store.append(case.id, session_id, ChatMessage(role="user", content="hola", ts=""))
     restored = store.read(case.id, session_id)
     assert restored[0].activity is None
+
+
+def test_notice_flag_round_trips_and_defaults_to_false(store, case, session_id) -> None:
+    """`notice` marca el turno assistant que escribió Agentopsy para el perito,
+    no el modelo (corrida abortada, job fallido, parada). Persiste tal cual, y una
+    sesión anterior al campo, sin la clave, se lee como False."""
+    store.append(case.id, session_id, ChatMessage(
+        role="assistant", content="The model broke the response contract.", ts="",
+        notice=True,
+    ))
+    store.append(case.id, session_id, ChatMessage(
+        role="assistant", content="La evidencia confirma...", ts="",
+    ))
+    restored = store.read(case.id, session_id)
+    assert [m.notice for m in restored] == [True, False]
+
+    # Una línea escrita ANTES de que existiera el campo: sin clave `notice`.
+    path = store._session_path(case.id, session_id)
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"role": "assistant", "content": "antiguo", "ts": "2026-01-01T00:00:00Z"}) + "\n")
+    assert store.read(case.id, session_id)[-1].notice is False
+
+
+def test_notice_must_be_a_bool(store, case, session_id) -> None:
+    with pytest.raises(ValueError, match="notice"):
+        store.append(case.id, session_id, ChatMessage(
+            role="assistant", content="x", ts="", notice="yes",  # type: ignore[arg-type]
+        ))

@@ -221,6 +221,7 @@ def query(req: QueryRequest) -> dict:
     return {
         "status": "llm-loop",
         "reply": result.get("reply", ""),
+        "notice": bool(result.get("notice", False)),
         "iterations": result.get("iterations"),
         "tool_calls": result.get("tool_calls", []),
         **meta,
@@ -251,6 +252,10 @@ def analyze(req: QueryRequest) -> dict:
         )
         return {
             "reply": result.get("reply", ""),
+            # Whether `reply` is an Agentopsy notice rather than the model's
+            # answer. The SPA persists it on the chat message so the replay of
+            # the next run leaves notices out (see `AgentLoopResult`).
+            "notice": bool(result.get("notice", False)),
             "iterations": result.get("iterations"),
             "tool_calls": result.get("tool_calls", []),
         }
@@ -322,6 +327,7 @@ async def query_stream(req: QueryRequest) -> StreamingResponse:
             push({
                 "type": "done",
                 "reply": result.get("reply", ""),
+                "notice": bool(result.get("notice", False)),
                 "iterations": result.get("iterations"),
                 "tool_calls": result.get("tool_calls", []),
                 **meta,

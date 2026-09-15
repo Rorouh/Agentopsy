@@ -31,6 +31,18 @@ Token budget: cap at the last ``MAX_REPLAY_TURNS`` user/assistant pairs OR
 ``MAX_REPLAY_CHARS`` total content chars, whichever hits first. No LLM-based
 summarization in v1 — accept the cap.
 
+What is NOT replayed as the assistant's words: a message flagged ``notice``.
+The SPA persists whatever text closed the turn as the assistant's message,
+and that text is not always the model's: an aborted run, a failed job, a
+stop by the operator are notices Agentopsy wrote FOR THE EXAMINER. Replayed
+in the assistant role they are noise at best. Measured worst case
+(2026-09-15, case 9bdb86f8): the contract-broken notice quotes the malformed
+envelope the model emitted; replayed as its own prior turn, the model copied
+it byte for byte from the FIRST iteration of each of the next two runs (same
+response SHA-256 in the audit), each run poisoning the session a little more.
+The ledger of tool runs persisted on such a message IS replayed: those runs
+happened, whatever text closed the turn.
+
 Source of truth is ``ChatStore``, not the renderer's in-memory ``msgs`` —
 RULE 2 says don't trust unverified inputs (the renderer is hardened, but
 evidence is hostile and we don't want a path where a compromised renderer
@@ -86,8 +98,10 @@ def build_replay_messages(case_id: str, session_id: str) -> list[dict[str, Any]]
         # sino como `user`, y el propio bloque los etiqueta como datos NO confiables.
         replay.append({"role": "user", "content": findings_block})
 
-    # Tail-cap the user/assistant transcript by turns + chars.
-    transcript = _cap_transcript(trimmed, MAX_REPLAY_TURNS, MAX_REPLAY_CHARS)
+    # Tail-cap the user/assistant transcript by turns + chars. Notices leave
+    # BEFORE the cap so they neither count as turns nor spend the budget.
+    spoken = [m for m in trimmed if not m.notice]
+    transcript = _cap_transcript(spoken, MAX_REPLAY_TURNS, MAX_REPLAY_CHARS)
     for m in transcript:
         if m.role in ("user", "assistant"):
             replay.append({"role": m.role, "content": m.content})

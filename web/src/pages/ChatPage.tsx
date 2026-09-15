@@ -652,6 +652,12 @@ export function ChatPage({
     setBusy(true);
     let reply = "";
     let tools: unknown[] | null = null;
+    // Hasta que el job termine con la respuesta del modelo, lo que cierre el
+    // turno es un AVISO de Agentopsy (parada, job fallido, corrida abortada,
+    // error de transporte): se pinta igual, pero se persiste marcado para que
+    // el replay del turno siguiente no se lo reinyecte al modelo como si fuera
+    // su propia respuesta.
+    let notice = true;
     let cursor = 0; // eventos de progreso ya pintados en el chat
     const collected: StreamEvent[] = []; // para persistir la traza con el mensaje
     let anchored = false; // ¿ya se fijó el ancla del cronómetro?
@@ -681,6 +687,7 @@ export function ChatPage({
             job.result?.reply ??
             (job.status === "cancelled" ? t("chat.stoppedByOperator") : "");
           tools = (job.result?.tool_calls as unknown[]) ?? null;
+          notice = job.status !== "done" || job.result?.notice === true;
           break;
         }
         if (job.status === "error") {
@@ -706,6 +713,7 @@ export function ChatPage({
           content: reply,
           tool_calls: tools,
           activity: collected.length ? collected : null,
+          notice,
         })
         .catch(() => {
           /* best-effort */

@@ -26,6 +26,9 @@ class AppendMessageRequest(BaseModel):
     content: str
     tool_calls: list[dict] | None = None
     activity: list[dict] | None = None  # traza de actividad para re-pintar al recargar
+    # El `content` es un aviso de Agentopsy en lugar del modelo (job fallido,
+    # corrida abortada, parada): se pinta, no se reinyecta al modelo.
+    notice: bool = False
 
 
 def _msg_dict(msg: Any) -> dict[str, Any]:
@@ -73,6 +76,7 @@ def append_chat_message(
         ts=_utc_now_iso(),
         tool_calls=req.tool_calls,
         activity=req.activity,
+        notice=req.notice,
     )
     try:
         chat_store.append(case_id, session_id, message)

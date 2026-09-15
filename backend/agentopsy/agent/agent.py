@@ -284,7 +284,19 @@ def _bounded_json(body: dict[str, Any], limit: int) -> str:
 
 
 class AgentLoopResult(dict):
-    """Convenience dict subclass for typing the run() return."""
+    """Convenience dict subclass for typing the run() return.
+
+    ``notice`` says WHO wrote ``reply``. ``False``: the model's own final
+    answer. ``True``: a notice Agentopsy composed for the examiner in the
+    model's place (no valid tools, stopped by the operator, contract broken,
+    executor failure, budget exhausted). The distinction is not cosmetic: the
+    SPA persists the reply as the assistant's turn, and ``agent.history``
+    replays assistant turns into the next run's context. A notice replayed as
+    if the model had said it is noise at best; the contract-broken one, which
+    quotes the malformed envelope, became a few-shot example the model copied
+    byte for byte in three consecutive runs (2026-09-15). The flag travels with
+    the persisted message so the replay can leave notices out.
+    """
 
 
 class ForensicAgent:
@@ -415,6 +427,7 @@ class ForensicAgent:
                 reply=t("agent.noValidTools", id=self.package.id),
                 iterations=0,
                 tool_calls=[],
+                notice=True,
             )
 
         system_text = self._system_prompt(case_id, allowed, all_handles)
@@ -494,7 +507,10 @@ class ForensicAgent:
                 stopped = t("agent.stoppedByOperator")
                 emit({"type": "final", "iteration": iteration, "text": stopped, "cancelled": True})
                 return AgentLoopResult(
-                    reply=stopped, iterations=iteration, tool_calls=tool_calls_log
+                    reply=stopped,
+                    iterations=iteration,
+                    tool_calls=tool_calls_log,
+                    notice=True,
                 )
             # Nudge de PRESUPUESTO (fase-turnos §6.4): la corrida medida agotó
             # sus 21 iteraciones sin emitir un solo `final` — 12,97 USD sin
@@ -619,6 +635,7 @@ class ForensicAgent:
                         ),
                         iterations=iteration,
                         tool_calls=tool_calls_log,
+                        notice=True,
                     )
                 contract_repairs += 1
                 logger.warning(
@@ -650,6 +667,7 @@ class ForensicAgent:
                     ),
                     iterations=iteration,
                     tool_calls=tool_calls_log,
+                    notice=True,
                 )
             # Envoltorio válido: se cierra la ronda de corrección abierta, si la
             # había. Lo que se acota son los incumplimientos SEGUIDOS.
@@ -678,10 +696,13 @@ class ForensicAgent:
 
             if isinstance(action, FinalAnswer):
                 emit({"type": "final", "iteration": iteration + 1, "text": action.text})
+                # The ONE reply the model wrote itself: the only one the next
+                # run may replay as the assistant's own turn.
                 return AgentLoopResult(
                     reply=action.text,
                     iterations=iteration + 1,
                     tool_calls=tool_calls_log,
+                    notice=False,
                 )
 
             if isinstance(action, (ToolCall, ToolBatch)):
@@ -1218,6 +1239,7 @@ class ForensicAgent:
             reply=exhausted,
             iterations=max_iter,
             tool_calls=tool_calls_log,
+            notice=True,
         )
 
     # ---- internals ---------------------------------------------------------

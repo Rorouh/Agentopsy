@@ -277,6 +277,9 @@ def test_router_chain_threads_verified_context_end_to_end(wired) -> None:
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["reply"] == "cadena completada"
+    # The model's own final answer: the SPA persists it un-flagged and the next
+    # run may replay it as the assistant's turn (an Agentopsy notice would not).
+    assert body["notice"] is False
     assert body["os_profile"] == "windows"
     assert body["executor"]["id"] == "ollama"
 

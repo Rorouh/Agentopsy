@@ -468,6 +468,7 @@ export const api = {
         content: string;
         tool_calls?: unknown[] | null;
         activity?: unknown[] | null;
+        notice?: boolean;
       },
     ) =>
       post<PersistedChatMessage>(
@@ -477,6 +478,7 @@ export const api = {
           content: msg.content,
           tool_calls: msg.tool_calls ?? null,
           activity: msg.activity ?? null,
+          notice: msg.notice ?? false,
         },
       ),
 

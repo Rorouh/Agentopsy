@@ -335,3 +335,23 @@ def test_the_contract_shown_to_the_model_has_single_braces() -> None:
         assert '{"action": "tool_call", "tool_id":' in contrato
         assert '{"action": "tool_batch", "calls": [{"tool_id":' in contrato
     assert "{{" not in _response_contract()
+
+
+# ---- 4. quién escribió la respuesta -----------------------------------------
+
+
+def test_the_result_declares_whether_the_reply_is_the_models_or_a_notice() -> None:
+    """`notice` viaja con el resultado y de ahí al mensaje persistido: el aviso
+    de contrato roto, replicado como turno del asistente, fue el ejemplo que el
+    modelo copió byte a byte tres corridas seguidas (2026-09-15)."""
+    modelo = _Scripted([FinalAnswer(text="ya lo tengo")])
+    agent = ForensicAgent(make_package("unix"), modelo, _FakeEvidence())
+    assert agent.run("analiza", case_id="c")["notice"] is False
+
+    modelo = _Scripted([_violacion(), _violacion(), _violacion(), FinalAnswer(text="tarde")])
+    agent = ForensicAgent(make_package("unix"), modelo, _FakeEvidence())
+    assert agent.run("analiza", case_id="c")["notice"] is True
+
+    modelo = _Scripted([RuntimeError("executor timeout")])
+    agent = ForensicAgent(make_package("unix"), modelo, _FakeEvidence())
+    assert agent.run("analiza", case_id="c")["notice"] is True

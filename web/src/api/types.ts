@@ -12,7 +12,10 @@ export interface AgentJob {
   status: "running" | "done" | "error" | "cancelled";
   created_at: string;
   finished_at: string | null;
-  result: { reply: string; iterations: number; tool_calls: unknown[] } | null;
+  // `notice`: el `reply` es un aviso de Agentopsy en lugar del modelo (corrida
+  // abortada, ejecutor caído, parada, presupuesto agotado), no su respuesta.
+  // Se persiste con el mensaje para que el replay del turno siguiente lo deje fuera.
+  result: { reply: string; notice?: boolean; iterations: number; tool_calls: unknown[] } | null;
   error: string | null;
   // Eventos de progreso acumulados (tool_call con argv, tool_result, finding…);
   // `event_count` es el total (para sondear con `since`).
@@ -215,6 +218,7 @@ export interface Capabilities {
 export interface QueryResponse {
   status: "llm-loop";
   reply: string;
+  notice?: boolean;
   iterations?: number;
   // Lista de {tool_id, run_id?, exit_code?, refused?, error?}, una entrada por
   // invocación de tool en este turno. Se persiste en el ChatMessage assistant
@@ -438,6 +442,9 @@ export interface PersistedChatMessage {
   tool_calls: unknown[] | null;
   // Traza de actividad del turno para re-pintar el bloque "✓ N pasos" al recargar.
   activity?: StreamEvent[] | null;
+  // El `content` de un turno assistant lo escribió Agentopsy para el perito, no
+  // el modelo. Ausente en sesiones anteriores al campo (equivale a false).
+  notice?: boolean;
 }
 
 export interface AgentFinding {
