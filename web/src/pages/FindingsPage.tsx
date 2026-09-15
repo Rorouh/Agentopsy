@@ -293,6 +293,7 @@ function FindingDetail({ finding: f }: { finding: AgentFinding }) {
     [t("finding.recordedAt"), fecha(f.created_at)],
     [t("finding.confidence"), f.confidence != null ? `${Math.round(f.confidence * 100)}%` : na],
     [t("finding.artifactHash"), f.artifact_sha256 ?? na],
+    [t("finding.quote"), f.quote ?? na],
   ];
 
   return (

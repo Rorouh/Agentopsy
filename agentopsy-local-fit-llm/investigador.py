@@ -204,6 +204,10 @@ class Investigador:
             return ""
         return ("Si la orden ya no se puede cumplir con lo que hay, usa informar diciendo por qué. ")
 
+    #: Lo último que se le puso delante al modelo, ya recortado por la ventana. Lo fija
+    #: `_bloques` y lo consume `prompt()` para anotar la lectura del intento que se envía.
+    _mostrado: str = ""
+
     def _bloques(self, objetivo: str, n: int, max_pasos: int, *, tope_resultado: int,
                  con_pasos: bool, con_conversacion: bool) -> str:
         ev = self.evidencia.puntero()
@@ -219,10 +223,15 @@ class Investigador:
         if con_pasos:
             partes.append("PASOS ANTERIORES:\n" + self.estado.pasos_texto())
         ultimo = self.estado.ultimo_resultado()
+        self._mostrado = ""
         if ultimo:
             texto = ultimo.get("texto") or ""
             if len(texto) > tope_resultado:
                 texto = texto[:tope_resultado] + "… (recortado; usa leer_artefacto o buscar para más)"
+            # Lo que de VERDAD se le pone delante, ya recortado por la ventana. `prompt()`
+            # lo anota como lectura solo si este intento es el que acaba enviándose: lo que
+            # el modelo no llegó a ver no puede sostener la cita de un hallazgo.
+            self._mostrado = texto
             partes.append(f"ÚLTIMO RESULTADO ({ultimo.get('accion')} {ultimo.get('args') or ''}):\n{texto}")
         partes.append(FORMATO.format(
             n=n, max=max_pasos,
@@ -242,9 +251,12 @@ class Investigador:
         for opciones in intentos:
             user = self._bloques(objetivo, n, max_pasos, **opciones)
             try:
-                return system, user, self.modelo.comprobar_ventana(system, user)
+                estimado = self.modelo.comprobar_ventana(system, user)
             except PromptDemasiadoLargo as exc:
                 ultimo_error = exc
+                continue
+            self.estado.anotar_lectura(self._mostrado)
+            return system, user, estimado
         assert ultimo_error is not None
         raise ultimo_error
 

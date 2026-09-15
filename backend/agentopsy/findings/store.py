@@ -93,6 +93,19 @@ class Finding:
     #: (ver ``_VALID_FINDING_KINDS``). Lleva default para que los hallazgos previos al
     #: campo sigan construyendo en ``list()``.
     finding_kind: str = _DEFAULT_FINDING_KIND
+    #: Línea LITERAL de la salida del ``run_id`` que sostiene el hallazgo. Es la
+    #: procedencia a nivel de LÍNEA, un escalón por debajo de ``artifact_sha256``: el
+    #: hash dice qué fichero lo sostiene, la cita dice qué renglón de ese fichero.
+    #:
+    #: El motor local-fit-llm la exige en toda ``afirmacion`` y comprueba que aparece
+    #: en el artefacto sellado y que el agente la leyó (ver
+    #: ``agentopsy-local-fit-llm/custodia/cita.py``). Un ``descarte`` no cita: deja
+    #: constancia de que una vía no aportó, y no hay línea que señalar.
+    #:
+    #: Opcional y con default, como ``mitre_hints``: sin él, ``Finding(**data)`` en
+    #: ``list()`` lanzaría TypeError y CADA hallazgo con cita desaparecería de la UI
+    #: con solo un warning en el log.
+    quote: str | None = None
 
 
 def _validate_mitre_hints(raw: Any) -> list[str]:

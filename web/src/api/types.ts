@@ -475,6 +475,11 @@ export interface AgentFinding {
   artifact_sha256?: string | null;
   // "afirmacion" (afirma algo de la evidencia, exige run_id) | "descarte".
   finding_kind?: string;
+  // Línea LITERAL de la salida del run que sostiene el hallazgo: la procedencia
+  // un escalón por debajo del hash (qué renglón, no solo qué fichero). El motor
+  // local-fit-llm la exige en toda afirmacion; un descarte no cita. Es texto
+  // DERIVADO DE LA EVIDENCIA: se pinta como texto, nunca como HTML.
+  quote?: string | null;
 }
 
 // ── MITRE ATT&CK ────────────────────────────────────────────────────────────

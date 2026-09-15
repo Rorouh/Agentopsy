@@ -388,6 +388,7 @@ export const en = {
   "finding.recordedAt": "Recorded",
   "finding.confidence": "Confidence",
   "finding.artifactHash": "Artifact SHA-256",
+  "finding.quote": "Quoted line",
   "finding.recordedOn": "recorded {date}",
   "finding.provenance": "Provenance and custody",
   "finding.attackCorrelation": "ATT&CK correlation",

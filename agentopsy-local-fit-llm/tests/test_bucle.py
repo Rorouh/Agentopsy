@@ -32,16 +32,19 @@ def test_turno_completo_con_orden_del_revisor(entorno):
         {"pensamiento": "perfil", "accion": "volatility3", "args": {"plugin": "windows.info.Info"}},
         {"pensamiento": "sin símbolos, cadenas", "accion": "strings_head", "args": {"min_len": 6}},
         {"pensamiento": "usuarios", "accion": "buscar", "args": {"consulta": "Administrator"}},
+        # La cita es la línea que el paso anterior (`buscar`) le puso delante: sin haberla
+        # leído, `registrar_hallazgo` la rechaza (custodia/cita.py, tests/test_cita.py).
         {"pensamiento": "concluyo", "accion": "registrar_hallazgo", "args": {
             "titulo": "Usuario Administrator en el equipo WIN-TESTHOST", "resumen": "strings muestra WIN-TESTHOST Administrator",
-            "severidad": "medium", "run_id": "__RUN_STRINGS__", "confianza": 0.8}},
+            "severidad": "medium", "run_id": "__RUN_STRINGS__", "cita": "WIN-TESTHOST Administrator", "confianza": 0.8}},
         {"pensamiento": "cierro", "accion": "informar", "args": {"texto": "Equipo WIN-TESTHOST, usuario Administrator."}},
         # revisor, ronda 1: pide revisar
         {"veredicto": "revisar", "ordenes": ["revisa indicadores de ataque con la herramienta buscar (sqlmap, webshell)"], "respuesta": ""},
         # investigador con la orden
         {"pensamiento": "busco", "accion": "buscar", "args": {"consulta": "sqlmap"}},
         {"pensamiento": "hallazgo", "accion": "registrar_hallazgo", "args": {
-            "titulo": "sqlmap presente en memoria", "resumen": "cadena sqlmap/1.0", "severidad": "critical", "run_id": "__RUN_STRINGS__"}},
+            "titulo": "sqlmap presente en memoria", "resumen": "cadena sqlmap/1.0", "severidad": "critical",
+            "run_id": "__RUN_STRINGS__", "cita": "sqlmap/1.0"}},
         {"pensamiento": "cierro", "accion": "informar", "args": {"texto": "sqlmap y phpshell presentes."}},
         # revisor, ronda 2 (última): aprueba
         {"veredicto": "aprobar", "ordenes": [], "respuesta": "Respuesta final: WIN-TESTHOST, Administrator, sqlmap activo."},
@@ -71,6 +74,8 @@ def test_turno_completo_con_orden_del_revisor(entorno):
     assert vol["status"] == "nonzero" and "PISTA" in vol["summary"]
     hallazgos = Hallazgos(corrida.dir_caso, corrida.case_id).listar()
     assert [h["severity"] for h in hallazgos] == ["medium", "critical"] and all(h["run_id"] for h in hallazgos)
+    # Cada hallazgo viaja con la línea que lo sostiene, para que un tercero la compruebe.
+    assert [h["quote"] for h in hallazgos] == ["WIN-TESTHOST Administrator", "sqlmap/1.0"]
     assert r["metrics"]["herramientas"] == 3 and r["metrics"]["rondas"] == 2
 
     # RA-7: ningún prompt reenvía la conversación entera; todos caben en la ventana.
@@ -141,9 +146,14 @@ def test_prompt_se_recorta_para_caber_en_la_ventana(entorno):
              {"veredicto": "aprobar", "respuesta": "ok"}]
     corrida, modelo = _corrida(entorno, guion)
     corrida.estado.anotar_paso(agente="investigador", accion="strings_head", args={}, resultado="A" * 20000)
-    modelo._prompt_max = 1200
+    # El suelo del prompt es el bloque de sistema, y no se puede recortar por debajo de él.
+    # Subió ~25 tokens cuando `registrar_hallazgo` pasó a exigir `cita` (custodia/cita.py):
+    # es el contrato de la herramienta, no relleno. Sobre el presupuesto real (num_ctx 4096
+    # menos num_predict y margen, ~3500) es un 1%; aquí el tope es sintético y solo tiene que
+    # quedar por encima del suelo para que el bucle de recorte se pueda probar.
+    modelo._prompt_max = 1250
     system, user, est = corrida.investigador.prompt("objetivo", 2, 8)
-    assert est <= 1200 and "recortado" in user
+    assert est <= 1250 and "recortado" in user
     modelo._prompt_max = 100
     with pytest.raises(PromptDemasiadoLargo):
         corrida.investigador.prompt("objetivo", 2, 8)

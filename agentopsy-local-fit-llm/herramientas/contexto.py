@@ -15,6 +15,7 @@ import re
 from typing import Any
 
 from artefactos.almacen import Almacen
+from custodia import cita as _cita
 from estado import Estado
 from hallazgos import Hallazgos
 from herramientas import forenses
@@ -27,7 +28,7 @@ FIRMAS_CONTEXTO = """- ver_tareas(): tu lista de tareas tal como la dejaste.
 - leer_artefacto(run_id, desde?: 1, n?: 40, fichero?: 'stdout.txt' | 'out/<nombre>'): un trozo de una salida, nunca entera.
 - buscar(consulta, run_id?): dónde aparece un texto LITERAL en las salidas (líneas con run_id y nº de línea). Varios términos se separan con | o coma y se buscan por separado.
 - ver_catalogo(): herramientas forenses disponibles para esta evidencia.
-- registrar_hallazgo(titulo, resumen, severidad: low|medium|high|critical, run_id, confianza?: 0-1, observado_en?: ISO-8601 con zona, tipo?: afirmacion|descarte): deja constancia de una conclusión y su justificación.
+- registrar_hallazgo(titulo, resumen, severidad: low|medium|high|critical, run_id, cita, confianza?: 0-1, observado_en?: ISO-8601 con zona (sin él, fuera de la cronología), tipo?: afirmacion|descarte): deja constancia de una conclusión. `cita`: la línea literal LEÍDA que la sostiene; un 'descarte' no lleva.
 - ver_hallazgos(): lo que llevas concluido.
 - informar(texto): cierras tu turno: qué has averiguado, con qué runs, y qué queda sin determinar."""
 
@@ -166,8 +167,35 @@ class Contexto:
     def _registrar_hallazgo(self, args: dict) -> tuple[str, dict]:
         if "run_id" in args and isinstance(args["run_id"], str) and args["run_id"]:
             args["run_id"] = self._completar_run_id(args["run_id"])
+        self._exigir_lectura(args)
         h = self.hallazgos.registrar(args, evidence_id=self.evidence_id, agente=self.agente)
         return f"hallazgo registrado [{h['severity']}] {h['title']} (id {h['id'][:8]})", {"hallazgo": h}
+
+    def _exigir_lectura(self, args: dict) -> None:
+        """La mitad de la compuerta que solo se puede comprobar aquí: que la cita esté en
+        algo que el agente LEYÓ en este turno.
+
+        `hallazgos.registrar` comprueba que la cita exista en el artefacto sellado, que es
+        cierto venga de donde venga. Pero una cita puede existir en el fichero y aun así
+        no haberse leído: es exactamente lo que pasó el 2026-09-13, cuando el modelo
+        afirmó algo que estaba en la línea 14.795 de una salida de la que había visto 25
+        líneas. Acertó sin mirar. Eso se corta aquí, que es donde vive el estado del turno.
+        """
+        tipo = str(args.get("tipo") or args.get("finding_kind") or "afirmacion").strip().lower()
+        if tipo != "afirmacion":
+            return
+        bruta = args.get("cita", args.get("quote", args.get("linea")))
+        if bruta in (None, ""):
+            return  # el almacén lo rechaza con el mensaje bueno; aquí no se duplica
+        try:
+            cita = _cita.validar_forma(bruta)
+        except ValueError:
+            return  # idem: la forma la valida el almacén
+        if not self.estado.ha_leido(cita):
+            raise ValueError(
+                f"no has leído {cita[:60]!r} en esta investigación: no aparece en ninguna salida que "
+                "se te haya puesto delante. Un hallazgo se sostiene en lo que has leído, no en lo que "
+                "suena probable. Localízalo primero con buscar(...) y cita la línea que devuelva.")
 
     def _ver_hallazgos(self, args: dict) -> tuple[str, dict]:
         return self.hallazgos.texto_compacto(), {"hallazgos": self.hallazgos.listar()}

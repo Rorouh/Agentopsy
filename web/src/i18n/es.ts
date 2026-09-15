@@ -361,6 +361,7 @@ export const es: Record<MessageKey, string> = {
   "finding.recordedAt": "Registrado",
   "finding.confidence": "Confianza",
   "finding.artifactHash": "SHA-256 del artefacto",
+  "finding.quote": "Línea citada",
   "finding.recordedOn": "registrado {date}",
   "finding.provenance": "Procedencia y custodia",
   "finding.attackCorrelation": "Correlación ATT&CK",

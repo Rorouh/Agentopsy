@@ -271,6 +271,9 @@ class Corrida:
         })
         self._objetivo = self.prompt
         self._ordenes_dadas = []
+        # Las lecturas sostienen las citas de los hallazgos y son DE ESTE TURNO: lo que el
+        # modelo leyó en el turno anterior ya no lo tiene delante y no puede citarlo.
+        self.estado.olvidar_lecturas()
         respuesta = ""
         error: str | None = None
         try:

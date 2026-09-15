@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from custodia import cita as _cita
+
 ESTADOS_TAREA = ("pendiente", "en_curso", "hecha", "descartada")
 TOPE_TAREAS = 12
 TOPE_PASOS_RESUMEN = 6
@@ -29,6 +31,7 @@ class Estado:
         self.datos: dict[str, Any] = {
             "tareas": [],
             "pasos": [],
+            "lecturas": [],
             "rondas": [],
             "ultimo_resultado": None,
             "objetivo": None,
@@ -107,9 +110,42 @@ class Estado:
             "estado": estado,
         }
         self.datos["pasos"].append(paso)
-        self.datos["ultimo_resultado"] = {"accion": accion, "args": paso["args"], "texto": resultado}
+        self.datos["ultimo_resultado"] = {"accion": accion, "args": paso["args"], "texto": resultado,
+                                          "run_id": run_id}
         self.guardar()
         return paso
+
+    # -- lecturas ---------------------------------------------------------------------
+    def anotar_lectura(self, texto: str) -> None:
+        """Deja constancia de un texto que se le PUSO DELANTE al modelo.
+
+        No es lo mismo que `anotar_paso`: ahí el resultado se recorta a 200 caracteres
+        para el resumen, y con 200 caracteres no se puede comprobar después si el agente
+        llegó a leer la línea que cita. Aquí se guarda lo que de verdad entró en el
+        prompt, ya recortado por la ventana, que es la definición honesta de «leído».
+
+        Se anota en `prompt()`, no al ejecutar la herramienta: el recorte lo decide la
+        ventana en el intento que finalmente se envía, y lo que el agente no vio no
+        puede sostener una cita.
+        """
+        texto = (texto or "").strip()
+        if not texto:
+            return
+        lecturas = self.datos.setdefault("lecturas", [])
+        if lecturas and lecturas[-1] == texto:
+            return
+        lecturas.append(texto)
+        self.guardar()
+
+    def ha_leido(self, fragmento: str) -> bool:
+        """¿Apareció `fragmento` en algo que se le puso delante en este turno?"""
+        return any(_cita.contiene(t, fragmento) for t in self.datos.get("lecturas", []))
+
+    def olvidar_lecturas(self) -> None:
+        """Las lecturas son del turno: lo leído en el turno anterior no sostiene una
+        cita de este, porque el modelo ya no lo tiene delante."""
+        self.datos["lecturas"] = []
+        self.guardar()
 
     def pasos_texto(self, n: int = TOPE_PASOS_RESUMEN) -> str:
         ultimos = self.datos["pasos"][-n:]

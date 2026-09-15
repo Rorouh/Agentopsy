@@ -1,10 +1,18 @@
 """Hallazgos: `findings.jsonl` con el mismo esquema que `backend/agentopsy/findings`,
 para que la vista de Hallazgos de la web los pinte vengan del motor que vengan.
 
-Regla anti-alucinación heredada: un hallazgo afirmativo exige `run_id` (la
-ejecución que lo sostiene) y ese run tiene que existir en el caso; un
-`descarte` (una vía que no aportó) queda exento. `mitre_hints` se acepta solo
-si hay semilla ATT&CK a mano; sin ella se descarta con aviso, nunca se inventa.
+Regla anti-alucinación, en dos tramos. El heredado: un hallazgo afirmativo exige
+`run_id` (la ejecución que lo sostiene) y ese run tiene que existir en el caso. El
+añadido: exige además una `cita`, el texto literal de la salida de ese run que lo
+sostiene, y se comprueba que esa cita APARECE en el artefacto sellado. Citar un run
+real del que no se ha leído nada era el agujero por el que se coló un hallazgo
+acertado por coincidencia (ver `custodia/cita.py`). Un `descarte` (una vía que no
+aportó) queda exento de los dos tramos. `mitre_hints` se acepta solo si hay semilla
+ATT&CK a mano; sin ella se descarta con aviso, nunca se inventa.
+
+La segunda mitad de la comprobación —que el agente HAYA LEÍDO esa cita— no vive
+aquí sino en `herramientas.contexto`, que es quien tiene el estado del turno. Aquí
+se valida lo que es cierto venga de donde venga: que la cita está en el fichero.
 """
 
 from __future__ import annotations
@@ -16,6 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from custodia import cita as _cita
 from custodia.registro import Registro
 
 SEVERIDADES = ("low", "medium", "high", "critical")
@@ -74,6 +83,7 @@ class Hallazgos:
             run_id = None
         if kind == "afirmacion" and not run_id:
             raise ValueError("un hallazgo afirmativo necesita run_id: la ejecución cuya salida lo sostiene")
+        cita = self._cita_valida(datos, kind=kind, run_id=run_id)
         tool_id = None
         artifact_sha = None
         if run_id:
@@ -109,6 +119,7 @@ class Hallazgos:
             "observed_at": observado,
             "artifact_sha256": artifact_sha,
             "finding_kind": kind,
+            "quote": cita,
         }
         with self.ruta.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(hallazgo, sort_keys=True, ensure_ascii=False) + "\n")
@@ -119,10 +130,50 @@ class Hallazgos:
             "run_id": run_id,
             "severity": sev,
             "title": titulo,
+            "quote": cita,
             "agent": agente,
             "engine": "local-fit-llm",
         })
         return hallazgo
+
+    def _cita_valida(self, datos: dict[str, Any], *, kind: str, run_id: str | None) -> str | None:
+        """La cita del hallazgo, comprobada contra el artefacto que dice sostenerlo.
+
+        Un `descarte` no cita: deja constancia de que una vía NO aportó, y no hay línea
+        que señalar. Una `afirmacion` sí, siempre.
+        """
+        bruta = datos.get("cita", datos.get("quote", datos.get("linea")))
+        if kind != "afirmacion":
+            if bruta in (None, ""):
+                return None
+            return _cita.validar_forma(bruta)
+        if bruta in (None, ""):
+            raise ValueError(
+                "un hallazgo afirmativo necesita cita: el texto LITERAL de la línea de la salida "
+                f"que lo sostiene. Búscala con buscar(...) o leer_artefacto('{str(run_id or '')[:8]}', ...) "
+                "y copia la línea tal cual.")
+        cita = _cita.validar_forma(bruta)
+        assert run_id  # garantizado arriba para una afirmacion
+        if not self._aparece_en_artefacto(run_id, cita):
+            raise ValueError(
+                f"la cita {cita[:60]!r} NO aparece en la salida del run {run_id[:8]}. "
+                "Un hallazgo afirmativo se sostiene en lo que la salida dice, no en lo que "
+                f"parece probable: busca el término con buscar(...) y cita la línea que devuelva.")
+        return cita
+
+    def _aparece_en_artefacto(self, run_id: str, cita: str) -> bool:
+        """Recorre `stdout.txt` y, si no está ahí, los ficheros que la herramienta dejó
+        en `out/`: hay tools cuyo resultado real no es la salida estándar sino el fichero
+        que escriben."""
+        run = self.dir / "artifacts" / run_id
+        if _cita.contiene_en_fichero(run / "stdout.txt", cita):
+            return True
+        out = run / "out"
+        if out.is_dir():
+            for hijo in sorted(out.rglob("*")):
+                if hijo.is_file() and _cita.contiene_en_fichero(hijo, cita):
+                    return True
+        return False
 
     def listar(self) -> list[dict[str, Any]]:
         if not self.ruta.is_file():
