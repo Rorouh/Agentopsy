@@ -37,15 +37,26 @@ FORMATO_PLAN = (
     'ejecutarse, cada una corta y ejecutable con UNA herramienta de la lista y el dato concreto (qué buscar, qué '
     'scanners, qué plugin, qué run leer). Cada orden debe poder cumplirse CON LO QUE HAY: no ordenes leer ni '
     'buscar en artefactos que todavía no existen, ni repetir lo ya hecho, ni herramientas que ya fallaron. '
+    'Cada orden nombra UNA herramienta y solo los parámetros de ESA herramienta. `buscar` y `leer_artefacto` '
+    'actúan sobre una salida que YA existe: si hay que localizar algo dentro del resultado de una herramienta, '
+    'son DOS órdenes, primero la que produce la salida y después la que busca en ella. '
     'Responde SOLO con un objeto JSON: {{"ordenes": ["extrae las cadenas imprimibles con la herramienta '
-    'strings_head", "busca Administrator y WIN- en ese resultado con la herramienta buscar", ...]}}.'
+    'strings_head", "busca en ese resultado los terminos que respondan a lo que pide el perito con la '
+    'herramienta buscar", ...]}}.'
 )
+# Los ejemplos NO llevan valores que parezcan un resultado real. Medido el 2026-09-13:
+# con estos dos huecos rellenos con «Administrator» y «WIN-», un modelo de 3B ante un
+# objetivo vago no planificaba, DEVOLVÍA EL EJEMPLO, y el investigador lo «confirmaba»
+# después como hallazgo. Un ejemplo es una forma, no un dato del caso.
 TOPE_ORDENES_PLAN = 4
 
 FORMATO = (
     'Responde SOLO con un objeto JSON: {{"veredicto": "aprobar" | "revisar", '
     '"ordenes": ["revisa X con la herramienta Y", ...], "respuesta": "texto completo para el perito"}}. '
-    '{cierre}'
+    'La respuesta SOLO puede afirmar lo que figura en HALLAZGOS REGISTRADOS, y cada afirmación nombra el run '
+    'que la sostiene. Lo que no se haya determinado se dice que no se ha determinado: es una respuesta '
+    'legítima y la que se espera. No repitas los ejemplos de este formato ni des por visto nada que no esté '
+    'en la lista de hallazgos. {cierre}'
 )
 
 
@@ -187,7 +198,8 @@ class Revisor:
             if ultima else
             f"Ronda {ronda} de {max_rondas}. Si das órdenes, máximo {TOPE_ORDENES}, cortas y ejecutables: cada una nombra "
             "una herramienta de la lista y el dato concreto (término a buscar, run a leer, plugin o scanner), por ejemplo "
-            "«busca Administrator y WIN- en el run de strings_head con la herramienta buscar». Deja respuesta vacía."
+            "«busca el término que responda a la pregunta en el run de strings_head con la herramienta buscar». "
+            "Deja respuesta vacía."
         )
         partes.append(FORMATO.format(cierre=cierre))
         return "\n\n".join(partes)
