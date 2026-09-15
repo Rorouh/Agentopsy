@@ -12,7 +12,6 @@ prosa para el perito.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -23,9 +22,10 @@ from custodia.ingesta import Evidencia
 from custodia.registro import Registro, sha256_texto
 from estado import Estado
 from hallazgos import Hallazgos
-from herramientas.contexto import FIRMAS_CONTEXTO, NOMBRES as CONTEXTO
-from herramientas.forenses import PORTADAS, SHELL_ID, firmas as firmas_forenses
+from herramientas.contexto import FIRMAS_CONTEXTO
+from herramientas.forenses import firmas as firmas_forenses
 from modelo import Modelo, ModeloError, PromptDemasiadoLargo, Respuesta
+from ordenes import motivo_inejecutable
 import trazas
 
 RUTA_IDENTIDAD = Path(__file__).parent / "agentes" / "revisor.md"
@@ -70,18 +70,6 @@ class Veredicto:
     crudo: dict[str, Any] = field(default_factory=dict)
 
 
-_HERRAMIENTA_RE = re.compile(r"herramienta\s+['\"`]?([a-zA-Z_][a-zA-Z0-9_]*)", re.IGNORECASE)
-
-
-def _herramienta_inventada(orden: str, permitir_shell: bool = False) -> str | None:
-    """El nombre que la orden dice usar, si no es ninguna de las que hay."""
-    conocidas = set(PORTADAS) | set(CONTEXTO) | {"informar"}
-    if not permitir_shell:
-        conocidas.discard(SHELL_ID)
-    for nombre in _HERRAMIENTA_RE.findall(orden):
-        if nombre.lower() not in conocidas:
-            return nombre
-    return None
 
 
 def _orden_a_texto(orden: Any) -> str:
@@ -292,15 +280,16 @@ class Revisor:
             texto = _orden_a_texto(o)
             if not texto:
                 continue
-            inventada = _herramienta_inventada(texto, self.cfg.shell)
-            if inventada:
-                # Medido: el modelo pequeño ordenó «usa la herramienta cmd», y el
-                # investigador gastó tres pasos chocando contra una herramienta que no
-                # existe. Una orden que nombra algo inexistente no se le pasa.
+            motivo = motivo_inejecutable(texto, permitir_shell=self.cfg.shell)
+            if motivo:
+                # Una orden que el investigador no puede cumplir no se le pasa: gastaría
+                # pasos chocando contra ella. Medido con «usa la herramienta cmd» (no
+                # existe), con «ver_tareas» como orden (no investiga nada) y con
+                # «strings_head con consulta: X» (strings_head no filtra). Se descarta y
+                # se audita; NO se reescribe en lo que el revisor quizá quiso decir.
                 self.registro.anotar({
                     "action": "reviewer_order_discarded", "case_id": self.evidencia.case_id,
-                    "order": texto, "reason": f"herramienta inexistente: {inventada}",
-                    "engine": "local-fit-llm",
+                    "order": texto, "reason": motivo, "engine": "local-fit-llm",
                 })
                 continue
             salida.append(texto[:200])
