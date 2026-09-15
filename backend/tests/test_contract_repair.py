@@ -11,12 +11,17 @@ Lo que se fija aquí:
 
 1. el contrato distingue el defecto de FORMATO (``ResponseContractError``) de un
    fallo de EJECUCIÓN, y nombra la confusión concreta en el mensaje;
-2. el loop concede UNA corrección, con el motivo exacto devuelto al modelo;
-3. dos incumplimientos SEGUIDOS abortan, como antes;
+2. el loop concede DOS correcciones seguidas, con el motivo exacto devuelto al
+   modelo (una hasta la corrida del 2026-09-15: respuesta final en prosa y, en
+   la corrección, un tool_call con una comilla sin cerrar, dos deslices
+   distintos al cierre de una investigación ya hecha);
+3. tres incumplimientos SEGUIDOS abortan;
 4. el contador se reinicia con cada envoltorio válido: lo acotado son los
    incumplimientos consecutivos, no uno por corrida;
 5. un fallo que NO es de contrato (timeout, CLI caído) no se reintenta: eso sería
-   adivinar que la segunda vez sale mejor (RULE 2).
+   adivinar que la segunda vez sale mejor (RULE 2);
+6. una respuesta SIN JSON recibe la reparación que le corresponde: envolver ese
+   texto en ``final``, no «continúa donde estabas».
 """
 
 from __future__ import annotations
@@ -179,18 +184,39 @@ def test_one_violation_gets_a_correction_and_the_run_continues() -> None:
     assert "tool_id" in correcciones[0]
 
 
-def test_two_consecutive_violations_abort_the_run() -> None:
-    modelo = _Scripted([_violacion(), _violacion(), FinalAnswer(text="tarde")])
+def test_two_consecutive_violations_still_get_corrected() -> None:
+    """La corrida medida: prosa en la iteración 7, comilla sin cerrar en la
+    corrección. Con una sola ronda se perdía la respuesta final de una
+    investigación terminada; con dos, la tercera emisión cierra la corrida."""
+    modelo = _Scripted(
+        [
+            _violacion("La evidencia confirma un indicador de compromiso."),
+            _violacion('{"action":"tool_call","tool_id":"aff4imager","params":{"evidence_id":"e0}}'),
+            FinalAnswer(text="ya lo tengo"),
+        ]
+    )
+    agent = ForensicAgent(make_package("unix"), modelo, _FakeEvidence())
+
+    result = agent.run("analiza", case_id="c")
+
+    assert result["reply"] == "ya lo tengo"
+    assert len(_correccion_en(modelo.vistos[-1])) == 2
+
+
+def test_three_consecutive_violations_abort_the_run() -> None:
+    modelo = _Scripted(
+        [_violacion(), _violacion(), _violacion(), FinalAnswer(text="tarde")]
+    )
     agent = ForensicAgent(make_package("unix"), modelo, _FakeEvidence())
 
     result = agent.run("analiza", case_id="c")
 
     assert "tarde" not in result["reply"]
     # El aviso al perito sale en el idioma en curso, así que se fija por la
-    # entrada del catálogo: dice que el contrato se incumplió DOS veces y que lo
-    # ya persistido en caliente se conserva. No se relaja nada.
-    # El aviso sale en el idioma en curso: se comprueba contra la PLANTILLA del
-    # catálogo, trozo fijo a trozo fijo, en vez de contra una frase castellana.
+    # entrada del catálogo: dice que el contrato se incumplió y que lo ya
+    # persistido en caliente se conserva. No se relaja nada.
+    # Se comprueba contra la PLANTILLA del catálogo, trozo fijo a trozo fijo,
+    # en vez de contra una frase castellana.
     plantilla = t("agent.contractBroken", None, model="\x00", iteration="\x00", error="\x00")
     for trozo in (parte for parte in plantilla.split("\x00") if parte.strip()):
         assert trozo in result["reply"]
@@ -253,5 +279,59 @@ def test_an_execution_failure_is_not_retried() -> None:
     assert not _correccion_en(modelo.vistos[-1])
 
 
-def test_only_one_correction_round_is_granted() -> None:
-    assert MAX_REPARACIONES_CONTRATO == 1
+def test_two_correction_rounds_are_granted() -> None:
+    assert MAX_REPARACIONES_CONTRATO == 2
+
+
+# ---- 3. la reparación nombra el arreglo real ---------------------------------
+
+
+def test_a_reply_without_json_is_told_to_wrap_it_in_final() -> None:
+    """Iteración 7 de la corrida medida: la respuesta final, en prosa. La
+    corrección tiene que decir que ese texto se envuelve en `final`, no
+    «continúa donde estabas», que a un modelo que ya había terminado lo mandó a
+    inventarse un tool_call."""
+    exc = _violacion("La evidencia confirma un indicador de compromiso.")
+    assert exc.no_json is True
+
+    modelo = _Scripted([exc, FinalAnswer(text="ya lo tengo")])
+    agent = ForensicAgent(make_package("unix"), modelo, _FakeEvidence())
+    agent.run("analiza", case_id="c")
+
+    (correccion,) = _correccion_en(modelo.vistos[-1])
+    assert '{"action": "final", "text":' in correccion
+    assert t("agentLoop.repairTailNoJson") in correccion
+    assert t("agentLoop.repairTail") not in correccion
+    # Lo que emitió viaja citado, para que reconozca su propio texto.
+    assert "La evidencia confirma" in correccion
+
+
+def test_a_broken_envelope_keeps_the_generic_repair() -> None:
+    """Una comilla sin cerrar o una clave mal puesta se corrige reemitiendo lo
+    mismo bien formado: ahí no hay nada que envolver en `final`."""
+    exc = _violacion('{"action":"tool_call","tool_id":"aff4imager","params":{"evidence_id":"e0}}')
+    assert exc.no_json is False
+
+    modelo = _Scripted([exc, FinalAnswer(text="ya lo tengo")])
+    agent = ForensicAgent(make_package("unix"), modelo, _FakeEvidence())
+    agent.run("analiza", case_id="c")
+
+    (correccion,) = _correccion_en(modelo.vistos[-1])
+    assert t("agentLoop.repairTail") in correccion
+    assert t("agentLoop.repairTailNoJson") not in correccion
+    assert "Unterminated string" in correccion
+
+
+def test_the_contract_shown_to_the_model_has_single_braces() -> None:
+    """El catálogo escapaba las llaves para `str.format`, pero `t()` no formatea
+    una entrada sin parámetros: el modelo leía `{{"action": "final", ...}}` como
+    formato OBLIGATORIO. Los tres ejemplos tienen que ser JSON de una llave."""
+    from agentopsy.models.base import _response_contract
+
+    for lang in ("es", "en"):
+        contrato = t("agentContract.format", lang)
+        assert "{{" not in contrato and "}}}}" not in contrato
+        assert '{"action": "final", "text":' in contrato
+        assert '{"action": "tool_call", "tool_id":' in contrato
+        assert '{"action": "tool_batch", "calls": [{"tool_id":' in contrato
+    assert "{{" not in _response_contract()

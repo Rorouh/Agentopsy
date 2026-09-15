@@ -435,8 +435,13 @@ refuses any argv element over the cap with `executor.argvTooLong` instead of
 letting `execve` fail with `[Errno 7]`.
 
 **Agent loop.** `agentopsy.agent` runs the analysis as a background job, persists
-findings hot, and concedes ONE correction round when a response breaks the
-response contract (a failure to EXECUTE is never retried). Findings validate
+findings hot, and concedes up to TWO consecutive correction rounds when a response
+breaks the response contract (`MAX_REPARACIONES_CONTRATO`; the counter resets on
+every valid envelope, and a failure to EXECUTE is never retried). The parser is
+never relaxed: the correction names the exact defect back to the model, and a
+reply with no JSON object at all is told to wrap that text in `final` rather
+than to "continue", because in the measured run it was the finished final answer
+written as prose. Findings validate
 `observed_at` as ISO-8601 with an explicit zone: a mark without an offset is
 rejected rather than assumed UTC. A run covers EVERY evidence of the case on equal
 terms, with no primary one: the request carries the case (an `evidence_id` in it is

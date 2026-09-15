@@ -40,11 +40,19 @@ class ResponseContractError(ValueError):
 
     ``raw_text`` carries a bounded sample of what the model actually emitted, so
     the correction quotes the defect instead of describing it in the abstract.
+
+    ``no_json`` marks the one defect that is not a broken envelope but the
+    ABSENCE of one: the reply has no JSON object at all. In the measured run
+    (2026-09-15, Codex, iteration 7) that reply was the finished final answer
+    written as prose, and a correction that only says "comply with the format"
+    sent a model that had nothing left to do off to invent a tool call. The
+    flag lets the agent loop name the right repair: wrap the text in ``final``.
     """
 
-    def __init__(self, message: str, raw_text: str = "") -> None:
+    def __init__(self, message: str, raw_text: str = "", *, no_json: bool = False) -> None:
         super().__init__(message)
         self.raw_text = raw_text[:_RAW_SAMPLE_CHARS]
+        self.no_json = no_json
 
 
 #: How much of a contract-violating reply travels back to the model in the
@@ -391,6 +399,7 @@ class ExecutorBackend(ModelBackend):
             raise ResponseContractError(
                 Mensaje("agentContract.noJson", sample=repr(text.strip()[:300])),
                 text,
+                no_json=True,
             )
         try:
             envelope, _ = json.JSONDecoder().raw_decode(candidate[start:])

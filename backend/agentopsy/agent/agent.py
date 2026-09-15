@@ -84,17 +84,23 @@ logger = logging.getLogger(__name__)
 #: Rondas de CORRECCIÓN SEGUIDAS que se le conceden al modelo cuando su
 #: respuesta no cumple el contrato de formato (``ResponseContractError``): el
 #: contador se pone a cero en cuanto vuelve a emitir un envoltorio válido, así
-#: que lo que se prohíbe son dos incumplimientos consecutivos, no dos en toda
+#: que lo que se prohíbe son tres incumplimientos consecutivos, no tres en toda
 #: una corrida de veinte iteraciones. Mismo criterio que
 #: ``reports.writer.MAX_REPARACIONES`` y por la misma razón: tirar una corrida
 #: entera, con sus iteraciones ya pagadas, porque el modelo puso el nombre de una
 #: herramienta en ``action`` en vez de en ``tool_id`` no protege nada, solo
 #: pierde el trabajo. NO es un fallback (RULE 2): el mismo ejecutor, el mismo
 #: contrato, ninguna tolerancia nueva en el parser, y el motivo exacto devuelto
-#: al modelo. Si la corrección tampoco cumple, la corrida se aborta como antes.
-#: La ronda CONSUME una iteración del presupuesto porque cuesta una llamada real
-#: al ejecutor: el coste se ve en el contador, nunca se esconde.
-MAX_REPARACIONES_CONTRATO = 1
+#: al modelo. Si la última corrección tampoco cumple, la corrida se aborta.
+#: Cada ronda CONSUME una iteración del presupuesto porque cuesta una llamada
+#: real al ejecutor: el coste se ve en el contador, nunca se esconde.
+#:
+#: Dos y no una desde la corrida medida el 2026-09-15 (Codex, gpt-5.6-terra):
+#: en la iteración 7 el modelo entregó la respuesta final en prosa, y en la
+#: corrección respondió con un tool_call al que le faltaba una comilla. Dos
+#: deslices distintos, seguidos, al cierre de una investigación ya hecha; con
+#: una sola ronda se perdió la respuesta que faltaba y nada más se protegió.
+MAX_REPARACIONES_CONTRATO = 2
 
 
 def _contract_repair_message(exc: ResponseContractError) -> str:
@@ -103,14 +109,22 @@ def _contract_repair_message(exc: ResponseContractError) -> str:
     Es autocontenido a propósito (cita la muestra de lo que emitió) para que
     valga igual con transporte de sesión, donde el modelo ya tiene su turno en la
     conversación, que con un ejecutor stateless, donde no lo tiene.
+
+    El cierre depende del defecto. Un envoltorio roto (clave mal puesta, comilla
+    sin cerrar) se corrige reemitiendo lo mismo bien formado, y el cierre
+    genérico dice eso. Una respuesta SIN JSON es otra cosa: en la corrida medida
+    era la respuesta final, en prosa, de una investigación terminada, y decirle
+    a ese modelo «continúa donde estabas» lo mandó a inventarse un tool_call.
+    Ahí el cierre nombra la reparación real: envolver ese texto en ``final``.
     """
     muestra = exc.raw_text.strip()
     bloque = f"\nEsto es lo que emitiste:\n{muestra}\n" if muestra else "\n"
+    cierre = "agentLoop.repairTailNoJson" if exc.no_json else "agentLoop.repairTail"
     return (
         t("agentLoop.repairHead")
         + f"{exc}."
         + f"{bloque}"
-        + t("agentLoop.repairTail")
+        + t(cierre)
     )
 
 

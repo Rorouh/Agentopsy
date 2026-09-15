@@ -131,3 +131,21 @@ def test_toda_entrada_con_parametros_se_puede_renderizar():
                     f"{clave!r} ({idioma}) no se puede formatear: {exc}. "
                     "Una llave literal va DOBLADA ({{ }})."
                 ) from exc
+
+
+def test_una_entrada_sin_parametros_no_dobla_las_llaves():
+    """El complemento del anterior. `t()` solo formatea cuando hay parámetros,
+    así que una entrada SIN marcadores se sirve tal cual: si dobla una llave,
+    el doblado llega al lector. Así viajó el contrato de respuesta al modelo
+    hasta el 2026-09-15: `{{"action": "final", ...}}` como formato obligatorio.
+    Una entrada sin parámetros escribe el JSON con una sola llave."""
+    import re
+
+    for clave, entrada in CATALOGO.items():
+        for idioma, texto in entrada.items():
+            if re.search(r"\{(\w+)\}", texto):
+                continue
+            assert "{{" not in texto, (
+                f"{clave!r} ({idioma}) no tiene parámetros: `t()` no la formatea "
+                "y la llave doblada llegaría tal cual al lector."
+            )
