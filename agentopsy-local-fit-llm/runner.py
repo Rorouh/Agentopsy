@@ -190,13 +190,36 @@ class Corrida:
             self.estado.guardar()
             self._evento("orden", agent="revisor", text=orden)
             objetivo = f"{orden} (pregunta del perito: «{self.prompt[:160]}»)"
+            antes = len(self.estado.datos["pasos"])
             informe = self._investigar(objetivo, self.cfg.max_pasos_orden,
                                        langsmith_extra=trazas.metadatos(orden=orden, indice=idx))
-            self.estado.tareas[idx]["estado"] = "hecha"
+            hizo_algo = self._acciones_desde(antes) > 0
+            # Una orden que el investigador cerró sin ejecutar NADA no es una orden
+            # cumplida. Medido el 2026-09-13: la segunda orden del plan se saltó con
+            # «no se requiere realizar más análisis», se marcó «hecha» igual que la
+            # primera, y el revisor aprobó el turno creyendo que se habían ejecutado las
+            # dos. Marcarla como cumplida es decirle al operador algo que no pasó.
+            self.estado.tareas[idx]["estado"] = "hecha" if hizo_algo else "descartada"
             self.estado.guardar()
             self._evento("tareas", tareas=self.estado.tareas, agent="revisor")
-            informes.append(f"- Orden «{orden}»: {informe[:400]}")
+            if hizo_algo:
+                informes.append(f"- Orden «{orden}»: {informe[:400]}")
+            else:
+                self.registro.anotar({
+                    "action": "reviewer_order_abandoned", "case_id": self.case_id, "order": orden,
+                    "reason": informe[:300], "engine": "local-fit-llm",
+                })
+                informes.append(f"- Orden «{orden}»: NO EJECUTADA. El investigador la cerró sin ejecutar "
+                                f"ninguna herramienta. Lo que alegó: {informe[:300]}")
         return "\n".join(informes) if informes else "(sin órdenes ejecutadas)"
+
+    #: Pasos que NO son trabajo: cerrar el turno, o una respuesta que no se pudo leer.
+    _SIN_TRABAJO = frozenset({"informar", "(sin accion)", "(ilegible)"})
+
+    def _acciones_desde(self, antes: int) -> int:
+        """Cuántos pasos con acción real se dieron desde el índice `antes`."""
+        return sum(1 for p in self.estado.datos["pasos"][antes:]
+                   if p.get("accion") not in self._SIN_TRABAJO)
 
     # -- nodos del grafo (grafo.py) ----------------------------------------------------------
     def nodo_planificar(self, estado: dict[str, Any]) -> dict[str, Any]:
