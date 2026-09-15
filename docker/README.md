@@ -194,6 +194,21 @@ El maletín queda **habilitado para que el `api` lo consulte** así:
   cuando no la hay). Lo declara el propio ejecutor en `enforces_timeout`, nunca
   se deduce del contexto (RULE 2); ver `PromptExecutor.timeout_for` en
   `backend/agentopsy/executors/base.py`.
+- **El prompt entra a los CLI por stdin, nunca como argumento.** Linux limita
+  cada elemento de argv a 128 KiB (`MAX_ARG_STRLEN`); con la transcripción
+  completa del caso en un argumento, `execve` rechazaba el lanzamiento con
+  `[Errno 7] Argument list too long` en cuanto la investigación superaba la
+  decena de turnos (Codex CLI en la iteración 13, Claude Code en la 28). Los
+  tres CLI leen sus instrucciones de stdin cuando no reciben el prompt en la
+  línea de órdenes (`claude -p`, `codex exec`, `gemini` sin `-p`; comprobado
+  contra los binarios instalados), así que `CliPromptExecutor.run` lo escribe
+  ahí con `input=`. La cadena de custodia no pierde nada: el evento
+  `executor_run_start` sigue llevando el argv literal (invariante forense 4) y
+  fija el prompt por `prompt_sha256` y `prompt_chars`, con
+  `prompt_transport: "stdin"` diciendo por dónde viajó. Si algún día un flag
+  llevase texto derivado del caso por encima del tope, `run` lo rechaza antes
+  de lanzar nada con un mensaje que nombra el límite (`executor.argvTooLong`),
+  no con el errno del kernel (RULE 2).
 
 ## Notas de seguridad del contenedor
 

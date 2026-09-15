@@ -34,10 +34,11 @@ api    (backend/, FastAPI)        agentopsy/ = ALL the logic. routers/ are thin 
    │                              agentes/ mounted into the container (agent.md / agent.en.md,
    │                              one behavioral file PER LANGUAGE)
    ├─▶ EXECUTION LAYER            operator-selected per RULE 2 — never a default:
-   │     claude -p | codex exec | gemini -p    CLIs installed in the api image; sessions live
-   │                                           in the agentopsy-cli-auth volume — seeded once
-   │                                           from the host creds (ro staging) or created by
-   │                                           in-container login (own subscription, NO API keys)
+   │     claude -p | codex exec | gemini       CLIs installed in the api image, prompt on STDIN
+   │                                           (never in argv); sessions live in the
+   │                                           agentopsy-cli-auth volume — seeded once from the
+   │                                           host creds (ro staging) or created by in-container
+   │                                           login (own subscription, NO API keys)
    │     ollama                                HTTP to the Ollama the operator chose (100% local):
    │                                           the compose service by default, or the one on the
    │                                           operator's own machine (Settings beats the env)
@@ -424,7 +425,14 @@ run records the bound it was launched under (`executor_run_start.timeout_s`, nul
 when there is none). Session transport sends only the delta when
 `session_guard` can ACCOUNT for the session, and the CLI subprocesses run in a
 neutral empty cwd so no host `CLAUDE.md`/`AGENTS.md`/`GEMINI.md` leaks into the
-model's context.
+model's context. **The prompt never travels in argv: the three CLIs read it from
+stdin** (`claude -p` with no positional, `codex exec` with no prompt, `gemini`
+headless on a piped stdin, each verified against the real binary). Linux caps a
+single argv element at `MAX_ARG_STRLEN` (128 KiB) and a full transcript crosses
+it after a dozen turns; the audit keeps custody of the prompt by
+`prompt_sha256`/`prompt_chars` plus `prompt_transport: "stdin"`, and `run`
+refuses any argv element over the cap with `executor.argvTooLong` instead of
+letting `execve` fail with `[Errno 7]`.
 
 **Agent loop.** `agentopsy.agent` runs the analysis as a background job, persists
 findings hot, and concedes ONE correction round when a response breaks the

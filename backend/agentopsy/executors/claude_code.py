@@ -1,8 +1,12 @@
-"""Claude Code executor — ``claude -p <prompt> --output-format json``.
+"""Claude Code executor — ``claude -p --output-format json`` with the prompt on stdin.
 
 Flags verified against the official docs (code.claude.com/docs/en/headless,
-2026-07-02):
-- ``-p`` / ``--print`` runs non-interactively; the prompt is the positional arg.
+2026-07-02) and against the installed binary (2026-09-15):
+- ``-p`` / ``--print`` runs non-interactively. The prompt is NOT passed as the
+  positional argument: with no positional, ``claude -p`` reads it from stdin
+  (verified: a piped prompt reached the API and answered with a ``result``
+  envelope). Putting it in argv hit the kernel's 128 KiB per-argument cap at
+  turn 28 of a real run, and ``execve`` refused to start the CLI.
 - ``--output-format json`` returns one JSON object with the text in ``result``
   plus session metadata (``session_id``, ``is_error``, ``total_cost_usd``).
 - ``--bare`` is deliberately NOT used: bare mode skips the OAuth reads and
@@ -111,10 +115,10 @@ class ClaudeCodeExecutor(CliPromptExecutor):
             reason += f" (detalle de `claude auth status`: {detail})"
         return ExecutorAvailability(available=False, reason=reason)
 
-    def _build_argv(
-        self, prompt: str, model: str | None, session_id: str | None = None
-    ) -> list[str]:
-        argv = ["claude", "-p", prompt]
+    def _build_argv(self, model: str | None, session_id: str | None = None) -> list[str]:
+        # No positional prompt: `claude -p` reads it from stdin (base ``run``
+        # writes it there). See the module docstring for the verification.
+        argv = ["claude", "-p"]
         if model:
             # `--model` accepts an alias ('opus', 'sonnet', 'haiku', 'fable') or a
             # full name ('claude-fable-5') — verified in `claude --help`. It does

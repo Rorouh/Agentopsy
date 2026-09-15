@@ -275,7 +275,7 @@ def test_claude_run_exit_nonzero_surfaces_literal_stderr(
 
 # Bug 3 (repro en vivo 2026-07-17, codex-cli 0.142.5): un turno fallido de Codex se
 # reporta como evento JSONL en STDOUT; el stderr solo trae la nota informativa de
-# stdin=DEVNULL, que NO es la causa.
+# que lee el prompt por stdin, que NO es la causa.
 _CODEX_STDIN_NOTE = "Reading additional input from stdin..."
 _CODEX_USAGE_LIMIT_STDOUT = "\n".join(
     [
@@ -455,6 +455,79 @@ def test_run_uses_neutral_cwd_and_audits_it(
     assert not any(Path(expected).iterdir())  # neutro = VACÍO por construcción
     start = next(e for e in audit if e["action"] == "executor_run_start")
     assert start["cwd"] == expected
+
+
+def test_run_sends_the_prompt_on_stdin_never_in_argv(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """El prompt cruza al CLI por stdin (`input=`) y NO aparece en el argv.
+
+    Un prompt mayor que MAX_ARG_STRLEN (128 KiB, el tope del kernel por
+    argumento) tiene que lanzarse igual: antes, execve lo rechazaba con
+    `[Errno 7] Argument list too long` y el CLI ni arrancaba. El audit conserva
+    la custodia del prompt por hash y longitud, y declara por dónde viajó."""
+    monkeypatch.setattr(executors_base, "CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(
+        ClaudeCodeExecutor,
+        "is_available",
+        lambda self: ExecutorAvailability(available=True),
+    )
+    seen: dict = {}
+    envelope = json.dumps({"result": "ok", "session_id": "s1", "num_turns": 1})
+
+    def fake_run(argv, **kwargs):  # noqa: ANN001, ANN003
+        seen["argv"] = list(argv)
+        seen["input"] = kwargs.get("input")
+        seen["stdin"] = kwargs.get("stdin")
+        return subprocess.CompletedProcess(argv, 0, stdout=envelope, stderr="")
+
+    monkeypatch.setattr(executors_base.subprocess, "run", fake_run)
+    audit = _ListAudit()
+    # 200 000 caracteres ASCII: 200 000 bytes, por encima del tope del kernel.
+    prompt = "transcrito largo con ñ " * 9000
+    assert len(prompt.encode("utf-8")) > executors_base.MAX_ARG_STRLEN
+
+    ClaudeCodeExecutor().run(prompt, {"audit": audit, "case_id": "c1"})
+
+    assert seen["input"] == prompt
+    assert seen["stdin"] is None, "stdin=DEVNULL taparía el prompt"
+    assert all(prompt not in a for a in seen["argv"])
+    assert all(len(a.encode("utf-8")) <= executors_base.MAX_ARG_STRLEN for a in seen["argv"])
+    start = next(e for e in audit if e["action"] == "executor_run_start")
+    assert start["prompt_transport"] == "stdin"
+    assert start["prompt_sha256"] == executors_base.sha256_text(prompt)
+    assert start["prompt_chars"] == len(prompt)
+    assert prompt not in json.dumps(start["argv"])
+
+
+def test_run_refuses_an_argv_element_over_the_kernel_cap(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Tripwire: si algún día un flag arrastra texto del caso al argv, el fallo
+    es una frase que nombra el límite, no un `[Errno 7]` (RULE 2). Se comprueba
+    ANTES de lanzar nada: el subproceso no llega a invocarse."""
+    monkeypatch.setattr(executors_base, "CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(
+        ClaudeCodeExecutor,
+        "is_available",
+        lambda self: ExecutorAvailability(available=True),
+    )
+    huge = "x" * (executors_base.MAX_ARG_STRLEN + 1)
+    monkeypatch.setattr(
+        ClaudeCodeExecutor,
+        "_build_argv",
+        lambda self, model, session_id=None: ["claude", "-p", "--flag", huge],
+    )
+    launched: list = []
+    monkeypatch.setattr(
+        executors_base.subprocess, "run", lambda *a, **k: launched.append(a) or None
+    )
+
+    with pytest.raises(ExecutorError) as exc:
+        ClaudeCodeExecutor().run("hola", {})
+    assert codigo_de(exc.value) == "executor.argvTooLong"
+    assert str(executors_base.MAX_ARG_STRLEN) in str(exc.value)
+    assert launched == [], "no debe llegar a execve"
 
 
 def test_timeout_audits_estimated_cost(
@@ -789,23 +862,54 @@ def test_validate_model_id_accepts_real_ids(ok: str) -> None:
 
 
 def test_cloud_build_argv_includes_model_when_set() -> None:
-    assert ClaudeCodeExecutor()._build_argv("hi", "opus")[:5] == [
-        "claude", "-p", "hi", "--model", "opus",
+    assert ClaudeCodeExecutor()._build_argv("opus")[:4] == [
+        "claude", "-p", "--model", "opus",
     ]
-    assert "--model" in GeminiExecutor()._build_argv("hi", "gemini-2.5-pro")
+    assert "--model" in GeminiExecutor()._build_argv("gemini-2.5-pro")
     codex = CodexExecutor()
     codex._last_message_path = "/tmp/x.md"
-    argv = codex._build_argv("hi", "gpt-5.5")
-    assert argv[-3:] == ["--model", "gpt-5.5", "hi"]
+    argv = codex._build_argv("gpt-5.5")
+    assert argv[-2:] == ["--model", "gpt-5.5"]
 
 
 def test_cloud_build_argv_omits_model_when_none() -> None:
     """Sin modelo elegido no se pasa --model: manda el default del CLI (RULE 2)."""
-    assert "--model" not in ClaudeCodeExecutor()._build_argv("hi", None)
-    assert "--model" not in GeminiExecutor()._build_argv("hi", None)
+    assert "--model" not in ClaudeCodeExecutor()._build_argv(None)
+    assert "--model" not in GeminiExecutor()._build_argv(None)
     codex = CodexExecutor()
     codex._last_message_path = "/tmp/x.md"
-    assert "--model" not in codex._build_argv("hi", None)
+    assert "--model" not in codex._build_argv(None)
+
+
+def test_prompt_never_travels_in_argv() -> None:
+    """El prompt va por stdin, NUNCA como elemento del argv.
+
+    Linux limita cada argumento a MAX_ARG_STRLEN (128 KiB); el prompt de un
+    ejecutor sin sesión (agent.md + 37 esquemas + transcrito ventaneado) lo cruza
+    en una docena de turnos y execve mata el proceso antes de arrancar con
+    `[Errno 7] Argument list too long` (Codex en el turno 13, Claude en el 28,
+    medidos). Por eso `_build_argv` ya no recibe el prompt: si alguien vuelve a
+    meterlo en el argv, este test lo ve porque la firma no lo admite y porque
+    ningún elemento puede ser el texto del prompt."""
+    codex = CodexExecutor()
+    codex._last_message_path = "/tmp/x.md"
+    for argv in (
+        ClaudeCodeExecutor()._build_argv("opus"),
+        ClaudeCodeExecutor()._build_argv(None, "sid-1"),
+        GeminiExecutor()._build_argv(None),
+        codex._build_argv("gpt-5.5"),
+    ):
+        # Nada del argv es un positional libre: todo son el binario, flags y
+        # sus valores acotados (modelo, sesión, ruta del fichero de salida).
+        assert all(len(a.encode("utf-8")) < 4096 for a in argv), argv
+    # Gemini: sin `-p`, para que el prompt de stdin llegue byte a byte
+    # (con stdin no-TTY el CLI ya es headless: verificado en su bundle).
+    assert "-p" not in GeminiExecutor()._build_argv(None)
+    # Claude: `-p` sin positional (lee stdin, verificado en vivo).
+    assert ClaudeCodeExecutor()._build_argv(None)[:2] == ["claude", "-p"]
+    # Codex: `exec` sin positional ("if no prompt is given, instructions are
+    # read from stdin", `codex exec --help`).
+    assert codex._build_argv(None)[:2] == ["codex", "exec"]
 
 
 @pytest.mark.parametrize("bad", ["ULTRA", "ultra high", "-c", "x\"", "", "a" * 17])
@@ -824,12 +928,14 @@ def test_codex_argv_carries_the_reasoning_effort() -> None:
     codex = CodexExecutor()
     codex._last_message_path = "/tmp/x.md"
     codex._reasoning_effort = "ultra"
-    argv = codex._build_argv("hi", "gpt-5.6-sol")
+    argv = codex._build_argv("gpt-5.6-sol")
     assert argv[argv.index("-c") + 1] == 'model_reasoning_effort="ultra"'
-    assert argv[-1] == "hi"
+    # El override es el ÚLTIMO elemento: no hay positional detrás (el prompt va
+    # por stdin), así que el CLI no puede confundir el prompt con un valor.
+    assert argv[-1] == 'model_reasoning_effort="ultra"'
     # Sin nivel elegido no se sobreescribe nada: manda el CLI (RULE 2).
     codex._reasoning_effort = None
-    assert "-c" not in codex._build_argv("hi", "gpt-5.6-sol")
+    assert "-c" not in codex._build_argv("gpt-5.6-sol")
 
 
 def test_codex_rejects_an_effort_the_model_cannot_take(tmp_path: Path, monkeypatch) -> None:
@@ -871,14 +977,14 @@ def test_claude_argv_strips_the_cli_harness() -> None:
     del de un asistente de programación. En TODAS las llamadas, `--resume`
     incluido (verificado contra `claude` 2.1.220: mismo session_id, num_turns=1)."""
     ex = ClaudeCodeExecutor()
-    for argv in (ex._build_argv("hi", None), ex._build_argv("hi", None, "sid-1")):
+    for argv in (ex._build_argv(None), ex._build_argv(None, "sid-1")):
         assert argv[argv.index("--tools") + 1] == ""
         assert argv[argv.index("--setting-sources") + 1] == ""
         system = argv[argv.index("--system-prompt") + 1]
         # La identidad va en el idioma del agente: se compara con la entrada
         # del catálogo, no con una palabra castellana.
         assert system == t("claude.systemPrompt")
-    assert "--resume" in ex._build_argv("hi", None, "sid-1")
+    assert "--resume" in ex._build_argv(None, "sid-1")
 
 
 def test_claude_surfaces_the_expired_session_instead_of_an_empty_stderr() -> None:

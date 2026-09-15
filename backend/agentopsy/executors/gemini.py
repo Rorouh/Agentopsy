@@ -1,9 +1,16 @@
-"""Gemini CLI executor — ``gemini -p <prompt> --output-format json``.
+"""Gemini CLI executor — ``gemini --output-format json`` with the prompt on stdin.
 
 Flags verified against the official docs
-(google-gemini.github.io/gemini-cli/docs/cli/headless.html, 2026-07-02):
-- ``-p`` / ``--prompt`` takes the prompt and enables headless (non-interactive)
-  operation.
+(google-gemini.github.io/gemini-cli/docs/cli/headless.html, 2026-07-02) and
+against the installed bundle (2026-09-15, ``chunk-DG2DMXNL.js`` /
+``gemini-*.js``):
+- The prompt is NOT passed with ``-p``: the CLI reads it from stdin. Its
+  ``isHeadlessMode`` returns true whenever stdin or stdout is not a TTY (both
+  are pipes under ``subprocess.run``), and when stdin is not a TTY it does
+  ``input = stdinData`` — the piped text IS the prompt. ``--help`` documents the
+  same contract from the other side ("-p … appended to input on stdin"). An
+  empty ``-p ""`` would also work but adds nothing; the flag is omitted so the
+  prompt reaches the model byte-for-byte as Agentopsy composed it.
 - ``--output-format json`` returns one JSON object: the answer in ``response``,
   usage metrics in ``stats``, and an ``error`` object (type/message/code) only
   when something failed.
@@ -80,16 +87,16 @@ class GeminiExecutor(CliPromptExecutor):
             reason=t("gemini.expiredSession", hint=_login_hint()),
         )
 
-    def _build_argv(
-        self, prompt: str, model: str | None, session_id: str | None = None
-    ) -> list[str]:
+    def _build_argv(self, model: str | None, session_id: str | None = None) -> list[str]:
         # `session_id` is always None here: this executor leaves
         # `supports_session_resume` at False, so `CliPromptExecutor.run` refuses a
         # session id before it ever reaches this method. Gemini CLI's
         # checkpointing has not been verified against the real binary, and
         # Agentopsy does not send deltas into a session it cannot account for —
         # see plan.md Fase 5.
-        argv = ["gemini", "-p", prompt]
+        # No `-p`: with stdin piped the CLI is headless and takes stdin as the
+        # prompt (see the module docstring). Base ``run`` writes it there.
+        argv = ["gemini"]
         if model:
             # `-m/--model` — verified in `gemini --help`. Uses the OAuth session,
             # no API key (SECURITY INVARIANT 7).

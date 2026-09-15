@@ -1,9 +1,13 @@
-"""Codex CLI executor — ``codex exec <prompt>`` in non-interactive mode.
+"""Codex CLI executor — ``codex exec`` in non-interactive mode, prompt on stdin.
 
 Flags verified against the official docs (developers.openai.com/codex/cli/reference,
-2026-07-02):
-- ``codex exec "<prompt>"`` runs one non-interactive turn; the prompt is the
-  final positional argument.
+2026-07-02) and against ``codex exec --help`` of the installed binary (2026-09-15):
+- ``codex exec`` runs one non-interactive turn. The prompt is NOT the positional
+  argument: the help states "if no prompt is given, instructions are read from
+  stdin", and base ``run`` writes it there. Codex has no session resume here, so
+  every turn re-sends the full windowed transcript plus agent.md and the tool
+  schemas in ONE string; as an argv element that crossed the kernel's 128 KiB
+  cap at turn 13 of a real run and ``execve`` refused to start the CLI.
 - ``--skip-git-repo-check`` allows running outside a Git repository (the api
   container's workdir is not a repo).
 - ``--sandbox read-only`` pins the strictest sandbox: Agentopsy uses the CLI as a
@@ -223,9 +227,7 @@ class CodexExecutor(CliPromptExecutor):
         catalog, _ = read_model_catalog()
         return [entry.slug for entry in catalog]
 
-    def _build_argv(
-        self, prompt: str, model: str | None, session_id: str | None = None
-    ) -> list[str]:
+    def _build_argv(self, model: str | None, session_id: str | None = None) -> list[str]:
         # `session_id` is always None here: this executor leaves
         # `supports_session_resume` at False, so `CliPromptExecutor.run` refuses a
         # session id before it ever reaches this method. Codex does document a
@@ -260,7 +262,8 @@ class CodexExecutor(CliPromptExecutor):
             # override manda lo que diga el config.toml del volumen — que es el
             # default del CLI, no una decisión de Agentopsy (RULE 2).
             argv += ["-c", f'{_REASONING_KEY}="{self._reasoning_effort}"']
-        argv.append(prompt)
+        # No positional prompt: Codex reads the instructions from stdin, where
+        # base ``run`` writes them (see the module docstring).
         return argv
 
     def _extract_text(self, stdout: str) -> str:
@@ -275,10 +278,11 @@ class CodexExecutor(CliPromptExecutor):
     def _extract_error(self, stdout: str, stderr: str) -> str | None:
         # A failed Codex turn is reported as a JSONL event on STDOUT:
         # {"type":"error","message":"…"} (usage limit, auth, sandbox denial, …). The
-        # stderr only carries "Reading additional input from stdin..." — an
-        # informational note from stdin=DEVNULL, NOT the cause (Bug 3: verified in vivo
+        # stderr carries at most informational notes about stdin (it used to print
+        # "Reading additional input from stdin..." when stdin was /dev/null; now the
+        # prompt itself arrives there), NOT the cause (Bug 3: verified in vivo
         # 2026-07-17, codex-cli 0.142.5). Surface the LAST error message found so the
-        # operator sees the real, actionable reason instead of the stdin red herring.
+        # operator sees the real, actionable reason instead of a stderr red herring.
         message: str | None = None
         for line in stdout.splitlines():
             line = line.strip()

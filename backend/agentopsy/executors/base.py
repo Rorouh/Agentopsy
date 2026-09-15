@@ -20,8 +20,15 @@ Contract:
   never substitute). ``run()`` re-checks it and aborts fast before launching.
 - ``run(prompt, context)`` executes ONE prompt and returns an ``ExecutorResult``.
   CLI executors run ``subprocess.run(argv, shell=False)`` — argv arrays only
-  (SECURITY INVARIANT 4). When ``context`` carries an ``audit`` log, the run is
-  recorded with the LITERAL argv (FORENSIC INVARIANT 4), never a paraphrase.
+  (SECURITY INVARIANT 4). The PROMPT never travels in argv: it is written to the
+  CLI's stdin (``input=``). Linux caps ONE argv element at ``MAX_ARG_STRLEN``
+  (128 KiB); a transcript-plus-schemas prompt crosses it in a dozen turns and
+  ``execve`` then fails with ``E2BIG`` before the CLI even starts (measured:
+  Codex died at turn 13, Claude at turn 28, both with a bare
+  ``[Errno 7] Argument list too long``). stdin has no such cap, so the context
+  ceiling is once more the model's window, not the kernel's. When ``context``
+  carries an ``audit`` log, the run is recorded with the LITERAL argv plus the
+  prompt's SHA-256 and length (FORENSIC INVARIANT 4), never a paraphrase.
 - Failures raise ``ExecutorError`` with the exact stderr — fail loud, no retries
   against another executor (RULE 2).
 """
@@ -50,6 +57,16 @@ from agentopsy.config import CONFIG_DIR, config
 # (``context['timeout']``) or per deployment with AGENTOPSY_EXECUTOR_TIMEOUT
 # (env or Settings) — see ``resolve_timeout``.
 DEFAULT_TIMEOUT_S = 300
+
+# Linux caps a SINGLE argv element at 32 pages (``MAX_ARG_STRLEN`` in
+# ``include/uapi/linux/binfmts.h``): 32 * 4096 = 131072 bytes. Exceed it and
+# ``execve`` fails with E2BIG — the process never starts, there is no stdout or
+# stderr to explain anything. The prompt no longer travels in argv (it goes to
+# stdin), so no element gets near this line by design; the check stays as a
+# tripwire so a future flag that carries case-derived text fails with a
+# sentence instead of ``[Errno 7]``. Measured in BYTES of UTF-8, which is what
+# the kernel counts (an accented transcript is longer in bytes than in chars).
+MAX_ARG_STRLEN = 131_072
 
 # Chars-per-token divisor for the ESTIMATED cost of a turn that died before the
 # executor could report usage (timeout / unlaunchable binary). Explicitly an
@@ -421,11 +438,15 @@ class CliPromptExecutor(PromptExecutor):
         reason on failure names the CONCRETE login command."""
 
     @abstractmethod
-    def _build_argv(
-        self, prompt: str, model: str | None, session_id: str | None = None
-    ) -> list[str]:
+    def _build_argv(self, model: str | None, session_id: str | None = None) -> list[str]:
         """Literal argv for one non-interactive run (verified against the
         official CLI docs — see each subclass).
+
+        The PROMPT is not an argument: ``run`` writes it to the CLI's stdin, so
+        the argv this returns must leave the CLI reading its instructions from
+        there (each subclass documents the verified flag shape). Putting the
+        prompt in argv is what made the kernel refuse to launch the CLI once the
+        transcript outgrew ``MAX_ARG_STRLEN``.
 
         ``model`` is the operator-selected model id (already validated by
         ``run``): when set, the subclass appends the CLI's model flag; when
@@ -465,8 +486,8 @@ class CliPromptExecutor(PromptExecutor):
         """Hook: pull a MORE ACTIONABLE failure reason than raw stderr from the CLI's
         output when the run exits non-zero. Some CLIs report the real cause (usage
         limit, auth, sandbox denial) as a structured event on STDOUT while stderr
-        carries only noise (Codex: an informational "Reading additional input from
-        stdin..." from ``stdin=DEVNULL``). Default: none → the run falls back to stderr."""
+        carries only noise (Codex once printed an informational "Reading additional
+        input from stdin..." there). Default: none → the run falls back to stderr."""
         return None
 
     # ---- shared run ----------------------------------------------------------
@@ -511,7 +532,7 @@ class CliPromptExecutor(PromptExecutor):
             # Same gate as the model id (SECURITY INVARIANT 5).
             validate_model_id(session_id)
 
-        argv = self._build_argv(prompt, model, session_id)
+        argv = self._build_argv(model, session_id)
         # ``None`` = unbounded, which ``subprocess.run`` reads as "no limit".
         # The three CLIs declare a bound; the branch keeps the contract honest
         # for any executor that ever declares otherwise.
@@ -520,16 +541,34 @@ class CliPromptExecutor(PromptExecutor):
         audit = ctx.get("audit")
         case_id = ctx.get("case_id")
 
+        # Tripwire against the kernel's per-argument cap. The prompt goes to
+        # stdin, so today nothing here can trip it; if a future flag ever
+        # carries case-derived text, the operator reads a sentence naming the
+        # limit instead of ``[Errno 7] Argument list too long`` (RULE 2).
+        oversized = [a for a in argv if len(a.encode("utf-8")) > MAX_ARG_STRLEN]
+        if oversized:
+            raise ExecutorError(
+                Mensaje(
+                    "executor.argvTooLong",
+                    name=self.name,
+                    limit=MAX_ARG_STRLEN,
+                    size=max(len(a.encode("utf-8")) for a in oversized),
+                )
+            )
+
         if audit is not None:
-            # FORENSIC INVARIANT 4: the LITERAL argv (prompt included — it is
-            # case-derived content and the audit log lives inside the case dir),
-            # never the LLM's or the caller's paraphrase.
+            # FORENSIC INVARIANT 4: the LITERAL argv, never the LLM's or the
+            # caller's paraphrase. The prompt is case-derived content that
+            # travels on stdin, not in argv, so it is fixed here by SHA-256 and
+            # length: a third party recomputes the hash over the case's own
+            # transcript, and ``prompt_transport`` says where the bytes went.
             event: dict[str, Any] = {
                 "action": "executor_run_start",
                 "executor": self.id,
                 "local": self.is_local,
                 "case_id": case_id,
                 "argv": argv,
+                "prompt_transport": "stdin",
                 "prompt_sha256": sha256_text(prompt),
                 "prompt_chars": len(prompt),
                 # The literal working directory of the subprocess — a neutral
@@ -559,13 +598,20 @@ class CliPromptExecutor(PromptExecutor):
 
         started = time.monotonic()
         try:
+            # The prompt enters through stdin (``input=``): no argv element
+            # carries it, so ``execve`` never sees a string near MAX_ARG_STRLEN.
+            # ``text=True`` encodes it as UTF-8, which is what the three CLIs
+            # read. Verified against the real binaries (2026-09-15): ``claude -p``
+            # with no positional reads stdin; ``codex exec`` documents "if no
+            # prompt is given, instructions are read from stdin"; ``gemini`` goes
+            # headless whenever stdin is not a TTY and takes stdin as the prompt.
             proc = subprocess.run(  # noqa: S603 — argv array, shell=False by design
                 argv,
                 shell=False,
                 capture_output=True,
                 text=True,
                 timeout=timeout,
-                stdin=subprocess.DEVNULL,
+                input=prompt,
                 cwd=cwd,
             )
         except subprocess.TimeoutExpired as exc:

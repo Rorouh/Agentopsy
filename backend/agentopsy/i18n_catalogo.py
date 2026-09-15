@@ -250,6 +250,10 @@ CATALOGO["executor.stderrEmpty"] = {
     "en": "stderr: {detail}",
     "es": "stderr: {detail}",
 }
+CATALOGO["executor.argvTooLong"] = {
+    "en": "{name} was not launched: one command-line argument is {size} bytes and Linux caps a single argument at {limit} bytes (the process would die at execve with 'Argument list too long'). The prompt travels on stdin, so an argument this large is a defect in how the argv is built, not something the operator can reduce.",
+    "es": "{name} no se ha lanzado: un argumento de la línea de órdenes ocupa {size} bytes y Linux limita cada argumento a {limit} bytes (el proceso moriría en execve con 'Argument list too long'). El prompt viaja por stdin, así que un argumento de ese tamaño es un defecto en la construcción del argv, no algo que el operador pueda reducir.",
+}
 CATALOGO["executor.emptyMark"] = {
     "en": "(empty)",
     "es": "(vacío)",
