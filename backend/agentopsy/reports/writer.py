@@ -89,12 +89,19 @@ from agentopsy.reports.material import build_material
 from agentopsy.reports.svg import SvgNoAdmitido, validar_svg
 from agentopsy.reports.works import audited_argvs
 
-#: Presupuesto de tiempo de la redacción. Un informe pericial completo es la
-#: respuesta más larga que Agentopsy le pide a un modelo, así que no cabe en el
-#: `DEFAULT_TIMEOUT_S` (300 s) calibrado para un turno del agente. Viaja como
-#: ``context['timeout']``, el primer escalón de ``resolve_timeout``, así que el
-#: operador aún puede subirlo con AGENTOPSY_EXECUTOR_TIMEOUT si su modelo es más
-#: lento… pero no bajarlo por accidente para esta llamada.
+#: Presupuesto de tiempo de la redacción EN LOS EJECUTORES QUE LLEVAN COTA. Un
+#: informe pericial completo es la respuesta más larga que Agentopsy le pide a un
+#: modelo, así que no cabe en el `DEFAULT_TIMEOUT_S` (300 s) calibrado para un
+#: turno del agente. Viaja como ``context['timeout']``, el primer escalón de
+#: ``resolve_timeout``, así que el operador aún puede subirlo con
+#: AGENTOPSY_EXECUTOR_TIMEOUT si su modelo es más lento… pero no bajarlo por
+#: accidente para esta llamada.
+#:
+#: Con Ollama no se aplica NINGÚN presupuesto: el ejecutor local declara
+#: ``enforces_timeout = False`` y ``timeout_for`` descarta este valor antes de
+#: leerlo (ver ``agentopsy.executors.base``). Redactar el informe entero con un
+#: modelo grande en la GPU del perito pasa de sobra de estos 900 s, y cortarlo
+#: tiraba el borrador completo sin ahorrar nada.
 REPORT_TIMEOUT_S = 900
 
 #: Rondas de CORRECCIÓN que se le conceden al modelo cuando una puerta de
@@ -715,7 +722,8 @@ def write_report(
     context: dict[str, Any] = {
         "audit": audit,
         "case_id": case_id,
-        # Un informe completo es la respuesta más larga que Agentopsy pide.
+        # Un informe completo es la respuesta más larga que Agentopsy pide. Lo lee
+        # el ejecutor que declara cota; el local corre sin ella y lo ignora.
         "timeout": REPORT_TIMEOUT_S,
     }
     if model:

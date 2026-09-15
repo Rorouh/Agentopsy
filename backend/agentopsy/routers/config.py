@@ -29,8 +29,11 @@ logging in inside the container). Editable keys:
   CLI has configured. Validated for FORM always, and against the catalog the CLI
   itself cached when that catalog is readable — never against a list written
   here (RULE 2).
-- ``AGENTOPSY_EXECUTOR_TIMEOUT`` — seconds one executor run may take before it
-  is aborted (and audited) as a timeout; see ``agentopsy.executors.base``.
+- ``AGENTOPSY_EXECUTOR_TIMEOUT`` — seconds one run of a CLOUD executor (Claude
+  Code, Codex CLI, Gemini CLI) may take before it is aborted (and audited) as a
+  timeout. Ollama, the 100 % local option, declares itself unbounded and ignores
+  this key entirely; see ``PromptExecutor.timeout_for`` in
+  ``agentopsy.executors.base``.
 """
 
 from __future__ import annotations

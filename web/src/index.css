@@ -2181,6 +2181,10 @@ select option:disabled { color: var(--ink-5); }
 .settings-lede { font-size: var(--fs-3); line-height: 1.6; color: var(--ink-2); max-width: 46em; }
 .settings-inline { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
 .settings-inline-label { min-width: 148px; }
+/* Un ajuste con nota al pie: la fila conserva su alineación y la nota cuelga
+   debajo, sin el hueco de 36px que .settings-stack pone entre bloques. */
+.settings-field { display: flex; flex-direction: column; gap: 8px; }
+.settings-field .engine-note { max-width: 46em; }
 .settings-foot { font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-4); }
 
 /* Un motor por fila: disponibilidad, ámbito, por-defecto y modelo en la misma

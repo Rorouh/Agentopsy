@@ -181,6 +181,19 @@ El maletín queda **habilitado para que el `api` lo consulte** así:
   Ollama to the network* en la app). Es exactamente lo que dice el motivo cuando
   falla. Esto no publica nada nuevo hacia fuera: los puertos del compose siguen
   atados a `127.0.0.1` (SECURITY INVARIANT 1).
+- **El límite de tiempo acota solo a los ejecutores en nube.** El selector de
+  *Ajustes* (60 s, 120 s, 300 s, y `AGENTOPSY_EXECUTOR_TIMEOUT` como variable de
+  despliegue, 300 s por defecto) se aplica a Claude Code, Codex CLI y Gemini
+  CLI: su turno sale de la máquina, lo factura un proveedor y un CLI colgado no
+  puede retener el análisis. **Ollama corre sin límite**: un prompt, una
+  extracción de grafo o la redacción del informe pericial esperan a que el
+  modelo local termine. Nada sale de la máquina y nadie factura por segundo, y
+  un modelo grande en la GPU del perito tarda de sobra más que cualquiera de
+  esas cotas, así que cortarlo solo tiraba el trabajo ya hecho. Cada arranque de
+  turno deja la cota en el audit log (`executor_run_start.timeout_s`, nula
+  cuando no la hay). Lo declara el propio ejecutor en `enforces_timeout`, nunca
+  se deduce del contexto (RULE 2); ver `PromptExecutor.timeout_for` en
+  `backend/agentopsy/executors/base.py`.
 
 ## Notas de seguridad del contenedor
 

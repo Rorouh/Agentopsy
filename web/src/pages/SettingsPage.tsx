@@ -472,21 +472,30 @@ export function SettingsPage({ caps, onCapsRefresh }: SettingsPageProps) {
                 )}
               </div>
 
-              <div className="settings-inline">
-                <div className="eyebrow settings-inline-label">{t("settings.timeout")}</div>
-                <div className="engine-models">
-                  {TIMEOUT_OPTIONS.map((v) => (
-                    <button
-                      key={v}
-                      type="button"
-                      className={`chip-option${timeoutValue === v ? " is-on" : ""}`}
-                      disabled={savingKey === "AGENTOPSY_EXECUTOR_TIMEOUT"}
-                      onClick={() => void saveKey("AGENTOPSY_EXECUTOR_TIMEOUT", String(v))}
-                    >
-                      {v} s
-                    </button>
-                  ))}
+              {/* El límite acota a los ejecutores en nube, cuyo turno sale de la
+                  máquina y lo factura un proveedor. Ollama corre en la máquina
+                  del perito y no lleva cota: el modelo local tarda lo que tarde
+                  (ver PromptExecutor.timeout_for en el backend). La nota lo dice
+                  aquí mismo para que nadie deduzca del selector que también le
+                  aplica. */}
+              <div className="settings-field">
+                <div className="settings-inline">
+                  <div className="eyebrow settings-inline-label">{t("settings.timeout")}</div>
+                  <div className="engine-models">
+                    {TIMEOUT_OPTIONS.map((v) => (
+                      <button
+                        key={v}
+                        type="button"
+                        className={`chip-option${timeoutValue === v ? " is-on" : ""}`}
+                        disabled={savingKey === "AGENTOPSY_EXECUTOR_TIMEOUT"}
+                        onClick={() => void saveKey("AGENTOPSY_EXECUTOR_TIMEOUT", String(v))}
+                      >
+                        {v} s
+                      </button>
+                    ))}
+                  </div>
                 </div>
+                <div className="engine-note">{t("settings.timeoutScope")}</div>
               </div>
 
               {configError && (

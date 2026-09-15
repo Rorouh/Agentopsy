@@ -59,8 +59,9 @@ El compose levanta su propio servicio `ollama`, y con eso ya funciona. Pero lo n
 
 3. Elige el modelo en el mismo panel (la lista es la real de tu equipo, la que devuelve `ollama list`) y selecciona Ollama como ejecutor.
 
-Dos detalles de por qué esto funciona:
+Tres detalles de por qué esto funciona:
 
+- **Con Ollama no hay límite de tiempo.** El selector de *Ajustes → Tiempo máximo* (60 s, 120 s, 300 s) acota a los ejecutores de nube, cuyo turno sale de tu máquina y lo factura un proveedor. El modelo local corre en tu GPU y no lo factura nadie por segundo, así que un prompt, la extracción de un grafo o la redacción del informe pericial entero esperan a que termine, tarde lo que tarde. Cada turno deja en el audit log la cota con la que se lanzó, nula cuando no la hay.
 - **Lo que guardas en Ajustes manda.** El compose fija `OLLAMA_HOST=http://ollama:11434` como línea base del despliegue; el valor que guardas en la web gana sobre esa variable, así que no hay que editar el compose.
 - **`localhost` significa tu equipo, no el contenedor.** Dentro del contenedor `api` esa URL apuntaría al propio contenedor, donde no escucha nadie, así que se resuelve al nombre por el que se alcanza la máquina anfitriona (`host.docker.internal`, declarado en el compose junto al `extra_hosts` que lo hace funcionar también en Linux). La resolución no es silenciosa: sale en el motivo cuando algo falla y queda registrada en el audit log junto a lo que escribiste.
 

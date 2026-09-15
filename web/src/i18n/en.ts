@@ -641,6 +641,8 @@ export const en = {
   "settings.connectName": "Connect {name}",
   "settings.startOllama": "Start the compose ollama service to use it.",
   "settings.timeout": "Time limit",
+  "settings.timeoutScope":
+    "Applies to the cloud executors. Ollama runs on your machine and has no limit: a prompt, a graph or an expert report wait for the local model to finish.",
   "settings.saveFailed": "Could not save: {detail}",
   "settings.foot": "no API keys · sessions and settings only on your machine",
   "settings.noApi": "No connection with the api service",

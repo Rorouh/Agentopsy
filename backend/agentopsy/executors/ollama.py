@@ -24,6 +24,11 @@ The model name is resolved by the CALLER (router): operator-set ``OLLAMA_MODEL``
 from Settings wins, else the agent package's declared ``model.name``. This
 executor demands it in ``context['model']`` and never invents one.
 
+**No time limit.** ``enforces_timeout`` is False, so a prompt, a graph extraction
+or a full pericial report run against Ollama wait for the local model to finish
+(see ``PromptExecutor.timeout_for``). The configurable limit governs the three
+cloud CLIs, whose turns leave the machine and are billed.
+
 Uses stdlib ``urllib`` so the base install works without extra dependencies.
 """
 
@@ -48,7 +53,6 @@ from agentopsy.executors.base import (
     PromptExecutor,
     Usage,
     _as_int,
-    resolve_timeout,
     sha256_text,
 )
 
@@ -124,6 +128,18 @@ class OllamaExecutor(PromptExecutor):
     id = "ollama"
     name = "Ollama"
     is_local = True
+
+    #: Sin límite de reloj. El resto de ejecutores lo llevan porque su turno sale
+    #: de la máquina, lo factura un proveedor y un CLI colgado no puede retener el
+    #: análisis. Aquí no se cumple ninguna de las tres: el modelo corre en la
+    #: máquina del perito, no se factura por segundo y nadie más está esperando.
+    #: Lo único que conseguía el límite era matar trabajo real: un modelo local
+    #: grande tarda minutos por turno y bastante más en redactar un informe
+    #: pericial entero, así que el corte llegaba SIEMPRE antes que la respuesta y
+    #: se perdía el borrador completo. El operador sigue mandando: el prompt se
+    #: corta cerrando la corrida, no con un cronómetro que Agentopsy eligió por
+    #: él (RULE 2). Ver ``PromptExecutor.timeout_for``.
+    enforces_timeout = False
 
     @staticmethod
     def _host() -> ResolvedHost | None:
@@ -216,7 +232,11 @@ class OllamaExecutor(PromptExecutor):
         if temperature is not None:
             payload["options"] = {"temperature": float(temperature)}
 
-        timeout = resolve_timeout(ctx)
+        # Siempre ``None`` (``enforces_timeout = False``): ``urlopen`` espera a que
+        # el modelo local termine, tarde lo que tarde. Un ``context['timeout']``
+        # del llamante (el presupuesto de redacción del informe, p. ej.) no se
+        # aplica aquí, y así queda dicho en el audit.
+        timeout = self.timeout_for(ctx)
         audit = ctx.get("audit")
         case_id = ctx.get("case_id")
 
@@ -247,6 +267,11 @@ class OllamaExecutor(PromptExecutor):
                     "prompt": prompt,
                     "prompt_sha256": sha256_text(prompt),
                     "prompt_chars": len(prompt),
+                    # Null: el ejecutor local corre sin cota de reloj. Es el mismo
+                    # campo que escriben los CLI con su límite en segundos, para
+                    # que un tercero lea del audit bajo qué cota se lanzó cada
+                    # turno sin tener que deducirla del ejecutor.
+                    "timeout_s": timeout,
                 }
             )
 

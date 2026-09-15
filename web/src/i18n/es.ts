@@ -612,6 +612,8 @@ export const es: Record<MessageKey, string> = {
   "settings.connectName": "Conectar {name}",
   "settings.startOllama": "Levanta el servicio ollama del compose para usarlo.",
   "settings.timeout": "Tiempo máximo",
+  "settings.timeoutScope":
+    "Se aplica a los ejecutores en nube. Ollama corre en tu máquina y no lleva límite: un prompt, un grafo o un informe pericial esperan a que el modelo local termine.",
   "settings.saveFailed": "No se pudo guardar: {detail}",
   "settings.foot": "sin API keys · sesiones y ajustes solo en tu máquina",
   "settings.noApi": "Sin conexión con el servicio api",

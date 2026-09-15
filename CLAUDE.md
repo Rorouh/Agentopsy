@@ -414,7 +414,14 @@ beats the compose baseline, and `executors.ollama.resolve_host` turns a loopback
 URL into the host machine when the deployment declared `AGENTOPSY_HOST_GATEWAY`
 (the compose sets `host.docker.internal` plus the matching `extra_hosts`). Unset,
 nothing is rewritten; when it applies, both URLs travel in the availability reason
-and in the audit event. Session transport sends only the delta when
+and in the audit event. The RUN TIME LIMIT is declared per executor
+(`PromptExecutor.enforces_timeout`), never inferred: the three cloud CLIs are
+bounded by the operator's `AGENTOPSY_EXECUTOR_TIMEOUT` (Settings offers 60/120/300 s
+over a 300 s designed default), because their turn leaves the machine and a hung
+CLI must not hold the analysis; **Ollama runs unbounded**, so a prompt, a graph
+extraction or the whole pericial report wait for the local model to finish. Every
+run records the bound it was launched under (`executor_run_start.timeout_s`, null
+when there is none). Session transport sends only the delta when
 `session_guard` can ACCOUNT for the session, and the CLI subprocesses run in a
 neutral empty cwd so no host `CLAUDE.md`/`AGENTS.md`/`GEMINI.md` leaks into the
 model's context.
