@@ -25,7 +25,7 @@ from agentopsy.audit.log import AuditLog
 from agentopsy.cases import CaseManager
 from agentopsy.evidence import EvidenceManager
 from agentopsy.findings.store import FindingStore
-from agentopsy.mitre.coverage import CoverageStore
+from agentopsy.mitre.coverage import UNMARK, CoverageStore
 from agentopsy.reports.material import MAX_HALLAZGOS, build_material, naturaleza
 from agentopsy.reports.store import DocumentStore
 
@@ -107,7 +107,7 @@ def test_findings_travel_whole_with_full_hashes(entorno) -> None:
         "summary": "Se crea la tarea `updater` que ejecuta C:/Users/Public/update.exe.",
         "severity": "high", "confidence": 0.9, "observed_at": "2026-03-14T08:12:44Z",
         "run_id": run_id, "artifact_sha256": sha, "tool_id": "tsk_fls",
-        "mitre_hints": ["T1053.005"],
+        "mitre_hints": ["T1053"],
     })
     material = _build(entorno)
 
@@ -116,7 +116,7 @@ def test_findings_travel_whole_with_full_hashes(entorno) -> None:
     assert hallazgo["artifact_sha256"] == sha           # sin truncar
     assert hallazgo["run_id"] == run_id
     assert hallazgo["confianza"] == 0.9
-    assert hallazgo["mitre_hints"] == ["T1053.005"]
+    assert hallazgo["mitre_hints"] == ["T1053"]
 
 
 def test_audited_runs_reach_the_material(entorno) -> None:
@@ -284,3 +284,58 @@ def test_memory_is_enumerated_first(entorno) -> None:
     from agentopsy.reports.material import _por_volatilidad
 
     assert _por_volatilidad([disco, memoria]) == [memoria, disco]
+
+
+# --- el veredicto del perito sobre una técnica ATT&CK -------------------------
+#
+# El fallo de 2026-08-17: confirmar (o sospechar, o descartar) una técnica en la
+# matriz dejaba el caso SIN informe. `_ADJ_KEY` mapeaba el estado a una clave del
+# catálogo y sólo estaba declarada la de «sin dictamen», así que el material se
+# construía mientras nadie hubiese dictaminado nada y levantaba
+# `MensajeDesconocido` en cuanto había un veredicto. Como el informe se publica
+# entero o nada, la única salida era retirar el dictamen: renunciar al trabajo
+# pericial para poder entregar. Estos tres fijan las tres caras que faltaban.
+
+
+@pytest.mark.parametrize(
+    "status, esperado_es, esperado_en",
+    [
+        ("confirmada", "Confirmada", "Confirmed"),
+        ("sospechosa", "Sospechosa", "Suspected"),
+        ("descartada", "Descartada", "Ruled out"),
+    ],
+)
+def test_una_tecnica_dictaminada_por_el_perito_llega_al_material(
+    entorno, status, esperado_es, esperado_en
+) -> None:
+    entorno["coverage"].adjudicate(
+        entorno["case"].id, "T1053", status, "Tarea programada creada por el atacante."
+    )
+
+    def _veredicto(lang: str) -> dict:
+        token = set_current_lang(lang)
+        try:
+            material = _build(entorno)
+        finally:
+            _LANG_ACTUAL.reset(token)
+        return next(f for f in material["mitre"] if f["technique_id"] == "T1053")
+
+    fila = _veredicto("es")
+    assert fila["veredicto"] == esperado_es
+    # La motivación y la fecha son del perito: viajan tal cual, en cualquier idioma.
+    assert fila["motivacion_del_veredicto"] == "Tarea programada creada por el atacante."
+    assert fila["dictaminada_en"]
+
+    assert _veredicto("en")["veredicto"] == esperado_en
+
+
+def test_una_tecnica_sin_dictamen_sigue_diciendo_que_no_lo_tiene(entorno) -> None:
+    """El cuarto caso del mismo eje, el único que funcionaba: no se rompe."""
+    entorno["coverage"].adjudicate(
+        entorno["case"].id, "T1053", "confirmada", "Motivo."
+    )
+    entorno["coverage"].adjudicate(entorno["case"].id, "T1053", UNMARK, "")
+
+    material = _build(entorno)
+    filas = [f for f in material["mitre"] if f["technique_id"] == "T1053"]
+    assert all(f["veredicto"] in ("No dictaminada", "") for f in filas)

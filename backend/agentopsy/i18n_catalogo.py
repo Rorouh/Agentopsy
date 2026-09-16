@@ -1462,7 +1462,27 @@ CATALOGO["mitreSheet.tabTitle"] = {
     "es": "Cobertura ATT&CK",
 }
 
-# --- hoja de ATT&CK: sin dictamen ----------------------------------------------
+# --- ATT&CK: el veredicto del perito sobre una tecnica --------------------------
+# Las CUATRO caras del mismo eje, y por eso van juntas: `reports.material._ADJ_KEY`
+# mapea el `status` de la tecnica a una de estas claves y la resuelve con `t()`.
+# Solo estaba declarada la de «sin dictamen», asi que el material se construia
+# mientras nadie hubiese dictaminado nada y reventaba (`MensajeDesconocido`) en
+# cuanto el perito confirmaba, sospechaba o descartaba una tecnica en la matriz:
+# el informe no se podia emitir hasta retirar el dictamen. Los textos son los
+# mismos que pinta la SPA (`web/src/i18n/*.ts`, claves `mitre.status.*`): la
+# matriz y el informe nombran el veredicto igual porque leen el mismo texto.
+CATALOGO["mitre.status.confirmada"] = {
+    "en": "Confirmed",
+    "es": "Confirmada",
+}
+CATALOGO["mitre.status.sospechosa"] = {
+    "en": "Suspected",
+    "es": "Sospechosa",
+}
+CATALOGO["mitre.status.descartada"] = {
+    "en": "Ruled out",
+    "es": "Descartada",
+}
 CATALOGO["mitreSheet.noVerdict"] = {
     "en": "Not adjudicated",
     "es": "No dictaminada",
