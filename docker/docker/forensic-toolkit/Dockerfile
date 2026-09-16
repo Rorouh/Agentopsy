@@ -271,16 +271,38 @@ ENV HAYABUSA_RULES=/opt/hayabusa/rules \
     HAYABUSA_CONFIG=/opt/hayabusa/config
 
 # --- chainsaw (búsqueda/hunt EVTX + Sigma) -----------------------------------
-# Binario desde el tar.gz oficial + reglas/mappings clonados del repo (tag fijo).
-RUN cd /tmp \
- && wget -q "https://github.com/WithSecureLabs/chainsaw/releases/download/v${CHAINSAW_VERSION}/chainsaw_x86_64-unknown-linux-gnu.tar.gz" -O chainsaw.tgz \
- && echo "${CHAINSAW_SHA256}  chainsaw.tgz" | sha256sum -c - \
- && mkdir -p /opt/chainsaw \
- && tar -xzf chainsaw.tgz -C /opt/chainsaw \
- && BIN="$(find /opt/chainsaw -type f -name 'chainsaw' -perm -u+x | head -n1)" \
- && ln -sf "$BIN" /usr/local/bin/chainsaw \
- && rm -f chainsaw.tgz \
- && git clone --depth 1 --branch "v${CHAINSAW_VERSION}" https://github.com/WithSecureLabs/chainsaw.git /opt/chainsaw-src || true
+# Binario desde el tar.gz oficial; las reglas Sigma, del repo (tag fijo), en su
+# propio RUN de abajo.
+#
+# El `|| true` que cerraba esta cadena estaba puesto para el clone de las reglas,
+# pero en shell cuelga de TODA la cadena `&&`: un fallo de la descarga, del
+# checksum o del `find` dejaba la imagen sin chainsaw y el RUN devolvía 0. El
+# build seguía hasta gen_versions, que lo cazaba ("binario ausente del PATH") sin
+# poder decir qué había fallado ni dónde. Ahora cada paso aborta en el sitio con
+# su traza (`set -eux`), que es lo que RULE 2 pide de un fallo.
+RUN set -eux; cd /tmp; \
+    wget -q "https://github.com/WithSecureLabs/chainsaw/releases/download/v${CHAINSAW_VERSION}/chainsaw_x86_64-unknown-linux-gnu.tar.gz" -O chainsaw.tgz; \
+    echo "${CHAINSAW_SHA256}  chainsaw.tgz" | sha256sum -c -; \
+    mkdir -p /opt/chainsaw; \
+    tar -xzf chainsaw.tgz -C /opt/chainsaw; \
+    BIN="$(find /opt/chainsaw -type f -name chainsaw -perm -u+x | head -n1)"; \
+    if [ -z "$BIN" ]; then \
+      echo "chainsaw: el tar.gz de v${CHAINSAW_VERSION} no trae un binario ejecutable; contenido:" >&2; \
+      find /opt/chainsaw -maxdepth 3 >&2; \
+      exit 1; \
+    fi; \
+    ln -sf "$BIN" /usr/local/bin/chainsaw; \
+    rm -f chainsaw.tgz; \
+    chainsaw --version
+
+# Reglas Sigma del repo, en el MISMO tag que el binario. RUN aparte a propósito:
+# son un artefacto distinto y su fallo no debe poder confundirse con el del
+# binario. Tampoco se tolera ya en silencio: `CHAINSAW_RULES` apunta aquí, así
+# que sin reglas el `chainsaw hunt` del catálogo no funciona, y un maletín que
+# dice traer una herramienta que no puede correr es justo lo que RULE 2 prohíbe.
+RUN git clone --depth 1 --branch "v${CHAINSAW_VERSION}" https://github.com/WithSecureLabs/chainsaw.git /opt/chainsaw-src \
+ && test -d /opt/chainsaw-src/rules \
+ && test -f /opt/chainsaw-src/mappings/sigma-event-logs-all.yml
 ENV CHAINSAW_RULES=/opt/chainsaw-src/rules \
     CHAINSAW_MAPPING=/opt/chainsaw-src/mappings/sigma-event-logs-all.yml
 
